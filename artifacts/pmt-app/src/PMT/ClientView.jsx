@@ -103,9 +103,19 @@ const ClientView = ({
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
   
   const [showTaskForm, setShowTaskForm] = useState(false);
+  const [newTaskName, setNewTaskName] = useState("");
   const [showClientModal, setShowClientModal] = useState(false);
   const [newEntityName, setNewEntityName] = useState("");
   const [newClientName, setNewClientName] = useState("");
+
+  // Edit Task modal state
+  const [editingTask, setEditingTask] = useState(null);
+  const [editDraft, setEditDraft] = useState(null);
+  const [editDraftCategoryQuery, setEditDraftCategoryQuery] = useState('');
+  const [editDraftShowCategoryMenu, setEditDraftShowCategoryMenu] = useState(false);
+  const [editDraftAssigneeQuery, setEditDraftAssigneeQuery] = useState('');
+  const [editDraftShowAssigneeMenu, setEditDraftShowAssigneeMenu] = useState(false);
+  const [editDraftError, setEditDraftError] = useState('');
   const [selectedAdmins, setSelectedAdmins] = useState([]);
   const [selectedEmployees, setSelectedEmployees] = useState([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -178,6 +188,63 @@ const ClientView = ({
   const canChangeTaskStatus = (log) => {
     if (canFullyEditTask(log)) return true;
     return String(log.assigneeId) === String(currentUser?.id);
+  };
+
+  const openEditModal = (log) => {
+    const tryParse = (str) => {
+      if (!str) return null;
+      try { return parse(str, 'do MMM yyyy', new Date()); } catch { return null; }
+    };
+    setEditingTask(log);
+    setEditDraft({
+      name: log.name || '',
+      comment: log.comment || '',
+      category: log.category || '',
+      assigneeId: log.assigneeId || '',
+      assigneeName: log.assigneeName || '',
+      date: tryParse(log.date) || new Date(),
+      dueDate: tryParse(log.dueDate) || null,
+      repeatFrequency: log.repeatFrequency || 'Once',
+      status: log.status || 'Pending',
+      qcEnabled: log.qcEnabled ?? true,
+      qcAssigneeId: log.qcAssigneeId || '',
+      qcAssigneeName: log.qcAssigneeName || '',
+    });
+    setEditDraftCategoryQuery(log.category || '');
+    setEditDraftAssigneeQuery(log.assigneeName || '');
+    setEditDraftShowCategoryMenu(false);
+    setEditDraftShowAssigneeMenu(false);
+    setEditDraftError('');
+  };
+
+  const handleSaveEditTask = () => {
+    if (!editDraft) return;
+    if (!editDraft.comment.trim() || !editDraft.category || !editDraft.assigneeId) {
+      setEditDraftError('Description, category and assignee are required.');
+      return;
+    }
+    const assignee = (users || []).find(u => String(u.id) === String(editDraft.assigneeId));
+    const updated = (clientLogs[selectedClient.id] || []).map(l =>
+      l.id === editingTask.id ? {
+        ...l,
+        name: editDraft.name.trim() || '',
+        comment: editDraft.comment.trim(),
+        category: editDraft.category,
+        assigneeId: editDraft.assigneeId,
+        assigneeName: assignee?.name || l.assigneeName,
+        assigneeEmail: assignee?.email || l.assigneeEmail,
+        date: format(editDraft.date || new Date(), 'do MMM yyyy'),
+        dueDate: editDraft.dueDate ? format(editDraft.dueDate, 'do MMM yyyy') : null,
+        repeatFrequency: editDraft.repeatFrequency,
+        status: editDraft.status,
+        qcEnabled: editDraft.qcEnabled,
+        qcAssigneeId: editDraft.qcEnabled && editDraft.qcAssigneeId ? editDraft.qcAssigneeId : null,
+        qcAssigneeName: editDraft.qcEnabled && editDraft.qcAssigneeName ? editDraft.qcAssigneeName : null,
+      } : l
+    );
+    setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
+    setEditingTask(null);
+    setEditDraft(null);
   };
 
   useEffect(() => {
@@ -346,6 +413,7 @@ const ClientView = ({
     }
     const newLog = {
       id: Date.now(),
+      name: newTaskName.trim(),
       date: format(selectedDate, 'do MMM yyyy'),
       dueDate: taskDueDate ? format(taskDueDate, 'do MMM yyyy') : null,
       comment: trimmedComment, result: '', status: 'Pending',
@@ -390,6 +458,7 @@ const ClientView = ({
       ...clientLogs,
       [selectedClient.id]: [newLog, ...(clientLogs[selectedClient.id] || [])]
     });
+    setNewTaskName("");
     setNewTaskComment("");
     setNewTaskCategory("");
     setTaskCategoryQuery("");
@@ -709,6 +778,7 @@ const ClientView = ({
             )}
             <button
               onClick={() => {
+                setNewTaskName('');
                 setSelectedDate(new Date());
                 setNewTaskComment('');
                 setNewTaskCategory('');
@@ -769,25 +839,25 @@ const ClientView = ({
           <div className="max-h-[68vh] overflow-auto">
             <table className="w-full min-w-[980px] border-collapse table-fixed">
               <colgroup>
+                <col className="w-[7%]" />
                 <col className="w-[8%]" />
+                <col className="w-[9%]" />
+                <col className="w-[14%]" />
+                <col className="w-[11%]" />
+                <col className="w-[32%]" />
                 <col className="w-[10%]" />
-                <col className="w-[10%]" />
-                <col className="w-[18%]" />
-                <col className="w-[12%]" />
-                <col className="w-[27%]" />
-                <col className="w-[10%]" />
-                <col className="w-[5%]" />
+                <col className="w-[9%]" />
               </colgroup>
               <thead>
                 <tr className="sticky top-0 z-10 bg-slate-100 border-b border-slate-200 text-[10px] font-semibold uppercase tracking-wider text-slate-700">
                   <th className="px-1.5 py-2 text-left">Date</th>
                   <th className="px-1.5 py-2 text-left">Due Date</th>
                   <th className="px-1 py-2 text-left">Status</th>
-                  <th className="px-1.5 py-2 text-left">Task Category</th>
+                  <th className="px-1.5 py-2 text-left">Category</th>
                   <th className="px-1.5 py-2 text-left">Assigned To</th>
-                  <th className="px-2 py-2 text-left">Task Description</th>
+                  <th className="px-2 py-2 text-left">Task</th>
                   <th className="px-1.5 py-2 text-right">Timer</th>
-                  <th className="px-2 py-2 text-right">Action</th>
+                  <th className="px-2 py-2 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -930,69 +1000,58 @@ const ClientView = ({
                         </div>
                       </td>
                       <td className="px-2 py-2">
-                        {editingId === log.id && editField === 'comment' && canFullyEditTask(log) ? (
-                          <textarea
-                            className="w-full p-2 border border-blue-600 rounded-lg text-sm font-medium bg-white outline-none"
-                            value={tempValue}
-                            autoFocus
-                            onClick={(e) => e.stopPropagation()}
-                            onBlur={() => handleSaveInline(log.id)}
-                            onChange={(e) => setTempValue(e.target.value)}
-                          />
-                        ) : (
-                          <div className="flex items-start justify-between gap-2 group/cell">
-                            <div className="flex-1 min-w-0">
-                              <span className={`text-sm font-medium text-slate-700 leading-5 pr-1 break-words ${isExpanded ? '' : 'line-clamp-1'}`}>
-                                {log.comment}
-                              </span>
-                              {/* QC Reviewer info (expanded) */}
-                              {isExpanded && log.qcEnabled && log.qcAssigneeName && (
-                                <p className="text-[10px] text-indigo-500 font-medium mt-0.5">
-                                  QC Reviewer: {log.qcAssigneeName}
-                                </p>
-                              )}
-                              {/* QC Feedback banner (rejected tasks) */}
-                              {log.qcEnabled && log.qcStatus === 'rejected' && log.qcFeedback && (
-                                <div className="mt-1.5 flex items-start gap-1.5 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5">
-                                  <ThumbsDown size={11} className="text-red-500 mt-0.5 flex-shrink-0" />
-                                  <div className="min-w-0">
-                                    <p className="text-[10px] font-semibold text-red-700">Manager Feedback{log.qcRating ? ` · ${log.qcRating}/10` : ''}:</p>
-                                    <p className="text-[10px] text-red-600 break-words">{log.qcFeedback}</p>
-                                  </div>
+                        <div className="flex items-start justify-between gap-2 group/cell">
+                          <div className="flex-1 min-w-0">
+                            {log.name ? (
+                              <>
+                                <p className={`text-sm font-semibold text-slate-800 leading-5 break-words ${isExpanded ? '' : 'truncate'}`}>{log.name}</p>
+                                <p className={`text-xs text-slate-500 leading-4 mt-0.5 break-words ${isExpanded ? '' : 'line-clamp-1'}`}>{log.comment}</p>
+                              </>
+                            ) : (
+                              <p className={`text-sm font-medium text-slate-700 leading-5 break-words ${isExpanded ? '' : 'line-clamp-2'}`}>{log.comment}</p>
+                            )}
+                            {/* QC Reviewer info (expanded) */}
+                            {isExpanded && log.qcEnabled && log.qcAssigneeName && (
+                              <p className="text-[10px] text-indigo-500 font-medium mt-0.5">
+                                QC Reviewer: {log.qcAssigneeName}
+                              </p>
+                            )}
+                            {/* QC Feedback banner (rejected tasks) */}
+                            {log.qcEnabled && log.qcStatus === 'rejected' && log.qcFeedback && (
+                              <div className="mt-1.5 flex items-start gap-1.5 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5">
+                                <ThumbsDown size={11} className="text-red-500 mt-0.5 flex-shrink-0" />
+                                <div className="min-w-0">
+                                  <p className="text-[10px] font-semibold text-red-700">Manager Feedback{log.qcRating ? ` · ${log.qcRating}/10` : ''}:</p>
+                                  <p className="text-[10px] text-red-600 break-words">{log.qcFeedback}</p>
                                 </div>
-                              )}
-                            </div>
-                            {canFullyEditTask(log) && (
-                              <div className="flex items-center gap-1 opacity-0 group-hover/cell:opacity-100">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingId(log.id);
-                                    setEditField('comment');
-                                    setTempValue(log.comment);
-                                  }}
-                                  className="p-1 text-blue-400"
-                                  title="Edit task"
-                                >
-                                  <Edit2 size={12}/>
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (window.confirm("Are you sure you want to delete this task?")) {
-                                      const upd = clientLogs[selectedClient.id].filter(l => l.id !== log.id);
-                                      setClientLogs({ ...clientLogs, [selectedClient.id]: upd });
-                                    }
-                                  }}
-                                  className="p-1 text-slate-300 hover:text-red-500 transition-all"
-                                  title="Delete task"
-                                >
-                                  <Trash2 size={14}/>
-                                </button>
                               </div>
                             )}
                           </div>
-                        )}
+                          {canFullyEditTask(log) && (
+                            <div className="flex items-center gap-1 opacity-0 group-hover/cell:opacity-100 flex-shrink-0">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); openEditModal(log); }}
+                                className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-all"
+                                title="Edit task"
+                              >
+                                <Edit2 size={12}/>
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (window.confirm("Are you sure you want to delete this task?")) {
+                                    const upd = clientLogs[selectedClient.id].filter(l => l.id !== log.id);
+                                    setClientLogs({ ...clientLogs, [selectedClient.id]: upd });
+                                  }
+                                }}
+                                className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-md transition-all"
+                                title="Delete task"
+                              >
+                                <Trash2 size={12}/>
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </td>
                       <td className="px-1.5 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex flex-col items-end gap-1">
@@ -1297,6 +1356,16 @@ const ClientView = ({
                   </div>
                   <div className="flex-1 space-y-5">
                     <div className="space-y-1.5">
+                      <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Task Name</label>
+                      <input
+                        type="text"
+                        placeholder="Short title for this task (optional)"
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                        value={newTaskName}
+                        onChange={e => setNewTaskName(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
                       <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Task Category <span className="text-red-500">*</span></label>
                       <div className="relative">
                         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -1529,6 +1598,238 @@ const ClientView = ({
             </div>
           </div>
         )}
+
+        {/* Edit Task Modal */}
+        {editingTask && editDraft && (() => {
+          const editFilteredCategories = availableTaskCategories.filter(c =>
+            c.toLowerCase().includes(editDraftCategoryQuery.toLowerCase())
+          );
+          const editFilteredAssignees = assignableUsers.filter(u =>
+            `${u.name} ${u.email || ''}`.toLowerCase().includes(editDraftAssigneeQuery.toLowerCase())
+          );
+          const managementUsersForQC = assignableUsers.filter(u => managementRoles.includes(u.role));
+          return (
+            <div className="fixed inset-0 z-[700] flex items-start justify-center bg-slate-900/20 backdrop-blur-md overflow-y-auto p-4">
+              <div className="bg-white w-full max-w-5xl border border-slate-200 shadow-xl rounded-2xl animate-in zoom-in-95 flex flex-col my-auto">
+                {/* Header */}
+                <div className="flex justify-between items-center px-8 pt-7 pb-5 border-b border-slate-100">
+                  <div>
+                    <h4 className="text-lg font-semibold text-slate-900">Edit Task</h4>
+                    {editingTask.name && <p className="text-xs text-slate-500 mt-0.5">{editingTask.name}</p>}
+                  </div>
+                  <button
+                    onClick={() => { setEditingTask(null); setEditDraft(null); }}
+                    className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all"
+                  >
+                    <X size={18}/>
+                  </button>
+                </div>
+                <div className="space-y-6 px-8 py-6 overflow-y-auto">
+                  <div className="grid grid-cols-1 lg:grid-cols-[300px,1fr] gap-6">
+                    {/* Left column: dates + status */}
+                    <div className="space-y-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Task Date</label>
+                        <div className="border border-slate-200 rounded-xl p-3 bg-slate-50">
+                          <DatePicker
+                            selected={editDraft.date}
+                            onChange={date => setEditDraft(d => ({ ...d, date: date || new Date() }))}
+                            inline
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Due Date</label>
+                        <DatePicker
+                          selected={editDraft.dueDate}
+                          onChange={date => setEditDraft(d => ({ ...d, dueDate: date }))}
+                          placeholderText="Select due date"
+                          dateFormat="do MMM yyyy"
+                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                        />
+                        {editDraft.dueDate && (
+                          <button type="button" onClick={() => setEditDraft(d => ({ ...d, dueDate: null }))} className="text-xs font-semibold text-red-600 hover:text-red-700">
+                            Clear Due Date
+                          </button>
+                        )}
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</label>
+                        <select
+                          value={editDraft.status}
+                          onChange={e => setEditDraft(d => ({ ...d, status: e.target.value }))}
+                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 bg-white"
+                        >
+                          <option value="Pending">Pending</option>
+                          <option value="WIP">WIP</option>
+                          <option value="Done">Done</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Repeat Frequency</label>
+                        <div className="flex flex-wrap gap-2">
+                          {['Once','Daily','Weekly','Monthly'].map(freq => (
+                            <label key={freq} className="flex items-center gap-1.5 px-3 py-2 border rounded-lg cursor-pointer text-xs font-semibold transition-all"
+                              style={editDraft.repeatFrequency === freq ? {borderColor:'#2563eb',backgroundColor:'#eff6ff',color:'#1d4ed8'} : {borderColor:'#e2e8f0',color:'#374151'}}
+                            >
+                              <input type="radio" name="editRepeat" value={freq} checked={editDraft.repeatFrequency === freq}
+                                onChange={() => setEditDraft(d => ({ ...d, repeatFrequency: freq }))}
+                                className="w-3.5 h-3.5 accent-blue-600"
+                              />
+                              {freq}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    {/* Right column: all text fields */}
+                    <div className="space-y-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Task Name</label>
+                        <input
+                          type="text"
+                          placeholder="Short title for this task (optional)"
+                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                          value={editDraft.name}
+                          onChange={e => setEditDraft(d => ({ ...d, name: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Task Description <span className="text-red-500">*</span></label>
+                        <textarea
+                          placeholder="Describe the task details"
+                          className="w-full h-28 p-4 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 resize-none bg-slate-50"
+                          value={editDraft.comment}
+                          onChange={e => { setEditDraft(d => ({ ...d, comment: e.target.value })); setEditDraftError(''); }}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Task Category <span className="text-red-500">*</span></label>
+                        <div className="relative">
+                          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                          <input
+                            type="text"
+                            placeholder="Search and select category"
+                            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                            value={editDraftCategoryQuery}
+                            onFocus={() => setEditDraftShowCategoryMenu(true)}
+                            onChange={e => { setEditDraftCategoryQuery(e.target.value); setEditDraft(d => ({ ...d, category: '' })); setEditDraftShowCategoryMenu(true); setEditDraftError(''); }}
+                          />
+                          {editDraftShowCategoryMenu && (
+                            <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                              {editFilteredCategories.length ? editFilteredCategories.map(c => (
+                                <button key={c} type="button"
+                                  onClick={() => { setEditDraft(d => ({ ...d, category: c })); setEditDraftCategoryQuery(c); setEditDraftShowCategoryMenu(false); setEditDraftError(''); }}
+                                  className="w-full text-left px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                                >{c}</button>
+                              )) : <p className="px-3 py-2 text-sm text-slate-500">No categories found</p>}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Assign To <span className="text-red-500">*</span></label>
+                        <div className="relative">
+                          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                          <input
+                            type="text"
+                            placeholder="Search assignee"
+                            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                            value={editDraftAssigneeQuery}
+                            onFocus={() => setEditDraftShowAssigneeMenu(true)}
+                            onChange={e => { setEditDraftAssigneeQuery(e.target.value); setEditDraft(d => ({ ...d, assigneeId: '', assigneeName: '' })); setEditDraftShowAssigneeMenu(true); setEditDraftError(''); }}
+                          />
+                          {editDraftShowAssigneeMenu && (
+                            <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                              {editFilteredAssignees.length ? editFilteredAssignees.map(u => (
+                                <button key={u.id} type="button"
+                                  onClick={() => { setEditDraft(d => ({ ...d, assigneeId: u.id, assigneeName: u.name })); setEditDraftAssigneeQuery(u.name); setEditDraftShowAssigneeMenu(false); setEditDraftError(''); }}
+                                  className="w-full text-left px-3 py-2 hover:bg-slate-50"
+                                >
+                                  <p className="text-sm font-semibold text-slate-700">{u.name}</p>
+                                  <p className="text-xs text-slate-500">{u.email || ''}</p>
+                                </button>
+                              )) : <p className="px-3 py-2 text-sm text-slate-500">{assignableUsers.length ? 'No match' : 'No team members on this client'}</p>}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {/* QC Section */}
+                      <div className="space-y-3 border border-slate-200 rounded-xl p-4 bg-slate-50/60">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <ShieldCheck size={15} className="text-indigo-600" />
+                            <label className="text-xs font-semibold uppercase tracking-wide text-slate-600">Quality Check</label>
+                          </div>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={editDraft.qcEnabled}
+                            onClick={() => setEditDraft(d => ({
+                              ...d,
+                              qcEnabled: !d.qcEnabled,
+                              qcAssigneeId: d.qcEnabled ? '' : d.qcAssigneeId,
+                              qcAssigneeName: d.qcEnabled ? '' : d.qcAssigneeName,
+                            }))}
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${editDraft.qcEnabled ? 'bg-indigo-600' : 'bg-slate-300'}`}
+                          >
+                            <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${editDraft.qcEnabled ? 'translate-x-4' : 'translate-x-1'}`} />
+                          </button>
+                        </div>
+                        {editDraft.qcEnabled && (
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-slate-500">QC Reviewer</label>
+                            <div className="relative">
+                              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                              <input
+                                type="text"
+                                placeholder="Search management reviewer..."
+                                className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-3 py-2 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-indigo-500/20"
+                                value={editDraft.qcAssigneeName || ''}
+                                onChange={e => {
+                                  const q = e.target.value.toLowerCase();
+                                  const match = managementUsersForQC.find(u => u.name.toLowerCase() === q);
+                                  setEditDraft(d => ({ ...d, qcAssigneeName: e.target.value, qcAssigneeId: match ? String(match.id) : '' }));
+                                }}
+                              />
+                              {editDraft.qcAssigneeName && (
+                                <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-36 overflow-y-auto">
+                                  {managementUsersForQC.filter(u => u.name.toLowerCase().includes((editDraft.qcAssigneeName || '').toLowerCase())).map(u => (
+                                    <button key={u.id} type="button"
+                                      onClick={() => setEditDraft(d => ({ ...d, qcAssigneeId: String(u.id), qcAssigneeName: u.name }))}
+                                      className="w-full text-left px-3 py-2 text-xs font-medium text-slate-700 hover:bg-indigo-50"
+                                    >{u.name} <span className="text-slate-400">· {u.role}</span></button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  {editDraftError && <p className="text-sm font-medium text-red-600">{editDraftError}</p>}
+                  <div className="flex justify-end gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => { setEditingTask(null); setEditDraft(null); }}
+                      className="px-5 py-2.5 rounded-lg text-sm font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-all"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveEditTask}
+                      className="bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-all shadow-md"
+                    >
+                      Save Changes
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* QC Review Modal (management only) */}
         {qcReviewingTaskId && (() => {
