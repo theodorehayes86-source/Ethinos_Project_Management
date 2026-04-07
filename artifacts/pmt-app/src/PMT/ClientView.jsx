@@ -2279,12 +2279,12 @@ const ClientView = ({
       {/* Add Client Modal */}
       {showClientModal && (
         <div className="fixed inset-0 z-[700] flex items-center justify-center bg-slate-900/10 backdrop-blur-md p-4">
-          <div className="bg-white w-full max-w-5xl p-6 border border-slate-200 shadow-xl rounded-2xl animate-in zoom-in-95">
-            <div className="flex justify-between items-center mb-6">
+          <div className="bg-white w-full max-w-5xl border border-slate-200 shadow-xl rounded-2xl animate-in zoom-in-95 flex flex-col" style={{maxHeight:'90vh'}}>
+            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100">
               <h4 className="text-lg font-semibold text-slate-900">Add New Client</h4>
               <button onClick={() => setShowClientModal(false)} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all"><X size={18}/></button>
             </div>
-            <form onSubmit={handleSaveClient} className="space-y-5">
+            <form onSubmit={handleSaveClient} className="space-y-5 px-6 py-5 overflow-y-auto">
               <div className="space-y-2">
                 <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Entity Name</label>
                 <input type="text" className="w-full p-3 border border-slate-200 bg-white rounded-lg text-sm font-medium outline-none focus:ring-2 ring-blue-500/20 transition-all" placeholder="Enter entity name" value={newEntityName} onChange={(e) => setNewEntityName(e.target.value)} required />
@@ -2303,7 +2303,7 @@ const ClientView = ({
                       <Users size={12}/> Select Members
                     </button>
                   </div>
-                  <div className="min-h-[60px] border border-slate-200 rounded-xl p-2.5 bg-slate-50/40 flex flex-wrap gap-1.5 items-start">
+                  <div className="min-h-[60px] max-h-32 overflow-y-auto border border-slate-200 rounded-xl p-2.5 bg-slate-50/40 flex flex-wrap gap-1.5 items-start content-start">
                     {selectedAdmins.length === 0
                       ? <p className="text-xs text-slate-400 italic">No leadership selected</p>
                       : selectedAdmins.map(id => {
@@ -2328,7 +2328,7 @@ const ClientView = ({
                       <Users size={12}/> Select Members
                     </button>
                   </div>
-                  <div className="min-h-[60px] border border-slate-200 rounded-xl p-2.5 bg-slate-50/40 flex flex-wrap gap-1.5 items-start">
+                  <div className="min-h-[60px] max-h-32 overflow-y-auto border border-slate-200 rounded-xl p-2.5 bg-slate-50/40 flex flex-wrap gap-1.5 items-start content-start">
                     {selectedEmployees.length === 0
                       ? <p className="text-xs text-slate-400 italic">No team members selected</p>
                       : selectedEmployees.map(id => {
@@ -2353,12 +2353,12 @@ const ClientView = ({
       {/* Edit Client Modal */}
       {editingClientId && (
         <div className="fixed inset-0 z-[700] flex items-center justify-center bg-slate-900/10 backdrop-blur-md p-4">
-          <div className="bg-white w-full max-w-5xl p-6 border border-slate-200 shadow-xl rounded-2xl animate-in zoom-in-95">
-            <div className="flex justify-between items-center mb-6">
+          <div className="bg-white w-full max-w-5xl border border-slate-200 shadow-xl rounded-2xl animate-in zoom-in-95 flex flex-col" style={{maxHeight:'90vh'}}>
+            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100">
               <h4 className="text-lg font-semibold text-slate-900">Edit Client</h4>
               <button onClick={handleCancelEditClient} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all"><X size={18}/></button>
             </div>
-            <form onSubmit={handleSaveEditClient} className="space-y-5">
+            <form onSubmit={handleSaveEditClient} className="space-y-5 px-6 py-5 overflow-y-auto">
               <div className="space-y-2">
                 <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Entity Name</label>
                 <input type="text" className="w-full p-3 border border-slate-200 bg-white rounded-lg text-sm font-medium outline-none focus:ring-2 ring-blue-500/20 transition-all" placeholder="Enter entity name" value={editEntityName} onChange={(e) => setEditEntityName(e.target.value)} required />
@@ -2377,7 +2377,7 @@ const ClientView = ({
                       <Users size={12}/> Select Members
                     </button>
                   </div>
-                  <div className="min-h-[60px] border border-slate-200 rounded-xl p-2.5 bg-slate-50/40 flex flex-wrap gap-1.5 items-start">
+                  <div className="min-h-[60px] max-h-32 overflow-y-auto border border-slate-200 rounded-xl p-2.5 bg-slate-50/40 flex flex-wrap gap-1.5 items-start content-start">
                     {editClientAdmins.length === 0
                       ? <p className="text-xs text-slate-400 italic">No leadership selected</p>
                       : editClientAdmins.map(id => {
@@ -2402,7 +2402,7 @@ const ClientView = ({
                       <Users size={12}/> Select Members
                     </button>
                   </div>
-                  <div className="min-h-[60px] border border-slate-200 rounded-xl p-2.5 bg-slate-50/40 flex flex-wrap gap-1.5 items-start">
+                  <div className="min-h-[60px] max-h-32 overflow-y-auto border border-slate-200 rounded-xl p-2.5 bg-slate-50/40 flex flex-wrap gap-1.5 items-start content-start">
                     {editClientEmployees.length === 0
                       ? <p className="text-xs text-slate-400 italic">No team members selected</p>
                       : editClientEmployees.map(id => {
@@ -2418,7 +2418,7 @@ const ClientView = ({
                   </div>
                 </div>
               </div>
-              <div className="flex gap-3 justify-end">
+              <div className="flex gap-3 justify-end pt-1">
                 <button type="button" onClick={handleCancelEditClient} className="px-5 py-2.5 rounded-lg font-semibold text-sm bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-all">Cancel</button>
                 <button type="submit" className="px-5 py-2.5 rounded-lg font-semibold text-sm bg-blue-600 text-white hover:bg-blue-700 transition-all shadow-md">Save Changes</button>
               </div>

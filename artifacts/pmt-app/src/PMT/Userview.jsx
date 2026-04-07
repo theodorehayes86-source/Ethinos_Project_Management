@@ -170,8 +170,8 @@ const UserView = ({ users = [], setUsers, clients = [], settingsSearch = "", set
       {/* 3. MODAL (ADD & EDIT) */}
       {showAddModal && (
         <div className="fixed inset-0 z-[700] flex items-center justify-center bg-slate-900/10 backdrop-blur-md p-4">
-          <div className="bg-white w-[900px] p-12 border border-slate-100 shadow-2xl rounded-[3rem] flex flex-col animate-in zoom-in-95 duration-300">
-            <div className="flex justify-between items-center mb-10">
+          <div className="bg-white w-full max-w-[900px] border border-slate-100 shadow-2xl rounded-[3rem] flex flex-col animate-in zoom-in-95 duration-300 overflow-y-auto" style={{maxHeight:'92vh'}}>
+            <div className="p-12 pb-0 flex justify-between items-center mb-10">
               <h4 className="text-xl font-bold text-slate-900">
                 {editingUserId ? "Edit User Details" : "Add New User"}
               </h4>
@@ -179,7 +179,7 @@ const UserView = ({ users = [], setUsers, clients = [], settingsSearch = "", set
                 <X size={28}/>
               </button>
             </div>
-            <form onSubmit={handleSaveUser} className="space-y-8 text-left">
+            <form onSubmit={handleSaveUser} className="space-y-8 text-left px-12 pb-12">
               <div className="grid grid-cols-2 gap-8">
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-slate-600 ml-1">User Name</label>
@@ -190,7 +190,7 @@ const UserView = ({ users = [], setUsers, clients = [], settingsSearch = "", set
                   <input type="email" placeholder="Email Address..." className="w-full p-5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 ring-blue-500/5 font-bold transition-all" value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} required />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-8 h-80">
+              <div className="grid grid-cols-2 gap-8 items-start">
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-slate-600 ml-1">Designation</label>
                   <div className="relative">
@@ -226,17 +226,20 @@ const UserView = ({ users = [], setUsers, clients = [], settingsSearch = "", set
                     <ChevronDown size={18} className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                   </div>
                 </div>
-                <div className="space-y-3 flex flex-col h-full">
+                <div className="space-y-3 flex flex-col">
                   <label className="text-sm font-semibold text-slate-600 ml-1">Assign Projects</label>
-                  <div className="relative mb-2">
+                  <div className="relative">
                     <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"/>
-                    <input type="text" placeholder="Search..." className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2 text-sm font-medium outline-none" value={projectSearch} onChange={(e) => setProjectSearch(e.target.value)}/>
+                    <input type="text" placeholder="Search clients..." className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2 text-sm font-medium outline-none" value={projectSearch} onChange={(e) => setProjectSearch(e.target.value)}/>
                   </div>
-                  <div className="flex-1 overflow-y-auto border border-slate-50 rounded-2xl p-4 space-y-2 bg-slate-50/20 custom-scrollbar">
+                  <div className="h-64 overflow-y-auto border border-slate-100 rounded-2xl p-4 space-y-2 bg-slate-50/20">
+                    {filteredProjects.length === 0 && (
+                      <p className="text-sm text-slate-400 text-center py-4">No clients found</p>
+                    )}
                     {filteredProjects.map(client => (
-                      <div key={client.id} onClick={() => toggleProject(client.name)} className={`flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all ${newUser.assignedProjects.includes(client.name) ? 'bg-blue-600 text-white shadow-md' : 'bg-white border border-slate-200 text-slate-700 hover:border-blue-300'}`}>
-                        <span className="text-sm font-medium text-slate-700">{client.name}</span>
-                        {newUser.assignedProjects.includes(client.name) && <Check size={14} className="text-white" />}
+                      <div key={client.id} onClick={() => toggleProject(client.name)} className={`flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all ${newUser.assignedProjects.includes(client.name) ? 'bg-blue-600 shadow-md' : 'bg-white border border-slate-200 text-slate-700 hover:border-blue-300'}`}>
+                        <span className={`text-sm font-medium ${newUser.assignedProjects.includes(client.name) ? 'text-white' : 'text-slate-700'}`}>{client.name}</span>
+                        {newUser.assignedProjects.includes(client.name) && <Check size={14} className="text-white flex-shrink-0" />}
                       </div>
                     ))}
                   </div>
