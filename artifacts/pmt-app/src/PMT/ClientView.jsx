@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Search, ChevronLeft, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send } from 'lucide-react';
+import { Search, ChevronLeft, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import DatePicker from "react-datepicker";
 import { format, subDays, parse } from 'date-fns';
@@ -94,6 +94,46 @@ const ClientView = ({
   const canChangeTaskStatus = (log) => {
     if (canFullyEditTask(log)) return true;
     return String(log.assigneeId) === String(currentUser?.id);
+  };
+
+  // True if the current user is the assigned employee, or management (who can always interact)
+  const isAssignedToTask = (log) => {
+    if (isManagement) return true;
+    return String(log.assigneeId) === String(currentUser?.id);
+  };
+
+  // True if the current user has already sent an assignment request for this task
+  const hasRequestedAssignment = (log) => {
+    return (log.assignmentRequests || []).some(r => String(r.requesterId) === String(currentUser?.id));
+  };
+
+  // Employee requests to be assigned — stores on task + notifies client leadership
+  const handleRequestAssignment = (log) => {
+    if (!currentUser || hasRequestedAssignment(log)) return;
+    const request = { requesterId: currentUser.id, requesterName: currentUser.name, timestamp: Date.now() };
+    const updated = (clientLogs[selectedClient.id] || []).map(l =>
+      l.id === log.id ? { ...l, assignmentRequests: [...(l.assignmentRequests || []), request] } : l
+    );
+    setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
+
+    // Fire a notification visible to client leadership
+    const leaders = getProjectStaff(selectedClient.name).admins;
+    setNotifications(prev => [
+      {
+        id: `req-assign-${Date.now()}`,
+        text: `${currentUser.name} is requesting to be assigned to: "${log.comment || log.name}"`,
+        time: 'Just now',
+        type: 'assignment-request',
+        read: false,
+        clientId: selectedClient.id,
+        clientName: selectedClient.name,
+        taskId: log.id,
+        requesterId: currentUser.id,
+        requesterName: currentUser.name,
+        leaderIds: leaders.map(l => l.id),
+      },
+      ...prev
+    ]);
   };
 
   const openEditModal = (log) => {
@@ -864,33 +904,49 @@ const ClientView = ({
                           )}
                           {/* Timer controls — hidden when Done */}
                           {log.status !== 'Done' && (
-                            <div className="flex items-center gap-1 mt-0.5">
-                              {(timerState === 'idle' || timerState === 'stopped') && (
-                                <button onClick={() => startTaskTimer(log.id)} className="p-1 rounded border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-all" title="Start timer">
-                                  <Play size={11} />
-                                </button>
-                              )}
-                              {timerState === 'running' && (
-                                <>
-                                  <button onClick={() => pauseTaskTimer(log.id)} className="p-1 rounded border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 transition-all" title="Pause timer">
-                                    <Pause size={11} />
-                                  </button>
-                                  <button onClick={() => stopTaskTimer(log.id)} className="p-1 rounded border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-all" title="Stop timer">
-                                    <Square size={11} />
-                                  </button>
-                                </>
-                              )}
-                              {timerState === 'paused' && (
-                                <>
-                                  <button onClick={() => startTaskTimer(log.id)} className="p-1 rounded border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-all" title="Resume timer">
+                            isAssignedToTask(log) ? (
+                              <div className="flex items-center gap-1 mt-0.5">
+                                {(timerState === 'idle' || timerState === 'stopped') && (
+                                  <button onClick={() => startTaskTimer(log.id)} className="p-1 rounded border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-all" title="Start timer">
                                     <Play size={11} />
                                   </button>
-                                  <button onClick={() => stopTaskTimer(log.id)} className="p-1 rounded border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-all" title="Stop timer">
-                                    <Square size={11} />
-                                  </button>
-                                </>
-                              )}
-                            </div>
+                                )}
+                                {timerState === 'running' && (
+                                  <>
+                                    <button onClick={() => pauseTaskTimer(log.id)} className="p-1 rounded border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 transition-all" title="Pause timer">
+                                      <Pause size={11} />
+                                    </button>
+                                    <button onClick={() => stopTaskTimer(log.id)} className="p-1 rounded border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-all" title="Stop timer">
+                                      <Square size={11} />
+                                    </button>
+                                  </>
+                                )}
+                                {timerState === 'paused' && (
+                                  <>
+                                    <button onClick={() => startTaskTimer(log.id)} className="p-1 rounded border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-all" title="Resume timer">
+                                      <Play size={11} />
+                                    </button>
+                                    <button onClick={() => stopTaskTimer(log.id)} className="p-1 rounded border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-all" title="Stop timer">
+                                      <Square size={11} />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            ) : (
+                              hasRequestedAssignment(log) ? (
+                                <span className="flex items-center gap-0.5 text-[9px] font-semibold bg-slate-50 text-slate-400 border border-slate-200 rounded px-1.5 py-0.5 mt-0.5 whitespace-nowrap">
+                                  <UserPlus size={8} /> Requested
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => handleRequestAssignment(log)}
+                                  className="flex items-center gap-0.5 text-[9px] font-semibold bg-violet-50 text-violet-600 border border-violet-200 rounded px-1.5 py-0.5 mt-0.5 hover:bg-violet-100 transition-all whitespace-nowrap"
+                                  title="Request to be assigned to this task"
+                                >
+                                  <UserPlus size={8} /> Ask to assign
+                                </button>
+                              )
+                            )
                           )}
                         </div>
                       </td>

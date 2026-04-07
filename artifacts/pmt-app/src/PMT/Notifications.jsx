@@ -11,6 +11,9 @@ const Notifications = ({ isNotifOpen, setIsNotifOpen, setIsProfileOpen, currentU
     if (type === 'assignment') {
       return { icon: <Briefcase size={12} className="text-blue-500" />, bg: 'bg-blue-50' };
     }
+    if (type === 'assignment-request') {
+      return { icon: <UserPlus size={12} className="text-violet-500" />, bg: 'bg-violet-50' };
+    }
     if (type === 'team') {
       return { icon: <UserPlus size={12} className="text-emerald-500" />, bg: 'bg-emerald-50' };
     }
@@ -24,6 +27,11 @@ const Notifications = ({ isNotifOpen, setIsNotifOpen, setIsProfileOpen, currentU
 
     // 0. MANUAL IN-APP NOTIFICATIONS (e.g. task assignment)
     (notifications || []).forEach((item) => {
+      // Assignment-request notifications are only shown to targeted leaders
+      if (item.type === 'assignment-request') {
+        const isTargeted = (item.leaderIds || []).some(id => String(id) === String(currentUser?.id));
+        if (!isTargeted) return;
+      }
       const style = getNotificationStyle(item.type);
       list.push({
         id: item.id,
