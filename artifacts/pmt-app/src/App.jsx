@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ref, onValue, set } from 'firebase/database';
-import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
-import { db, auth } from './firebase.js';
+import { signInWithEmailAndPassword, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
+import { db, auth, googleProvider } from './firebase.js';
 
 import HomeView from './PMT/HomeView';
 import ClientView from './PMT/ClientView';
@@ -114,10 +114,6 @@ const App = () => {
 
     setDbReady(true);
 
-    // Map the firebase user email to a local user record
-    const matched = DEFAULT_USERS.find(u => u.email.toLowerCase() === firebaseUser.email?.toLowerCase());
-    if (matched) setCurrentUserId(matched.id);
-
     return () => unsubs.forEach(u => u());
   }, [firebaseUser]);
 
@@ -171,6 +167,23 @@ const App = () => {
     if (firebaseUser) set(ref(db, 'reportsAccessRoles'), val);
   };
 
+  // --- MATCH FIREBASE AUTH USER → PMT USER RECORD ---
+  // Runs whenever auth state changes or the users list loads from Firebase.
+  useEffect(() => {
+    if (!firebaseUser) { setCurrentUserId(null); return; }
+    const email = firebaseUser.email?.toLowerCase();
+    if (!email) return;
+    // Prefer the live users list from Firebase; fall back to hardcoded defaults
+    const pool = users.length > 0 ? users : DEFAULT_USERS;
+    const matched = pool.find(u => u.email?.toLowerCase() === email);
+    if (matched) {
+      setCurrentUserId(matched.id);
+    } else {
+      // Signed-in user has no PMT record yet — keep them on login screen
+      setCurrentUserId(null);
+    }
+  }, [firebaseUser, users]);
+
   // --- SHARED LOGIC ---
   const currentUser = users.find(u => u.id === currentUserId) || null;
   const canSeeControlCenter = controlCenterAccessRoles.includes(currentUser?.role);
@@ -222,6 +235,21 @@ const App = () => {
     }
   };
 
+  const handleGoogleLogin = async () => {
+    try {
+      setLoginError('');
+      await signInWithPopup(auth, googleProvider);
+    } catch (err) {
+      if (err.code === 'auth/popup-blocked') {
+        setLoginError('Pop-up was blocked by your browser. Please allow pop-ups for this site and try again.');
+      } else if (err.code === 'auth/cancelled-popup-request' || err.code === 'auth/popup-closed-by-user') {
+        // user dismissed — no error message needed
+      } else {
+        setLoginError('Google sign-in failed. Please try again.');
+      }
+    }
+  };
+
   const handleLogout = async () => {
     setIsProfileOpen(false);
     setIsNotifOpen(false);
@@ -249,8 +277,33 @@ const App = () => {
     );
   }
 
+  // Firebase user signed in but not registered in the PMT system
+  if (firebaseUser && !currentUser) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+        <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-lg">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100">
+            <svg className="h-7 w-7 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+          </div>
+          <h2 className="text-lg font-bold text-slate-900">Access Not Set Up</h2>
+          <p className="mt-2 text-sm text-slate-500">
+            <strong className="text-slate-700">{firebaseUser.email}</strong> is not registered in the PMT system yet. Please ask your administrator to add your account.
+          </p>
+          <button
+            onClick={handleLogout}
+            className="mt-6 w-full rounded-xl bg-slate-100 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-200 transition-colors"
+          >
+            Sign out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!firebaseUser || !currentUser) {
-    return <LoginView onLogin={handleLogin} loginError={loginError} />;
+    return <LoginView onLogin={handleLogin} onGoogleLogin={handleGoogleLogin} loginError={loginError} />;
   }
 
   return (
