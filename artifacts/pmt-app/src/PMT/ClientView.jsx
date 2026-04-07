@@ -2037,6 +2037,32 @@ const ClientView = ({
             </div>
           );
         })()}
+
+      {/* QC Reviewer Picker — rendered inside selectedClient view so it mounts when the Add Task form is open */}
+      {activePicker === 'qcReviewer' && (() => {
+        const clientStaff = getProjectStaff(selectedClient.name);
+        const reviewerUsers = clientStaff.admins.length
+          ? clientStaff.admins
+          : (users || []).filter(u => managementRoles.includes(u.role));
+        return (
+          <UserPickerModal
+            title="Select QC Reviewer"
+            users={reviewerUsers}
+            selected={qcAssigneeId ? [qcAssigneeId] : []}
+            onToggle={id => {
+              const picked = reviewerUsers.find(u => u.id === id);
+              if (picked) {
+                setQcAssigneeId(qcAssigneeId === id ? '' : id);
+                setQcAssigneeName(qcAssigneeId === id ? '' : picked.name);
+              }
+              setActivePicker(null);
+            }}
+            onClose={() => setActivePicker(null)}
+            pickerSearch={pickerSearch}
+            setPickerSearch={setPickerSearch}
+          />
+        );
+      })()}
       </div>
     );
   }
