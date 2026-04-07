@@ -409,9 +409,9 @@ const HomeView = ({
                           <Users size={13} className={qcAssigneeId ? 'text-indigo-600' : 'text-slate-400'} />
                           {qcAssigneeId ? qcAssigneeName : 'Select a reviewer (optional)'}
                           {qcAssigneeId && (
-                            <button type="button" onClick={e => { e.stopPropagation(); setQcAssigneeId(''); setQcAssigneeName(''); }} className="ml-auto text-indigo-400 hover:text-indigo-600">
+                            <span role="button" onClick={e => { e.stopPropagation(); setQcAssigneeId(''); setQcAssigneeName(''); }} className="ml-auto text-indigo-400 hover:text-indigo-600 cursor-pointer flex items-center">
                               <X size={12} />
-                            </button>
+                            </span>
                           )}
                         </button>
                       </div>

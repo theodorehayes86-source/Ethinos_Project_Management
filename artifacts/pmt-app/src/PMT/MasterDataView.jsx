@@ -113,10 +113,8 @@ const MasterDataView = ({
 
   const addItem = (value, list, setter, clear) => {
     const trimmed = value.trim();
-    console.log('[addItem] value:', JSON.stringify(trimmed), 'list:', JSON.stringify(list));
-    if (!trimmed) { console.log('[addItem] blocked: empty'); return; }
-    if (list.some(item => item.toLowerCase() === trimmed.toLowerCase())) { console.log('[addItem] blocked: duplicate'); return; }
-    console.log('[addItem] calling setter with', [...list, trimmed]);
+    if (!trimmed) return;
+    if (list.some(item => item.toLowerCase() === trimmed.toLowerCase())) return;
     setter([...list, trimmed]);
     clear('');
   };
