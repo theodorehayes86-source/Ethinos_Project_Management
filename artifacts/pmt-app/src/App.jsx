@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { ref, onValue, set } from 'firebase/database';
-import { signInWithEmailAndPassword, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
+import { ref, onValue, set, get } from 'firebase/database';
+import { signInWithEmailAndPassword, signInWithPopup, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { db, auth, googleProvider } from './firebase.js';
 
 import HomeView from './PMT/HomeView';
@@ -250,6 +250,45 @@ const App = () => {
     }
   };
 
+  const handleCreateAccount = async ({ name, email, password, department, region }) => {
+    try {
+      setLoginError('');
+      // 1. Create the Firebase Auth account (auto signs them in)
+      await createUserWithEmailAndPassword(auth, email, password);
+
+      // 2. Once authenticated, read current users and append the new record
+      const snap = await get(ref(db, 'users'));
+      const existing = snap.val();
+      const currentList = Array.isArray(existing)
+        ? existing
+        : existing ? Object.values(existing) : DEFAULT_USERS;
+
+      const newUser = {
+        id: Date.now(),
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        role: 'Employee',
+        assignedProjects: [],
+        department: department || 'Growth',
+        region: region || 'North',
+      };
+
+      const updated = [...currentList, newUser];
+      await set(ref(db, 'users'), updated);
+      // The onValue listener will pick this up and trigger the matching effect
+    } catch (err) {
+      if (err.code === 'auth/email-already-in-use') {
+        setLoginError('An account with this email already exists. Try signing in instead.');
+      } else if (err.code === 'auth/weak-password') {
+        setLoginError('Password must be at least 6 characters.');
+      } else if (err.code === 'auth/invalid-email') {
+        setLoginError('Please enter a valid email address.');
+      } else {
+        setLoginError('Could not create account. Please try again.');
+      }
+    }
+  };
+
   const handleLogout = async () => {
     setIsProfileOpen(false);
     setIsNotifOpen(false);
@@ -303,7 +342,7 @@ const App = () => {
   }
 
   if (!firebaseUser || !currentUser) {
-    return <LoginView onLogin={handleLogin} onGoogleLogin={handleGoogleLogin} loginError={loginError} />;
+    return <LoginView onLogin={handleLogin} onGoogleLogin={handleGoogleLogin} onCreateAccount={handleCreateAccount} loginError={loginError} />;
   }
 
   return (
