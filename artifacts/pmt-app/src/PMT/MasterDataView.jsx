@@ -6,6 +6,16 @@ const REPEAT_OPTIONS = ['Daily', 'Weekly', 'Monthly', 'Once'];
 
 const emptyTask = () => ({ comment: '', category: '', repeatFrequency: 'Monthly' });
 
+const CC_TABS = [
+  { id: 'users', label: 'Users' },
+  { id: 'clients', label: 'Clients' },
+  { id: 'categories', label: 'Task Categories' },
+  { id: 'departments', label: 'Departments' },
+  { id: 'regions', label: 'Regions' },
+  { id: 'conditions', label: 'Conditions' },
+  { id: 'templates', label: 'Templates' },
+];
+
 const MasterDataView = ({
   taskCategories = [],
   setTaskCategories,
@@ -17,10 +27,8 @@ const MasterDataView = ({
   regions = [],
   setRegions,
   availableRoles = [],
-  controlCenterAccessRoles = [],
-  setControlCenterAccessRoles,
-  settingsAccessRoles = [],
-  setSettingsAccessRoles,
+  controlCenterTabAccess = {},
+  setControlCenterTabAccess,
   userManagementAccessRoles = [],
   setUserManagementAccessRoles,
   employeeViewAccessRoles = [],
@@ -137,22 +145,13 @@ const MasterDataView = ({
     setRegionInput('');
   };
 
-  const toggleControlCenterRole = (role) => {
-    if (controlCenterAccessRoles.includes(role)) {
-      if (controlCenterAccessRoles.length <= 1) return;
-      setControlCenterAccessRoles(controlCenterAccessRoles.filter(item => item !== role));
-      return;
-    }
-    setControlCenterAccessRoles([...controlCenterAccessRoles, role]);
-  };
-
-  const toggleSettingsRole = (role) => {
-    if (settingsAccessRoles.includes(role)) {
-      if (settingsAccessRoles.length <= 1) return;
-      setSettingsAccessRoles(settingsAccessRoles.filter(item => item !== role));
-      return;
-    }
-    setSettingsAccessRoles([...settingsAccessRoles, role]);
+  const toggleTabAccess = (tabId, role) => {
+    if (role === 'Super Admin') return;
+    const current = controlCenterTabAccess[tabId] || [];
+    const next = current.includes(role)
+      ? current.filter(r => r !== role)
+      : [...current, role];
+    setControlCenterTabAccess({ ...controlCenterTabAccess, [tabId]: next });
   };
 
   const toggleUserManagementRole = (role) => {
@@ -519,15 +518,10 @@ const MasterDataView = ({
   return (
     <div className="min-h-full p-4 space-y-4 text-left">
       <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center gap-2 flex-wrap">
-        {[
-          { id: 'users', label: 'Users' },
-          { id: 'clients', label: 'Clients' },
-          { id: 'categories', label: 'Task Categories' },
-          { id: 'departments', label: 'Departments' },
-          { id: 'regions', label: 'Regions' },
-          { id: 'conditions', label: 'Conditions' },
-          { id: 'templates', label: 'Templates' },
-        ].map(tab => (
+        {CC_TABS.filter(tab => {
+          if (currentUser?.role === 'Super Admin') return true;
+          return (controlCenterTabAccess[tab.id] || []).includes(currentUser?.role);
+        }).map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
@@ -814,99 +808,42 @@ const MasterDataView = ({
         <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
           <div className="flex items-center gap-2 text-slate-700">
             <ShieldCheck size={16} className="text-blue-600" />
-            <p className="text-sm font-semibold">Control Center Visibility by Role</p>
+            <p className="text-sm font-semibold">Control Center Tab Access by Role</p>
           </div>
 
-          <div className="border border-slate-200 rounded-lg overflow-hidden">
-            <table className="w-full border-collapse">
+          <div className="overflow-x-auto border border-slate-200 rounded-lg">
+            <table className="w-full border-collapse text-xs">
               <thead>
-                <tr className="bg-slate-100 text-xs font-semibold text-slate-600">
-                  <th className="px-3 py-2 text-left">Role</th>
-                  <th className="px-3 py-2 text-left">Can Access Control Center</th>
-                  <th className="px-3 py-2 text-left">Can Access Settings</th>
-                  <th className="px-3 py-2 text-left">Can Access User Management</th>
-                  <th className="px-3 py-2 text-left">Can Access Employee View</th>
-                  <th className="px-3 py-2 text-left">Can Access Metrics</th>
-                  <th className="px-3 py-2 text-left">Can Access Reports</th>
+                <tr className="bg-slate-100 text-slate-600">
+                  <th className="px-3 py-2 text-left font-semibold sticky left-0 bg-slate-100 z-10 min-w-[130px]">Role</th>
+                  {CC_TABS.map(tab => (
+                    <th key={tab.id} className="px-3 py-2 text-center font-semibold whitespace-nowrap">{tab.label}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {normalizedRoles.map(role => {
-                  const controlCenterChecked = controlCenterAccessRoles.includes(role);
-                  const settingsChecked = settingsAccessRoles.includes(role);
-                  const userManagementChecked = userManagementAccessRoles.includes(role);
-                  const employeeViewChecked = employeeViewAccessRoles.includes(role);
-                  const metricsChecked = metricsAccessRoles.includes(role);
-                  const reportsChecked = reportsAccessRoles.includes(role);
+                  const isSuperAdmin = role === 'Super Admin';
                   return (
-                    <tr key={role}>
-                      <td className="px-3 py-2 text-sm font-medium text-slate-700">{role}</td>
-                      <td className="px-3 py-2">
-                        <label className="inline-flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={controlCenterChecked}
-                            onChange={() => toggleControlCenterRole(role)}
-                            className="w-4 h-4 accent-blue-600"
-                          />
-                          <span className="text-xs font-medium text-slate-600">{controlCenterChecked ? 'Enabled' : 'Disabled'}</span>
-                        </label>
+                    <tr key={role} className={isSuperAdmin ? 'bg-blue-50' : 'hover:bg-slate-50'}>
+                      <td className="px-3 py-2 font-medium text-slate-700 sticky left-0 bg-inherit z-10 flex items-center gap-1.5">
+                        {isSuperAdmin && <Crown size={11} className="text-blue-600 flex-shrink-0" />}
+                        {role}
                       </td>
-                      <td className="px-3 py-2">
-                        <label className="inline-flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={settingsChecked}
-                            onChange={() => toggleSettingsRole(role)}
-                            className="w-4 h-4 accent-blue-600"
-                          />
-                          <span className="text-xs font-medium text-slate-600">{settingsChecked ? 'Enabled' : 'Disabled'}</span>
-                        </label>
-                      </td>
-                      <td className="px-3 py-2">
-                        <label className="inline-flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={userManagementChecked}
-                            onChange={() => toggleUserManagementRole(role)}
-                            className="w-4 h-4 accent-blue-600"
-                          />
-                          <span className="text-xs font-medium text-slate-600">{userManagementChecked ? 'Enabled' : 'Disabled'}</span>
-                        </label>
-                      </td>
-                      <td className="px-3 py-2">
-                        <label className="inline-flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={employeeViewChecked}
-                            onChange={() => toggleEmployeeViewRole(role)}
-                            className="w-4 h-4 accent-blue-600"
-                          />
-                          <span className="text-xs font-medium text-slate-600">{employeeViewChecked ? 'Enabled' : 'Disabled'}</span>
-                        </label>
-                      </td>
-                      <td className="px-3 py-2">
-                        <label className="inline-flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={metricsChecked}
-                            onChange={() => toggleMetricsRole(role)}
-                            className="w-4 h-4 accent-blue-600"
-                          />
-                          <span className="text-xs font-medium text-slate-600">{metricsChecked ? 'Enabled' : 'Disabled'}</span>
-                        </label>
-                      </td>
-                      <td className="px-3 py-2">
-                        <label className="inline-flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={reportsChecked}
-                            onChange={() => toggleReportsRole(role)}
-                            className="w-4 h-4 accent-blue-600"
-                          />
-                          <span className="text-xs font-medium text-slate-600">{reportsChecked ? 'Enabled' : 'Disabled'}</span>
-                        </label>
-                      </td>
+                      {CC_TABS.map(tab => {
+                        const checked = isSuperAdmin || (controlCenterTabAccess[tab.id] || []).includes(role);
+                        return (
+                          <td key={tab.id} className="px-3 py-2 text-center">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={isSuperAdmin}
+                              onChange={() => toggleTabAccess(tab.id, role)}
+                              className="w-4 h-4 accent-blue-600 cursor-pointer disabled:cursor-not-allowed"
+                            />
+                          </td>
+                        );
+                      })}
                     </tr>
                   );
                 })}
@@ -914,9 +851,7 @@ const MasterDataView = ({
             </table>
           </div>
 
-          <p className="text-xs font-medium text-slate-500">
-            Recommended: keep Super Admin and Director enabled to match governance controls.
-          </p>
+          <p className="text-xs text-slate-500">Super Admin always has access to all tabs and cannot be modified.</p>
         </div>
       )}
 

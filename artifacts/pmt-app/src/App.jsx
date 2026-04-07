@@ -6,7 +6,6 @@ import { db, auth, googleProvider } from './firebase.js';
 import HomeView from './PMT/HomeView';
 import ClientView from './PMT/ClientView';
 import UserView from './PMT/Userview';
-import SettingsView from './PMT/SettingsView';
 import EmployeeView from './PMT/EmployeeView';
 import MasterDataView from './PMT/MasterDataView';
 import UserMetricsView from './PMT/UserMetricsView';
@@ -113,8 +112,8 @@ const App = () => {
   const [taskCategories, setTaskCategories] = useState(DEFAULT_TASK_CATEGORIES);
   const [departments, setDepartments] = useState(['Creative', 'Biddable', 'Growth', 'Client Servicing']);
   const [regions, setRegions] = useState(['North', 'South', 'West']);
-  const [controlCenterAccessRoles, setControlCenterAccessRoles] = useState(['Super Admin', 'Director']);
-  const [settingsAccessRoles, setSettingsAccessRoles] = useState(['Super Admin', 'Director']);
+  const DEFAULT_CC_TAB_ACCESS = { users: ['Super Admin', 'Director'], clients: ['Super Admin', 'Director'], categories: ['Super Admin', 'Director'], departments: ['Super Admin', 'Director'], regions: ['Super Admin', 'Director'], conditions: ['Super Admin', 'Director'], templates: ['Super Admin', 'Director'] };
+  const [controlCenterTabAccess, setControlCenterTabAccess] = useState(DEFAULT_CC_TAB_ACCESS);
   const [userManagementAccessRoles, setUserManagementAccessRoles] = useState(['Super Admin', 'Director']);
   const [employeeViewAccessRoles, setEmployeeViewAccessRoles] = useState(['Super Admin', 'Director']);
   const [metricsAccessRoles, setMetricsAccessRoles] = useState(['Super Admin', 'Director']);
@@ -188,8 +187,7 @@ const App = () => {
       syncRef('taskTemplates', (val) => setTaskTemplates(Array.isArray(val) ? val : Object.values(val))),
       syncRef('departments', (val) => setDepartments(Array.isArray(val) ? val : Object.values(val))),
       syncRef('regions', (val) => setRegions(Array.isArray(val) ? val : Object.values(val))),
-      syncRef('controlCenterAccessRoles', (val) => setControlCenterAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
-      syncRef('settingsAccessRoles', (val) => setSettingsAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
+      syncRef('controlCenterTabAccess', (val) => { if (val && typeof val === 'object' && !Array.isArray(val)) setControlCenterTabAccess(val); }),
       syncRef('userManagementAccessRoles', (val) => setUserManagementAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
       syncRef('employeeViewAccessRoles', (val) => setEmployeeViewAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
       syncRef('metricsAccessRoles', (val) => setMetricsAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
@@ -240,13 +238,9 @@ const App = () => {
     setRegions(val);
     if (firebaseUser) set(ref(db, 'regions'), sanitizeForFirebase(val));
   };
-  const persistControlCenterRoles = (val) => {
-    setControlCenterAccessRoles(val);
-    if (firebaseUser) set(ref(db, 'controlCenterAccessRoles'), sanitizeForFirebase(val));
-  };
-  const persistSettingsRoles = (val) => {
-    setSettingsAccessRoles(val);
-    if (firebaseUser) set(ref(db, 'settingsAccessRoles'), sanitizeForFirebase(val));
+  const persistControlCenterTabAccess = (val) => {
+    setControlCenterTabAccess(val);
+    if (firebaseUser) set(ref(db, 'controlCenterTabAccess'), sanitizeForFirebase(val));
   };
   const persistUserManagementRoles = (val) => {
     setUserManagementAccessRoles(val);
@@ -322,8 +316,7 @@ const App = () => {
   const effectiveUserId = testModeUserId || currentUserId;
   const currentUser = users.find(u => u.id === effectiveUserId) || null;
   const isTestMode = !!testModeUserId;
-  const canSeeControlCenter = controlCenterAccessRoles.includes(currentUser?.role);
-  const canSeeSettings = settingsAccessRoles.includes(currentUser?.role);
+  const canSeeControlCenter = currentUser?.role === 'Super Admin' || Object.values(controlCenterTabAccess).some(roles => (roles || []).includes(currentUser?.role));
   const canSeeUserManagement = userManagementAccessRoles.includes(currentUser?.role);
   const canSeeEmployeeView = employeeViewAccessRoles.includes(currentUser?.role);
   const canSeeMetrics = metricsAccessRoles.includes(currentUser?.role);
@@ -465,13 +458,12 @@ const App = () => {
 
   useEffect(() => {
     if (activeTab === 'master-data' && !canSeeControlCenter) setActiveTab('home');
-    if (activeTab === 'settings' && !canSeeSettings) setActiveTab('home');
     if (activeTab === 'users' && !canSeeUserManagement) setActiveTab('home');
     if (activeTab === 'employees' && !canSeeEmployeeView) setActiveTab('home');
     if (activeTab === 'metrics' && !canSeeMetrics) setActiveTab('home');
     if (activeTab === 'reports' && !canSeeReports) setActiveTab('home');
     if (activeTab === 'approvals' && !canSeeApprovals) setActiveTab('home');
-  }, [activeTab, canSeeControlCenter, canSeeSettings, canSeeUserManagement, canSeeEmployeeView, canSeeMetrics, canSeeReports, canSeeApprovals]);
+  }, [activeTab, canSeeControlCenter, canSeeUserManagement, canSeeEmployeeView, canSeeMetrics, canSeeReports, canSeeApprovals]);
 
   if (authLoading) {
     return (
@@ -541,7 +533,6 @@ const App = () => {
         isMinimized={isMinimized}
         setIsMinimized={setSidebarMinimized}
         canSeeControlCenter={canSeeControlCenter}
-        canSeeSettings={canSeeSettings}
         canSeeUserManagement={canSeeUserManagement}
         canSeeEmployeeView={canSeeEmployeeView}
         canSeeMetrics={canSeeMetrics}
@@ -647,17 +638,6 @@ const App = () => {
             <ReportsView users={users} clients={clients} clientLogs={clientLogs} currentUser={currentUser} />
           )}
 
-          {activeTab === 'settings' && !selectedClient && canSeeSettings && (
-            <SettingsView
-              users={users}
-              setUsers={persistUsers}
-              currentUser={currentUser}
-              clients={clients}
-              setClients={persistClients}
-              setClientLogs={persistClientLogs}
-            />
-          )}
-
           {activeTab === 'master-data' && !selectedClient && canSeeControlCenter && (
             <MasterDataView
               taskCategories={taskCategories}
@@ -670,10 +650,8 @@ const App = () => {
               regions={regions}
               setRegions={persistRegions}
               availableRoles={availableRoles}
-              controlCenterAccessRoles={controlCenterAccessRoles}
-              setControlCenterAccessRoles={persistControlCenterRoles}
-              settingsAccessRoles={settingsAccessRoles}
-              setSettingsAccessRoles={persistSettingsRoles}
+              controlCenterTabAccess={controlCenterTabAccess}
+              setControlCenterTabAccess={persistControlCenterTabAccess}
               userManagementAccessRoles={userManagementAccessRoles}
               setUserManagementAccessRoles={persistUserManagementRoles}
               employeeViewAccessRoles={employeeViewAccessRoles}

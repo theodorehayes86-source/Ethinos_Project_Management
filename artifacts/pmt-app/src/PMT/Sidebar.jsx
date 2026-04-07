@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Home, Briefcase, Users, Settings, Network, SlidersHorizontal, BarChart3, FileSpreadsheet, ChevronLeft, ChevronRight, ClipboardCheck } from 'lucide-react';
+import { Home, Briefcase, Users, Network, SlidersHorizontal, BarChart3, FileSpreadsheet, ChevronLeft, ChevronRight, ClipboardCheck } from 'lucide-react';
 
-const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setIsMinimized, canSeeControlCenter = false, canSeeSettings = true, canSeeUserManagement = true, canSeeEmployeeView = true, canSeeMetrics = true, canSeeReports = true, canSeeApprovals = false, pendingApprovalsCount = 0 }) => {
+const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setIsMinimized, canSeeControlCenter = false, canSeeUserManagement = true, canSeeEmployeeView = true, canSeeMetrics = true, canSeeReports = true, canSeeApprovals = false, pendingApprovalsCount = 0 }) => {
   const [logoError, setLogoError] = useState(false);
 
   const menuItems = [
@@ -12,12 +12,10 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
     { id: 'metrics', label: 'Metrics', icon: <BarChart3 size={18}/> },
     { id: 'reports', label: 'Reports', icon: <FileSpreadsheet size={18}/> },
     { id: 'employees', label: 'Employee View', icon: <Network size={18} /> },
-    { id: 'settings', label: 'Settings', icon: <Settings size={18}/> },
     { id: 'master-data', label: 'Control Center', icon: <SlidersHorizontal size={18}/> }
   ].filter(item => {
     if (item.id === 'approvals') return canSeeApprovals;
     if (item.id === 'master-data') return canSeeControlCenter;
-    if (item.id === 'settings') return canSeeSettings;
     if (item.id === 'users') return canSeeUserManagement;
     if (item.id === 'employees') return canSeeEmployeeView;
     if (item.id === 'metrics') return canSeeMetrics;
