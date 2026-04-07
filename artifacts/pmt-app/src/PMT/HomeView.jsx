@@ -364,6 +364,17 @@ const HomeView = ({
                         />
                         <span className="text-xs font-semibold text-slate-700">Daily</span>
                       </label>
+                      <label className="flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-all" style={taskRepeat === 'Weekly' ? { borderColor: '#2563eb', backgroundColor: '#eff6ff' } : {}}>
+                        <input
+                          type="radio"
+                          name="homeTaskRepeat"
+                          value="Weekly"
+                          checked={taskRepeat === 'Weekly'}
+                          onChange={(e) => setTaskRepeat(e.target.value)}
+                          className="w-4 h-4 accent-blue-600 cursor-pointer"
+                        />
+                        <span className="text-xs font-semibold text-slate-700">Weekly</span>
+                      </label>
                       <label className="flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-all" style={taskRepeat === 'Monthly' ? { borderColor: '#2563eb', backgroundColor: '#eff6ff' } : {}}>
                         <input
                           type="radio"
