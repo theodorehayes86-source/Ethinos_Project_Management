@@ -173,10 +173,32 @@ const App = () => {
     if (!firebaseUser) { setCurrentUserId(null); return; }
     const email = firebaseUser.email?.toLowerCase();
     if (!email) return;
-    // Check Firebase users first, then always fall back to DEFAULT_USERS
-    const matched = users.find(u => u.email?.toLowerCase() === email)
-      || DEFAULT_USERS.find(u => u.email?.toLowerCase() === email);
+    // Check Firebase users first, then fall back to DEFAULT_USERS
+    const firebaseMatch = users.find(u => u.email?.toLowerCase() === email);
+    const defaultMatch = DEFAULT_USERS.find(u => u.email?.toLowerCase() === email);
+    const matched = firebaseMatch || defaultMatch;
+
     if (matched) {
+      // Merge with live Firebase Auth info so name/email are always current
+      const mergedRecord = {
+        ...matched,
+        name: firebaseUser.displayName || matched.name,
+        email: firebaseUser.email,
+        _id: matched.id,
+      };
+      // Ensure the record is in the users state so currentUser resolves correctly
+      setUsers(prev => {
+        const exists = prev.find(u => u.id === matched.id);
+        if (exists) {
+          // Only update if name or email are actually stale (avoid infinite loop)
+          if (exists.name === mergedRecord.name && exists.email === mergedRecord.email) return prev;
+          return prev.map(u => u.id === matched.id
+            ? { ...u, name: mergedRecord.name, email: mergedRecord.email }
+            : u
+          );
+        }
+        return [...prev, mergedRecord];
+      });
       setCurrentUserId(matched.id);
     } else {
       // No PMT record means manually added via Firebase Console → Super Admin
