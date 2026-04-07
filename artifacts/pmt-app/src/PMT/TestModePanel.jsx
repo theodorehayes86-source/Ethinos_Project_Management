@@ -3,12 +3,21 @@ import { FlaskConical, X, ChevronDown, ChevronUp } from 'lucide-react';
 
 const TEST_USERS = [
   {
+    id: 'test-super-admin',
+    name: 'Test Super Admin',
+    email: 'theo.hayes@ethinos.com',
+    role: 'Super Admin',
+    assignedProjects: [],
+    department: 'Growth',
+    region: 'North',
+  },
+  {
     id: 'test-employee',
     name: 'Test Employee',
     email: 'test.employee@ethinos.com',
     role: 'Employee',
     assignedProjects: ['Test Client'],
-    department: 'Growth',
+    department: 'Creative',
     region: 'North',
   },
   {
@@ -17,7 +26,7 @@ const TEST_USERS = [
     email: 'test.manager@ethinos.com',
     role: 'Manager',
     assignedProjects: ['Test Client'],
-    department: 'Growth',
+    department: 'Biddable',
     region: 'South',
   },
   {
@@ -32,6 +41,7 @@ const TEST_USERS = [
 ];
 
 const ROLE_COLORS = {
+  'Super Admin': 'bg-red-100 text-red-700',
   Employee: 'bg-blue-100 text-blue-700',
   Manager: 'bg-purple-100 text-purple-700',
   Director: 'bg-amber-100 text-amber-700',
