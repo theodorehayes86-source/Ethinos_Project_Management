@@ -1,11 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import { format } from 'date-fns';
+import { format, parse, isBefore } from 'date-fns';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
-import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users } from 'lucide-react';
+import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, CheckCircle, Tag, Calendar } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 
-const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Business Head'];
+const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
 
 const HomeView = ({
   accessibleClients,
@@ -28,20 +28,20 @@ const HomeView = ({
   const [taskName, setTaskName] = useState('');
   const [taskComment, setTaskComment] = useState('');
   const [taskDueDate, setTaskDueDate] = useState(null);
-  // Assignee
   const [assigneeId, setAssigneeId] = useState('');
   const [assigneeName, setAssigneeName] = useState('');
   const [assigneeQuery, setAssigneeQuery] = useState('');
   const [showAssigneeMenu, setShowAssigneeMenu] = useState(false);
-  // QC
   const [qcEnabled, setQcEnabled] = useState(false);
   const [qcAssigneeId, setQcAssigneeId] = useState('');
   const [qcAssigneeName, setQcAssigneeName] = useState('');
   const [showQcPicker, setShowQcPicker] = useState(false);
   const [qcPickerSearch, setQcPickerSearch] = useState('');
   const [taskError, setTaskError] = useState('');
-  // Departments
   const [taskDepartments, setTaskDepartments] = useState([]);
+  const [statusFilter, setStatusFilter] = useState('all');
+
+  const isManagement = managementRoles.includes(currentUser?.role);
 
   const selectedClient = useMemo(
     () => accessibleClients.find(c => c.id === selectedClientId),
@@ -88,26 +88,6 @@ const HomeView = ({
   const openAddTaskModal = () => { resetModal(); setShowAddTaskModal(true); };
   const closeModal = () => { setShowAddTaskModal(false); resetModal(); };
 
-  const isCrossDept = CROSS_DEPT_ROLES.includes(currentUser?.role);
-  const userDept = currentUser?.department;
-
-  const visibleTasks = useMemo(() => {
-    if (isCrossDept) return allTasks;
-    return allTasks.filter(t => {
-      if (!t.departments || !Array.isArray(t.departments)) return true;
-      return t.departments.includes(userDept);
-    });
-  }, [allTasks, isCrossDept, userDept]);
-
-  const getVisibleClientTasks = (clientId) => {
-    const logs = clientLogs[clientId] || [];
-    if (isCrossDept) return logs;
-    return logs.filter(t => {
-      if (!t.departments || !Array.isArray(t.departments)) return true;
-      return t.departments.includes(userDept);
-    });
-  };
-
   const handleAddTaskFromHome = (event) => {
     event.preventDefault();
     if (!selectedClientId || !taskName.trim() || !taskCategory || !assigneeId || !taskComment.trim() || !selectedDate) {
@@ -148,24 +128,64 @@ const HomeView = ({
     closeModal();
   };
 
+  // --- Personal task data ---
+  const myTasks = useMemo(() => {
+    return allTasks.filter(t => String(t.assigneeId) === String(currentUser?.id));
+  }, [allTasks, currentUser]);
+
+  const myOpenTasks = myTasks.filter(t => t.status !== 'Done');
+  const myWip = myTasks.filter(t => t.status === 'WIP');
+  const myPending = myTasks.filter(t => t.status === 'Pending');
+  const myDone = myTasks.filter(t => t.status === 'Done');
+
+  const filteredMyTasks = useMemo(() => {
+    if (statusFilter === 'all') return myTasks.filter(t => t.status !== 'Done');
+    if (statusFilter === 'done') return myDone;
+    return myTasks.filter(t => t.status === statusFilter);
+  }, [myTasks, myDone, statusFilter]);
+
+  // Group tasks by client
+  const tasksByClient = useMemo(() => {
+    const groups = {};
+    filteredMyTasks.forEach(task => {
+      const key = task.cid || 'unknown';
+      if (!groups[key]) groups[key] = { clientName: task.cName || 'Unknown Client', clientId: task.cid, tasks: [] };
+      groups[key].tasks.push(task);
+    });
+    return Object.values(groups);
+  }, [filteredMyTasks]);
+
+  const statusColor = (status) => {
+    if (status === 'Done') return 'bg-emerald-100 text-emerald-700';
+    if (status === 'WIP') return 'bg-blue-100 text-blue-700';
+    return 'bg-orange-100 text-orange-700';
+  };
+
+  const isTaskOverdue = (task) => {
+    if (!task.dueDate || task.status === 'Done') return false;
+    try {
+      const due = parse(task.dueDate, 'do MMM yyyy', new Date());
+      return isBefore(due, new Date());
+    } catch { return false; }
+  };
+
   return (
     <div
-      className="w-full space-y-8 p-6 min-h-screen"
+      className="w-full space-y-6 p-6 min-h-screen"
       style={{
         background:
           'radial-gradient(50% 60% at 9% 10%, rgba(241, 94, 88, 0.12) 0%, rgba(241, 94, 88, 0) 62%), radial-gradient(44% 52% at 50% 94%, rgba(82, 110, 255, 0.12) 0%, rgba(82, 110, 255, 0) 64%), radial-gradient(38% 46% at 96% 12%, rgba(236, 232, 123, 0.13) 0%, rgba(236, 232, 123, 0) 62%), linear-gradient(140deg, #fff7f8 0%, #f7f8ff 58%, #fffde9 100%)'
       }}
     >
-      
-      {/* 1. STATISTICS ROW */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      {/* PERSONAL STATS */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Total Clients', value: accessibleClients.length, icon: <Briefcase size={16} className="text-blue-600"/>, bgColor: 'bg-blue-100', iconBgColor: 'bg-blue-200' },
-          { label: 'Open Tasks', value: visibleTasks.filter(t => t.status !== 'Done').length, icon: <Clock size={16} className="text-green-600"/>, bgColor: 'bg-green-100', iconBgColor: 'bg-green-200' },
-          { label: 'WIP', value: visibleTasks.filter(t => t.status === 'WIP').length, icon: <Activity size={16} className="text-orange-500"/>, bgColor: 'bg-orange-100', iconBgColor: 'bg-orange-200' },
-          { label: 'Pending', value: visibleTasks.filter(t => t.status === 'Pending').length, icon: <AlertTriangle size={16} className="text-red-500"/>, bgColor: 'bg-red-100', iconBgColor: 'bg-red-200' }
+          { label: 'My Clients', value: accessibleClients.length, icon: <Briefcase size={16} className="text-blue-600"/>, bgColor: 'bg-blue-50', iconBgColor: 'bg-blue-100', border: 'border-blue-100' },
+          { label: 'Open Tasks', value: myOpenTasks.length, icon: <Clock size={16} className="text-green-600"/>, bgColor: 'bg-green-50', iconBgColor: 'bg-green-100', border: 'border-green-100' },
+          { label: 'WIP', value: myWip.length, icon: <Activity size={16} className="text-orange-500"/>, bgColor: 'bg-orange-50', iconBgColor: 'bg-orange-100', border: 'border-orange-100' },
+          { label: 'Pending', value: myPending.length, icon: <AlertTriangle size={16} className="text-red-500"/>, bgColor: 'bg-red-50', iconBgColor: 'bg-red-100', border: 'border-red-100' },
         ].map((stat, i) => (
-          <div key={i} className={`${stat.bgColor} p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between h-28 transition-hover hover:shadow-md`}>
+          <div key={i} className={`${stat.bgColor} p-4 rounded-2xl shadow-sm border ${stat.border} flex flex-col justify-between h-24`}>
             <div className="flex justify-between items-start">
               <span className="text-xs font-semibold text-slate-500">{stat.label}</span>
               <div className={`p-2 ${stat.iconBgColor} rounded-lg`}>{stat.icon}</div>
@@ -175,75 +195,140 @@ const HomeView = ({
         ))}
       </div>
 
-      <div className="flex justify-end -mt-3">
-        <button
-          onClick={openAddTaskModal}
-          disabled={!accessibleClients.length}
-          className="bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg font-semibold text-xs hover:bg-slate-50 transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Plus size={13} /> Add Task
-        </button>
+      {/* TASK LIST HEADER */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-bold text-slate-800">My Tasks</h2>
+          <span className="text-xs text-slate-400 font-medium">({myTasks.length} total)</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Status filter pills */}
+          <div className="flex gap-1.5 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
+            {[
+              { key: 'all', label: 'Open' },
+              { key: 'WIP', label: 'WIP' },
+              { key: 'Pending', label: 'Pending' },
+              { key: 'done', label: 'Done' },
+            ].map(f => (
+              <button
+                key={f.key}
+                onClick={() => setStatusFilter(f.key)}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                  statusFilter === f.key
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          {isManagement && (
+            <button
+              onClick={openAddTaskModal}
+              disabled={!accessibleClients.length}
+              className="bg-slate-900 text-white px-3 py-1.5 rounded-lg font-semibold text-xs hover:bg-slate-800 transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+            >
+              <Plus size={13} /> Add Task
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* 2. TASK PIPELINES GRID */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {accessibleClients.map(client => {
-          const clientTasks = getVisibleClientTasks(client.id);
-          const activeTasks = clientTasks.filter(t => t.status !== 'Done');
-          return (
-          <div key={client.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full hover:shadow-lg transition-all duration-300">
-            <div className="p-5 flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                <h4 className="text-sm font-semibold text-slate-900">{client.name}</h4>
-                <span className={`px-2 py-0.5 rounded-full text-[8px] font-semibold ${
-                  clientTasks.length > 0 ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-400'
-                }`}>
-                  {clientTasks.length > 0 ? 'Active' : 'Inactive'}
-                </span>
-              </div>
-              <button onClick={() => setSelectedClient(client)} className="flex items-center gap-1 text-[10px] font-medium text-slate-500 hover:text-blue-600 transition-colors bg-slate-50 px-3 py-1.5 rounded-lg">
-                View All <ChevronRight size={14}/>
-              </button>
-            </div>
-            <div className="flex-1 p-5 pt-0">
-              <div className="bg-slate-50/50 rounded-2xl p-4 min-h-[140px] flex flex-col justify-center">
-                {activeTasks.length > 0 ? (
-                  <div className="space-y-4">
-                    {activeTasks.slice(0, 2).map(task => (
-                      <div key={task.id} className="flex items-start gap-3 group">
-                        <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${task.status === 'WIP' ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]' : 'bg-orange-500'}`} />
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-slate-600 leading-snug line-clamp-2">{task.name || task.comment}</p>
-                          <div className="flex items-center gap-2 mt-1 flex-wrap">
-                            <span className="text-[8px] font-semibold text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded">New</span>
-                            {Array.isArray(task.departments) && task.departments.map(dept => (
-                              <span key={dept} className="text-[8px] font-semibold text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">{dept}</span>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center text-center space-y-2 opacity-40">
-                    <div className="w-10 h-10 bg-slate-200 rounded-full flex items-center justify-center">
-                      <Briefcase size={16} className="text-slate-400"/>
-                    </div>
-                    <p className="text-xs font-semibold text-slate-500">No active tasks for this client</p>
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="px-5 py-4 bg-slate-50/80 border-t border-slate-50 flex items-center gap-2">
-              <Clock size={12} className="text-slate-400"/>
-              <span className="text-xs font-medium text-slate-500">
-                Last activity {clientTasks.length > 0 ? 'recently' : '1 week ago'}
-              </span>
-            </div>
+      {/* TASK LIST */}
+      {filteredMyTasks.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-20 text-center bg-white/60 rounded-2xl border border-slate-100">
+          <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
+            <CheckCircle size={24} className="text-slate-300" />
           </div>
-          );
-        })}
-      </div>
+          <p className="text-sm font-semibold text-slate-500">
+            {statusFilter === 'done' ? 'No completed tasks yet' : 'No tasks here'}
+          </p>
+          <p className="text-xs text-slate-400 mt-1">
+            {statusFilter === 'all' ? 'Tasks assigned to you will appear here.' : `Switch filter to see other tasks.`}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {tasksByClient.map(({ clientName, clientId, tasks }) => {
+            const client = accessibleClients.find(c => c.id === clientId);
+            return (
+              <div key={clientId}>
+                {/* Client header */}
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                      <span className="text-[10px] font-black text-indigo-700">
+                        {(clientName || '?')[0].toUpperCase()}
+                      </span>
+                    </div>
+                    <span className="text-sm font-bold text-slate-800">{clientName}</span>
+                    <span className="text-xs text-slate-400">({tasks.length})</span>
+                  </div>
+                  {client && (
+                    <button
+                      onClick={() => setSelectedClient(client)}
+                      className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-blue-600 transition-colors bg-white border border-slate-200 px-2.5 py-1 rounded-lg"
+                    >
+                      View client <ChevronRight size={11}/>
+                    </button>
+                  )}
+                </div>
+
+                {/* Task rows */}
+                <div className="space-y-2 pl-9">
+                  {tasks.map(task => (
+                    <div
+                      key={task.id}
+                      className="bg-white rounded-xl border border-slate-100 shadow-sm px-4 py-3 flex items-center gap-3 hover:border-slate-200 hover:shadow-md transition-all"
+                    >
+                      {/* Status dot */}
+                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                        task.status === 'Done' ? 'bg-emerald-400' :
+                        task.status === 'WIP' ? 'bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.5)]' : 'bg-orange-400'
+                      }`} />
+
+                      {/* Task info */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-slate-800 truncate">{task.name || task.comment}</p>
+                        {task.name && task.comment && (
+                          <p className="text-xs text-slate-500 truncate mt-0.5">{task.comment}</p>
+                        )}
+                      </div>
+
+                      {/* Meta: category, due date */}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {task.category && (
+                          <span className="hidden sm:flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600">
+                            <Tag size={9} /> {task.category}
+                          </span>
+                        )}
+                        {task.dueDate && (
+                          <span className={`hidden md:flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                            isTaskOverdue(task) ? 'bg-red-50 text-red-600' : 'bg-slate-50 text-slate-500'
+                          }`}>
+                            <Calendar size={9} /> {task.dueDate}
+                          </span>
+                        )}
+                        {/* Status badge */}
+                        <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${statusColor(task.status)}`}>
+                          {task.status}
+                        </span>
+                        {/* Timer running indicator */}
+                        {task.timerState === 'running' && (
+                          <span className="flex items-center gap-1 text-[10px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                            <Clock size={9} /> Live
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* ADD TASK MODAL */}
       {showAddTaskModal && (
@@ -298,7 +383,6 @@ const HomeView = ({
                 {/* RIGHT: All task fields */}
                 <div className="flex-1 space-y-5">
 
-                  {/* Task Name */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Task Name <span className="text-red-500">*</span></label>
                     <input
@@ -311,7 +395,6 @@ const HomeView = ({
                     />
                   </div>
 
-                  {/* Task Category */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Task Category <span className="text-red-500">*</span></label>
                     <div className="relative">
@@ -337,7 +420,6 @@ const HomeView = ({
                     </div>
                   </div>
 
-                  {/* Assign To */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Assign To <span className="text-red-500">*</span></label>
                     <div className="relative">
@@ -370,7 +452,6 @@ const HomeView = ({
                     </div>
                   </div>
 
-                  {/* Task Description */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Task Description <span className="text-red-500">*</span></label>
                     <textarea
@@ -381,7 +462,6 @@ const HomeView = ({
                     />
                   </div>
 
-                  {/* Repeat Frequency */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Repeat Frequency</label>
                     <div className="flex flex-wrap gap-3">
@@ -394,10 +474,8 @@ const HomeView = ({
                         </label>
                       ))}
                     </div>
-                    {taskRepeat === 'Weekly' && <p className="text-[11px] text-blue-600 font-medium">Task will repeat every week on the same day</p>}
                   </div>
 
-                  {/* Due Date */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Due Date</label>
                     <DatePicker
@@ -415,7 +493,6 @@ const HomeView = ({
                     )}
                   </div>
 
-                  {/* QC Section */}
                   <div className="space-y-3 border border-slate-200 rounded-xl p-4 bg-slate-50/60">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -452,7 +529,6 @@ const HomeView = ({
                     )}
                   </div>
 
-                  {/* Departments */}
                   {departments.length > 0 && (
                     <div className="space-y-1.5">
                       <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Departments</label>
@@ -505,7 +581,6 @@ const HomeView = ({
         </div>
       )}
 
-      {/* QC Reviewer Picker */}
       {showQcPicker && (
         <UserPickerModal
           title="Select QC Reviewer"
