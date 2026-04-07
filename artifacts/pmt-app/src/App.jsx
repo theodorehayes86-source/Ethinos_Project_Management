@@ -344,14 +344,20 @@ const App = () => {
   const CROSS_DEPT_ROLES_APP = ['Super Admin', 'Admin', 'Business Head'];
   const isCrossDeptApp = CROSS_DEPT_ROLES_APP.includes(currentUser?.role);
   const userDeptApp = currentUser?.department;
+  const myClientNames = (currentUser?.assignedProjects || []);
   const pendingApprovalsCount = canSeeApprovals
-    ? Object.values(clientLogs || {}).reduce((total, logs) => {
-        return total + (logs || []).filter(t => {
+    ? Object.entries(clientLogs || {}).reduce((total, [clientId, logs]) => {
+        const client = clients.find(c => String(c.id) === String(clientId));
+        const qcCount = (logs || []).filter(t => {
           if (String(t.qcAssigneeId) !== String(currentUser?.id) || t.qcStatus !== 'sent') return false;
           if (isCrossDeptApp) return true;
           if (!Array.isArray(t.departments)) return true;
           return t.departments.includes(userDeptApp);
         }).length;
+        const assignReqCount = (isCrossDeptApp || (client && myClientNames.includes(client.name)))
+          ? (logs || []).reduce((n, t) => n + (t.assignmentRequests?.length || 0), 0)
+          : 0;
+        return total + qcCount + assignReqCount;
       }, 0)
     : 0;
 

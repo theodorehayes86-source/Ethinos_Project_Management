@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckCircle, XCircle, Star, ChevronDown, ChevronUp, Clock, User, Tag, Calendar, MessageSquare } from 'lucide-react';
+import { CheckCircle, XCircle, Star, ChevronDown, ChevronUp, Clock, User, Tag, Calendar, MessageSquare, UserPlus, UserCheck, UserX } from 'lucide-react';
 
 const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
 
@@ -323,6 +323,66 @@ const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed }) => {
   );
 };
 
+const AssignmentRequestCard = ({ task, client, request, onAccept, onDecline }) => {
+  return (
+    <div className="bg-white rounded-2xl border border-violet-100 shadow-sm overflow-hidden">
+      <div className="px-5 py-4">
+        <div className="flex items-start gap-3">
+          <div className="w-9 h-9 rounded-full bg-violet-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <UserPlus size={16} className="text-violet-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap mb-1">
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full bg-violet-100 text-violet-700">
+                <UserPlus size={9} /> Assignment Request
+              </span>
+              {task.category && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600">
+                  <Tag size={9} /> {task.category}
+                </span>
+              )}
+            </div>
+            <p className="text-sm font-semibold text-slate-800 leading-snug mb-1">{task.comment}</p>
+            <div className="flex flex-wrap gap-3 text-xs text-slate-500">
+              <span className="flex items-center gap-1">
+                <User size={11} />
+                <span className="font-semibold text-violet-700">{request.requesterName}</span>
+                <span>wants to be assigned</span>
+              </span>
+              {client && (
+                <span className="flex items-center gap-1">
+                  <Tag size={11} /> {client.name}
+                </span>
+              )}
+              <span className="flex items-center gap-1">
+                <Clock size={11} />
+                {new Date(request.timestamp).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </div>
+            {task.assigneeName && (
+              <p className="text-xs text-slate-400 mt-1">Currently assigned to: <span className="font-semibold text-slate-500">{task.assigneeName}</span></p>
+            )}
+          </div>
+          <div className="flex gap-2 flex-shrink-0">
+            <button
+              onClick={() => onAccept(task, request)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold transition-all shadow-sm"
+            >
+              <UserCheck size={13} /> Assign
+            </button>
+            <button
+              onClick={() => onDecline(task, request)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-bold border border-slate-200 transition-all"
+            >
+              <UserX size={13} /> Decline
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Business Head'];
 
 const ApprovalsView = ({ clientLogs, clients, users, currentUser, persistClientLogs }) => {
@@ -342,6 +402,7 @@ const ApprovalsView = ({ clientLogs, clients, users, currentUser, persistClientL
   const isCrossDept = CROSS_DEPT_ROLES.includes(currentUser?.role);
   const userDept = currentUser?.department;
 
+  // --- QC tasks ---
   const allTasksFlat = [];
   Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
     const client = clients.find(c => String(c.id) === String(clientId));
@@ -360,6 +421,20 @@ const ApprovalsView = ({ clientLogs, clients, users, currentUser, persistClientL
   const reviewedTasks = allTasksFlat
     .filter(t => t.qcStatus === 'approved' || t.qcStatus === 'rejected')
     .sort((a, b) => (b.qcReviewedAt || 0) - (a.qcReviewedAt || 0));
+
+  // --- Assignment requests: all tasks on clients where currentUser is assigned (as management) ---
+  const assignmentRequestItems = [];
+  const myClientNames = (currentUser?.assignedProjects || []);
+  Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
+    const client = clients.find(c => String(c.id) === String(clientId));
+    if (!isCrossDept && client && !myClientNames.includes(client.name)) return;
+    (logs || []).forEach(task => {
+      (task.assignmentRequests || []).forEach(req => {
+        assignmentRequestItems.push({ task: { ...task, _clientId: clientId, _client: client }, client, request: req });
+      });
+    });
+  });
+  assignmentRequestItems.sort((a, b) => b.request.timestamp - a.request.timestamp);
 
   const groupByClient = (tasks) => {
     const groups = {};
@@ -403,6 +478,20 @@ const ApprovalsView = ({ clientLogs, clients, users, currentUser, persistClientL
       qcReviewedAt: Date.now(),
     });
     setReturningTask(null);
+  };
+
+  const handleAcceptAssignment = (task, request) => {
+    updateTask(task, {
+      assigneeId: request.requesterId,
+      assigneeName: request.requesterName,
+      assignmentRequests: (task.assignmentRequests || []).filter(r => String(r.requesterId) !== String(request.requesterId)),
+    });
+  };
+
+  const handleDeclineAssignment = (task, request) => {
+    updateTask(task, {
+      assignmentRequests: (task.assignmentRequests || []).filter(r => String(r.requesterId) !== String(request.requesterId)),
+    });
   };
 
   const renderGroups = (groups, isReviewed) => {
@@ -462,6 +551,35 @@ const ApprovalsView = ({ clientLogs, clients, users, currentUser, persistClientL
     );
   };
 
+  const renderAssignmentRequests = () => {
+    if (assignmentRequestItems.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-violet-50 flex items-center justify-center mb-4">
+            <UserPlus size={24} className="text-violet-300" />
+          </div>
+          <p className="text-sm font-semibold text-slate-500">No assignment requests</p>
+          <p className="text-xs text-slate-400 mt-1">Employees who request to join a task will appear here.</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-3">
+        {assignmentRequestItems.map(({ task, client, request }) => (
+          <AssignmentRequestCard
+            key={`${task.id}-${request.requesterId}`}
+            task={task}
+            client={client}
+            request={request}
+            onAccept={handleAcceptAssignment}
+            onDecline={handleDeclineAssignment}
+          />
+        ))}
+      </div>
+    );
+  };
+
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <div>
@@ -500,10 +618,26 @@ const ApprovalsView = ({ clientLogs, clients, users, currentUser, persistClientL
             </span>
           )}
         </button>
+        <button
+          onClick={() => setActiveSubTab('assignments')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${
+            activeSubTab === 'assignments'
+              ? 'bg-white border border-violet-200/70 text-slate-900 shadow-sm'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          Assignments
+          {assignmentRequestItems.length > 0 && (
+            <span className="bg-violet-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full">
+              {assignmentRequestItems.length}
+            </span>
+          )}
+        </button>
       </div>
 
       {activeSubTab === 'pending' && renderGroups(pendingGroups, false)}
       {activeSubTab === 'reviewed' && renderGroups(reviewedGroups, true)}
+      {activeSubTab === 'assignments' && renderAssignmentRequests()}
 
       {approvingTask && (
         <ApproveModal
