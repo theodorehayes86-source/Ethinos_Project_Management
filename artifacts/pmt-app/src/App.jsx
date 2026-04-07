@@ -11,6 +11,7 @@ import EmployeeView from './PMT/EmployeeView';
 import MasterDataView from './PMT/MasterDataView';
 import UserMetricsView from './PMT/UserMetricsView';
 import ReportsView from './PMT/ReportsView';
+import ApprovalsView from './PMT/ApprovalsView';
 import Sidebar from './PMT/Sidebar';
 import Notifications from './PMT/Notifications';
 import ProfileDropdown from './PMT/ProfileDropdown';
@@ -343,9 +344,21 @@ const App = () => {
 
   const allTasks = accessibleClients.flatMap(c => (clientLogs[c.id] || []).map(t => ({ ...t, cid: c.id, cName: c.name })));
 
+  const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
+  const canSeeApprovals = managementRoles.includes(currentUser?.role);
+
+  const pendingApprovalsCount = canSeeApprovals
+    ? Object.values(clientLogs || {}).reduce((total, logs) => {
+        return total + (logs || []).filter(t =>
+          String(t.qcAssigneeId) === String(currentUser?.id) && t.qcStatus === 'sent'
+        ).length;
+      }, 0)
+    : 0;
+
   const tabTitles = {
     home: 'Home',
     clients: 'Clients',
+    approvals: 'Approvals',
     users: 'Users',
     metrics: 'Metrics',
     reports: 'Reports',
@@ -447,7 +460,8 @@ const App = () => {
     if (activeTab === 'employees' && !canSeeEmployeeView) setActiveTab('home');
     if (activeTab === 'metrics' && !canSeeMetrics) setActiveTab('home');
     if (activeTab === 'reports' && !canSeeReports) setActiveTab('home');
-  }, [activeTab, canSeeControlCenter, canSeeSettings, canSeeUserManagement, canSeeEmployeeView, canSeeMetrics, canSeeReports]);
+    if (activeTab === 'approvals' && !canSeeApprovals) setActiveTab('home');
+  }, [activeTab, canSeeControlCenter, canSeeSettings, canSeeUserManagement, canSeeEmployeeView, canSeeMetrics, canSeeReports, canSeeApprovals]);
 
   if (authLoading) {
     return (
@@ -506,6 +520,8 @@ const App = () => {
         canSeeEmployeeView={canSeeEmployeeView}
         canSeeMetrics={canSeeMetrics}
         canSeeReports={canSeeReports}
+        canSeeApprovals={canSeeApprovals}
+        pendingApprovalsCount={pendingApprovalsCount}
       />
 
       <div className="flex-1 flex flex-col bg-transparent overflow-hidden relative border-l border-white/40">
@@ -546,6 +562,16 @@ const App = () => {
               setClientLogs={persistClientLogs}
               currentUser={currentUser}
               taskCategories={taskCategories}
+            />
+          )}
+
+          {activeTab === 'approvals' && !selectedClient && canSeeApprovals && (
+            <ApprovalsView
+              clientLogs={clientLogs}
+              clients={clients}
+              users={users}
+              currentUser={currentUser}
+              persistClientLogs={persistClientLogs}
             />
           )}
 

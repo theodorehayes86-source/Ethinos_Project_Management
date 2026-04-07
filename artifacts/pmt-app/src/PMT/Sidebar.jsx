@@ -1,20 +1,21 @@
 import React, { useState } from 'react';
-import { Home, Briefcase, Users, Settings, Network, SlidersHorizontal, BarChart3, FileSpreadsheet, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Home, Briefcase, Users, Settings, Network, SlidersHorizontal, BarChart3, FileSpreadsheet, ChevronLeft, ChevronRight, ClipboardCheck } from 'lucide-react';
 
-const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setIsMinimized, canSeeControlCenter = false, canSeeSettings = true, canSeeUserManagement = true, canSeeEmployeeView = true, canSeeMetrics = true, canSeeReports = true }) => {
+const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setIsMinimized, canSeeControlCenter = false, canSeeSettings = true, canSeeUserManagement = true, canSeeEmployeeView = true, canSeeMetrics = true, canSeeReports = true, canSeeApprovals = false, pendingApprovalsCount = 0 }) => {
   const [logoError, setLogoError] = useState(false);
 
-  // Corrected array syntax and updated icons for better visual distinction
   const menuItems = [
     { id: 'home', label: 'Home', icon: <Home size={18}/> },
     { id: 'clients', label: 'Clients', icon: <Briefcase size={18}/> },
+    { id: 'approvals', label: 'Approvals', icon: <ClipboardCheck size={18}/>, badge: pendingApprovalsCount > 0 ? pendingApprovalsCount : null },
     { id: 'users', label: 'User Management', icon: <Users size={18}/> },
     { id: 'metrics', label: 'Metrics', icon: <BarChart3 size={18}/> },
     { id: 'reports', label: 'Reports', icon: <FileSpreadsheet size={18}/> },
-    { id: 'employees', label: 'Employee View', icon: <Network size={18} /> }, // Changed to Network icon for flowchart feel
+    { id: 'employees', label: 'Employee View', icon: <Network size={18} /> },
     { id: 'settings', label: 'Settings', icon: <Settings size={18}/> },
     { id: 'master-data', label: 'Control Center', icon: <SlidersHorizontal size={18}/> }
   ].filter(item => {
+    if (item.id === 'approvals') return canSeeApprovals;
     if (item.id === 'master-data') return canSeeControlCenter;
     if (item.id === 'settings') return canSeeSettings;
     if (item.id === 'users') return canSeeUserManagement;
@@ -68,13 +69,23 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
                   : 'text-slate-600 border border-transparent hover:text-slate-900 hover:bg-white/65 hover:border-white/80 bg-transparent'
               }`}
             >
-              <div className={`${isActive ? 'text-indigo-600' : 'text-slate-500'}`}>
+              <div className={`relative ${isActive ? 'text-indigo-600' : 'text-slate-500'}`}>
                 {item.icon}
+                {item.badge && isMinimized && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500 text-white text-[9px] font-black flex items-center justify-center">
+                    {item.badge > 9 ? '9+' : item.badge}
+                  </span>
+                )}
               </div>
               
               {!isMinimized && (
-                <span className="whitespace-nowrap">
+                <span className="whitespace-nowrap flex-1 text-left">
                   {item.label}
+                </span>
+              )}
+              {!isMinimized && item.badge && (
+                <span className="bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full flex-shrink-0">
+                  {item.badge > 99 ? '99+' : item.badge}
                 </span>
               )}
             </button>
