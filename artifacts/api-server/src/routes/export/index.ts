@@ -285,6 +285,125 @@ router.get("/hours/by-client", async (req, res): Promise<void> => {
   });
 });
 
+/* ─── GET /api/export/hours/by-date ─── */
+
+/**
+ * Returns task hours grouped by calendar date (YYYY-MM-DD), sorted chronologically.
+ * Each date entry also contains a breakdown by category and, optionally, by client.
+ *
+ * Query params:
+ *   from       ISO date (e.g. 2026-04-01)  optional
+ *   to         ISO date (e.g. 2026-04-30)  optional
+ *   clientId   filter to a specific client  optional
+ *   category   filter to a specific tag     optional
+ *   groupBy    "category" (default) | "client" | "both"
+ *   detail     "true" to include raw task list per group
+ */
+router.get("/hours/by-date", async (req, res): Promise<void> => {
+  const fromDate = parseOptionalDate(req.query.from);
+  const toDate = parseOptionalDate(req.query.to);
+  const clientIdFilter = typeof req.query.clientId === "string" ? req.query.clientId : null;
+  const categoryFilter = typeof req.query.category === "string" ? req.query.category : null;
+  const includeDetail = req.query.detail === "true";
+  const groupBy = typeof req.query.groupBy === "string" ? req.query.groupBy : "category";
+
+  req.log.info({ fromDate, toDate, groupBy }, "Fetching export hours by-date");
+
+  const tasks = await fetchFilteredTasks(fromDate, toDate, clientIdFilter, categoryFilter);
+
+  type SubGroup = { hours: number; taskCount: number; tasks?: FilteredTask[] };
+  type DateEntry = {
+    date: string;
+    totalHours: number;
+    totalTasks: number;
+    byCategory?: Record<string, SubGroup>;
+    byClient?: Record<string, { clientName: string } & SubGroup>;
+  };
+
+  const byDate = new Map<string, DateEntry>();
+
+  for (const task of tasks) {
+    const taskDate = parseTaskDate(task.date);
+    const dateKey = taskDate ? taskDate.toISOString().slice(0, 10) : "unknown";
+
+    if (!byDate.has(dateKey)) {
+      byDate.set(dateKey, {
+        date: dateKey,
+        totalHours: 0,
+        totalTasks: 0,
+        ...(groupBy === "category" || groupBy === "both" ? { byCategory: {} } : {}),
+        ...(groupBy === "client" || groupBy === "both" ? { byClient: {} } : {}),
+      });
+    }
+    const entry = byDate.get(dateKey)!;
+    const h = hoursFromMs(task.elapsedMs || 0);
+    entry.totalHours = Math.round((entry.totalHours + h) * 100) / 100;
+    entry.totalTasks += 1;
+
+    if (entry.byCategory !== undefined) {
+      const cat = task.category || "Uncategorised";
+      if (!entry.byCategory[cat]) {
+        entry.byCategory[cat] = { hours: 0, taskCount: 0, ...(includeDetail ? { tasks: [] } : {}) };
+      }
+      entry.byCategory[cat].hours = Math.round((entry.byCategory[cat].hours + h) * 100) / 100;
+      entry.byCategory[cat].taskCount += 1;
+      if (includeDetail) entry.byCategory[cat].tasks!.push(task);
+    }
+
+    if (entry.byClient !== undefined) {
+      const cid = task.clientId;
+      if (!entry.byClient[cid]) {
+        entry.byClient[cid] = { clientName: task.clientName, hours: 0, taskCount: 0, ...(includeDetail ? { tasks: [] } : {}) };
+      }
+      entry.byClient[cid].hours = Math.round((entry.byClient[cid].hours + h) * 100) / 100;
+      entry.byClient[cid].taskCount += 1;
+      if (includeDetail) entry.byClient[cid].tasks!.push(task);
+    }
+  }
+
+  const dateRows = [...byDate.entries()]
+    .map(([, entry]) => ({
+      ...entry,
+      ...(entry.byCategory
+        ? {
+            byCategory: Object.entries(entry.byCategory)
+              .map(([category, data]) => ({ category, ...data }))
+              .sort((a, b) => b.hours - a.hours),
+          }
+        : {}),
+      ...(entry.byClient
+        ? {
+            byClient: Object.entries(entry.byClient)
+              .map(([clientId, data]) => ({ clientId, ...data }))
+              .sort((a, b) => b.hours - a.hours),
+          }
+        : {}),
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const totalHours = dateRows.reduce((s, r) => s + r.totalHours, 0);
+  const totalTasks = dateRows.reduce((s, r) => s + r.totalTasks, 0);
+
+  res.json({
+    generatedAt: new Date().toISOString(),
+    period: {
+      from: fromDate?.toISOString().slice(0, 10) ?? null,
+      to: toDate?.toISOString().slice(0, 10) ?? null,
+    },
+    filters: {
+      clientId: clientIdFilter,
+      category: categoryFilter,
+      groupBy,
+    },
+    summary: {
+      totalHours: Math.round(totalHours * 100) / 100,
+      totalTasks,
+      days: dateRows.length,
+    },
+    byDate: dateRows,
+  });
+});
+
 /* ─── GET /api/export/categories ─── */
 
 /**
