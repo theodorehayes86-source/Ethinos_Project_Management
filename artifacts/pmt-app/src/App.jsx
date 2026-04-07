@@ -665,6 +665,8 @@ const App = () => {
               setClients={persistClients}
               users={users}
               setUsers={persistUsers}
+              clientLogs={clientLogs}
+              setClientLogs={persistClientLogs}
             />
           )}
         </main>

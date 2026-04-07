@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Search, ChevronLeft, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, Play, Pause, Square, MoreVertical, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send } from 'lucide-react';
+import { Search, ChevronLeft, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send } from 'lucide-react';
 
 /* ─── Reusable User Picker Modal ─── */
 const UserPickerModal = ({ title, users, selected, onToggle, onClose, pickerSearch, setPickerSearch }) => {
@@ -104,9 +104,6 @@ const ClientView = ({
   
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [newTaskName, setNewTaskName] = useState("");
-  const [showClientModal, setShowClientModal] = useState(false);
-  const [newEntityName, setNewEntityName] = useState("");
-  const [newClientName, setNewClientName] = useState("");
 
   // Edit Task modal state
   const [editingTask, setEditingTask] = useState(null);
@@ -116,16 +113,12 @@ const ClientView = ({
   const [editDraftAssigneeQuery, setEditDraftAssigneeQuery] = useState('');
   const [editDraftShowAssigneeMenu, setEditDraftShowAssigneeMenu] = useState(false);
   const [editDraftError, setEditDraftError] = useState('');
-  const [selectedAdmins, setSelectedAdmins] = useState([]);
-  const [selectedEmployees, setSelectedEmployees] = useState([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [taskDueDate, setTaskDueDate] = useState(null);
   const [newTaskComment, setNewTaskComment] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editField, setEditField] = useState(""); 
   const [tempValue, setTempValue] = useState("");
-  const [adminQuery, setAdminQuery] = useState("");
-  const [teamQuery, setTeamQuery] = useState("");
   const [timerTick, setTimerTick] = useState(Date.now());
   const [taskStatusFilter, setTaskStatusFilter] = useState('All');
   const [newTaskCategory, setNewTaskCategory] = useState("");
@@ -144,7 +137,6 @@ const ClientView = ({
   const [customReportUrl, setCustomReportUrl] = useState("");
   const [editingCustomReportId, setEditingCustomReportId] = useState(null);
   const [expandedTaskId, setExpandedTaskId] = useState(null);
-  const [openMenuClientId, setOpenMenuClientId] = useState(null);
   const [activePicker, setActivePicker] = useState(null); // 'addLeadership'|'addTeam'|'qcReviewer'
   const [pickerSearch, setPickerSearch] = useState("");
 
@@ -170,7 +162,6 @@ const ClientView = ({
   const [templateApplyError, setTemplateApplyError] = useState('');
 
   const isManagement = managementRoles.includes(currentUser?.role);
-  const canAddClient = currentUser?.role === 'Super Admin' || currentUser?.role === 'Director';
 
   // Permission helpers for task-level access
   const canFullyEditTask = (log) => {
@@ -466,49 +457,6 @@ const ClientView = ({
     setQcAssigneeId('');
     setQcAssigneeName('');
     setShowTaskForm(false);
-  };
-
-  const handleSaveClient = (e) => {
-    e.preventDefault();
-    if (!newEntityName || !newClientName) return;
-    const newClient = {
-      id: `client-${Date.now()}`,
-      name: newClientName,
-      entityName: newEntityName
-    };
-    setClients([...clients, newClient]);
-    const updatedUsers = users.map(u => {
-      if (selectedAdmins.includes(u.id) || selectedEmployees.includes(u.id)) {
-        return { ...u, assignedProjects: [...(u.assignedProjects || []), newClientName] };
-      }
-      return u;
-    });
-    if(setUsers) setUsers(updatedUsers);
-    setNewEntityName(""); setNewClientName(""); setSelectedAdmins([]); setSelectedEmployees([]); 
-    setAdminQuery(""); setTeamQuery(""); setShowClientModal(false);
-  };
-
-  const handleDeleteClient = (clientId) => {
-    if (window.confirm('Are you sure you want to delete this client? This action cannot be undone.')) {
-      const clientToDelete = clients.find(c => c.id === clientId);
-      setClients(clients.filter(c => c.id !== clientId));
-      
-      // Remove client from all user's assigned projects
-      if (setUsers) {
-        const updatedUsers = users.map(u => ({
-          ...u,
-          assignedProjects: (u.assignedProjects || []).filter(p => p !== clientToDelete?.name)
-        }));
-        setUsers(updatedUsers);
-      }
-      
-      // Remove client logs
-      const newLogs = { ...clientLogs };
-      delete newLogs[clientId];
-      setClientLogs(newLogs);
-      
-      setOpenMenuClientId(null);
-    }
   };
 
   // --- TEMPLATE APPLY HELPERS ---
@@ -2034,15 +1982,8 @@ const ClientView = ({
   // --- GRID VIEW (ALL CLIENTS) ---
   const filteredClients = clients.filter(c => c.name.toLowerCase().includes(clientSearch.toLowerCase()));
 
-  // --- PICKER CONFIG ---
-  const pickerIsLeadership = activePicker === 'addLeadership';
+  // --- PICKER CONFIG (only qcReviewer remains here) ---
   const pickerAllUsers = users || [];
-  const pickerSelected =
-    activePicker === 'addLeadership' ? selectedAdmins :
-    activePicker === 'addTeam' ? selectedEmployees : [];
-  const pickerSetSelected =
-    activePicker === 'addLeadership' ? setSelectedAdmins :
-    activePicker === 'addTeam' ? setSelectedEmployees : () => {};
 
   return (
     <div className="p-3 space-y-5 animate-in fade-in duration-500 text-left min-h-full">
@@ -2051,11 +1992,6 @@ const ClientView = ({
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
           <input type="text" placeholder="Filter Clients..." className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-xs font-medium outline-none focus:ring-2 ring-blue-500/20 shadow-sm text-slate-700" value={clientSearch} onChange={(e) => setClientSearch(e.target.value)} />
         </div>
-        {canAddClient && (
-          <button onClick={() => setShowClientModal(true)} className="bg-blue-600 text-white px-3.5 py-2 rounded-lg font-semibold text-xs hover:bg-blue-700 transition-all flex items-center gap-1.5 shadow-md">
-            <Plus size={14}/> Add Client
-          </button>
-        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -2088,40 +2024,9 @@ const ClientView = ({
               {/* Header with Account Name and Avg Time */}
               <div className="mb-3 flex items-start justify-between gap-2">
                 <h3 className="text-base font-bold text-slate-900 uppercase tracking-tight group-hover:text-blue-600 transition-all">{c.name}</h3>
-                <div className="flex items-center gap-2">
-                  <div className="bg-purple-50 px-1.5 py-0.5 rounded-md border border-purple-200">
-                    <p className="text-[8px] font-semibold text-purple-600">AVG</p>
-                    <p className="text-xs font-bold text-purple-700">{avgTimeStr}</p>
-                  </div>
-                  
-                  {/* 3-Dot Menu Button */}
-                  <div className="relative">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setOpenMenuClientId(openMenuClientId === c.id ? null : c.id);
-                      }}
-                      className="p-1.5 hover:bg-slate-100 rounded-lg transition-all text-slate-500 hover:text-slate-700"
-                    >
-                      <MoreVertical size={16} />
-                    </button>
-                    
-                    {/* Dropdown Menu */}
-                    {openMenuClientId === c.id && (
-                      <div className="absolute right-0 top-8 bg-white border border-slate-200 rounded-lg shadow-lg z-50 w-32">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteClient(c.id);
-                          }}
-                          className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 transition-all"
-                        >
-                          <Trash2 size={14} />
-                          Delete
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                <div className="bg-purple-50 px-1.5 py-0.5 rounded-md border border-purple-200 flex-shrink-0">
+                  <p className="text-[8px] font-semibold text-purple-600">AVG</p>
+                  <p className="text-xs font-bold text-purple-700">{avgTimeStr}</p>
                 </div>
               </div>
 
@@ -2185,92 +2090,6 @@ const ClientView = ({
         })}
       </div>
 
-      {/* Add Client Modal */}
-      {showClientModal && (
-        <div className="fixed inset-0 z-[700] flex items-center justify-center bg-slate-900/10 backdrop-blur-md p-4">
-          <div className="bg-white w-full max-w-5xl border border-slate-200 shadow-xl rounded-2xl animate-in zoom-in-95 flex flex-col" style={{maxHeight:'90vh'}}>
-            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100">
-              <h4 className="text-lg font-semibold text-slate-900">Add New Client</h4>
-              <button onClick={() => setShowClientModal(false)} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all"><X size={18}/></button>
-            </div>
-            <form onSubmit={handleSaveClient} className="space-y-5 px-6 py-5 overflow-y-auto">
-              <div className="space-y-2">
-                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Entity Name</label>
-                <input type="text" className="w-full p-3 border border-slate-200 bg-white rounded-lg text-sm font-medium outline-none focus:ring-2 ring-blue-500/20 transition-all" placeholder="Enter entity name" value={newEntityName} onChange={(e) => setNewEntityName(e.target.value)} required />
-              </div>
-              <div className="space-y-2">
-                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Client Name</label>
-                <input type="text" className="w-full p-3 border border-slate-200 bg-white rounded-lg text-sm font-medium outline-none focus:ring-2 ring-blue-500/20 transition-all" placeholder="Enter client name" value={newClientName} onChange={(e) => setNewClientName(e.target.value)} required />
-              </div>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {/* Leadership Picker */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Leadership</label>
-                    <button type="button" onClick={() => { setPickerSearch(""); setActivePicker('addLeadership'); }}
-                      className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-all">
-                      <Users size={12}/> Select Members
-                    </button>
-                  </div>
-                  <div className="min-h-[60px] max-h-32 overflow-y-auto border border-slate-200 rounded-xl p-2.5 bg-slate-50/40 flex flex-wrap gap-1.5 items-start content-start">
-                    {selectedAdmins.length === 0
-                      ? <p className="text-xs text-slate-400 italic">No leadership selected</p>
-                      : selectedAdmins.map(id => {
-                          const u = (users || []).find(x => x.id === id);
-                          return u ? (
-                            <span key={id} className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold px-2 py-1 rounded-full">
-                              <Crown size={10} className="fill-blue-500 text-blue-500"/>
-                              {u.name}
-                              <button type="button" onClick={() => setSelectedAdmins(selectedAdmins.filter(x => x !== id))} className="ml-0.5 hover:text-blue-900"><X size={10}/></button>
-                            </span>
-                          ) : null;
-                        })
-                    }
-                  </div>
-                </div>
-                {/* Team Picker */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Team</label>
-                    <button type="button" onClick={() => { setPickerSearch(""); setActivePicker('addTeam'); }}
-                      className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-all">
-                      <Users size={12}/> Select Members
-                    </button>
-                  </div>
-                  <div className="min-h-[60px] max-h-32 overflow-y-auto border border-slate-200 rounded-xl p-2.5 bg-slate-50/40 flex flex-wrap gap-1.5 items-start content-start">
-                    {selectedEmployees.length === 0
-                      ? <p className="text-xs text-slate-400 italic">No team members selected</p>
-                      : selectedEmployees.map(id => {
-                          const u = (users || []).find(x => x.id === id);
-                          return u ? (
-                            <span key={id} className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold px-2 py-1 rounded-full">
-                              {u.name}
-                              <button type="button" onClick={() => setSelectedEmployees(selectedEmployees.filter(x => x !== id))} className="ml-0.5 hover:text-slate-900"><X size={10}/></button>
-                            </span>
-                          ) : null;
-                        })
-                    }
-                  </div>
-                </div>
-              </div>
-              <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold text-sm tracking-wide shadow-md hover:bg-blue-700 transition-all">Add Client</button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* User Picker Modal */}
-      {activePicker && activePicker !== 'qcReviewer' && (
-        <UserPickerModal
-          title={pickerIsLeadership ? 'Select Leadership' : 'Select Team Members'}
-          users={pickerAllUsers}
-          selected={pickerSelected}
-          onToggle={id => pickerSetSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])}
-          onClose={() => setActivePicker(null)}
-          pickerSearch={pickerSearch}
-          setPickerSearch={setPickerSearch}
-        />
-      )}
       {/* QC Reviewer Picker (single-select, management only) */}
       {activePicker === 'qcReviewer' && selectedClient && (() => {
         const clientStaff = getProjectStaff(selectedClient.name);

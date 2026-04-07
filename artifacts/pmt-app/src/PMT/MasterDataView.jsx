@@ -117,6 +117,8 @@ const MasterDataView = ({
   setClients,
   users = [],
   setUsers,
+  clientLogs = {},
+  setClientLogs,
 }) => {
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
@@ -132,12 +134,20 @@ const MasterDataView = ({
 
   // --- CLIENT STATE ---
   const [clientSearch, setClientSearch] = useState('');
+  // Edit
   const [editingClientId, setEditingClientId] = useState(null);
   const [editEntityName, setEditEntityName] = useState('');
   const [editClientName, setEditClientName] = useState('');
   const [editClientAdmins, setEditClientAdmins] = useState([]);
   const [editClientEmployees, setEditClientEmployees] = useState([]);
-  const [activePicker, setActivePicker] = useState(null); // 'leadership' | 'team'
+  // Add
+  const [showAddClientModal, setShowAddClientModal] = useState(false);
+  const [addEntityName, setAddEntityName] = useState('');
+  const [addClientName, setAddClientName] = useState('');
+  const [addClientAdmins, setAddClientAdmins] = useState([]);
+  const [addClientEmployees, setAddClientEmployees] = useState([]);
+  // Shared picker — mode: 'edit-leadership' | 'edit-team' | 'add-leadership' | 'add-team'
+  const [activePicker, setActivePicker] = useState(null);
   const [pickerSearch, setPickerSearch] = useState('');
 
   // --- TEMPLATE STATE ---
@@ -334,6 +344,74 @@ const MasterDataView = ({
     setActivePicker(null);
     setPickerSearch('');
   };
+
+  const openAddClient = () => {
+    setAddEntityName('');
+    setAddClientName('');
+    setAddClientAdmins([]);
+    setAddClientEmployees([]);
+    setActivePicker(null);
+    setPickerSearch('');
+    setShowAddClientModal(true);
+  };
+
+  const closeAddClient = () => {
+    setShowAddClientModal(false);
+    setAddEntityName('');
+    setAddClientName('');
+    setAddClientAdmins([]);
+    setAddClientEmployees([]);
+    setActivePicker(null);
+    setPickerSearch('');
+  };
+
+  const handleSaveNewClient = (e) => {
+    e.preventDefault();
+    if (!addEntityName.trim() || !addClientName.trim()) return;
+    const newClient = { id: `client-${Date.now()}`, name: addClientName.trim(), entityName: addEntityName.trim() };
+    if (setClients) setClients([...(clients || []), newClient]);
+    if (setUsers) {
+      const allAssigned = new Set([...addClientAdmins, ...addClientEmployees]);
+      setUsers((users || []).map(u =>
+        allAssigned.has(u.id)
+          ? { ...u, assignedProjects: [...(u.assignedProjects || []), newClient.name] }
+          : u
+      ));
+    }
+    closeAddClient();
+  };
+
+  const handleDeleteClient = (clientId) => {
+    if (!window.confirm('Delete this client? This cannot be undone.')) return;
+    const clientToDelete = (clients || []).find(c => c.id === clientId);
+    if (setClients) setClients((clients || []).filter(c => c.id !== clientId));
+    if (setUsers && clientToDelete) {
+      setUsers((users || []).map(u => ({
+        ...u,
+        assignedProjects: (u.assignedProjects || []).filter(p => p !== clientToDelete.name),
+      })));
+    }
+    if (setClientLogs) {
+      const updated = { ...(clientLogs || {}) };
+      delete updated[clientId];
+      setClientLogs(updated);
+    }
+  };
+
+  // Picker helpers for both add and edit flows
+  const pickerSelected =
+    activePicker === 'edit-leadership' ? editClientAdmins :
+    activePicker === 'edit-team' ? editClientEmployees :
+    activePicker === 'add-leadership' ? addClientAdmins :
+    activePicker === 'add-team' ? addClientEmployees : [];
+  const pickerSetSelected =
+    activePicker === 'edit-leadership' ? setEditClientAdmins :
+    activePicker === 'edit-team' ? setEditClientEmployees :
+    activePicker === 'add-leadership' ? setAddClientAdmins :
+    activePicker === 'add-team' ? setAddClientEmployees : () => {};
+  const pickerTitle =
+    activePicker === 'edit-leadership' || activePicker === 'add-leadership'
+      ? 'Select Leadership' : 'Select Team Members';
 
   const filteredClients = (clients || []).filter(c =>
     !clientSearch.trim() || c.name.toLowerCase().includes(clientSearch.toLowerCase())
@@ -849,6 +927,12 @@ const MasterDataView = ({
               />
             </div>
             <span className="text-xs text-slate-500 font-medium">{filteredClients.length} client{filteredClients.length !== 1 ? 's' : ''}</span>
+            <button
+              onClick={openAddClient}
+              className="bg-blue-600 text-white px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 hover:bg-blue-700 transition-all shadow-sm ml-auto"
+            >
+              <Plus size={13}/> Add Client
+            </button>
           </div>
 
           {filteredClients.length === 0 ? (
@@ -897,13 +981,22 @@ const MasterDataView = ({
                           </div>
                         </td>
                         <td className="px-3 py-2 text-right">
-                          <button
-                            onClick={() => openEditClient(c)}
-                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                            title="Edit"
-                          >
-                            <Edit2 size={14}/>
-                          </button>
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => openEditClient(c)}
+                              className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                              title="Edit"
+                            >
+                              <Edit2 size={14}/>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteClient(c.id)}
+                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                              title="Delete"
+                            >
+                              <Trash2 size={14}/>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -956,7 +1049,7 @@ const MasterDataView = ({
                     <label className="text-xs font-semibold text-slate-700">Leadership</label>
                     <button
                       type="button"
-                      onClick={() => { setPickerSearch(''); setActivePicker('leadership'); }}
+                      onClick={() => { setPickerSearch(''); setActivePicker('edit-leadership'); }}
                       className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-all"
                     >
                       <Users size={12}/> Select Members
@@ -985,7 +1078,7 @@ const MasterDataView = ({
                     <label className="text-xs font-semibold text-slate-700">Team</label>
                     <button
                       type="button"
-                      onClick={() => { setPickerSearch(''); setActivePicker('team'); }}
+                      onClick={() => { setPickerSearch(''); setActivePicker('edit-team'); }}
                       className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-all"
                     >
                       <Users size={12}/> Select Members
@@ -1017,16 +1110,115 @@ const MasterDataView = ({
         </div>
       )}
 
-      {/* ─── USER PICKER MODAL (for client edit) ─── */}
+      {/* ─── ADD CLIENT MODAL ─── */}
+      {showAddClientModal && (
+        <div className="fixed inset-0 z-[800] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 flex flex-col animate-in zoom-in-95 duration-200" style={{maxHeight:'90vh'}}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-800">Add New Client</h3>
+              <button onClick={closeAddClient} className="p-1.5 hover:bg-slate-100 rounded-lg transition-all"><X size={16}/></button>
+            </div>
+            <form onSubmit={handleSaveNewClient} className="flex flex-col flex-1 overflow-y-auto">
+              <div className="px-6 py-5 space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-700">Entity Name <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={addEntityName}
+                      onChange={e => setAddEntityName(e.target.value)}
+                      placeholder="Entity name..."
+                      required
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 ring-blue-500/20 bg-white"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-700">Client Name <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={addClientName}
+                      onChange={e => setAddClientName(e.target.value)}
+                      placeholder="Client name..."
+                      required
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 ring-blue-500/20 bg-white"
+                    />
+                  </div>
+                </div>
+
+                {/* Leadership */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-700">Leadership</label>
+                    <button
+                      type="button"
+                      onClick={() => { setPickerSearch(''); setActivePicker('add-leadership'); }}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-all"
+                    >
+                      <Users size={12}/> Select Members
+                    </button>
+                  </div>
+                  <div className="min-h-[52px] max-h-28 overflow-y-auto border border-slate-200 rounded-xl p-2.5 bg-slate-50/50 flex flex-wrap gap-1.5 items-start content-start">
+                    {addClientAdmins.length === 0
+                      ? <p className="text-xs text-slate-400 italic">No leadership selected</p>
+                      : addClientAdmins.map(id => {
+                          const u = (users || []).find(x => x.id === id);
+                          return u ? (
+                            <span key={id} className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold px-2 py-1 rounded-full">
+                              <Crown size={10} className="text-blue-500"/>
+                              {u.name}
+                              <button type="button" onClick={() => setAddClientAdmins(prev => prev.filter(x => x !== id))} className="ml-0.5 hover:text-blue-900"><X size={10}/></button>
+                            </span>
+                          ) : null;
+                        })
+                    }
+                  </div>
+                </div>
+
+                {/* Team */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-700">Team</label>
+                    <button
+                      type="button"
+                      onClick={() => { setPickerSearch(''); setActivePicker('add-team'); }}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-all"
+                    >
+                      <Users size={12}/> Select Members
+                    </button>
+                  </div>
+                  <div className="min-h-[52px] max-h-28 overflow-y-auto border border-slate-200 rounded-xl p-2.5 bg-slate-50/50 flex flex-wrap gap-1.5 items-start content-start">
+                    {addClientEmployees.length === 0
+                      ? <p className="text-xs text-slate-400 italic">No team members selected</p>
+                      : addClientEmployees.map(id => {
+                          const u = (users || []).find(x => x.id === id);
+                          return u ? (
+                            <span key={id} className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold px-2 py-1 rounded-full">
+                              {u.name}
+                              <button type="button" onClick={() => setAddClientEmployees(prev => prev.filter(x => x !== id))} className="ml-0.5 hover:text-slate-900"><X size={10}/></button>
+                            </span>
+                          ) : null;
+                        })
+                    }
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100">
+                <button type="button" onClick={closeAddClient} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-all">Cancel</button>
+                <button type="submit" className="px-5 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-all shadow-sm">Add Client</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── USER PICKER MODAL (add & edit clients) ─── */}
       {activePicker && (
         <UserPickerModal
-          title={activePicker === 'leadership' ? 'Select Leadership' : 'Select Team Members'}
+          title={pickerTitle}
           users={users || []}
-          selected={activePicker === 'leadership' ? editClientAdmins : editClientEmployees}
-          onToggle={id => {
-            const setter = activePicker === 'leadership' ? setEditClientAdmins : setEditClientEmployees;
-            setter(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-          }}
+          selected={pickerSelected}
+          onToggle={id => pickerSetSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])}
           onClose={() => setActivePicker(null)}
           pickerSearch={pickerSearch}
           setPickerSearch={setPickerSearch}
