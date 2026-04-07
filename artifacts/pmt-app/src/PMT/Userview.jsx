@@ -137,7 +137,7 @@ const UserView = ({ users = [], setUsers, clients = [], settingsSearch = "", set
                 </td>
                 <td className="px-5 py-2.5">
                   <div className="flex flex-wrap gap-2">
-                    {user.assignedProjects.map(p => (
+                    {(user.assignedProjects || []).map(p => (
                       <span key={p} className="text-xs font-medium border border-blue-300 px-2 py-1 rounded-full text-blue-700 bg-blue-100 shadow-sm">
                         {p}
                       </span>
