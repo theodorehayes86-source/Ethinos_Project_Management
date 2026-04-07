@@ -1008,9 +1008,10 @@ const ClientView = ({
 
         {/* Modal: Add Task */}
         {showTaskForm && (
-          <div className="fixed inset-0 z-[600] flex items-center justify-center bg-slate-900/10 backdrop-blur-md p-4">
-            <div className="bg-white w-full max-w-5xl p-8 border border-slate-200 shadow-xl rounded-2xl animate-in zoom-in-95">
-              <div className="flex justify-between items-center mb-6">
+          <div className="fixed inset-0 z-[600] flex items-start justify-center bg-slate-900/10 backdrop-blur-md overflow-y-auto p-4">
+            <div className="bg-white w-full max-w-5xl border border-slate-200 shadow-xl rounded-2xl animate-in zoom-in-95 flex flex-col my-auto">
+              {/* Sticky header */}
+              <div className="flex justify-between items-center px-8 pt-7 pb-5 border-b border-slate-100">
                 <h4 className="text-lg font-semibold text-slate-900">New Task</h4>
                 <button
                   onClick={() => {
@@ -1025,7 +1026,7 @@ const ClientView = ({
                   <X size={18}/>
                 </button>
               </div>
-              <form onSubmit={addTaskEntry} className="space-y-6">
+              <form onSubmit={addTaskEntry} className="space-y-6 px-8 py-6 overflow-y-auto">
                 <div className="grid grid-cols-1 lg:grid-cols-[320px,1fr] gap-6">
                   <div className="space-y-3">
                     <div className="space-y-2">
