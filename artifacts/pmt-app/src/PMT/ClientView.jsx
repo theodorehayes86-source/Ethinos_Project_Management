@@ -10,7 +10,7 @@ const ClientView = ({
   users = [], setUsers, currentUser, taskCategories = [], setNotifications = () => {}
 }) => {
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
-  const executionRoles = ['Snr Executive', 'Executive', 'Intern'];
+  const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
   
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [showClientModal, setShowClientModal] = useState(false);

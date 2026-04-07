@@ -11,7 +11,7 @@ import {
   subMonths
 } from 'date-fns';
 
-const EXECUTION_ROLES = ['Snr Executive', 'Executive', 'Intern'];
+const EXECUTION_ROLES = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
 
 const parseTimeTaken = (timeTaken = '') => {
   if (!timeTaken || typeof timeTaken !== 'string') return 0;
