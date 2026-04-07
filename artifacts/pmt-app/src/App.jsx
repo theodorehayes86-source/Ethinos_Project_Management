@@ -43,6 +43,77 @@ const DEFAULT_TASK_CATEGORIES = [
   'Training & Development', 'Other',
 ];
 
+const DEFAULT_TASK_TEMPLATES = [
+  {
+    id: 'prebuilt-1',
+    name: 'Monthly Digital Report',
+    description: 'Standard end-of-month reporting tasks for digital campaigns.',
+    isPrebuilt: true,
+    createdBy: null,
+    tasks: [
+      { comment: 'Pull performance data from all ad platforms', category: 'Reporting & Analysis', repeatFrequency: 'Monthly' },
+      { comment: 'Compile monthly KPI summary deck', category: 'Reporting & Analysis', repeatFrequency: 'Monthly' },
+      { comment: 'Share report with client and collect feedback', category: 'Client Communication', repeatFrequency: 'Monthly' },
+      { comment: 'Update internal performance tracker', category: 'Reporting & Analysis', repeatFrequency: 'Monthly' },
+    ],
+  },
+  {
+    id: 'prebuilt-2',
+    name: 'New Client Onboarding',
+    description: 'Tasks to onboard a new client onto the platform and align on strategy.',
+    isPrebuilt: true,
+    createdBy: null,
+    tasks: [
+      { comment: 'Kick-off call and introductions', category: 'Client Communication', repeatFrequency: 'Once' },
+      { comment: 'Collect brand guidelines and assets', category: 'Creatives & Assets', repeatFrequency: 'Once' },
+      { comment: 'Set up ad accounts and grant access', category: 'Technical Setup', repeatFrequency: 'Once' },
+      { comment: 'Define goals, KPIs and reporting cadence', category: 'Strategy & Planning', repeatFrequency: 'Once' },
+      { comment: 'Create onboarding summary doc and share with team', category: 'Client Communication', repeatFrequency: 'Once' },
+    ],
+  },
+  {
+    id: 'prebuilt-3',
+    name: 'Campaign Launch',
+    description: 'Pre-launch and go-live checklist for a new campaign.',
+    isPrebuilt: true,
+    createdBy: null,
+    tasks: [
+      { comment: 'Brief creative team on campaign requirements', category: 'Creatives & Assets', repeatFrequency: 'Once' },
+      { comment: 'Set up campaign in ad platform with correct targeting', category: 'Campaign Setup', repeatFrequency: 'Once' },
+      { comment: 'QA all creatives, copy and tracking links', category: 'Campaign Setup', repeatFrequency: 'Once' },
+      { comment: 'Get client approval on launch plan', category: 'Client Communication', repeatFrequency: 'Once' },
+      { comment: 'Launch campaign and monitor initial delivery', category: 'Campaign Optimization', repeatFrequency: 'Once' },
+    ],
+  },
+  {
+    id: 'prebuilt-4',
+    name: 'Weekly Performance Review',
+    description: 'Recurring weekly tasks to monitor and optimise live campaigns.',
+    isPrebuilt: true,
+    createdBy: null,
+    tasks: [
+      { comment: 'Review weekly spend vs. budget pacing', category: 'Budget Management', repeatFrequency: 'Weekly' },
+      { comment: 'Check CTR, CPC and conversion metrics', category: 'Campaign Optimization', repeatFrequency: 'Weekly' },
+      { comment: 'Pause underperforming ad sets and reallocate budget', category: 'Campaign Optimization', repeatFrequency: 'Weekly' },
+      { comment: 'Send weekly performance update to client', category: 'Client Communication', repeatFrequency: 'Weekly' },
+    ],
+  },
+  {
+    id: 'prebuilt-5',
+    name: 'Social Media Monthly Plan',
+    description: 'Monthly content planning and scheduling tasks for social channels.',
+    isPrebuilt: true,
+    createdBy: null,
+    tasks: [
+      { comment: 'Plan content calendar for the month', category: 'Content Creation', repeatFrequency: 'Monthly' },
+      { comment: 'Create and design post creatives', category: 'Creatives & Assets', repeatFrequency: 'Monthly' },
+      { comment: 'Write captions and get client approval', category: 'Client Communication', repeatFrequency: 'Monthly' },
+      { comment: 'Schedule posts across platforms', category: 'Content Creation', repeatFrequency: 'Monthly' },
+      { comment: 'Review previous month engagement and refine strategy', category: 'Reporting & Analysis', repeatFrequency: 'Monthly' },
+    ],
+  },
+];
+
 const App = () => {
   const [activeTab, setActiveTab] = useState('home');
   const [currentUserId, setCurrentUserId] = useState(null);
@@ -62,6 +133,7 @@ const App = () => {
   const [metricsAccessRoles, setMetricsAccessRoles] = useState(['Super Admin', 'Director']);
   const [reportsAccessRoles, setReportsAccessRoles] = useState(['Super Admin', 'Director']);
   const [clientLogs, setClientLogs] = useState({});
+  const [taskTemplates, setTaskTemplates] = useState(DEFAULT_TASK_TEMPLATES);
   const [notifications, setNotifications] = useState([
     { id: 1, text: "Permissions system active", time: "Just now", read: false },
   ]);
@@ -106,6 +178,15 @@ const App = () => {
     };
     seedUsers();
 
+    // Seed DEFAULT_TASK_TEMPLATES into Firebase if the taskTemplates node is empty
+    const seedTaskTemplates = async () => {
+      const snap = await get(ref(db, 'taskTemplates'));
+      if (!snap.exists()) {
+        await set(ref(db, 'taskTemplates'), DEFAULT_TASK_TEMPLATES);
+      }
+    };
+    seedTaskTemplates();
+
     const unsubs = [
       syncRef('users', (val) => {
         const firebaseList = Array.isArray(val) ? val : Object.values(val);
@@ -121,6 +202,7 @@ const App = () => {
       syncRef('clients', (val) => setClients(Array.isArray(val) ? val : Object.values(val))),
       syncRef('clientLogs', (val) => setClientLogs(val || {})),
       syncRef('taskCategories', (val) => setTaskCategories(Array.isArray(val) ? val : DEFAULT_TASK_CATEGORIES)),
+      syncRef('taskTemplates', (val) => setTaskTemplates(Array.isArray(val) ? val : Object.values(val))),
       syncRef('departments', (val) => setDepartments(Array.isArray(val) ? val : ['Creative', 'Biddable', 'Growth', 'Client Servicing'])),
       syncRef('regions', (val) => setRegions(Array.isArray(val) ? val : ['North', 'South', 'West'])),
       syncRef('controlCenterAccessRoles', (val) => setControlCenterAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
@@ -152,6 +234,10 @@ const App = () => {
   const persistTaskCategories = (val) => {
     setTaskCategories(val);
     if (firebaseUser) set(ref(db, 'taskCategories'), val);
+  };
+  const persistTaskTemplates = (val) => {
+    setTaskTemplates(val);
+    if (firebaseUser) set(ref(db, 'taskTemplates'), val);
   };
   const persistDepartments = (val) => {
     setDepartments(val);
@@ -477,6 +563,7 @@ const App = () => {
               setUsers={persistUsers}
               currentUser={currentUser}
               taskCategories={taskCategories}
+              taskTemplates={taskTemplates}
               setNotifications={setNotifications}
               accessibleClients={accessibleClients}
             />
@@ -518,6 +605,9 @@ const App = () => {
             <MasterDataView
               taskCategories={taskCategories}
               setTaskCategories={persistTaskCategories}
+              taskTemplates={taskTemplates}
+              setTaskTemplates={persistTaskTemplates}
+              currentUser={currentUser}
               departments={departments}
               setDepartments={persistDepartments}
               regions={regions}

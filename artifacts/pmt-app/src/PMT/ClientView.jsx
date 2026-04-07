@@ -97,7 +97,7 @@ import "react-datepicker/dist/react-datepicker.css";
 const ClientView = ({ 
   selectedClient, setSelectedClient, clients = [], setClients, 
   clientLogs = {}, setClientLogs, clientSearch = "", setClientSearch,
-  users = [], setUsers, currentUser, taskCategories = [], setNotifications = () => {}
+  users = [], setUsers, currentUser, taskCategories = [], taskTemplates = [], setNotifications = () => {}
 }) => {
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
@@ -155,6 +155,16 @@ const ClientView = ({
   const [qcReviewRating, setQcReviewRating] = useState('');
   const [qcReviewFeedback, setQcReviewFeedback] = useState('');
   const [qcReviewDecision, setQcReviewDecision] = useState('approved'); // 'approved' | 'rejected'
+
+  // --- TEMPLATE APPLY STATE ---
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [templateSearch, setTemplateSearch] = useState('');
+  const [selectedTemplateId, setSelectedTemplateId] = useState(null);
+  const [templateStep, setTemplateStep] = useState(1); // 1 = pick template, 2 = set date + assignee
+  const [templateStartDate, setTemplateStartDate] = useState(new Date());
+  const [templateAssigneeId, setTemplateAssigneeId] = useState('');
+  const [templateAssigneeQuery, setTemplateAssigneeQuery] = useState('');
+  const [templateApplyError, setTemplateApplyError] = useState('');
 
   const isManagement = managementRoles.includes(currentUser?.role);
   const canAddClient = currentUser?.role === 'Super Admin' || currentUser?.role === 'Director';
@@ -509,6 +519,87 @@ const ClientView = ({
     setEditTeamQuery("");
   };
 
+  // --- TEMPLATE APPLY HELPERS ---
+  const openTemplateModal = () => {
+    setTemplateSearch('');
+    setSelectedTemplateId(null);
+    setTemplateStep(1);
+    setTemplateStartDate(new Date());
+    setTemplateAssigneeId('');
+    setTemplateAssigneeQuery('');
+    setTemplateApplyError('');
+    setShowTemplateModal(true);
+  };
+
+  const closeTemplateModal = () => {
+    setShowTemplateModal(false);
+    setSelectedTemplateId(null);
+    setTemplateStep(1);
+    setTemplateSearch('');
+    setTemplateAssigneeId('');
+    setTemplateAssigneeQuery('');
+    setTemplateApplyError('');
+  };
+
+  const handleApplyTemplate = () => {
+    if (!selectedTemplateId || !selectedClient) return;
+    const tpl = taskTemplates.find(t => t.id === selectedTemplateId);
+    if (!tpl) return;
+    const assignee = (users || []).find(u => String(u.id) === String(templateAssigneeId));
+    if (!assignee) { setTemplateApplyError('Please select an assignee.'); return; }
+    const clientTeam = getProjectStaff(selectedClient.name);
+    const clientMemberIds = new Set([
+      ...clientTeam.admins.map(u => String(u.id)),
+      ...clientTeam.employees.map(u => String(u.id)),
+    ]);
+    if (!clientMemberIds.has(String(assignee.id))) {
+      setTemplateApplyError('The selected assignee is not on this client\'s team.');
+      return;
+    }
+
+    const dateStr = format(templateStartDate, 'do MMM yyyy');
+    const newTasks = tpl.tasks.map(taskItem => ({
+      id: Date.now() + Math.random(),
+      date: dateStr,
+      dueDate: null,
+      comment: taskItem.comment,
+      result: '',
+      status: 'Pending',
+      creatorId: currentUser?.id || null,
+      creatorName: currentUser?.name || 'Unassigned',
+      creatorRole: currentUser?.role || 'Employee',
+      assigneeId: assignee.id,
+      assigneeName: assignee.name,
+      assigneeEmail: assignee.email || '',
+      category: taskItem.category || '',
+      repeatFrequency: taskItem.repeatFrequency || 'Once',
+      timerState: 'idle',
+      timerStartedAt: null,
+      elapsedMs: 0,
+      timeTaken: null,
+    }));
+
+    setClientLogs({
+      ...clientLogs,
+      [selectedClient.id]: [...newTasks, ...(clientLogs[selectedClient.id] || [])],
+    });
+
+    setNotifications(prev => [
+      {
+        id: `tpl-${Date.now()}`,
+        text: `Applied template "${tpl.name}" to ${selectedClient.name} — ${newTasks.length} task${newTasks.length !== 1 ? 's' : ''} created`,
+        time: 'Just now',
+        type: 'assignment',
+        read: false,
+        clientId: selectedClient.id,
+        clientName: selectedClient.name,
+      },
+      ...prev,
+    ]);
+
+    closeTemplateModal();
+  };
+
   const handleSaveDailyReportLink = () => {
     if (!selectedClient) return;
     const trimmed = reportUrlInput.trim();
@@ -608,6 +699,14 @@ const ClientView = ({
               <option value="WIP">WIP</option>
               <option value="Done">Completed</option>
             </select>
+            {isManagement && (
+              <button
+                onClick={openTemplateModal}
+                className="bg-white border border-slate-200 text-slate-700 px-3.5 py-2 rounded-lg font-semibold text-xs hover:bg-slate-50 transition-all flex items-center gap-1.5"
+              >
+                Use Template
+              </button>
+            )}
             <button
               onClick={() => {
                 setSelectedDate(new Date());
@@ -1529,6 +1628,207 @@ const ClientView = ({
                   >
                     {qcReviewDecision === 'approved' ? 'Approve Task' : 'Return to Employee'}
                   </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ─── TEMPLATE PICKER MODAL ─── */}
+        {showTemplateModal && (() => {
+          const projectStaffForTpl = getProjectStaff(selectedClient.name);
+          const assignableForTpl = [...projectStaffForTpl.admins, ...projectStaffForTpl.employees];
+          const filteredAssigneesForTpl = templateAssigneeQuery.trim()
+            ? assignableForTpl.filter(u => u.name.toLowerCase().includes(templateAssigneeQuery.toLowerCase()))
+            : assignableForTpl;
+          const filteredTpls = templateSearch.trim()
+            ? taskTemplates.filter(t => t.name.toLowerCase().includes(templateSearch.toLowerCase()))
+            : taskTemplates;
+          const selectedTpl = taskTemplates.find(t => t.id === selectedTemplateId) || null;
+          const repeatBadge = (freq) => {
+            if (freq === 'Daily') return 'bg-rose-100 text-rose-700';
+            if (freq === 'Weekly') return 'bg-amber-100 text-amber-700';
+            if (freq === 'Monthly') return 'bg-blue-100 text-blue-700';
+            return 'bg-slate-100 text-slate-600';
+          };
+          return (
+            <div className="fixed inset-0 z-[700] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4">
+              <div className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl border border-slate-200 flex flex-col" style={{maxHeight:'88vh'}}>
+                {/* Header */}
+                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-800">
+                      {templateStep === 1 ? 'Choose a Template' : `Apply "${selectedTpl?.name}"`}
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      {templateStep === 1
+                        ? 'Select a template to preview its tasks, then continue.'
+                        : 'Set the start date and assignee for all tasks.'}
+                    </p>
+                  </div>
+                  <button onClick={closeTemplateModal} className="p-1.5 hover:bg-slate-100 rounded-lg transition-all"><X size={16}/></button>
+                </div>
+
+                {/* Step 1: Template list + preview */}
+                {templateStep === 1 && (
+                  <div className="flex flex-1 min-h-0 overflow-hidden">
+                    {/* Left: template list */}
+                    <div className="w-1/2 border-r border-slate-100 flex flex-col">
+                      <div className="p-3 border-b border-slate-100">
+                        <div className="relative">
+                          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+                          <input
+                            value={templateSearch}
+                            onChange={e => setTemplateSearch(e.target.value)}
+                            placeholder="Search templates..."
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-2 text-sm outline-none focus:ring-2 ring-blue-500/20"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                        {filteredTpls.length === 0 && (
+                          <p className="text-center text-sm text-slate-400 py-6">No templates found</p>
+                        )}
+                        {filteredTpls.map(tpl => (
+                          <button
+                            key={tpl.id}
+                            type="button"
+                            onClick={() => setSelectedTemplateId(tpl.id)}
+                            className={`w-full text-left p-3 rounded-xl border transition-all ${
+                              selectedTemplateId === tpl.id
+                                ? 'bg-blue-50 border-blue-200'
+                                : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className={`text-sm font-semibold ${selectedTemplateId === tpl.id ? 'text-blue-700' : 'text-slate-800'}`}>{tpl.name}</p>
+                              {tpl.isPrebuilt && (
+                                <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">Prebuilt</span>
+                              )}
+                            </div>
+                            {tpl.description && (
+                              <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-1">{tpl.description}</p>
+                            )}
+                            <p className="text-[10px] text-slate-400 mt-1">{(tpl.tasks || []).length} tasks</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Right: preview */}
+                    <div className="w-1/2 flex flex-col">
+                      {!selectedTpl ? (
+                        <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
+                          Select a template to preview
+                        </div>
+                      ) : (
+                        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                          <p className="text-xs font-bold text-slate-700 mb-2">Tasks in this template</p>
+                          {(selectedTpl.tasks || []).map((task, idx) => (
+                            <div key={idx} className="flex items-start gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-100">
+                              <span className="w-4 h-4 rounded-full bg-slate-200 text-slate-500 text-[9px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{idx + 1}</span>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-medium text-slate-700 leading-snug">{task.comment}</p>
+                                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                  {task.category && (
+                                    <span className="text-[9px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded-full">{task.category}</span>
+                                  )}
+                                  <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${repeatBadge(task.repeatFrequency)}`}>
+                                    {task.repeatFrequency}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Step 2: Date + assignee */}
+                {templateStep === 2 && (
+                  <div className="flex-1 overflow-y-auto p-6 space-y-5">
+                    {/* Date */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-slate-700">Start Date</label>
+                      <DatePicker
+                        selected={templateStartDate}
+                        onChange={date => setTemplateStartDate(date)}
+                        dateFormat="do MMM yyyy"
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 ring-blue-500/20"
+                      />
+                    </div>
+
+                    {/* Assignee */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-slate-700">Assignee <span className="text-red-500">*</span></label>
+                      <div className="relative">
+                        <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+                        <input
+                          value={templateAssigneeQuery}
+                          onChange={e => { setTemplateAssigneeQuery(e.target.value); setTemplateAssigneeId(''); }}
+                          placeholder="Search team member..."
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-2 text-sm outline-none focus:ring-2 ring-blue-500/20"
+                        />
+                      </div>
+                      <div className="space-y-1 max-h-52 overflow-y-auto">
+                        {filteredAssigneesForTpl.map(u => (
+                          <button
+                            key={u.id}
+                            type="button"
+                            onClick={() => { setTemplateAssigneeId(u.id); setTemplateAssigneeQuery(u.name); setTemplateApplyError(''); }}
+                            className={`w-full text-left flex items-center gap-3 p-2.5 rounded-lg border transition-all ${
+                              String(templateAssigneeId) === String(u.id)
+                                ? 'bg-blue-50 border-blue-200'
+                                : 'bg-white border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${String(templateAssigneeId) === String(u.id) ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                              {(u.name || '?')[0].toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="text-xs font-semibold text-slate-800">{u.name}</p>
+                              <p className="text-[10px] text-slate-400">{u.role}</p>
+                            </div>
+                          </button>
+                        ))}
+                        {filteredAssigneesForTpl.length === 0 && (
+                          <p className="text-xs text-slate-400 text-center py-4">No team members found</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {templateApplyError && (
+                      <p className="text-xs font-semibold text-red-500">{templateApplyError}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Footer */}
+                <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-slate-100">
+                  <button
+                    onClick={templateStep === 1 ? closeTemplateModal : () => setTemplateStep(1)}
+                    className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-all"
+                  >
+                    {templateStep === 1 ? 'Cancel' : 'Back'}
+                  </button>
+                  {templateStep === 1 ? (
+                    <button
+                      disabled={!selectedTemplateId}
+                      onClick={() => setTemplateStep(2)}
+                      className="px-5 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Continue
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleApplyTemplate}
+                      className="px-5 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-all shadow-sm"
+                    >
+                      Apply Template
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
