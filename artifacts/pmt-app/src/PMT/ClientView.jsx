@@ -973,23 +973,8 @@ const ClientView = ({
                           )}
                         </div>
                       </td>
-                      <td className="px-1.5 py-2" onClick={(e) => e.stopPropagation()}>
-                        {canFullyEditTask(log) ? (
-                          <select
-                            className="w-full min-w-0 text-[10px] border border-slate-200 rounded-md px-2 py-1 font-semibold outline-none cursor-pointer bg-white text-slate-700"
-                            value={log.category || taskCategories[0] || 'General'}
-                            onChange={e => {
-                              const updated = clientLogs[selectedClient.id].map(l => l.id === log.id ? { ...l, category: e.target.value } : l);
-                              setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
-                            }}
-                          >
-                            {(taskCategories.length ? taskCategories : ['General']).map(category => (
-                              <option key={category} value={category}>{category}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          <span className="text-[10px] font-semibold text-slate-600 px-1">{log.category || 'General'}</span>
-                        )}
+                      <td className="px-1.5 py-2">
+                        <span className="text-[10px] font-semibold text-slate-600 px-1">{log.category || 'General'}</span>
                       </td>
                       <td className="px-1.5 py-2 text-xs text-slate-600">
                         <div className="leading-4">
