@@ -116,7 +116,8 @@ const HomeView = ({
       qcFeedback: null,
       qcReviewedAt: null,
     };
-    setClientLogs(prev => ({ ...prev, [selectedClientId]: [newTask, ...(prev[selectedClientId] || [])] }));
+    const nextLogs = { ...clientLogs, [selectedClientId]: [newTask, ...(clientLogs[selectedClientId] || [])] };
+    setClientLogs(nextLogs);
     closeModal();
   };
 
