@@ -35,13 +35,13 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
             isMinimized
               ? 'w-12 h-12 rounded-2xl'
               : 'w-40 h-10 rounded-xl'
-          } border border-white/80 bg-white/75 backdrop-blur-sm flex items-center justify-center font-black text-slate-900 tracking-tighter shadow-sm`}
+          } border border-white/80 bg-white/75 backdrop-blur-sm flex items-center justify-center font-black text-slate-900 tracking-tighter shadow-sm overflow-hidden`}
         >
           {!logoError ? (
             <img
-              src="/company-logo.png"
-              alt="Company Logo"
-              className={`${isMinimized ? 'h-6' : 'h-7'} w-auto object-contain`}
+              src="/ethinos-logo.png"
+              alt="Ethinos"
+              className={`${isMinimized ? 'h-5' : 'h-6'} w-auto object-contain`}
               onError={() => setLogoError(true)}
             />
           ) : (

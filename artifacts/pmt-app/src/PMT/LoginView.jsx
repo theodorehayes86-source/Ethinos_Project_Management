@@ -80,13 +80,16 @@ const LoginView = ({ onLogin, onGoogleLogin, onCreateAccount, loginError }) => {
           {/* Left panel */}
           <section className="hidden flex-col justify-between bg-gradient-to-br from-rose-400/50 via-indigo-500/45 to-yellow-200/45 p-10 text-white md:flex">
             <div>
-              <h1 className="mt-4 text-4xl font-black leading-tight tracking-tight text-white">Plan. Execute. Grow.</h1>
+              <div className="inline-flex items-center rounded-2xl border border-white/30 bg-white/90 px-5 py-2.5 shadow-md backdrop-blur-sm">
+                <img src="/ethinos-logo.png" alt="Ethinos" className="h-6 w-auto object-contain" />
+              </div>
+              <h1 className="mt-8 text-4xl font-black leading-tight tracking-tight text-white">Plan. Execute. Grow.</h1>
               <p className="mt-4 max-w-sm text-sm text-white/85">
                 Centralized project tracking for teams, tasks, and outcomes.
               </p>
             </div>
             <div className="rounded-2xl border border-white/35 bg-white/15 p-4 backdrop-blur-sm">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-white/85">Ethinos PMT</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-white/85">Project Management Tool</p>
               <p className="mt-2 text-sm text-white">
                 {mode === 'signin'
                   ? 'Sign in with your Ethinos work email to access your workspace.'
@@ -101,6 +104,7 @@ const LoginView = ({ onLogin, onGoogleLogin, onCreateAccount, loginError }) => {
             {mode === 'signin' ? (
               <>
                 <div className="mb-6">
+                  <img src="/ethinos-logo.png" alt="Ethinos" className="mb-4 h-7 w-auto object-contain md:hidden" />
                   <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-900">Welcome</h2>
                   <p className="mt-1 text-sm text-slate-600">Sign in to continue to your workspace.</p>
                 </div>
