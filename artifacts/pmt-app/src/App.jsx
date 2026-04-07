@@ -17,26 +17,9 @@ import Notifications from './PMT/Notifications';
 import ProfileDropdown from './PMT/ProfileDropdown';
 import LoginView from './PMT/LoginView';
 import TestModePanel, { TEST_USERS } from './PMT/TestModePanel';
-import { TEST_CLIENT_ID, TEST_CLIENT, buildTestTasks } from './PMT/testFixtures';
 
 const DEFAULT_USERS = [
-  { id: 1, name: "Theo", email: "theo.hayes@ethinos.com", role: 'Super Admin', assignedProjects: ["All"], department: 'Growth', region: 'North' },
-  { id: 201, name: "Ankit", email: "ankit@ethinos.com", role: 'Director', assignedProjects: ["KMF", "Durian"], department: 'Growth', region: 'South' },
-  { id: 202, name: "Poonam", email: "poonam@ethinos.com", role: 'Director', assignedProjects: ["Bajaj - Chetak", "Bajaj - KTM"], department: 'Client Servicing', region: 'West' },
-  { id: 205, name: "Suresh", email: "suresh@ethinos.com", role: 'Director', assignedProjects: ["KMF", "Durian", "Bajaj - Chetak", "Bajaj - KTM"], department: 'Growth', region: 'North' },
-  { id: 203, name: "Sanford", email: "sanford@ethinos.com", role: 'Manager', assignedProjects: ["Bajaj - Chetak"], department: 'Client Servicing', region: 'North' },
-  { id: 204, name: "Yogesh", email: "yogesh@ethinos.com", role: 'Manager', assignedProjects: ["Bajaj - KTM"], department: 'Client Servicing', region: 'South' },
-  { id: 206, name: "Abha", email: "abha@ethinos.com", role: 'Manager', assignedProjects: ["KMF"], department: 'Growth', region: 'North' },
-  { id: 207, name: "Gaurav Sharma", email: "gaurav.sharma@ethinos.com", role: 'Manager', assignedProjects: ["Durian"], department: 'Growth', region: 'South' },
-  { id: 208, name: "Manuj", email: "manuj@ethinos.com", role: 'Manager', assignedProjects: ["Bajaj - Chetak"], department: 'Growth', region: 'West' },
-  { id: 209, name: "Rajesh", email: "rajesh@ethinos.com", role: 'Manager', assignedProjects: ["Bajaj - KTM"], department: 'Growth', region: 'North' },
-  { id: 210, name: "Prashanth Raghavan", email: "prashanth.r@ethinos.com", role: 'Manager', assignedProjects: ["KMF", "Durian"], department: 'Growth', region: 'South' },
-  { id: 211, name: "Chinthan", email: "chinthan@ethinos.com", role: 'Manager', assignedProjects: ["Bajaj - Chetak"], department: 'Growth', region: 'West' },
-  { id: 212, name: "Shivananda", email: "shivananda@ethinos.com", role: 'Manager', assignedProjects: ["Bajaj - KTM"], department: 'Growth', region: 'North' },
-  { id: 213, name: "Yash", email: "yash.manager@ethinos.com", role: 'Manager', assignedProjects: ["KMF"], department: 'Growth', region: 'South' },
-  { id: 214, name: "Ritwick", email: "ritwick@ethinos.com", role: 'Manager', assignedProjects: ["Durian"], department: 'Growth', region: 'West' },
-  { id: 215, name: "Yash Karnawat", email: "yash.karnawat@ethinos.com", role: 'Manager', assignedProjects: ["Bajaj - Chetak"], department: 'Growth', region: 'North' },
-  { id: 216, name: "Pranali", email: "pranali@ethinos.com", role: 'Manager', assignedProjects: ["Bajaj - KTM"], department: 'Growth', region: 'South' },
+  { id: 1, name: "Theo", email: "theo.hayes@ethinos.com", role: 'Super Admin', assignedProjects: [], department: 'Growth', region: 'North' },
   ...TEST_USERS,
 ];
 
@@ -162,76 +145,7 @@ const App = () => {
     return unsubscribe;
   }, []);
 
-  // --- SEED TEST CLIENT + TEST TASKS (runs on mount, no auth required) ---
-  useEffect(() => {
-    const seedTestData = async () => {
-      try {
-        const clientsSnap = await get(ref(db, 'clients'));
-        const existingClients = clientsSnap.exists()
-          ? (Array.isArray(clientsSnap.val()) ? clientsSnap.val() : Object.values(clientsSnap.val()))
-          : [];
 
-        let resolvedTestClientId = TEST_CLIENT_ID;
-        const alreadyExists = existingClients.find(c => c.id === TEST_CLIENT_ID || c.name === 'Test Client');
-        if (!alreadyExists) {
-          await set(ref(db, 'clients'), [...existingClients, TEST_CLIENT]);
-        } else {
-          resolvedTestClientId = alreadyExists.id;
-        }
-
-        const logsSnap = await get(ref(db, `clientLogs/${resolvedTestClientId}`));
-        if (!logsSnap.exists()) {
-          await set(ref(db, `clientLogs/${resolvedTestClientId}`), buildTestTasks());
-        }
-      } catch {
-        // Non-fatal: if Firebase is unavailable, skip seeding
-      }
-    };
-    seedTestData();
-  }, []);
-
-  // --- TEST MODE: load in-memory test data (works without Firebase auth) ---
-  useEffect(() => {
-    if (!testModeUserId) return;
-    if (firebaseUser) return; // authenticated path handles live sync
-    const testTasks = buildTestTasks();
-    setClients(prev => {
-      const already = prev.find(c => c.id === TEST_CLIENT_ID || c.name === 'Test Client');
-      return already ? prev : [...prev, TEST_CLIENT];
-    });
-    setClientLogs(prev => ({
-      ...prev,
-      [TEST_CLIENT_ID]: prev[TEST_CLIENT_ID] || testTasks,
-    }));
-    setDbReady(true);
-
-    // Also attempt a Firebase sync in the background (succeeds if auth rules allow unauth reads)
-    const tryFirebaseSync = async () => {
-      try {
-        const [clientsSnap, logsSnap] = await Promise.all([
-          get(ref(db, 'clients')),
-          get(ref(db, 'clientLogs')),
-        ]);
-        if (clientsSnap.exists()) {
-          const val = clientsSnap.val();
-          const list = Array.isArray(val) ? val : Object.values(val);
-          setClients(prev => {
-            const merged = [...list];
-            if (!merged.find(c => c.id === TEST_CLIENT_ID || c.name === 'Test Client')) {
-              merged.push(TEST_CLIENT);
-            }
-            return merged;
-          });
-        }
-        if (logsSnap.exists()) {
-          setClientLogs(prev => ({ [TEST_CLIENT_ID]: prev[TEST_CLIENT_ID] || testTasks, ...logsSnap.val() }));
-        }
-      } catch {
-        // Firebase rules likely require auth — in-memory data already loaded above
-      }
-    };
-    tryFirebaseSync();
-  }, [testModeUserId, firebaseUser]);
 
   // --- FIREBASE DATA SYNC (read once on auth) ---
   useEffect(() => {
@@ -250,18 +164,6 @@ const App = () => {
       const snap = await get(ref(db, 'users'));
       if (!snap.exists()) {
         await set(ref(db, 'users'), DEFAULT_USERS);
-      } else {
-        // Upsert test users to Firebase so they exist regardless of prior seeding
-        const existing = Array.isArray(snap.val()) ? snap.val() : Object.values(snap.val());
-        let updated = [...existing];
-        let changed = false;
-        TEST_USERS.forEach(tu => {
-          if (!updated.find(u => u.email?.toLowerCase() === tu.email?.toLowerCase())) {
-            updated.push(tu);
-            changed = true;
-          }
-        });
-        if (changed) await set(ref(db, 'users'), updated);
       }
     };
     seedUsers();
@@ -275,40 +177,10 @@ const App = () => {
     };
     seedTaskTemplates();
 
-    // Seed Test Client + test tasks into Firebase (authenticated, so rules allow writes)
-    const seedTestClientAndTasks = async () => {
-      try {
-        const clientsSnap = await get(ref(db, 'clients'));
-        const existingClients = clientsSnap.exists()
-          ? (Array.isArray(clientsSnap.val()) ? clientsSnap.val() : Object.values(clientsSnap.val()))
-          : [];
-        const alreadyHasClient = existingClients.find(c => c.id === TEST_CLIENT_ID || c.name === 'Test Client');
-        if (!alreadyHasClient) {
-          await set(ref(db, 'clients'), [...existingClients, TEST_CLIENT]);
-        }
-        const resolvedId = alreadyHasClient?.id || TEST_CLIENT_ID;
-        const logsSnap = await get(ref(db, `clientLogs/${resolvedId}`));
-        if (!logsSnap.exists()) {
-          await set(ref(db, `clientLogs/${resolvedId}`), buildTestTasks());
-        }
-      } catch {
-        // Non-fatal — test data will be available in-memory via test mode effect
-      }
-    };
-    seedTestClientAndTasks();
-
-
     const unsubs = [
       syncRef('users', (val) => {
         const firebaseList = Array.isArray(val) ? val : Object.values(val);
-        // Merge: keep all Firebase users and back-fill any DEFAULT_USERS not yet in Firebase
-        const merged = [...firebaseList];
-        DEFAULT_USERS.forEach(du => {
-          if (!merged.find(u => u.email?.toLowerCase() === du.email?.toLowerCase())) {
-            merged.push(du);
-          }
-        });
-        setUsers(merged);
+        setUsers(firebaseList);
       }),
       syncRef('clients', (val) => setClients(Array.isArray(val) ? val : Object.values(val))),
       syncRef('clientLogs', (val) => setClientLogs(val || {})),
