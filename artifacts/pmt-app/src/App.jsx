@@ -220,17 +220,27 @@ const App = () => {
   }, [firebaseUser]);
 
   // --- FIREBASE WRITE HELPERS ---
+  // Firebase rejects `undefined` values — replace them recursively with `null`
+  const sanitizeForFirebase = (value) => {
+    if (value === undefined) return null;
+    if (value === null || typeof value !== 'object') return value;
+    if (Array.isArray(value)) return value.map(sanitizeForFirebase);
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k, sanitizeForFirebase(v)])
+    );
+  };
+
   const persistUsers = (nextUsers) => {
     setUsers(nextUsers);
-    if (firebaseUser) set(ref(db, 'users'), nextUsers);
+    if (firebaseUser) set(ref(db, 'users'), sanitizeForFirebase(nextUsers));
   };
   const persistClients = (nextClients) => {
     setClients(nextClients);
-    if (firebaseUser) set(ref(db, 'clients'), nextClients);
+    if (firebaseUser) set(ref(db, 'clients'), sanitizeForFirebase(nextClients));
   };
   const persistClientLogs = (nextLogs) => {
     setClientLogs(nextLogs);
-    if (firebaseUser) set(ref(db, 'clientLogs'), nextLogs);
+    if (firebaseUser) set(ref(db, 'clientLogs'), sanitizeForFirebase(nextLogs));
   };
   const persistTaskCategories = (val) => {
     setTaskCategories(val);
@@ -238,23 +248,23 @@ const App = () => {
   };
   const persistTaskTemplates = (val) => {
     setTaskTemplates(val);
-    if (firebaseUser) set(ref(db, 'taskTemplates'), val);
+    if (firebaseUser) set(ref(db, 'taskTemplates'), sanitizeForFirebase(val));
   };
   const persistDepartments = (val) => {
     setDepartments(val);
-    if (firebaseUser) set(ref(db, 'departments'), val);
+    if (firebaseUser) set(ref(db, 'departments'), sanitizeForFirebase(val));
   };
   const persistRegions = (val) => {
     setRegions(val);
-    if (firebaseUser) set(ref(db, 'regions'), val);
+    if (firebaseUser) set(ref(db, 'regions'), sanitizeForFirebase(val));
   };
   const persistControlCenterRoles = (val) => {
     setControlCenterAccessRoles(val);
-    if (firebaseUser) set(ref(db, 'controlCenterAccessRoles'), val);
+    if (firebaseUser) set(ref(db, 'controlCenterAccessRoles'), sanitizeForFirebase(val));
   };
   const persistSettingsRoles = (val) => {
     setSettingsAccessRoles(val);
-    if (firebaseUser) set(ref(db, 'settingsAccessRoles'), val);
+    if (firebaseUser) set(ref(db, 'settingsAccessRoles'), sanitizeForFirebase(val));
   };
   const persistUserManagementRoles = (val) => {
     setUserManagementAccessRoles(val);
