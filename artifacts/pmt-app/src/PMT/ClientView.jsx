@@ -1,5 +1,95 @@
 import React, { useEffect, useState } from 'react';
-import { Search, ChevronLeft, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, Play, Pause, Square, MoreVertical } from 'lucide-react';
+import { Search, ChevronLeft, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, Play, Pause, Square, MoreVertical, Check, Users } from 'lucide-react';
+
+/* ─── Reusable User Picker Modal ─── */
+const UserPickerModal = ({ title, users, selected, onToggle, onClose, pickerSearch, setPickerSearch }) => {
+  const q = pickerSearch.toLowerCase().trim();
+  const filtered = (users || []).filter(u =>
+    !q ||
+    (u.name || '').toLowerCase().includes(q) ||
+    (u.role || '').toLowerCase().includes(q) ||
+    (u.department || '').toLowerCase().includes(q)
+  );
+  const roleColor = (role = '') => {
+    if (['Super Admin'].includes(role)) return 'bg-purple-100 text-purple-700';
+    if (['Director','Business Head'].includes(role)) return 'bg-blue-100 text-blue-700';
+    if (['Manager','Snr Manager','Project Manager','CSM'].includes(role)) return 'bg-indigo-100 text-indigo-700';
+    return 'bg-slate-100 text-slate-600';
+  };
+  return (
+    <div className="fixed inset-0 z-[900] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4">
+      <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 flex flex-col" style={{maxHeight:'80vh'}}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <Users size={16} className="text-blue-600" />
+            <h3 className="text-base font-bold text-slate-800">{title}</h3>
+            {selected.length > 0 && (
+              <span className="bg-blue-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">{selected.length}</span>
+            )}
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg transition-all"><X size={16}/></button>
+        </div>
+        {/* Search */}
+        <div className="px-4 py-3 border-b border-slate-100">
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+            <input
+              autoFocus
+              type="text"
+              placeholder="Search by name, role, or department..."
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 ring-blue-500/20 focus:border-blue-300"
+              value={pickerSearch}
+              onChange={e => setPickerSearch(e.target.value)}
+            />
+          </div>
+        </div>
+        {/* User List */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+          {filtered.length === 0 && (
+            <p className="text-center text-sm text-slate-400 py-8">No users found</p>
+          )}
+          {filtered.map(u => {
+            const isSelected = selected.includes(u.id);
+            return (
+              <button
+                key={u.id}
+                type="button"
+                onClick={() => onToggle(u.id)}
+                className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${
+                  isSelected ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                {/* Avatar */}
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0 ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                  {isSelected ? <Check size={14}/> : (u.name || '?')[0].toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm font-semibold truncate ${isSelected ? 'text-blue-700' : 'text-slate-800'}`}>{u.name}</p>
+                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${roleColor(u.role)}`}>{u.role}</span>
+                    {u.department && <span className="text-[10px] text-slate-400">{u.department}</span>}
+                  </div>
+                </div>
+                {isSelected && <Check size={14} className="text-blue-600 flex-shrink-0"/>}
+              </button>
+            );
+          })}
+        </div>
+        {/* Footer */}
+        <div className="px-4 py-3 border-t border-slate-100">
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm py-2.5 rounded-lg transition-all shadow-sm"
+          >
+            Done — {selected.length} selected
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 import DatePicker from "react-datepicker";
 import { format, subDays, parse } from 'date-fns';
 import "react-datepicker/dist/react-datepicker.css";
@@ -52,6 +142,8 @@ const ClientView = ({
   const [editClientEmployees, setEditClientEmployees] = useState([]);
   const [editAdminQuery, setEditAdminQuery] = useState("");
   const [editTeamQuery, setEditTeamQuery] = useState("");
+  const [activePicker, setActivePicker] = useState(null); // 'addLeadership'|'addTeam'|'editLeadership'|'editTeam'
+  const [pickerSearch, setPickerSearch] = useState("");
 
   const isManagement = managementRoles.includes(currentUser?.role);
   const canAddClient = currentUser?.role === 'Super Admin' || currentUser?.role === 'Director';
@@ -1338,71 +1430,54 @@ const ClientView = ({
                 <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Client Name</label>
                 <input type="text" className="w-full p-3 border border-slate-200 bg-white rounded-lg text-sm font-medium outline-none focus:ring-2 ring-blue-500/20 transition-all" placeholder="Enter client name" value={newClientName} onChange={(e) => setNewClientName(e.target.value)} required />
               </div>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-[360px]">
-                <div className="flex flex-col space-y-3">
-                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Leadership</label>
-                  <div className="relative">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
-                    <input type="text" placeholder="Search admins" className="w-full bg-white border border-slate-200 rounded-lg pl-10 pr-3 py-2 text-sm font-medium outline-none focus:ring-2 ring-blue-500/20" value={adminQuery} onChange={(e) => setAdminQuery(e.target.value)}/>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Leadership Picker */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Leadership</label>
+                    <button type="button" onClick={() => { setPickerSearch(""); setActivePicker('addLeadership'); }}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-all">
+                      <Users size={12}/> Select Members
+                    </button>
                   </div>
-                  <div className="flex-1 overflow-y-auto border border-slate-200 rounded-xl p-2.5 bg-slate-50/40 space-y-2">
-                    {adminQuery.trim() ? getUserSuggestionsByRole(managementRoles, adminQuery).map(admin => (
-                      <button
-                        key={admin.id}
-                        type="button"
-                        onClick={() => selectedAdmins.includes(admin.id)
-                          ? setSelectedAdmins(selectedAdmins.filter(id => id !== admin.id))
-                          : setSelectedAdmins([...selectedAdmins, admin.id])
-                        }
-                        className={`w-full flex items-center justify-between p-3 rounded-lg transition-all border ${selectedAdmins.includes(admin.id)
-                          ? 'bg-blue-50 border-blue-200 text-blue-700'
-                          : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
-                        }`}
-                      >
-                        <span className="text-sm font-semibold">{admin.name}</span>
-                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${selectedAdmins.includes(admin.id) ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
-                          {selectedAdmins.includes(admin.id) ? 'Selected' : 'Add'}
-                        </span>
-                      </button>
-                    )) : (
-                      <p className="text-xs font-medium text-slate-500 px-1 py-2">Type to search leadership members.</p>
-                    )}
-                    {adminQuery.trim() && !getUserSuggestionsByRole(managementRoles, adminQuery).length && (
-                      <p className="text-xs font-medium text-slate-500 px-1 py-2">No close leadership matches found.</p>
-                    )}
+                  <div className="min-h-[60px] border border-slate-200 rounded-xl p-2.5 bg-slate-50/40 flex flex-wrap gap-1.5 items-start">
+                    {selectedAdmins.length === 0
+                      ? <p className="text-xs text-slate-400 italic">No leadership selected</p>
+                      : selectedAdmins.map(id => {
+                          const u = (users || []).find(x => x.id === id);
+                          return u ? (
+                            <span key={id} className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold px-2 py-1 rounded-full">
+                              <Crown size={10} className="fill-blue-500 text-blue-500"/>
+                              {u.name}
+                              <button type="button" onClick={() => setSelectedAdmins(selectedAdmins.filter(x => x !== id))} className="ml-0.5 hover:text-blue-900"><X size={10}/></button>
+                            </span>
+                          ) : null;
+                        })
+                    }
                   </div>
                 </div>
-                <div className="flex flex-col space-y-3">
-                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Team</label>
-                  <div className="relative">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
-                    <input type="text" placeholder="Search team" className="w-full bg-white border border-slate-200 rounded-lg pl-10 pr-3 py-2 text-sm font-medium outline-none focus:ring-2 ring-blue-500/20" value={teamQuery} onChange={(e) => setTeamQuery(e.target.value)}/>
+                {/* Team Picker */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Team</label>
+                    <button type="button" onClick={() => { setPickerSearch(""); setActivePicker('addTeam'); }}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-all">
+                      <Users size={12}/> Select Members
+                    </button>
                   </div>
-                  <div className="flex-1 overflow-y-auto border border-slate-200 rounded-xl p-2.5 bg-slate-50/40 space-y-2">
-                    {teamQuery.trim() ? getUserSuggestionsByRole(executionRoles, teamQuery).map(emp => (
-                      <button
-                        key={emp.id}
-                        type="button"
-                        onClick={() => selectedEmployees.includes(emp.id)
-                          ? setSelectedEmployees(selectedEmployees.filter(id => id !== emp.id))
-                          : setSelectedEmployees([...selectedEmployees, emp.id])
-                        }
-                        className={`w-full flex items-center justify-between p-3 rounded-lg transition-all border ${selectedEmployees.includes(emp.id)
-                          ? 'bg-blue-50 border-blue-200 text-blue-700'
-                          : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
-                        }`}
-                      >
-                        <span className="text-sm font-semibold">{emp.name}</span>
-                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${selectedEmployees.includes(emp.id) ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
-                          {selectedEmployees.includes(emp.id) ? 'Selected' : 'Add'}
-                        </span>
-                      </button>
-                    )) : (
-                      <p className="text-xs font-medium text-slate-500 px-1 py-2">Type to search team members.</p>
-                    )}
-                    {teamQuery.trim() && !getUserSuggestionsByRole(executionRoles, teamQuery).length && (
-                      <p className="text-xs font-medium text-slate-500 px-1 py-2">No close team matches found.</p>
-                    )}
+                  <div className="min-h-[60px] border border-slate-200 rounded-xl p-2.5 bg-slate-50/40 flex flex-wrap gap-1.5 items-start">
+                    {selectedEmployees.length === 0
+                      ? <p className="text-xs text-slate-400 italic">No team members selected</p>
+                      : selectedEmployees.map(id => {
+                          const u = (users || []).find(x => x.id === id);
+                          return u ? (
+                            <span key={id} className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold px-2 py-1 rounded-full">
+                              {u.name}
+                              <button type="button" onClick={() => setSelectedEmployees(selectedEmployees.filter(x => x !== id))} className="ml-0.5 hover:text-slate-900"><X size={10}/></button>
+                            </span>
+                          ) : null;
+                        })
+                    }
                   </div>
                 </div>
               </div>
@@ -1429,71 +1504,54 @@ const ClientView = ({
                 <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Client Name</label>
                 <input type="text" className="w-full p-3 border border-slate-200 bg-white rounded-lg text-sm font-medium outline-none focus:ring-2 ring-blue-500/20 transition-all" placeholder="Enter client name" value={editClientName} onChange={(e) => setEditClientName(e.target.value)} required />
               </div>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-[360px]">
-                <div className="flex flex-col space-y-3">
-                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Leadership</label>
-                  <div className="relative">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
-                    <input type="text" placeholder="Search admins" className="w-full bg-white border border-slate-200 rounded-lg pl-10 pr-3 py-2 text-sm font-medium outline-none focus:ring-2 ring-blue-500/20" value={editAdminQuery} onChange={(e) => setEditAdminQuery(e.target.value)}/>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Edit Leadership Picker */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Leadership</label>
+                    <button type="button" onClick={() => { setPickerSearch(""); setActivePicker('editLeadership'); }}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-all">
+                      <Users size={12}/> Select Members
+                    </button>
                   </div>
-                  <div className="flex-1 overflow-y-auto border border-slate-200 rounded-xl p-2.5 bg-slate-50/40 space-y-2">
-                    {editAdminQuery.trim() ? getUserSuggestionsByRole(managementRoles, editAdminQuery).map(admin => (
-                      <button
-                        key={admin.id}
-                        type="button"
-                        onClick={() => editClientAdmins.includes(admin.id)
-                          ? setEditClientAdmins(editClientAdmins.filter(id => id !== admin.id))
-                          : setEditClientAdmins([...editClientAdmins, admin.id])
-                        }
-                        className={`w-full flex items-center justify-between p-3 rounded-lg transition-all border ${editClientAdmins.includes(admin.id)
-                          ? 'bg-blue-50 border-blue-200 text-blue-700'
-                          : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
-                        }`}
-                      >
-                        <span className="text-sm font-semibold">{admin.name}</span>
-                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${editClientAdmins.includes(admin.id) ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
-                          {editClientAdmins.includes(admin.id) ? 'Selected' : 'Add'}
-                        </span>
-                      </button>
-                    )) : (
-                      <p className="text-xs font-medium text-slate-500 px-1 py-2">Type to search leadership members.</p>
-                    )}
-                    {editAdminQuery.trim() && !getUserSuggestionsByRole(managementRoles, editAdminQuery).length && (
-                      <p className="text-xs font-medium text-slate-500 px-1 py-2">No close leadership matches found.</p>
-                    )}
+                  <div className="min-h-[60px] border border-slate-200 rounded-xl p-2.5 bg-slate-50/40 flex flex-wrap gap-1.5 items-start">
+                    {editClientAdmins.length === 0
+                      ? <p className="text-xs text-slate-400 italic">No leadership selected</p>
+                      : editClientAdmins.map(id => {
+                          const u = (users || []).find(x => x.id === id);
+                          return u ? (
+                            <span key={id} className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold px-2 py-1 rounded-full">
+                              <Crown size={10} className="fill-blue-500 text-blue-500"/>
+                              {u.name}
+                              <button type="button" onClick={() => setEditClientAdmins(editClientAdmins.filter(x => x !== id))} className="ml-0.5 hover:text-blue-900"><X size={10}/></button>
+                            </span>
+                          ) : null;
+                        })
+                    }
                   </div>
                 </div>
-                <div className="flex flex-col space-y-3">
-                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Team</label>
-                  <div className="relative">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
-                    <input type="text" placeholder="Search team" className="w-full bg-white border border-slate-200 rounded-lg pl-10 pr-3 py-2 text-sm font-medium outline-none focus:ring-2 ring-blue-500/20" value={editTeamQuery} onChange={(e) => setEditTeamQuery(e.target.value)}/>
+                {/* Edit Team Picker */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Team</label>
+                    <button type="button" onClick={() => { setPickerSearch(""); setActivePicker('editTeam'); }}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-all">
+                      <Users size={12}/> Select Members
+                    </button>
                   </div>
-                  <div className="flex-1 overflow-y-auto border border-slate-200 rounded-xl p-2.5 bg-slate-50/40 space-y-2">
-                    {editTeamQuery.trim() ? getUserSuggestionsByRole(executionRoles, editTeamQuery).map(emp => (
-                      <button
-                        key={emp.id}
-                        type="button"
-                        onClick={() => editClientEmployees.includes(emp.id)
-                          ? setEditClientEmployees(editClientEmployees.filter(id => id !== emp.id))
-                          : setEditClientEmployees([...editClientEmployees, emp.id])
-                        }
-                        className={`w-full flex items-center justify-between p-3 rounded-lg transition-all border ${editClientEmployees.includes(emp.id)
-                          ? 'bg-blue-50 border-blue-200 text-blue-700'
-                          : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
-                        }`}
-                      >
-                        <span className="text-sm font-semibold">{emp.name}</span>
-                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${editClientEmployees.includes(emp.id) ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
-                          {editClientEmployees.includes(emp.id) ? 'Selected' : 'Add'}
-                        </span>
-                      </button>
-                    )) : (
-                      <p className="text-xs font-medium text-slate-500 px-1 py-2">Type to search team members.</p>
-                    )}
-                    {editTeamQuery.trim() && !getUserSuggestionsByRole(executionRoles, editTeamQuery).length && (
-                      <p className="text-xs font-medium text-slate-500 px-1 py-2">No close team matches found.</p>
-                    )}
+                  <div className="min-h-[60px] border border-slate-200 rounded-xl p-2.5 bg-slate-50/40 flex flex-wrap gap-1.5 items-start">
+                    {editClientEmployees.length === 0
+                      ? <p className="text-xs text-slate-400 italic">No team members selected</p>
+                      : editClientEmployees.map(id => {
+                          const u = (users || []).find(x => x.id === id);
+                          return u ? (
+                            <span key={id} className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold px-2 py-1 rounded-full">
+                              {u.name}
+                              <button type="button" onClick={() => setEditClientEmployees(editClientEmployees.filter(x => x !== id))} className="ml-0.5 hover:text-slate-900"><X size={10}/></button>
+                            </span>
+                          ) : null;
+                        })
+                    }
                   </div>
                 </div>
               </div>
@@ -1505,6 +1563,32 @@ const ClientView = ({
           </div>
         </div>
       )}
+
+      {/* User Picker Modal */}
+      {activePicker && (() => {
+        const isLeadership = activePicker === 'addLeadership' || activePicker === 'editLeadership';
+        const roleGroup = isLeadership ? managementRoles : executionRoles;
+        const pickerUsers = (users || []).filter(u => roleGroup.includes(u.role));
+        const selected = activePicker === 'addLeadership' ? selectedAdmins
+          : activePicker === 'addTeam' ? selectedEmployees
+          : activePicker === 'editLeadership' ? editClientAdmins
+          : editClientEmployees;
+        const setSelected = activePicker === 'addLeadership' ? setSelectedAdmins
+          : activePicker === 'addTeam' ? setSelectedEmployees
+          : activePicker === 'editLeadership' ? setEditClientAdmins
+          : setEditClientEmployees;
+        return (
+          <UserPickerModal
+            title={isLeadership ? 'Select Leadership' : 'Select Team Members'}
+            users={pickerUsers}
+            selected={selected}
+            onToggle={id => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])}
+            onClose={() => setActivePicker(null)}
+            pickerSearch={pickerSearch}
+            setPickerSearch={setPickerSearch}
+          />
+        );
+      })()}
     </div>
   );
 };
