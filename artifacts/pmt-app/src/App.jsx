@@ -1,0 +1,399 @@
+import React, { useEffect, useState } from 'react';
+import { ref, onValue, set } from 'firebase/database';
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { db, auth } from './firebase.js';
+
+import HomeView from './PMT/HomeView';
+import ClientView from './PMT/ClientView';
+import UserView from './PMT/Userview';
+import SettingsView from './PMT/SettingsView';
+import EmployeeView from './PMT/EmployeeView';
+import MasterDataView from './PMT/MasterDataView';
+import UserMetricsView from './PMT/UserMetricsView';
+import ReportsView from './PMT/ReportsView';
+import Sidebar from './PMT/Sidebar';
+import Notifications from './PMT/Notifications';
+import ProfileDropdown from './PMT/ProfileDropdown';
+import LoginView from './PMT/LoginView';
+
+const DEFAULT_USERS = [
+  { id: 1, name: "Theo", email: "theo@ethinos.com", role: 'Super Admin', assignedProjects: ["All"], department: 'Growth', region: 'North' },
+  { id: 201, name: "Ankit", email: "ankit@ethinos.com", role: 'Director', assignedProjects: ["KMF", "Durian"], department: 'Growth', region: 'South' },
+  { id: 202, name: "Poonam", email: "poonam@ethinos.com", role: 'Director', assignedProjects: ["Bajaj - Chetak", "Bajaj - KTM"], department: 'Client Servicing', region: 'West' },
+  { id: 205, name: "Suresh", email: "suresh@ethinos.com", role: 'Director', assignedProjects: ["KMF", "Durian", "Bajaj - Chetak", "Bajaj - KTM"], department: 'Growth', region: 'North' },
+  { id: 203, name: "Sanford", email: "sanford@ethinos.com", role: 'Manager', assignedProjects: ["Bajaj - Chetak"], department: 'Client Servicing', region: 'North' },
+  { id: 204, name: "Yogesh", email: "yogesh@ethinos.com", role: 'Manager', assignedProjects: ["Bajaj - KTM"], department: 'Client Servicing', region: 'South' },
+  { id: 206, name: "Abha", email: "abha@ethinos.com", role: 'Manager', assignedProjects: ["KMF"], department: 'Growth', region: 'North' },
+  { id: 207, name: "Gaurav Sharma", email: "gaurav.sharma@ethinos.com", role: 'Manager', assignedProjects: ["Durian"], department: 'Growth', region: 'South' },
+  { id: 208, name: "Manuj", email: "manuj@ethinos.com", role: 'Manager', assignedProjects: ["Bajaj - Chetak"], department: 'Growth', region: 'West' },
+  { id: 209, name: "Rajesh", email: "rajesh@ethinos.com", role: 'Manager', assignedProjects: ["Bajaj - KTM"], department: 'Growth', region: 'North' },
+  { id: 210, name: "Prashanth Raghavan", email: "prashanth.r@ethinos.com", role: 'Manager', assignedProjects: ["KMF", "Durian"], department: 'Growth', region: 'South' },
+  { id: 211, name: "Chinthan", email: "chinthan@ethinos.com", role: 'Manager', assignedProjects: ["Bajaj - Chetak"], department: 'Growth', region: 'West' },
+  { id: 212, name: "Shivananda", email: "shivananda@ethinos.com", role: 'Manager', assignedProjects: ["Bajaj - KTM"], department: 'Growth', region: 'North' },
+  { id: 213, name: "Yash", email: "yash.manager@ethinos.com", role: 'Manager', assignedProjects: ["KMF"], department: 'Growth', region: 'South' },
+  { id: 214, name: "Ritwick", email: "ritwick@ethinos.com", role: 'Manager', assignedProjects: ["Durian"], department: 'Growth', region: 'West' },
+  { id: 215, name: "Yash Karnawat", email: "yash.karnawat@ethinos.com", role: 'Manager', assignedProjects: ["Bajaj - Chetak"], department: 'Growth', region: 'North' },
+  { id: 216, name: "Pranali", email: "pranali@ethinos.com", role: 'Manager', assignedProjects: ["Bajaj - KTM"], department: 'Growth', region: 'South' },
+];
+
+const DEFAULT_TASK_CATEGORIES = [
+  'Strategy & Planning', 'Campaign Setup', 'Campaign Optimization',
+  'Reporting & Analysis', 'Client Communication', 'Content Creation',
+  'Creatives & Assets', 'Research', 'Budget Management', 'Technical Setup',
+  'Training & Development', 'Other',
+];
+
+const App = () => {
+  const [activeTab, setActiveTab] = useState('home');
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [loginError, setLoginError] = useState('');
+  const [firebaseUser, setFirebaseUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  const [clients, setClients] = useState([]);
+  const [users, setUsers] = useState(DEFAULT_USERS);
+  const [taskCategories, setTaskCategories] = useState(DEFAULT_TASK_CATEGORIES);
+  const [departments, setDepartments] = useState(['Creative', 'Biddable', 'Growth', 'Client Servicing']);
+  const [regions, setRegions] = useState(['North', 'South', 'West']);
+  const [controlCenterAccessRoles, setControlCenterAccessRoles] = useState(['Super Admin', 'Director']);
+  const [settingsAccessRoles, setSettingsAccessRoles] = useState(['Super Admin', 'Director']);
+  const [userManagementAccessRoles, setUserManagementAccessRoles] = useState(['Super Admin', 'Director']);
+  const [employeeViewAccessRoles, setEmployeeViewAccessRoles] = useState(['Super Admin', 'Director']);
+  const [metricsAccessRoles, setMetricsAccessRoles] = useState(['Super Admin', 'Director']);
+  const [reportsAccessRoles, setReportsAccessRoles] = useState(['Super Admin', 'Director']);
+  const [clientLogs, setClientLogs] = useState({});
+  const [notifications, setNotifications] = useState([
+    { id: 1, text: "Permissions system active", time: "Just now", read: false },
+  ]);
+
+  const [selectedClient, setSelectedClient] = useState(null);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [clientSearch, setClientSearch] = useState("");
+  const [sidebarMinimized, setSidebarMinimized] = useState(false);
+  const [dbReady, setDbReady] = useState(false);
+
+  // --- FIREBASE AUTH LISTENER ---
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setFirebaseUser(user);
+      setAuthLoading(false);
+      if (!user) {
+        setCurrentUserId(null);
+      }
+    });
+    return unsubscribe;
+  }, []);
+
+  // --- FIREBASE DATA SYNC (read once on auth) ---
+  useEffect(() => {
+    if (!firebaseUser) return;
+
+    const syncRef = (path, setter) => {
+      const dbRef = ref(db, path);
+      return onValue(dbRef, (snapshot) => {
+        const val = snapshot.val();
+        if (val !== null && val !== undefined) setter(val);
+      });
+    };
+
+    const unsubs = [
+      syncRef('users', (val) => setUsers(Array.isArray(val) ? val : Object.values(val))),
+      syncRef('clients', (val) => setClients(Array.isArray(val) ? val : Object.values(val))),
+      syncRef('clientLogs', (val) => setClientLogs(val || {})),
+      syncRef('taskCategories', (val) => setTaskCategories(Array.isArray(val) ? val : DEFAULT_TASK_CATEGORIES)),
+      syncRef('departments', (val) => setDepartments(Array.isArray(val) ? val : ['Creative', 'Biddable', 'Growth', 'Client Servicing'])),
+      syncRef('regions', (val) => setRegions(Array.isArray(val) ? val : ['North', 'South', 'West'])),
+      syncRef('controlCenterAccessRoles', (val) => setControlCenterAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
+      syncRef('settingsAccessRoles', (val) => setSettingsAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
+      syncRef('userManagementAccessRoles', (val) => setUserManagementAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
+      syncRef('employeeViewAccessRoles', (val) => setEmployeeViewAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
+      syncRef('metricsAccessRoles', (val) => setMetricsAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
+      syncRef('reportsAccessRoles', (val) => setReportsAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
+    ];
+
+    setDbReady(true);
+
+    // Map the firebase user email to a local user record
+    const matched = DEFAULT_USERS.find(u => u.email.toLowerCase() === firebaseUser.email?.toLowerCase());
+    if (matched) setCurrentUserId(matched.id);
+
+    return () => unsubs.forEach(u => u());
+  }, [firebaseUser]);
+
+  // --- FIREBASE WRITE HELPERS ---
+  const persistUsers = (nextUsers) => {
+    setUsers(nextUsers);
+    if (firebaseUser) set(ref(db, 'users'), nextUsers);
+  };
+  const persistClients = (nextClients) => {
+    setClients(nextClients);
+    if (firebaseUser) set(ref(db, 'clients'), nextClients);
+  };
+  const persistClientLogs = (nextLogs) => {
+    setClientLogs(nextLogs);
+    if (firebaseUser) set(ref(db, 'clientLogs'), nextLogs);
+  };
+  const persistTaskCategories = (val) => {
+    setTaskCategories(val);
+    if (firebaseUser) set(ref(db, 'taskCategories'), val);
+  };
+  const persistDepartments = (val) => {
+    setDepartments(val);
+    if (firebaseUser) set(ref(db, 'departments'), val);
+  };
+  const persistRegions = (val) => {
+    setRegions(val);
+    if (firebaseUser) set(ref(db, 'regions'), val);
+  };
+  const persistControlCenterRoles = (val) => {
+    setControlCenterAccessRoles(val);
+    if (firebaseUser) set(ref(db, 'controlCenterAccessRoles'), val);
+  };
+  const persistSettingsRoles = (val) => {
+    setSettingsAccessRoles(val);
+    if (firebaseUser) set(ref(db, 'settingsAccessRoles'), val);
+  };
+  const persistUserManagementRoles = (val) => {
+    setUserManagementAccessRoles(val);
+    if (firebaseUser) set(ref(db, 'userManagementAccessRoles'), val);
+  };
+  const persistEmployeeViewRoles = (val) => {
+    setEmployeeViewAccessRoles(val);
+    if (firebaseUser) set(ref(db, 'employeeViewAccessRoles'), val);
+  };
+  const persistMetricsRoles = (val) => {
+    setMetricsAccessRoles(val);
+    if (firebaseUser) set(ref(db, 'metricsAccessRoles'), val);
+  };
+  const persistReportsRoles = (val) => {
+    setReportsAccessRoles(val);
+    if (firebaseUser) set(ref(db, 'reportsAccessRoles'), val);
+  };
+
+  // --- SHARED LOGIC ---
+  const currentUser = users.find(u => u.id === currentUserId) || null;
+  const canSeeControlCenter = controlCenterAccessRoles.includes(currentUser?.role);
+  const canSeeSettings = settingsAccessRoles.includes(currentUser?.role);
+  const canSeeUserManagement = userManagementAccessRoles.includes(currentUser?.role);
+  const canSeeEmployeeView = employeeViewAccessRoles.includes(currentUser?.role);
+  const canSeeMetrics = metricsAccessRoles.includes(currentUser?.role);
+  const canSeeReports = reportsAccessRoles.includes(currentUser?.role);
+  const availableRoles = [...new Set(users.map(u => u.role))];
+
+  const accessibleClients = !currentUser
+    ? []
+    : currentUser.role === 'Super Admin'
+      ? clients
+      : clients.filter(c => currentUser.assignedProjects?.includes(c.name) || currentUser.assignedProjects?.includes('All'));
+
+  const allTasks = accessibleClients.flatMap(c => (clientLogs[c.id] || []).map(t => ({ ...t, cid: c.id, cName: c.name })));
+
+  const tabTitles = {
+    home: 'Home',
+    clients: 'Clients',
+    users: 'Users',
+    metrics: 'Metrics',
+    reports: 'Reports',
+    employees: 'Employees',
+    settings: 'Settings',
+    'master-data': 'Control Center',
+  };
+
+  const isMinimized = sidebarMinimized || activeTab === 'clients' || selectedClient !== null;
+
+  const handleUpdateProfileName = (updatedName) => {
+    if (!updatedName?.trim() || !currentUser) return;
+    persistUsers(users.map(u => u.id === currentUser.id ? { ...u, name: updatedName.trim() } : u));
+  };
+
+  const handleChangePassword = () => {};
+
+  const handleLogin = async (email, password) => {
+    if (!email || !password) {
+      setLoginError('Enter both email and password');
+      return;
+    }
+    try {
+      setLoginError('');
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch {
+      setLoginError('Invalid email or password. Please try again.');
+    }
+  };
+
+  const handleLogout = async () => {
+    setIsProfileOpen(false);
+    setIsNotifOpen(false);
+    setSelectedClient(null);
+    setActiveTab('home');
+    setCurrentUserId(null);
+    setDbReady(false);
+    await signOut(auth);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'master-data' && !canSeeControlCenter) setActiveTab('home');
+    if (activeTab === 'settings' && !canSeeSettings) setActiveTab('home');
+    if (activeTab === 'users' && !canSeeUserManagement) setActiveTab('home');
+    if (activeTab === 'employees' && !canSeeEmployeeView) setActiveTab('home');
+    if (activeTab === 'metrics' && !canSeeMetrics) setActiveTab('home');
+    if (activeTab === 'reports' && !canSeeReports) setActiveTab('home');
+  }, [activeTab, canSeeControlCenter, canSeeSettings, canSeeUserManagement, canSeeEmployeeView, canSeeMetrics, canSeeReports]);
+
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-slate-50">
+        <div className="text-sm font-semibold text-slate-500">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!firebaseUser || !currentUser) {
+    return <LoginView onLogin={handleLogin} loginError={loginError} />;
+  }
+
+  return (
+    <div
+      className="flex w-screen h-screen text-black text-sm overflow-hidden font-sans"
+      style={{
+        background:
+          'radial-gradient(58% 64% at 8% 10%, rgba(241, 94, 88, 0.14) 0%, rgba(241, 94, 88, 0) 62%), radial-gradient(48% 56% at 52% 92%, rgba(82, 110, 255, 0.13) 0%, rgba(82, 110, 255, 0) 64%), radial-gradient(36% 48% at 96% 12%, rgba(236, 232, 123, 0.15) 0%, rgba(236, 232, 123, 0) 62%), linear-gradient(140deg, #fff7f8 0%, #f7f8ff 58%, #fffde9 100%)'
+      }}
+    >
+      <Sidebar
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        setSelectedClient={setSelectedClient}
+        isMinimized={isMinimized}
+        setIsMinimized={setSidebarMinimized}
+        canSeeControlCenter={canSeeControlCenter}
+        canSeeSettings={canSeeSettings}
+        canSeeUserManagement={canSeeUserManagement}
+        canSeeEmployeeView={canSeeEmployeeView}
+        canSeeMetrics={canSeeMetrics}
+        canSeeReports={canSeeReports}
+      />
+
+      <div className="flex-1 flex flex-col bg-transparent overflow-hidden relative border-l border-white/40">
+        <header className="h-16 px-8 flex items-center justify-between border-b border-white/50 font-black bg-white/45 backdrop-blur-sm uppercase sticky top-0 z-20">
+          <h2 className="tracking-tight text-black">
+            {selectedClient ? selectedClient.name : (tabTitles[activeTab] || activeTab)}
+          </h2>
+          <div className="flex items-center gap-4">
+            <Notifications
+              isNotifOpen={isNotifOpen}
+              setIsNotifOpen={setIsNotifOpen}
+              setIsProfileOpen={setIsProfileOpen}
+              notifications={notifications}
+              currentUser={currentUser}
+              users={users}
+              clients={clients}
+              clientLogs={clientLogs}
+            />
+            <ProfileDropdown
+              isProfileOpen={isProfileOpen}
+              setIsProfileOpen={setIsProfileOpen}
+              setIsNotifOpen={setIsNotifOpen}
+              currentUser={currentUser}
+              onUpdateProfileName={handleUpdateProfileName}
+              onChangePassword={handleChangePassword}
+              onLogout={handleLogout}
+            />
+          </div>
+        </header>
+
+        <main className="p-6 overflow-y-auto flex-1 bg-transparent">
+          {activeTab === 'home' && !selectedClient && (
+            <HomeView
+              accessibleClients={accessibleClients}
+              allTasks={allTasks}
+              clientLogs={clientLogs}
+              setSelectedClient={setSelectedClient}
+              setClientLogs={persistClientLogs}
+              currentUser={currentUser}
+              taskCategories={taskCategories}
+            />
+          )}
+
+          {(activeTab === 'clients' || selectedClient) && (
+            <ClientView
+              selectedClient={selectedClient}
+              setSelectedClient={setSelectedClient}
+              clients={clients}
+              setClients={persistClients}
+              clientLogs={clientLogs}
+              setClientLogs={persistClientLogs}
+              clientSearch={clientSearch}
+              setClientSearch={setClientSearch}
+              users={users}
+              setUsers={persistUsers}
+              currentUser={currentUser}
+              taskCategories={taskCategories}
+              setNotifications={setNotifications}
+              accessibleClients={accessibleClients}
+            />
+          )}
+
+          {activeTab === 'users' && !selectedClient && canSeeUserManagement && (
+            <UserView
+              users={users}
+              setUsers={persistUsers}
+              currentUser={currentUser}
+              clients={clients}
+            />
+          )}
+
+          {activeTab === 'employees' && !selectedClient && canSeeEmployeeView && (
+            <EmployeeView users={users} clients={clients} clientLogs={clientLogs} />
+          )}
+
+          {activeTab === 'metrics' && !selectedClient && canSeeMetrics && (
+            <UserMetricsView users={users} clients={clients} clientLogs={clientLogs} />
+          )}
+
+          {activeTab === 'reports' && !selectedClient && canSeeReports && (
+            <ReportsView users={users} clients={clients} clientLogs={clientLogs} />
+          )}
+
+          {activeTab === 'settings' && !selectedClient && canSeeSettings && (
+            <SettingsView
+              users={users}
+              setUsers={persistUsers}
+              currentUser={currentUser}
+              clients={clients}
+              setClients={persistClients}
+              setClientLogs={persistClientLogs}
+            />
+          )}
+
+          {activeTab === 'master-data' && !selectedClient && canSeeControlCenter && (
+            <MasterDataView
+              taskCategories={taskCategories}
+              setTaskCategories={persistTaskCategories}
+              departments={departments}
+              setDepartments={persistDepartments}
+              regions={regions}
+              setRegions={persistRegions}
+              availableRoles={availableRoles}
+              controlCenterAccessRoles={controlCenterAccessRoles}
+              setControlCenterAccessRoles={persistControlCenterRoles}
+              settingsAccessRoles={settingsAccessRoles}
+              setSettingsAccessRoles={persistSettingsRoles}
+              userManagementAccessRoles={userManagementAccessRoles}
+              setUserManagementAccessRoles={persistUserManagementRoles}
+              employeeViewAccessRoles={employeeViewAccessRoles}
+              setEmployeeViewAccessRoles={persistEmployeeViewRoles}
+              metricsAccessRoles={metricsAccessRoles}
+              setMetricsAccessRoles={persistMetricsRoles}
+              reportsAccessRoles={reportsAccessRoles}
+              setReportsAccessRoles={persistReportsRoles}
+            />
+          )}
+        </main>
+      </div>
+    </div>
+  );
+};
+
+export default App;
