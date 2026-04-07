@@ -837,27 +837,29 @@ const ClientView = ({
         {/* Task Table */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="max-h-[68vh] overflow-auto">
-            <table className="w-full min-w-[980px] border-collapse table-fixed">
+            <table className="w-full min-w-[1100px] border-collapse table-fixed">
               <colgroup>
-                <col className="w-[7%]" />
-                <col className="w-[8%]" />
-                <col className="w-[9%]" />
-                <col className="w-[14%]" />
+                <col className="w-[6%]" />
                 <col className="w-[11%]" />
-                <col className="w-[32%]" />
-                <col className="w-[10%]" />
                 <col className="w-[9%]" />
+                <col className="w-[8%]" />
+                <col className="w-[10%]" />
+                <col className="w-[22%]" />
+                <col className="w-[7%]" />
+                <col className="w-[7%]" />
+                <col className="w-[20%]" />
               </colgroup>
               <thead>
                 <tr className="sticky top-0 z-10 bg-slate-100 border-b border-slate-200 text-[10px] font-semibold uppercase tracking-wider text-slate-700">
                   <th className="px-1.5 py-2 text-left">Date</th>
-                  <th className="px-1.5 py-2 text-left">Due Date</th>
-                  <th className="px-1 py-2 text-left">Status</th>
+                  <th className="px-1.5 py-2 text-left">Task</th>
                   <th className="px-1.5 py-2 text-left">Category</th>
+                  <th className="px-1.5 py-2 text-left">Due Date</th>
                   <th className="px-1.5 py-2 text-left">Assigned To</th>
-                  <th className="px-2 py-2 text-left">Task</th>
+                  <th className="px-2 py-2 text-left">Description</th>
+                  <th className="px-2 py-2 text-center">Edit</th>
                   <th className="px-1.5 py-2 text-right">Timer</th>
-                  <th className="px-2 py-2 text-right">Actions</th>
+                  <th className="px-2 py-2 text-left">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -871,25 +873,103 @@ const ClientView = ({
                       onClick={() => setExpandedTaskId(isExpanded ? null : log.id)}
                       className={`hover:bg-slate-50 transition-all group align-top cursor-pointer ${isExpanded ? 'bg-slate-50/70' : ''}`}
                     >
+                      {/* Date */}
                       <td className="px-1.5 py-2 text-xs font-medium text-slate-600 whitespace-nowrap">{String(log.date || '').replace(/\s+\d{4}$/, '')}</td>
+
+                      {/* Task name */}
+                      <td className="px-1.5 py-2">
+                        <p className={`text-xs font-semibold text-slate-800 leading-4 break-words ${isExpanded ? '' : 'line-clamp-2'}`}>{log.name || '—'}</p>
+                      </td>
+
+                      {/* Category */}
+                      <td className="px-1.5 py-2">
+                        <span className="text-[10px] font-semibold text-slate-600">{log.category || 'General'}</span>
+                      </td>
+
+                      {/* Due Date */}
                       <td className="px-1.5 py-2 text-xs font-medium whitespace-nowrap">
                         {log.dueDate ? (
-                          <span className={`px-2 py-1 rounded-md font-semibold text-[9px] ${
+                          <span className={`px-1.5 py-0.5 rounded-md font-semibold text-[9px] ${
                             new Date(log.dueDate) < new Date() && log.status !== 'Done'
                               ? 'bg-red-100 text-red-700'
                               : 'bg-blue-100 text-blue-700'
-                          }`}>
-                            {log.dueDate}
-                          </span>
+                          }`}>{log.dueDate}</span>
                         ) : (
-                          <span className="text-slate-400 text-[9px]">-</span>
+                          <span className="text-slate-400 text-[9px]">—</span>
                         )}
                       </td>
-                      <td className="px-1 py-2 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+
+                      {/* Assigned To */}
+                      <td className="px-1.5 py-2 text-xs text-slate-600">
+                        <div className="leading-4">
+                          <p className="font-semibold text-slate-700 truncate">{log.assigneeName || 'Unassigned'}</p>
+                          {isExpanded && log.assigneeEmail && (
+                            <p className="text-[10px] text-slate-500 truncate">{log.assigneeEmail}</p>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Description */}
+                      <td className="px-2 py-2">
+                        <p className={`text-xs text-slate-600 leading-4 break-words ${isExpanded ? '' : 'line-clamp-2'}`}>{log.comment}</p>
+                        {isExpanded && log.qcEnabled && log.qcAssigneeName && (
+                          <p className="text-[10px] text-indigo-500 font-medium mt-0.5">QC: {log.qcAssigneeName}</p>
+                        )}
+                        {log.qcEnabled && log.qcStatus === 'rejected' && log.qcFeedback && (
+                          <div className="mt-1.5 flex items-start gap-1.5 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5">
+                            <ThumbsDown size={10} className="text-red-500 mt-0.5 flex-shrink-0" />
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-semibold text-red-700">Feedback{log.qcRating ? ` · ${log.qcRating}/10` : ''}:</p>
+                              <p className="text-[10px] text-red-600 break-words">{log.qcFeedback}</p>
+                            </div>
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Edit / Delete */}
+                      <td className="px-2 py-2 text-center" onClick={(e) => e.stopPropagation()}>
+                        {canFullyEditTask(log) && (
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => openEditModal(log)}
+                              className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-all"
+                              title="Edit task"
+                            >
+                              <Edit2 size={12}/>
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (window.confirm('Are you sure you want to delete this task?')) {
+                                  const upd = clientLogs[selectedClient.id].filter(l => l.id !== log.id);
+                                  setClientLogs({ ...clientLogs, [selectedClient.id]: upd });
+                                }
+                              }}
+                              className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-md transition-all"
+                              title="Delete task"
+                            >
+                              <Trash2 size={12}/>
+                            </button>
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Timer display */}
+                      <td className="px-1.5 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex flex-col items-end gap-0.5">
+                          <span className="text-[10px] font-semibold text-slate-700">{formatDuration(getElapsedMs(log))}</span>
+                          {isExpanded && timerState === 'stopped' && log.timeTaken && (
+                            <span className="text-[8px] font-medium text-emerald-600">Time: {log.timeTaken}</span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Actions: status + QC + timer controls */}
+                      <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
                         <div className="flex flex-col gap-1">
+                          {/* Status */}
                           {canChangeTaskStatus(log) ? (
                             <select
-                              className={`w-full min-w-0 text-[10px] border-none rounded-md px-1.5 py-1 font-semibold outline-none cursor-pointer ${
+                              className={`w-full text-[10px] border-none rounded-md px-1.5 py-1 font-semibold outline-none cursor-pointer ${
                                 log.status === 'Done' ? 'bg-emerald-100 text-emerald-600' :
                                 log.status === 'WIP' ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'
                               }`}
@@ -914,11 +994,9 @@ const ClientView = ({
                             <span className={`inline-block text-[10px] rounded-md px-1.5 py-1 font-semibold ${
                               log.status === 'Done' ? 'bg-emerald-100 text-emerald-600' :
                               log.status === 'WIP' ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'
-                            }`}>
-                              {log.status}
-                            </span>
+                            }`}>{log.status}</span>
                           )}
-                          {/* QC Badge */}
+                          {/* QC badges */}
                           {log.qcEnabled && log.status === 'Done' && !log.qcStatus && canChangeTaskStatus(log) && (
                             <button
                               onClick={() => {
@@ -971,128 +1049,34 @@ const ClientView = ({
                               <RotateCcw size={8} /> Returned
                             </button>
                           )}
-                        </div>
-                      </td>
-                      <td className="px-1.5 py-2">
-                        <span className="text-[10px] font-semibold text-slate-600 px-1">{log.category || 'General'}</span>
-                      </td>
-                      <td className="px-1.5 py-2 text-xs text-slate-600">
-                        <div className="leading-4">
-                          <p className="font-semibold text-slate-700 truncate">{log.assigneeName || 'Unassigned'}</p>
-                          {isExpanded && log.assigneeEmail && (
-                            <p className="text-[10px] text-slate-500 truncate">{log.assigneeEmail}</p>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-2 py-2">
-                        <div className="flex items-start justify-between gap-2 group/cell">
-                          <div className="flex-1 min-w-0">
-                            {log.name ? (
+                          {/* Timer controls */}
+                          <div className="flex items-center gap-1 mt-0.5">
+                            {(timerState === 'idle' || timerState === 'stopped') && (
+                              <button onClick={() => startTaskTimer(log.id)} className="p-1 rounded border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-all" title="Start timer">
+                                <Play size={11} />
+                              </button>
+                            )}
+                            {timerState === 'running' && (
                               <>
-                                <p className={`text-sm font-semibold text-slate-800 leading-5 break-words ${isExpanded ? '' : 'truncate'}`}>{log.name}</p>
-                                <p className={`text-xs text-slate-500 leading-4 mt-0.5 break-words ${isExpanded ? '' : 'line-clamp-1'}`}>{log.comment}</p>
+                                <button onClick={() => pauseTaskTimer(log.id)} className="p-1 rounded border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 transition-all" title="Pause timer">
+                                  <Pause size={11} />
+                                </button>
+                                <button onClick={() => stopTaskTimer(log.id)} className="p-1 rounded border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-all" title="Stop timer">
+                                  <Square size={11} />
+                                </button>
                               </>
-                            ) : (
-                              <p className={`text-sm font-medium text-slate-700 leading-5 break-words ${isExpanded ? '' : 'line-clamp-2'}`}>{log.comment}</p>
                             )}
-                            {/* QC Reviewer info (expanded) */}
-                            {isExpanded && log.qcEnabled && log.qcAssigneeName && (
-                              <p className="text-[10px] text-indigo-500 font-medium mt-0.5">
-                                QC Reviewer: {log.qcAssigneeName}
-                              </p>
-                            )}
-                            {/* QC Feedback banner (rejected tasks) */}
-                            {log.qcEnabled && log.qcStatus === 'rejected' && log.qcFeedback && (
-                              <div className="mt-1.5 flex items-start gap-1.5 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5">
-                                <ThumbsDown size={11} className="text-red-500 mt-0.5 flex-shrink-0" />
-                                <div className="min-w-0">
-                                  <p className="text-[10px] font-semibold text-red-700">Manager Feedback{log.qcRating ? ` · ${log.qcRating}/10` : ''}:</p>
-                                  <p className="text-[10px] text-red-600 break-words">{log.qcFeedback}</p>
-                                </div>
-                              </div>
+                            {timerState === 'paused' && (
+                              <>
+                                <button onClick={() => startTaskTimer(log.id)} className="p-1 rounded border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-all" title="Resume timer">
+                                  <Play size={11} />
+                                </button>
+                                <button onClick={() => stopTaskTimer(log.id)} className="p-1 rounded border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-all" title="Stop timer">
+                                  <Square size={11} />
+                                </button>
+                              </>
                             )}
                           </div>
-                          {canFullyEditTask(log) && (
-                            <div className="flex items-center gap-1 opacity-0 group-hover/cell:opacity-100 flex-shrink-0">
-                              <button
-                                onClick={(e) => { e.stopPropagation(); openEditModal(log); }}
-                                className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-all"
-                                title="Edit task"
-                              >
-                                <Edit2 size={12}/>
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (window.confirm("Are you sure you want to delete this task?")) {
-                                    const upd = clientLogs[selectedClient.id].filter(l => l.id !== log.id);
-                                    setClientLogs({ ...clientLogs, [selectedClient.id]: upd });
-                                  }
-                                }}
-                                className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-md transition-all"
-                                title="Delete task"
-                              >
-                                <Trash2 size={12}/>
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-1.5 py-2 text-right" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex flex-col items-end gap-1">
-                          <span className="text-[10px] font-semibold text-slate-700">{formatDuration(getElapsedMs(log))}</span>
-                          {isExpanded && timerState === 'stopped' && log.timeTaken && (
-                            <span className="text-[8px] font-medium text-emerald-600">Time: {log.timeTaken}</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-2 py-2 text-right" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1">
-                          {(timerState === 'idle' || timerState === 'stopped') && (
-                            <button
-                              onClick={() => startTaskTimer(log.id)}
-                              className="p-1.5 rounded-md border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-all"
-                              title="Start timer"
-                            >
-                              <Play size={13} />
-                            </button>
-                          )}
-                          {timerState === 'running' && (
-                            <>
-                              <button
-                                onClick={() => pauseTaskTimer(log.id)}
-                                className="p-1.5 rounded-md border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 transition-all"
-                                title="Pause timer"
-                              >
-                                <Pause size={13} />
-                              </button>
-                              <button
-                                onClick={() => stopTaskTimer(log.id)}
-                                className="p-1.5 rounded-md border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-all"
-                                title="Stop timer"
-                              >
-                                <Square size={13} />
-                              </button>
-                            </>
-                          )}
-                          {timerState === 'paused' && (
-                            <>
-                              <button
-                                onClick={() => startTaskTimer(log.id)}
-                                className="p-1.5 rounded-md border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-all"
-                                title="Resume timer"
-                              >
-                                <Play size={13} />
-                              </button>
-                              <button
-                                onClick={() => stopTaskTimer(log.id)}
-                                className="p-1.5 rounded-md border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-all"
-                                title="Stop timer"
-                              >
-                                <Square size={13} />
-                              </button>
-                            </>
-                          )}
                         </div>
                       </td>
                     </tr>
