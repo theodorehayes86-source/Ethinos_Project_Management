@@ -32,9 +32,8 @@ const LoginView = ({ onLogin, loginError }) => {
             </div>
 
             <div className="rounded-2xl border border-white/35 bg-white/15 p-4 backdrop-blur-sm">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-white/85">Demo Access</p>
-              <p className="mt-2 text-sm text-white">Email: test@ethinos.com</p>
-              <p className="text-sm text-white">Password: ethinos@2026</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-white/85">Ethinos PMT</p>
+              <p className="mt-2 text-sm text-white">Sign in with your Ethinos work email to access your workspace.</p>
             </div>
           </section>
 
@@ -80,7 +79,7 @@ const LoginView = ({ onLogin, loginError }) => {
             </form>
 
             <p className="mt-5 text-xs font-medium text-slate-500 md:hidden">
-              Demo: test@ethinos.com / ethinos@2026
+              Sign in with your Ethinos work email.
             </p>
           </section>
         </div>
