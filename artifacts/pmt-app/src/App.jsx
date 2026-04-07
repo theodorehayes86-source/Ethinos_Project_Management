@@ -359,6 +359,10 @@ const App = () => {
           : 0;
         return total + qcCount + assignReqCount;
       }, 0)
+      + (clients || []).reduce((n, c) => {
+          if (!isCrossDeptApp && !myClientNames.includes(c.name)) return n;
+          return n + (c.joinRequests?.length || 0);
+        }, 0)
     : 0;
 
   const tabTitles = {
@@ -596,6 +600,8 @@ const App = () => {
               users={users}
               currentUser={currentUser}
               persistClientLogs={persistClientLogs}
+              setClients={persistClients}
+              setUsers={persistUsers}
             />
           )}
 

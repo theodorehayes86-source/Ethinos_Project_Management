@@ -14,6 +14,9 @@ const Notifications = ({ isNotifOpen, setIsNotifOpen, setIsProfileOpen, currentU
     if (type === 'assignment-request') {
       return { icon: <UserPlus size={12} className="text-violet-500" />, bg: 'bg-violet-50' };
     }
+    if (type === 'client-join-request') {
+      return { icon: <UserPlus size={12} className="text-violet-600" />, bg: 'bg-violet-50' };
+    }
     if (type === 'team') {
       return { icon: <UserPlus size={12} className="text-emerald-500" />, bg: 'bg-emerald-50' };
     }
@@ -31,6 +34,10 @@ const Notifications = ({ isNotifOpen, setIsNotifOpen, setIsProfileOpen, currentU
       if (item.type === 'assignment-request') {
         const isTargeted = (item.leaderIds || []).some(id => String(id) === String(currentUser?.id));
         if (!isTargeted) return;
+      }
+      // Client join request notifications are only shown to the targeted recipient
+      if (item.type === 'client-join-request') {
+        if (String(item.recipientId) !== String(currentUser?.id)) return;
       }
       const style = getNotificationStyle(item.type);
       list.push({

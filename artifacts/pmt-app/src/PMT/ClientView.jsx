@@ -17,7 +17,7 @@ const ClientView = ({
   selectedClient, setSelectedClient, clients = [], setClients, 
   clientLogs = {}, setClientLogs, clientSearch = "", setClientSearch,
   users = [], setUsers, currentUser, taskCategories = [], taskTemplates = [], setNotifications = () => {},
-  departments = [],
+  departments = [], accessibleClients = [],
 }) => {
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
@@ -59,6 +59,7 @@ const ClientView = ({
   const [expandedTaskId, setExpandedTaskId] = useState(null);
   const [activePicker, setActivePicker] = useState(null); // 'addLeadership'|'addTeam'|'qcReviewer'
   const [pickerSearch, setPickerSearch] = useState("");
+  const [clientViewFilter, setClientViewFilter] = useState('mine'); // 'mine' | 'available'
 
   // QC form state (for new task creation)
   const [qcEnabled, setQcEnabled] = useState(true);
@@ -289,6 +290,33 @@ const ClientView = ({
       admins: staff.filter(u => managementRoles.includes(u.role)),
       employees: staff.filter(u => executionRoles.includes(u.role))
     };
+  };
+
+  const handleRequestClientAssignment = (client) => {
+    if (!currentUser) return;
+    const alreadyRequested = (client.joinRequests || []).some(r => r.requesterId === currentUser.id);
+    if (alreadyRequested) return;
+    const newRequest = { requesterId: currentUser.id, requesterName: currentUser.name, timestamp: Date.now() };
+    const updatedClient = { ...client, joinRequests: [...(client.joinRequests || []), newRequest] };
+    const updatedClients = clients.map(c => c.id === client.id ? updatedClient : c);
+    setClients(updatedClients);
+    const leaders = getProjectStaff(client.name).admins;
+    const superAdmins = (users || []).filter(u => u.role === 'Super Admin');
+    const notifyIds = [...new Set([...leaders.map(l => l.id), ...superAdmins.map(u => u.id)])];
+    notifyIds.forEach(recipientId => {
+      setNotifications(prev => [{
+        id: Date.now() + Math.random(),
+        type: 'client-join-request',
+        text: `${currentUser.name} requested to be assigned to ${client.name}`,
+        clientId: client.id,
+        clientName: client.name,
+        requesterId: currentUser.id,
+        requesterName: currentUser.name,
+        recipientId,
+        timestamp: new Date().toISOString(),
+        read: false,
+      }, ...prev]);
+    });
   };
 
   const getNameSearchScore = (name = '', query = '') => {
@@ -2013,55 +2041,84 @@ const ClientView = ({
     );
   }
 
-  // --- GRID VIEW (ALL CLIENTS) ---
-  const filteredClients = clients.filter(c => c.name.toLowerCase().includes(clientSearch.toLowerCase()));
+  // --- GRID VIEW ---
+  const accessibleClientIds = new Set(accessibleClients.map(c => c.id));
+
+  const myClients = clients.filter(c => accessibleClientIds.has(c.id) && c.name.toLowerCase().includes(clientSearch.toLowerCase()));
+  const availableClients = clients.filter(c => !accessibleClientIds.has(c.id) && c.name.toLowerCase().includes(clientSearch.toLowerCase()));
+  const filteredClients = clientViewFilter === 'mine' ? myClients : availableClients;
 
   // --- PICKER CONFIG (only qcReviewer remains here) ---
   const pickerAllUsers = users || [];
 
   return (
     <div className="p-3 space-y-5 animate-in fade-in duration-500 text-left min-h-full">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-wrap justify-between items-center gap-3">
         <div className="relative w-72">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
           <input type="text" placeholder="Filter Clients..." className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-xs font-medium outline-none focus:ring-2 ring-blue-500/20 shadow-sm text-slate-700" value={clientSearch} onChange={(e) => setClientSearch(e.target.value)} />
         </div>
+        <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
+          <button
+            onClick={() => setClientViewFilter('mine')}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${clientViewFilter === 'mine' ? 'bg-white text-blue-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+          >My Clients <span className="ml-1 text-[10px] font-bold text-blue-500">{myClients.length}</span></button>
+          <button
+            onClick={() => setClientViewFilter('available')}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${clientViewFilter === 'available' ? 'bg-white text-violet-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+          >Available <span className="ml-1 text-[10px] font-bold text-violet-500">{availableClients.length}</span></button>
+        </div>
       </div>
+
+      {filteredClients.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+          <Users size={36} className="mb-3 opacity-40" />
+          <p className="text-sm font-medium">{clientViewFilter === 'mine' ? 'No clients assigned to you yet.' : 'No available clients to request.'}</p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         {filteredClients.map(c => {
           const counts = getTaskCounts(c.id);
           const staff = getProjectStaff(c.name);
-          
-          // Calculate average time spent per day (department-filtered)
-          const projectLogs = (clientLogs[c.id] || []).filter(t => isTaskVisible(t, currentUser));
-          const dailyTotals = {};
-          projectLogs.forEach(log => {
-            if (!dailyTotals[log.date]) {
-              dailyTotals[log.date] = 0;
-            }
-            dailyTotals[log.date] += log.elapsedMs || 0;
-          });
-          const uniqueDays = Object.keys(dailyTotals).length || 1;
-          const totalMs = Object.values(dailyTotals).reduce((sum, ms) => sum + ms, 0);
-          const avgMs = totalMs / uniqueDays;
-          const avgHours = Math.floor(avgMs / 3600000);
-          const avgMinutes = Math.floor((avgMs % 3600000) / 60000);
-          const avgTimeStr = avgHours > 0 ? `${avgHours}h ${avgMinutes}m` : `${avgMinutes}m`;
+          const isAvailable = clientViewFilter === 'available';
+          const alreadyRequested = (c.joinRequests || []).some(r => r.requesterId === currentUser?.id);
+
+          // Calculate average time spent per day (department-filtered) — only for my clients
+          let avgTimeStr = '—';
+          if (!isAvailable) {
+            const projectLogs = (clientLogs[c.id] || []).filter(t => isTaskVisible(t, currentUser));
+            const dailyTotals = {};
+            projectLogs.forEach(log => {
+              if (!dailyTotals[log.date]) dailyTotals[log.date] = 0;
+              dailyTotals[log.date] += log.elapsedMs || 0;
+            });
+            const uniqueDays = Object.keys(dailyTotals).length || 1;
+            const totalMs = Object.values(dailyTotals).reduce((sum, ms) => sum + ms, 0);
+            const avgMs = totalMs / uniqueDays;
+            const avgHours = Math.floor(avgMs / 3600000);
+            const avgMinutes = Math.floor((avgMs % 3600000) / 60000);
+            avgTimeStr = avgHours > 0 ? `${avgHours}h ${avgMinutes}m` : `${avgMinutes}m`;
+          }
           
           return (
             <div
               key={c.id}
-              onClick={() => setSelectedClient(c)}
-              className="group bg-white border-2 border-slate-200 rounded-2xl p-4 shadow-sm hover:shadow-lg hover:border-blue-400 transition-all cursor-pointer"
+              onClick={!isAvailable ? () => setSelectedClient(c) : undefined}
+              className={`group bg-white border-2 rounded-2xl p-4 shadow-sm transition-all ${isAvailable ? 'border-slate-200 hover:border-violet-300 hover:shadow-md' : 'border-slate-200 hover:shadow-lg hover:border-blue-400 cursor-pointer'}`}
             >
-              {/* Header with Account Name and Avg Time */}
+              {/* Header */}
               <div className="mb-3 flex items-start justify-between gap-2">
-                <h3 className="text-base font-bold text-slate-900 uppercase tracking-tight group-hover:text-blue-600 transition-all">{c.name}</h3>
-                <div className="bg-purple-50 px-1.5 py-0.5 rounded-md border border-purple-200 flex-shrink-0">
-                  <p className="text-[8px] font-semibold text-purple-600">AVG</p>
-                  <p className="text-xs font-bold text-purple-700">{avgTimeStr}</p>
-                </div>
+                <h3 className={`text-base font-bold uppercase tracking-tight transition-all ${isAvailable ? 'text-slate-700' : 'text-slate-900 group-hover:text-blue-600'}`}>{c.name}</h3>
+                {!isAvailable && (
+                  <div className="bg-purple-50 px-1.5 py-0.5 rounded-md border border-purple-200 flex-shrink-0">
+                    <p className="text-[8px] font-semibold text-purple-600">AVG</p>
+                    <p className="text-xs font-bold text-purple-700">{avgTimeStr}</p>
+                  </div>
+                )}
+                {isAvailable && (
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-violet-50 text-violet-600 border border-violet-200">Unassigned</span>
+                )}
               </div>
 
               {/* Leadership Section */}
@@ -2093,32 +2150,44 @@ const ClientView = ({
                 </div>
               )}
 
-              {/* Status Cards */}
-              <div className="grid grid-cols-3 gap-1.5 mb-3">
-                <div className="bg-orange-50 px-2 py-2 rounded-xl border border-orange-200 text-center">
-                  <Clock size={14} className="text-orange-500 mx-auto mb-0.5" />
-                  <p className="text-xs font-bold text-orange-600">{counts.open}</p>
-                  <p className="text-[9px] text-orange-500 font-medium">Pending</p>
+              {/* Status Cards — only for assigned clients */}
+              {!isAvailable && (
+                <div className="grid grid-cols-3 gap-1.5 mb-3">
+                  <div className="bg-orange-50 px-2 py-2 rounded-xl border border-orange-200 text-center">
+                    <Clock size={14} className="text-orange-500 mx-auto mb-0.5" />
+                    <p className="text-xs font-bold text-orange-600">{counts.open}</p>
+                    <p className="text-[9px] text-orange-500 font-medium">Pending</p>
+                  </div>
+                  <div className="bg-blue-50 px-2 py-2 rounded-xl border border-blue-200 text-center">
+                    <Activity size={14} className="text-blue-500 mx-auto mb-0.5" />
+                    <p className="text-xs font-bold text-blue-600">{counts.wip}</p>
+                    <p className="text-[9px] text-blue-500 font-medium">WIP</p>
+                  </div>
+                  <div className="bg-emerald-50 px-2 py-2 rounded-xl border border-emerald-200 text-center">
+                    <CheckCircle size={14} className="text-emerald-500 mx-auto mb-0.5" />
+                    <p className="text-xs font-bold text-emerald-600">{counts.done}</p>
+                    <p className="text-[9px] text-emerald-500 font-medium">Done</p>
+                  </div>
                 </div>
-                <div className="bg-blue-50 px-2 py-2 rounded-xl border border-blue-200 text-center">
-                  <Activity size={14} className="text-blue-500 mx-auto mb-0.5" />
-                  <p className="text-xs font-bold text-blue-600">{counts.wip}</p>
-                  <p className="text-[9px] text-blue-500 font-medium">WIP</p>
-                </div>
-                <div className="bg-emerald-50 px-2 py-2 rounded-xl border border-emerald-200 text-center">
-                  <CheckCircle size={14} className="text-emerald-500 mx-auto mb-0.5" />
-                  <p className="text-xs font-bold text-emerald-600">{counts.done}</p>
-                  <p className="text-[9px] text-emerald-500 font-medium">Done</p>
-                </div>
-              </div>
+              )}
 
-              {/* View Tasks Button */}
-              <button
-                onClick={() => setSelectedClient(c)}
-                className="w-full bg-gradient-to-r from-blue-600 to-blue-500 text-white py-2.5 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 hover:from-blue-700 hover:to-blue-600 transition-all shadow-md group-hover:shadow-lg"
-              >
-                <Eye size={15} /> View Tasks
-              </button>
+              {/* Action Button */}
+              {isAvailable ? (
+                <button
+                  onClick={() => handleRequestClientAssignment(c)}
+                  disabled={alreadyRequested}
+                  className={`w-full py-2.5 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 transition-all shadow-sm ${alreadyRequested ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-default' : 'bg-gradient-to-r from-violet-600 to-violet-500 text-white hover:from-violet-700 hover:to-violet-600 shadow-md'}`}
+                >
+                  {alreadyRequested ? <><Check size={14} /> Requested</> : <><UserPlus size={14} /> Request to Join</>}
+                </button>
+              ) : (
+                <button
+                  onClick={() => setSelectedClient(c)}
+                  className="w-full bg-gradient-to-r from-blue-600 to-blue-500 text-white py-2.5 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 hover:from-blue-700 hover:to-blue-600 transition-all shadow-md group-hover:shadow-lg"
+                >
+                  <Eye size={15} /> View Tasks
+                </button>
+              )}
             </div>
           );
         })}

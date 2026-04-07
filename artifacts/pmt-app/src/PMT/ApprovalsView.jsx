@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckCircle, XCircle, Star, ChevronDown, ChevronUp, Clock, User, Tag, Calendar, MessageSquare, UserPlus, UserCheck, UserX } from 'lucide-react';
+import { CheckCircle, XCircle, Star, ChevronDown, ChevronUp, Clock, User, Tag, Calendar, MessageSquare, UserPlus, UserCheck, UserX, Check, X } from 'lucide-react';
 
 const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
 
@@ -385,7 +385,7 @@ const AssignmentRequestCard = ({ task, client, request, onAccept, onDecline }) =
 
 const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Business Head'];
 
-const ApprovalsView = ({ clientLogs, clients, users, currentUser, persistClientLogs }) => {
+const ApprovalsView = ({ clientLogs, clients, users, currentUser, persistClientLogs, setClients, setUsers }) => {
   const [activeSubTab, setActiveSubTab] = useState('pending');
   const [approvingTask, setApprovingTask] = useState(null);
   const [returningTask, setReturningTask] = useState(null);
@@ -435,6 +435,36 @@ const ApprovalsView = ({ clientLogs, clients, users, currentUser, persistClientL
     });
   });
   assignmentRequestItems.sort((a, b) => b.request.timestamp - a.request.timestamp);
+
+  // --- Client join requests: collected from all accessible clients ---
+  const clientJoinRequestItems = [];
+  (clients || []).forEach(client => {
+    if (!isCrossDept && !myClientNames.includes(client.name)) return;
+    (client.joinRequests || []).forEach(req => {
+      clientJoinRequestItems.push({ client, request: req });
+    });
+  });
+  clientJoinRequestItems.sort((a, b) => b.request.timestamp - a.request.timestamp);
+
+  const totalAssignmentBadge = assignmentRequestItems.length + clientJoinRequestItems.length;
+
+  const handleAcceptClientJoin = (client, request) => {
+    if (!setClients || !setUsers) return;
+    const updatedClient = { ...client, joinRequests: (client.joinRequests || []).filter(r => String(r.requesterId) !== String(request.requesterId)) };
+    setClients((clients || []).map(c => String(c.id) === String(client.id) ? updatedClient : c));
+    if (setUsers) {
+      setUsers(prev => prev.map(u => String(u.id) === String(request.requesterId)
+        ? { ...u, assignedProjects: [...new Set([...(u.assignedProjects || []), client.name])] }
+        : u
+      ));
+    }
+  };
+
+  const handleDeclineClientJoin = (client, request) => {
+    if (!setClients) return;
+    const updatedClient = { ...client, joinRequests: (client.joinRequests || []).filter(r => String(r.requesterId) !== String(request.requesterId)) };
+    setClients((clients || []).map(c => String(c.id) === String(client.id) ? updatedClient : c));
+  };
 
   const groupByClient = (tasks) => {
     const groups = {};
@@ -552,30 +582,81 @@ const ApprovalsView = ({ clientLogs, clients, users, currentUser, persistClientL
   };
 
   const renderAssignmentRequests = () => {
-    if (assignmentRequestItems.length === 0) {
+    const hasTaskRequests = assignmentRequestItems.length > 0;
+    const hasClientRequests = clientJoinRequestItems.length > 0;
+
+    if (!hasTaskRequests && !hasClientRequests) {
       return (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <div className="w-14 h-14 rounded-2xl bg-violet-50 flex items-center justify-center mb-4">
             <UserPlus size={24} className="text-violet-300" />
           </div>
           <p className="text-sm font-semibold text-slate-500">No assignment requests</p>
-          <p className="text-xs text-slate-400 mt-1">Employees who request to join a task will appear here.</p>
+          <p className="text-xs text-slate-400 mt-1">Employees who request to join a task or client will appear here.</p>
         </div>
       );
     }
 
     return (
-      <div className="space-y-3">
-        {assignmentRequestItems.map(({ task, client, request }) => (
-          <AssignmentRequestCard
-            key={`${task.id}-${request.requesterId}`}
-            task={task}
-            client={client}
-            request={request}
-            onAccept={handleAcceptAssignment}
-            onDecline={handleDeclineAssignment}
-          />
-        ))}
+      <div className="space-y-6">
+        {hasClientRequests && (
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-widest text-violet-600 mb-3 flex items-center gap-2">
+              <span className="w-4 h-4 rounded-full bg-violet-100 flex items-center justify-center text-[9px] font-black text-violet-700">{clientJoinRequestItems.length}</span>
+              Client Requests
+            </h3>
+            <div className="space-y-2">
+              {clientJoinRequestItems.map(({ client, request }) => (
+                <div key={`${client.id}-${request.requesterId}`} className="bg-white border border-violet-200 rounded-xl p-4 shadow-sm flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-8 h-8 rounded-full bg-violet-100 flex items-center justify-center flex-shrink-0">
+                      <span className="text-xs font-black text-violet-700">{(request.requesterName || '?')[0].toUpperCase()}</span>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-slate-800 truncate">{request.requesterName}</p>
+                      <p className="text-xs text-slate-500 truncate">Requesting to join <span className="font-semibold text-violet-700">{client.name}</span></p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 flex-shrink-0">
+                    <button
+                      onClick={() => handleAcceptClientJoin(client, request)}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 transition-all shadow-sm"
+                    >
+                      <Check size={12} /> Accept
+                    </button>
+                    <button
+                      onClick={() => handleDeclineClientJoin(client, request)}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-200 transition-all"
+                    >
+                      <X size={12} /> Decline
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {hasTaskRequests && (
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-3 flex items-center gap-2">
+              <span className="w-4 h-4 rounded-full bg-slate-100 flex items-center justify-center text-[9px] font-black text-slate-600">{assignmentRequestItems.length}</span>
+              Task Requests
+            </h3>
+            <div className="space-y-3">
+              {assignmentRequestItems.map(({ task, client, request }) => (
+                <AssignmentRequestCard
+                  key={`${task.id}-${request.requesterId}`}
+                  task={task}
+                  client={client}
+                  request={request}
+                  onAccept={handleAcceptAssignment}
+                  onDecline={handleDeclineAssignment}
+                />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -627,9 +708,9 @@ const ApprovalsView = ({ clientLogs, clients, users, currentUser, persistClientL
           }`}
         >
           Assignments
-          {assignmentRequestItems.length > 0 && (
+          {totalAssignmentBadge > 0 && (
             <span className="bg-violet-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full">
-              {assignmentRequestItems.length}
+              {totalAssignmentBadge}
             </span>
           )}
         </button>
