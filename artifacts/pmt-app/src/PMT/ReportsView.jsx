@@ -1,22 +1,33 @@
 import React, { useMemo, useState } from 'react';
 import { Download } from 'lucide-react';
 
-const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Business Head'];
-
-const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = null }) => {
+const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = null, departments = [], canSeeAllData = false }) => {
   const [activeView, setActiveView] = useState('client');
+  const [selectedDepts, setSelectedDepts] = useState([]);
+  const [deptPickerOpen, setDeptPickerOpen] = useState(false);
+
+  const toggleDept = (dept) => {
+    setSelectedDepts(prev => prev.includes(dept) ? prev.filter(d => d !== dept) : [...prev, dept]);
+  };
 
   const filteredClientLogs = useMemo(() => {
-    const isCrossDept = CROSS_DEPT_ROLES.includes(currentUser?.role);
+    if (canSeeAllData) {
+      if (selectedDepts.length === 0) return clientLogs;
+      return Object.fromEntries(
+        Object.entries(clientLogs).map(([clientId, logs]) => [
+          clientId,
+          (logs || []).filter(t => !Array.isArray(t.departments) || t.departments.length === 0 || t.departments.some(d => selectedDepts.includes(d)))
+        ])
+      );
+    }
     const userDept = currentUser?.department;
-    if (isCrossDept) return clientLogs;
     return Object.fromEntries(
       Object.entries(clientLogs).map(([clientId, logs]) => [
         clientId,
-        (logs || []).filter(t => !Array.isArray(t.departments) || t.departments.includes(userDept))
+        (logs || []).filter(t => !Array.isArray(t.departments) || t.departments.length === 0 || t.departments.includes(userDept))
       ])
     );
-  }, [clientLogs, currentUser]);
+  }, [clientLogs, currentUser, canSeeAllData, selectedDepts]);
 
   const usersById = useMemo(() => {
     const map = new Map();
@@ -244,13 +255,42 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
           <p className="text-xs font-medium text-slate-500 mt-1">Client, employee, and combined performance views with CSV download.</p>
         </div>
 
-        <button
-          type="button"
-          onClick={handleDownload}
-          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-all"
-        >
-          <Download size={14} /> Download CSV
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {canSeeAllData && departments.length > 0 && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setDeptPickerOpen(o => !o)}
+                className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold text-slate-700 min-w-[160px] hover:border-blue-400 transition-all"
+              >
+                <span className="flex-1 text-left truncate">
+                  {selectedDepts.length === 0 ? 'All Departments' : selectedDepts.length === 1 ? selectedDepts[0] : `${selectedDepts.length} Departments`}
+                </span>
+                <span className="text-slate-400">▾</span>
+              </button>
+              {deptPickerOpen && (
+                <div className="absolute top-full mt-1 right-0 bg-white border border-slate-200 rounded-xl shadow-lg z-30 py-1 min-w-[180px]">
+                  <button type="button" onClick={() => setSelectedDepts([])} className="w-full text-left px-3 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 transition-all">
+                    Clear (All)
+                  </button>
+                  {departments.map(dept => (
+                    <label key={dept} className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 cursor-pointer">
+                      <input type="checkbox" checked={selectedDepts.includes(dept)} onChange={() => toggleDept(dept)} className="w-3.5 h-3.5 accent-blue-600" />
+                      <span className="text-xs font-medium text-slate-700">{dept}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={handleDownload}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-all"
+          >
+            <Download size={14} /> Download CSV
+          </button>
+        </div>
       </div>
 
       <div className="inline-flex bg-white border border-slate-200 rounded-xl p-1 shadow-sm">

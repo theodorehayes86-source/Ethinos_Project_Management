@@ -37,6 +37,10 @@ const MasterDataView = ({
   setMetricsAccessRoles,
   reportsAccessRoles = [],
   setReportsAccessRoles,
+  metricsAllDataRoles = [],
+  setMetricsAllDataRoles,
+  reportsAllDataRoles = [],
+  setReportsAllDataRoles,
   clients = [],
   setClients,
   users = [],
@@ -143,6 +147,12 @@ const MasterDataView = ({
     if (regions.some(item => item.toLowerCase() === trimmed.toLowerCase())) return;
     setRegions([...regions, trimmed]);
     setRegionInput('');
+  };
+
+  const toggleDataAccessRole = (setter, current, role) => {
+    if (role === 'Super Admin') return;
+    const next = current.includes(role) ? current.filter(r => r !== role) : [...current, role];
+    setter(next);
   };
 
   const toggleTabAccess = (tabId, role) => {
@@ -852,6 +862,47 @@ const MasterDataView = ({
           </div>
 
           <p className="text-xs text-slate-500">Super Admin always has access to all tabs and cannot be modified.</p>
+
+          <div className="mt-4 pt-4 border-t border-slate-200 space-y-3">
+            <p className="text-sm font-semibold text-slate-700">Data Access — Metrics &amp; Reports</p>
+            <p className="text-xs text-slate-500">Choose which roles see data across <strong>all departments</strong>. Roles without this permission will only see data from their own department.</p>
+            <div className="overflow-x-auto border border-slate-200 rounded-lg">
+              <table className="w-full border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-600">
+                    <th className="px-3 py-2 text-left font-semibold sticky left-0 bg-slate-100 z-10 min-w-[130px]">Role</th>
+                    <th className="px-3 py-2 text-center font-semibold whitespace-nowrap">Metrics — All Depts</th>
+                    <th className="px-3 py-2 text-center font-semibold whitespace-nowrap">Reports — All Depts</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {normalizedRoles.map(role => {
+                    const isSuperAdmin = role === 'Super Admin';
+                    const mChecked = isSuperAdmin || metricsAllDataRoles.includes(role);
+                    const rChecked = isSuperAdmin || reportsAllDataRoles.includes(role);
+                    return (
+                      <tr key={role} className={isSuperAdmin ? 'bg-blue-50' : 'hover:bg-slate-50'}>
+                        <td className="px-3 py-2 font-medium text-slate-700 sticky left-0 bg-inherit z-10 flex items-center gap-1.5">
+                          {isSuperAdmin && <Crown size={11} className="text-blue-600 flex-shrink-0" />}
+                          {role}
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <input type="checkbox" checked={mChecked} disabled={isSuperAdmin}
+                            onChange={() => toggleDataAccessRole(setMetricsAllDataRoles, metricsAllDataRoles, role)}
+                            className="w-4 h-4 accent-blue-600 cursor-pointer disabled:cursor-not-allowed" />
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <input type="checkbox" checked={rChecked} disabled={isSuperAdmin}
+                            onChange={() => toggleDataAccessRole(setReportsAllDataRoles, reportsAllDataRoles, role)}
+                            className="w-4 h-4 accent-blue-600 cursor-pointer disabled:cursor-not-allowed" />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
 

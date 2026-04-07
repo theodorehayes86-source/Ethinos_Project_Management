@@ -43,12 +43,40 @@ const TABS = [
   { id: 'quality', label: 'Quality' },
 ];
 
-const UserMetricsView = ({ users = [], clients = [], clientLogs = {} }) => {
+const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUser = null, departments = [], canSeeAllData = false }) => {
   const [rangePreset, setRangePreset] = useState('last7');
   const [customRange, setCustomRange] = useState({ start: '', end: '' });
   const [activeTab, setActiveTab] = useState('performance');
   const [qcClientFilter, setQcClientFilter] = useState('');
   const [qcCategoryFilter, setQcCategoryFilter] = useState('');
+  const [selectedDepts, setSelectedDepts] = useState([]);
+  const [deptPickerOpen, setDeptPickerOpen] = useState(false);
+
+  const toggleDept = (dept) => {
+    setSelectedDepts(prev => prev.includes(dept) ? prev.filter(d => d !== dept) : [...prev, dept]);
+  };
+
+  const effectiveLogs = useMemo(() => {
+    if (canSeeAllData) {
+      if (selectedDepts.length === 0) return clientLogs;
+      return Object.fromEntries(
+        Object.entries(clientLogs).map(([clientId, logs]) => [
+          clientId,
+          (logs || []).filter(log => {
+            if (!Array.isArray(log.departments) || log.departments.length === 0) return true;
+            return log.departments.some(d => selectedDepts.includes(d));
+          })
+        ])
+      );
+    }
+    const userDept = currentUser?.department;
+    return Object.fromEntries(
+      Object.entries(clientLogs).map(([clientId, logs]) => [
+        clientId,
+        (logs || []).filter(log => !Array.isArray(log.departments) || log.departments.length === 0 || log.departments.includes(userDept))
+      ])
+    );
+  }, [clientLogs, canSeeAllData, selectedDepts, currentUser]);
 
   const { rangeStart, rangeEnd } = useMemo(() => {
     const now = new Date();
@@ -88,7 +116,7 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {} }) => {
 
     const filteredLogs = [];
 
-    Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
+    Object.entries(effectiveLogs || {}).forEach(([clientId, logs]) => {
       const projectName = clientNameById[clientId] || 'Unknown Project';
 
       (logs || []).forEach(log => {
@@ -196,7 +224,7 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {} }) => {
       avgTaskSeconds,
       trendData
     };
-  }, [users, clients, clientLogs, rangeStart, rangeEnd]);
+  }, [users, clients, effectiveLogs, rangeStart, rangeEnd]);
 
   const qcMetrics = useMemo(() => {
     const clientNameById = Object.fromEntries(clients.map(c => [c.id, c.name]));
@@ -207,7 +235,7 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {} }) => {
     let totalApproved = 0;
     let totalReturned = 0;
 
-    Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
+    Object.entries(effectiveLogs || {}).forEach(([clientId, logs]) => {
       const clientName = clientNameById[clientId] || clientId;
       if (qcClientFilter && clientId !== qcClientFilter) return;
 
@@ -274,7 +302,7 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {} }) => {
     const lowestRated = employeeRows.filter(e => e.avgRating !== null).slice(-3).reverse();
 
     const allCategories = [...new Set(
-      Object.values(clientLogs || {}).flatMap(logs =>
+      Object.values(effectiveLogs || {}).flatMap(logs =>
         (logs || []).filter(l => l.qcEnabled).map(l => l.category).filter(Boolean)
       )
     )].sort();
@@ -290,7 +318,7 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {} }) => {
       lowestRated,
       allCategories,
     };
-  }, [clients, clientLogs, rangeStart, rangeEnd, qcClientFilter, qcCategoryFilter]);
+  }, [clients, effectiveLogs, rangeStart, rangeEnd, qcClientFilter, qcCategoryFilter]);
 
   const ratingBar = (rating) => {
     if (rating === null) return <span className="text-slate-400 text-xs">N/A</span>;
@@ -326,6 +354,33 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {} }) => {
         </div>
 
         <div className="flex flex-wrap gap-2 items-center">
+          {canSeeAllData && departments.length > 0 && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setDeptPickerOpen(o => !o)}
+                className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold text-slate-700 min-w-[160px] hover:border-blue-400 transition-all"
+              >
+                <span className="flex-1 text-left truncate">
+                  {selectedDepts.length === 0 ? 'All Departments' : selectedDepts.length === 1 ? selectedDepts[0] : `${selectedDepts.length} Departments`}
+                </span>
+                <span className="text-slate-400">▾</span>
+              </button>
+              {deptPickerOpen && (
+                <div className="absolute top-full mt-1 left-0 bg-white border border-slate-200 rounded-xl shadow-lg z-30 py-1 min-w-[180px]">
+                  <button type="button" onClick={() => setSelectedDepts([])} className="w-full text-left px-3 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 transition-all">
+                    Clear (All)
+                  </button>
+                  {departments.map(dept => (
+                    <label key={dept} className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 cursor-pointer">
+                      <input type="checkbox" checked={selectedDepts.includes(dept)} onChange={() => toggleDept(dept)} className="w-3.5 h-3.5 accent-blue-600" />
+                      <span className="text-xs font-medium text-slate-700">{dept}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <select
             value={rangePreset}
             onChange={(e) => setRangePreset(e.target.value)}

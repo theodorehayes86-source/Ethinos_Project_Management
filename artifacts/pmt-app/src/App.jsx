@@ -118,6 +118,8 @@ const App = () => {
   const [employeeViewAccessRoles, setEmployeeViewAccessRoles] = useState(['Super Admin', 'Director']);
   const [metricsAccessRoles, setMetricsAccessRoles] = useState(['Super Admin', 'Director']);
   const [reportsAccessRoles, setReportsAccessRoles] = useState(['Super Admin', 'Director']);
+  const [metricsAllDataRoles, setMetricsAllDataRoles] = useState(['Super Admin', 'Director']);
+  const [reportsAllDataRoles, setReportsAllDataRoles] = useState(['Super Admin', 'Director']);
   const [clientLogs, setClientLogs] = useState({});
   const [taskTemplates, setTaskTemplates] = useState(DEFAULT_TASK_TEMPLATES);
   const [notifications, setNotifications] = useState([
@@ -192,6 +194,8 @@ const App = () => {
       syncRef('employeeViewAccessRoles', (val) => setEmployeeViewAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
       syncRef('metricsAccessRoles', (val) => setMetricsAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
       syncRef('reportsAccessRoles', (val) => setReportsAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
+      syncRef('metricsAllDataRoles', (val) => setMetricsAllDataRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
+      syncRef('reportsAllDataRoles', (val) => setReportsAllDataRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
     ];
 
     setDbReady(true);
@@ -258,6 +262,14 @@ const App = () => {
     setReportsAccessRoles(val);
     if (firebaseUser) set(ref(db, 'reportsAccessRoles'), val);
   };
+  const persistMetricsAllDataRoles = (val) => {
+    setMetricsAllDataRoles(val);
+    if (firebaseUser) set(ref(db, 'metricsAllDataRoles'), val);
+  };
+  const persistReportsAllDataRoles = (val) => {
+    setReportsAllDataRoles(val);
+    if (firebaseUser) set(ref(db, 'reportsAllDataRoles'), val);
+  };
 
   // --- MATCH FIREBASE AUTH USER → PMT USER RECORD ---
   // Runs whenever auth state changes or the users list loads from Firebase.
@@ -316,6 +328,8 @@ const App = () => {
   const effectiveUserId = testModeUserId || currentUserId;
   const currentUser = users.find(u => u.id === effectiveUserId) || null;
   const isTestMode = !!testModeUserId;
+  const canSeeAllMetricsData = metricsAllDataRoles.includes(currentUser?.role);
+  const canSeeAllReportsData = reportsAllDataRoles.includes(currentUser?.role);
   const canSeeControlCenter = currentUser?.role === 'Super Admin' || Object.values(controlCenterTabAccess).some(roles => (roles || []).includes(currentUser?.role));
   const canSeeUserManagement = userManagementAccessRoles.includes(currentUser?.role);
   const canSeeEmployeeView = employeeViewAccessRoles.includes(currentUser?.role);
@@ -631,11 +645,11 @@ const App = () => {
           )}
 
           {activeTab === 'metrics' && !selectedClient && canSeeMetrics && (
-            <UserMetricsView users={users} clients={clients} clientLogs={clientLogs} />
+            <UserMetricsView users={users} clients={clients} clientLogs={clientLogs} currentUser={currentUser} departments={departments} canSeeAllData={canSeeAllMetricsData} />
           )}
 
           {activeTab === 'reports' && !selectedClient && canSeeReports && (
-            <ReportsView users={users} clients={clients} clientLogs={clientLogs} currentUser={currentUser} />
+            <ReportsView users={users} clients={clients} clientLogs={clientLogs} currentUser={currentUser} departments={departments} canSeeAllData={canSeeAllReportsData} />
           )}
 
           {activeTab === 'master-data' && !selectedClient && canSeeControlCenter && (
@@ -660,6 +674,10 @@ const App = () => {
               setMetricsAccessRoles={persistMetricsRoles}
               reportsAccessRoles={reportsAccessRoles}
               setReportsAccessRoles={persistReportsRoles}
+              metricsAllDataRoles={metricsAllDataRoles}
+              setMetricsAllDataRoles={persistMetricsAllDataRoles}
+              reportsAllDataRoles={reportsAllDataRoles}
+              setReportsAllDataRoles={persistReportsAllDataRoles}
               clients={clients}
               setClients={persistClients}
               users={users}
