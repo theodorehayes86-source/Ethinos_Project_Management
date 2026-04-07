@@ -145,14 +145,7 @@ const ClientView = ({
   const [editingCustomReportId, setEditingCustomReportId] = useState(null);
   const [expandedTaskId, setExpandedTaskId] = useState(null);
   const [openMenuClientId, setOpenMenuClientId] = useState(null);
-  const [editingClientId, setEditingClientId] = useState(null);
-  const [editEntityName, setEditEntityName] = useState("");
-  const [editClientName, setEditClientName] = useState("");
-  const [editClientAdmins, setEditClientAdmins] = useState([]);
-  const [editClientEmployees, setEditClientEmployees] = useState([]);
-  const [editAdminQuery, setEditAdminQuery] = useState("");
-  const [editTeamQuery, setEditTeamQuery] = useState("");
-  const [activePicker, setActivePicker] = useState(null); // 'addLeadership'|'addTeam'|'editLeadership'|'editTeam'|'qcReviewer'
+  const [activePicker, setActivePicker] = useState(null); // 'addLeadership'|'addTeam'|'qcReviewer'
   const [pickerSearch, setPickerSearch] = useState("");
 
   // QC form state (for new task creation)
@@ -516,76 +509,6 @@ const ClientView = ({
       
       setOpenMenuClientId(null);
     }
-  };
-
-  const handleEditClientClick = (client) => {
-    setEditingClientId(client.id);
-    setEditEntityName(client.entityName || "");
-    setEditClientName(client.name);
-    
-    // Get current admins and employees for this client
-    const staff = getProjectStaff(client.name);
-    setEditClientAdmins(staff.admins.map(a => a.id));
-    setEditClientEmployees(staff.employees.map(e => e.id));
-    setEditAdminQuery("");
-    setEditTeamQuery("");
-    setOpenMenuClientId(null);
-  };
-
-  const handleSaveEditClient = (e) => {
-    e.preventDefault();
-    if (!editEntityName || !editClientName) return;
-
-    const oldClientName = clients.find(c => c.id === editingClientId)?.name || "";
-    
-    // Update client name
-    const updatedClients = clients.map(c =>
-      c.id === editingClientId ? { ...c, entityName: editEntityName, name: editClientName } : c
-    );
-    setClients(updatedClients);
-
-    // Update user assignments
-    const updatedUsers = users.map(u => {
-      let updatedProjects = (u.assignedProjects || []).map(p => 
-        p === oldClientName ? editClientName : p
-      );
-      
-      const userWasAssigned = editClientAdmins.includes(u.id) || editClientEmployees.includes(u.id);
-      const userIsNowAssigned = editClientAdmins.includes(u.id) || editClientEmployees.includes(u.id);
-      
-      if (!userWasAssigned && userIsNowAssigned) {
-        updatedProjects = [...updatedProjects, editClientName];
-      } else if (userWasAssigned && !userIsNowAssigned) {
-        updatedProjects = updatedProjects.filter(p => p !== editClientName);
-      }
-      
-      return { ...u, assignedProjects: updatedProjects };
-    });
-    
-    if(setUsers) setUsers(updatedUsers);
-
-    // Update client logs if name changed
-    if (oldClientName !== editClientName) {
-      const newLogs = { ...clientLogs };
-      newLogs[editingClientId] = clientLogs[editingClientId] || [];
-      setClientLogs(newLogs);
-    }
-
-    setEditingClientId(null);
-    setEditEntityName("");
-    setEditClientName("");
-    setEditClientAdmins([]);
-    setEditClientEmployees([]);
-  };
-
-  const handleCancelEditClient = () => {
-    setEditingClientId(null);
-    setEditEntityName("");
-    setEditClientName("");
-    setEditClientAdmins([]);
-    setEditClientEmployees([]);
-    setEditAdminQuery("");
-    setEditTeamQuery("");
   };
 
   // --- TEMPLATE APPLY HELPERS ---
@@ -2112,18 +2035,14 @@ const ClientView = ({
   const filteredClients = clients.filter(c => c.name.toLowerCase().includes(clientSearch.toLowerCase()));
 
   // --- PICKER CONFIG ---
-  const pickerIsLeadership = activePicker === 'addLeadership' || activePicker === 'editLeadership';
+  const pickerIsLeadership = activePicker === 'addLeadership';
   const pickerAllUsers = users || [];
   const pickerSelected =
     activePicker === 'addLeadership' ? selectedAdmins :
-    activePicker === 'addTeam' ? selectedEmployees :
-    activePicker === 'editLeadership' ? editClientAdmins :
-    activePicker === 'editTeam' ? editClientEmployees : [];
+    activePicker === 'addTeam' ? selectedEmployees : [];
   const pickerSetSelected =
     activePicker === 'addLeadership' ? setSelectedAdmins :
-    activePicker === 'addTeam' ? setSelectedEmployees :
-    activePicker === 'editLeadership' ? setEditClientAdmins :
-    activePicker === 'editTeam' ? setEditClientEmployees : () => {};
+    activePicker === 'addTeam' ? setSelectedEmployees : () => {};
 
   return (
     <div className="p-3 space-y-5 animate-in fade-in duration-500 text-left min-h-full">
@@ -2190,16 +2109,6 @@ const ClientView = ({
                     {/* Dropdown Menu */}
                     {openMenuClientId === c.id && (
                       <div className="absolute right-0 top-8 bg-white border border-slate-200 rounded-lg shadow-lg z-50 w-32">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleEditClientClick(c);
-                          }}
-                          className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 border-b border-slate-100 transition-all"
-                        >
-                          <Edit2 size={14} />
-                          Edit
-                        </button>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -2345,83 +2254,6 @@ const ClientView = ({
                 </div>
               </div>
               <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold text-sm tracking-wide shadow-md hover:bg-blue-700 transition-all">Add Client</button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Client Modal */}
-      {editingClientId && (
-        <div className="fixed inset-0 z-[700] flex items-center justify-center bg-slate-900/10 backdrop-blur-md p-4">
-          <div className="bg-white w-full max-w-5xl border border-slate-200 shadow-xl rounded-2xl animate-in zoom-in-95 flex flex-col" style={{maxHeight:'90vh'}}>
-            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100">
-              <h4 className="text-lg font-semibold text-slate-900">Edit Client</h4>
-              <button onClick={handleCancelEditClient} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all"><X size={18}/></button>
-            </div>
-            <form onSubmit={handleSaveEditClient} className="space-y-5 px-6 py-5 overflow-y-auto">
-              <div className="space-y-2">
-                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Entity Name</label>
-                <input type="text" className="w-full p-3 border border-slate-200 bg-white rounded-lg text-sm font-medium outline-none focus:ring-2 ring-blue-500/20 transition-all" placeholder="Enter entity name" value={editEntityName} onChange={(e) => setEditEntityName(e.target.value)} required />
-              </div>
-              <div className="space-y-2">
-                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Client Name</label>
-                <input type="text" className="w-full p-3 border border-slate-200 bg-white rounded-lg text-sm font-medium outline-none focus:ring-2 ring-blue-500/20 transition-all" placeholder="Enter client name" value={editClientName} onChange={(e) => setEditClientName(e.target.value)} required />
-              </div>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {/* Edit Leadership Picker */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Leadership</label>
-                    <button type="button" onClick={() => { setPickerSearch(""); setActivePicker('editLeadership'); }}
-                      className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-all">
-                      <Users size={12}/> Select Members
-                    </button>
-                  </div>
-                  <div className="min-h-[60px] max-h-32 overflow-y-auto border border-slate-200 rounded-xl p-2.5 bg-slate-50/40 flex flex-wrap gap-1.5 items-start content-start">
-                    {editClientAdmins.length === 0
-                      ? <p className="text-xs text-slate-400 italic">No leadership selected</p>
-                      : editClientAdmins.map(id => {
-                          const u = (users || []).find(x => x.id === id);
-                          return u ? (
-                            <span key={id} className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold px-2 py-1 rounded-full">
-                              <Crown size={10} className="fill-blue-500 text-blue-500"/>
-                              {u.name}
-                              <button type="button" onClick={() => setEditClientAdmins(editClientAdmins.filter(x => x !== id))} className="ml-0.5 hover:text-blue-900"><X size={10}/></button>
-                            </span>
-                          ) : null;
-                        })
-                    }
-                  </div>
-                </div>
-                {/* Edit Team Picker */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Team</label>
-                    <button type="button" onClick={() => { setPickerSearch(""); setActivePicker('editTeam'); }}
-                      className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-all">
-                      <Users size={12}/> Select Members
-                    </button>
-                  </div>
-                  <div className="min-h-[60px] max-h-32 overflow-y-auto border border-slate-200 rounded-xl p-2.5 bg-slate-50/40 flex flex-wrap gap-1.5 items-start content-start">
-                    {editClientEmployees.length === 0
-                      ? <p className="text-xs text-slate-400 italic">No team members selected</p>
-                      : editClientEmployees.map(id => {
-                          const u = (users || []).find(x => x.id === id);
-                          return u ? (
-                            <span key={id} className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold px-2 py-1 rounded-full">
-                              {u.name}
-                              <button type="button" onClick={() => setEditClientEmployees(editClientEmployees.filter(x => x !== id))} className="ml-0.5 hover:text-slate-900"><X size={10}/></button>
-                            </span>
-                          ) : null;
-                        })
-                    }
-                  </div>
-                </div>
-              </div>
-              <div className="flex gap-3 justify-end pt-1">
-                <button type="button" onClick={handleCancelEditClient} className="px-5 py-2.5 rounded-lg font-semibold text-sm bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-all">Cancel</button>
-                <button type="submit" className="px-5 py-2.5 rounded-lg font-semibold text-sm bg-blue-600 text-white hover:bg-blue-700 transition-all shadow-md">Save Changes</button>
-              </div>
             </form>
           </div>
         </div>

@@ -1,5 +1,90 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, Trash2, Search, ShieldCheck, Edit2, X, ChevronUp, ChevronDown, Lock } from 'lucide-react';
+import { Plus, Trash2, Search, ShieldCheck, Edit2, X, ChevronUp, ChevronDown, Lock, Users, Crown, Check } from 'lucide-react';
+
+/* ─── Reusable User Picker Modal ─── */
+const UserPickerModal = ({ title, users, selected, onToggle, onClose, pickerSearch, setPickerSearch }) => {
+  const q = pickerSearch.toLowerCase().trim();
+  const filtered = (users || []).filter(u =>
+    !q ||
+    (u.name || '').toLowerCase().includes(q) ||
+    (u.role || '').toLowerCase().includes(q) ||
+    (u.department || '').toLowerCase().includes(q)
+  );
+  const roleColor = (role = '') => {
+    if (['Super Admin'].includes(role)) return 'bg-purple-100 text-purple-700';
+    if (['Director','Business Head'].includes(role)) return 'bg-blue-100 text-blue-700';
+    if (['Manager','Snr Manager','Project Manager','CSM'].includes(role)) return 'bg-indigo-100 text-indigo-700';
+    return 'bg-slate-100 text-slate-600';
+  };
+  return (
+    <div className="fixed inset-0 z-[900] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4">
+      <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 flex flex-col" style={{maxHeight:'80vh'}}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <Users size={16} className="text-blue-600" />
+            <h3 className="text-base font-bold text-slate-800">{title}</h3>
+            {selected.length > 0 && (
+              <span className="bg-blue-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">{selected.length}</span>
+            )}
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg transition-all"><X size={16}/></button>
+        </div>
+        <div className="px-4 py-3 border-b border-slate-100">
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+            <input
+              autoFocus
+              type="text"
+              placeholder="Search by name, role, or department..."
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 ring-blue-500/20 focus:border-blue-300"
+              value={pickerSearch}
+              onChange={e => setPickerSearch(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+          {filtered.length === 0 && (
+            <p className="text-center text-sm text-slate-400 py-8">No users found</p>
+          )}
+          {filtered.map(u => {
+            const isSelected = selected.includes(u.id);
+            return (
+              <button
+                key={u.id}
+                type="button"
+                onClick={() => onToggle(u.id)}
+                className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${
+                  isSelected ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0 ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                  {isSelected ? <Check size={14}/> : (u.name || '?')[0].toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm font-semibold truncate ${isSelected ? 'text-blue-700' : 'text-slate-800'}`}>{u.name}</p>
+                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${roleColor(u.role)}`}>{u.role}</span>
+                    {u.department && <span className="text-[10px] text-slate-400">{u.department}</span>}
+                  </div>
+                </div>
+                {isSelected && <Check size={14} className="text-blue-600 flex-shrink-0"/>}
+              </button>
+            );
+          })}
+        </div>
+        <div className="px-4 py-3 border-t border-slate-100">
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm py-2.5 rounded-lg transition-all shadow-sm"
+          >
+            Done — {selected.length} selected
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const REPEAT_OPTIONS = ['Daily', 'Weekly', 'Monthly', 'Once'];
 
@@ -27,8 +112,15 @@ const MasterDataView = ({
   metricsAccessRoles = [],
   setMetricsAccessRoles,
   reportsAccessRoles = [],
-  setReportsAccessRoles
+  setReportsAccessRoles,
+  clients = [],
+  setClients,
+  users = [],
+  setUsers,
 }) => {
+  const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
+  const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
+
   const [activeTab, setActiveTab] = useState('categories');
   const [categoryInput, setCategoryInput] = useState('');
   const [departmentInput, setDepartmentInput] = useState('');
@@ -37,6 +129,16 @@ const MasterDataView = ({
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [departmentFilter, setDepartmentFilter] = useState('All');
   const [regionFilter, setRegionFilter] = useState('All');
+
+  // --- CLIENT STATE ---
+  const [clientSearch, setClientSearch] = useState('');
+  const [editingClientId, setEditingClientId] = useState(null);
+  const [editEntityName, setEditEntityName] = useState('');
+  const [editClientName, setEditClientName] = useState('');
+  const [editClientAdmins, setEditClientAdmins] = useState([]);
+  const [editClientEmployees, setEditClientEmployees] = useState([]);
+  const [activePicker, setActivePicker] = useState(null); // 'leadership' | 'team'
+  const [pickerSearch, setPickerSearch] = useState('');
 
   // --- TEMPLATE STATE ---
   const [templateSearch, setTemplateSearch] = useState('');
@@ -166,6 +268,77 @@ const MasterDataView = ({
     ? regions
     : regions.filter(region => region === regionFilter);
 
+  // --- CLIENT HELPERS ---
+  const getProjectStaff = (clientName) => {
+    const staff = (users || []).filter(u => u.assignedProjects?.includes(clientName));
+    return {
+      admins: staff.filter(u => managementRoles.includes(u.role)),
+      employees: staff.filter(u => executionRoles.includes(u.role)),
+    };
+  };
+
+  const openEditClient = (client) => {
+    const staff = getProjectStaff(client.name);
+    setEditingClientId(client.id);
+    setEditEntityName(client.entityName || '');
+    setEditClientName(client.name);
+    setEditClientAdmins(staff.admins.map(a => a.id));
+    setEditClientEmployees(staff.employees.map(e => e.id));
+    setPickerSearch('');
+    setActivePicker(null);
+  };
+
+  const handleSaveEditClient = (e) => {
+    e.preventDefault();
+    if (!editEntityName.trim() || !editClientName.trim()) return;
+    const oldClientName = (clients.find(c => c.id === editingClientId) || {}).name || '';
+    const newName = editClientName.trim();
+
+    // Update client record
+    const updatedClients = clients.map(c =>
+      c.id === editingClientId ? { ...c, entityName: editEntityName.trim(), name: newName } : c
+    );
+    if (setClients) setClients(updatedClients);
+
+    // Sync user assignedProjects
+    if (setUsers) {
+      const newAdminSet = new Set(editClientAdmins);
+      const newEmpSet = new Set(editClientEmployees);
+      const oldStaff = getProjectStaff(oldClientName);
+      const oldAssignedSet = new Set([...oldStaff.admins, ...oldStaff.employees].map(u => u.id));
+
+      const updatedUsers = (users || []).map(u => {
+        // Rename old project name to new name
+        let projects = (u.assignedProjects || []).map(p => p === oldClientName ? newName : p);
+        const nowAssigned = newAdminSet.has(u.id) || newEmpSet.has(u.id);
+        const wasAssigned = oldAssignedSet.has(u.id);
+        if (!wasAssigned && nowAssigned) {
+          projects = [...projects, newName];
+        } else if (wasAssigned && !nowAssigned) {
+          projects = projects.filter(p => p !== newName);
+        }
+        return { ...u, assignedProjects: projects };
+      });
+      setUsers(updatedUsers);
+    }
+
+    closeEditClient();
+  };
+
+  const closeEditClient = () => {
+    setEditingClientId(null);
+    setEditEntityName('');
+    setEditClientName('');
+    setEditClientAdmins([]);
+    setEditClientEmployees([]);
+    setActivePicker(null);
+    setPickerSearch('');
+  };
+
+  const filteredClients = (clients || []).filter(c =>
+    !clientSearch.trim() || c.name.toLowerCase().includes(clientSearch.toLowerCase())
+  );
+
   // --- TEMPLATE HELPERS ---
   const openNewTemplateForm = () => {
     setEditingTemplate(null);
@@ -280,6 +453,7 @@ const MasterDataView = ({
           { id: 'regions', label: 'Regions' },
           { id: 'conditions', label: 'Conditions' },
           { id: 'templates', label: 'Templates' },
+          { id: 'clients', label: 'Clients' },
         ].map(tab => (
           <button
             key={tab.id}
@@ -659,6 +833,204 @@ const MasterDataView = ({
             ))}
           </div>
         </div>
+      )}
+
+      {/* ─── CLIENTS TAB ─── */}
+      {activeTab === 'clients' && (
+        <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1 max-w-sm">
+              <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+              <input
+                value={clientSearch}
+                onChange={e => setClientSearch(e.target.value)}
+                placeholder="Search clients..."
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-2 text-sm outline-none focus:ring-2 ring-blue-500/20"
+              />
+            </div>
+            <span className="text-xs text-slate-500 font-medium">{filteredClients.length} client{filteredClients.length !== 1 ? 's' : ''}</span>
+          </div>
+
+          {filteredClients.length === 0 ? (
+            <p className="text-center text-sm text-slate-400 py-8">No clients found.</p>
+          ) : (
+            <div className="border border-slate-200 rounded-lg overflow-hidden">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="bg-slate-100 text-xs font-semibold text-slate-600">
+                    <th className="px-3 py-2 text-left">Entity</th>
+                    <th className="px-3 py-2 text-left">Client Name</th>
+                    <th className="px-3 py-2 text-left">Leadership</th>
+                    <th className="px-3 py-2 text-left">Team</th>
+                    <th className="px-3 py-2 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredClients.map(c => {
+                    const staff = getProjectStaff(c.name);
+                    return (
+                      <tr key={c.id} className="hover:bg-slate-50 transition-all">
+                        <td className="px-3 py-2 text-xs text-slate-500">{c.entityName || '—'}</td>
+                        <td className="px-3 py-2 text-sm font-semibold text-slate-800">{c.name}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex flex-wrap gap-1">
+                            {staff.admins.length === 0
+                              ? <span className="text-xs text-slate-400 italic">None</span>
+                              : staff.admins.map(u => (
+                                  <span key={u.id} className="inline-flex items-center gap-1 text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded-full">
+                                    <Crown size={8} className="text-blue-500"/>{u.name}
+                                  </span>
+                                ))
+                            }
+                          </div>
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex flex-wrap gap-1">
+                            {staff.employees.length === 0
+                              ? <span className="text-xs text-slate-400 italic">None</span>
+                              : staff.employees.map(u => (
+                                  <span key={u.id} className="inline-flex text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 px-1.5 py-0.5 rounded-full">
+                                    {u.name}
+                                  </span>
+                                ))
+                            }
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <button
+                            onClick={() => openEditClient(c)}
+                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                            title="Edit"
+                          >
+                            <Edit2 size={14}/>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── EDIT CLIENT MODAL ─── */}
+      {editingClientId && (
+        <div className="fixed inset-0 z-[800] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 flex flex-col animate-in zoom-in-95 duration-200" style={{maxHeight:'90vh'}}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-800">Edit Client</h3>
+              <button onClick={closeEditClient} className="p-1.5 hover:bg-slate-100 rounded-lg transition-all"><X size={16}/></button>
+            </div>
+            <form onSubmit={handleSaveEditClient} className="flex flex-col flex-1 overflow-y-auto">
+              <div className="px-6 py-5 space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-700">Entity Name <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={editEntityName}
+                      onChange={e => setEditEntityName(e.target.value)}
+                      placeholder="Entity name..."
+                      required
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 ring-blue-500/20 bg-white"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-700">Client Name <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={editClientName}
+                      onChange={e => setEditClientName(e.target.value)}
+                      placeholder="Client name..."
+                      required
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 ring-blue-500/20 bg-white"
+                    />
+                  </div>
+                </div>
+
+                {/* Leadership */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-700">Leadership</label>
+                    <button
+                      type="button"
+                      onClick={() => { setPickerSearch(''); setActivePicker('leadership'); }}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-all"
+                    >
+                      <Users size={12}/> Select Members
+                    </button>
+                  </div>
+                  <div className="min-h-[52px] max-h-28 overflow-y-auto border border-slate-200 rounded-xl p-2.5 bg-slate-50/50 flex flex-wrap gap-1.5 items-start content-start">
+                    {editClientAdmins.length === 0
+                      ? <p className="text-xs text-slate-400 italic">No leadership selected</p>
+                      : editClientAdmins.map(id => {
+                          const u = (users || []).find(x => x.id === id);
+                          return u ? (
+                            <span key={id} className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold px-2 py-1 rounded-full">
+                              <Crown size={10} className="text-blue-500"/>
+                              {u.name}
+                              <button type="button" onClick={() => setEditClientAdmins(prev => prev.filter(x => x !== id))} className="ml-0.5 hover:text-blue-900"><X size={10}/></button>
+                            </span>
+                          ) : null;
+                        })
+                    }
+                  </div>
+                </div>
+
+                {/* Team */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-700">Team</label>
+                    <button
+                      type="button"
+                      onClick={() => { setPickerSearch(''); setActivePicker('team'); }}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-all"
+                    >
+                      <Users size={12}/> Select Members
+                    </button>
+                  </div>
+                  <div className="min-h-[52px] max-h-28 overflow-y-auto border border-slate-200 rounded-xl p-2.5 bg-slate-50/50 flex flex-wrap gap-1.5 items-start content-start">
+                    {editClientEmployees.length === 0
+                      ? <p className="text-xs text-slate-400 italic">No team members selected</p>
+                      : editClientEmployees.map(id => {
+                          const u = (users || []).find(x => x.id === id);
+                          return u ? (
+                            <span key={id} className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold px-2 py-1 rounded-full">
+                              {u.name}
+                              <button type="button" onClick={() => setEditClientEmployees(prev => prev.filter(x => x !== id))} className="ml-0.5 hover:text-slate-900"><X size={10}/></button>
+                            </span>
+                          ) : null;
+                        })
+                    }
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100">
+                <button type="button" onClick={closeEditClient} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-all">Cancel</button>
+                <button type="submit" className="px-5 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-all shadow-sm">Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── USER PICKER MODAL (for client edit) ─── */}
+      {activePicker && (
+        <UserPickerModal
+          title={activePicker === 'leadership' ? 'Select Leadership' : 'Select Team Members'}
+          users={users || []}
+          selected={activePicker === 'leadership' ? editClientAdmins : editClientEmployees}
+          onToggle={id => {
+            const setter = activePicker === 'leadership' ? setEditClientAdmins : setEditClientEmployees;
+            setter(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+          }}
+          onClose={() => setActivePicker(null)}
+          pickerSearch={pickerSearch}
+          setPickerSearch={setPickerSearch}
+        />
       )}
 
       {/* ─── TEMPLATE FORM MODAL ─── */}

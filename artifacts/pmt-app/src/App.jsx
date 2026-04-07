@@ -661,6 +661,10 @@ const App = () => {
               setMetricsAccessRoles={persistMetricsRoles}
               reportsAccessRoles={reportsAccessRoles}
               setReportsAccessRoles={persistReportsRoles}
+              clients={clients}
+              setClients={persistClients}
+              users={users}
+              setUsers={persistUsers}
             />
           )}
         </main>
