@@ -192,14 +192,12 @@ const ClientView = ({
 
   const startTaskTimer = (logId) => {
     updateTaskLog(logId, (log) => {
-      const shouldReset = log.timerState === 'stopped';
       return {
         ...log,
         status: 'WIP',
         timerState: 'running',
         timerStartedAt: Date.now(),
-        elapsedMs: shouldReset ? 0 : (log.elapsedMs || 0),
-        timeTaken: shouldReset ? null : log.timeTaken
+        elapsedMs: log.elapsedMs || 0,
       };
     });
   };
