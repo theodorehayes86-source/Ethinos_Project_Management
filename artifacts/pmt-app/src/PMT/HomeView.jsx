@@ -5,6 +5,8 @@ import "react-datepicker/dist/react-datepicker.css";
 import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 
+const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Business Head'];
+
 const HomeView = ({
   accessibleClients,
   allTasks,
@@ -14,6 +16,7 @@ const HomeView = ({
   currentUser,
   taskCategories = [],
   users = [],
+  departments = [],
 }) => {
   const [showAddTaskModal, setShowAddTaskModal] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState(accessibleClients[0]?.id || '');
@@ -37,6 +40,8 @@ const HomeView = ({
   const [showQcPicker, setShowQcPicker] = useState(false);
   const [qcPickerSearch, setQcPickerSearch] = useState('');
   const [taskError, setTaskError] = useState('');
+  // Departments
+  const [taskDepartments, setTaskDepartments] = useState([]);
 
   const selectedClient = useMemo(
     () => accessibleClients.find(c => c.id === selectedClientId),
@@ -77,10 +82,31 @@ const HomeView = ({
     setShowQcPicker(false);
     setQcPickerSearch('');
     setTaskError('');
+    setTaskDepartments(currentUser?.department ? [currentUser.department] : []);
   };
 
   const openAddTaskModal = () => { resetModal(); setShowAddTaskModal(true); };
   const closeModal = () => { setShowAddTaskModal(false); resetModal(); };
+
+  const isCrossDept = CROSS_DEPT_ROLES.includes(currentUser?.role);
+  const userDept = currentUser?.department;
+
+  const visibleTasks = useMemo(() => {
+    if (isCrossDept) return allTasks;
+    return allTasks.filter(t => {
+      if (!t.departments || !Array.isArray(t.departments)) return true;
+      return t.departments.includes(userDept);
+    });
+  }, [allTasks, isCrossDept, userDept]);
+
+  const getVisibleClientTasks = (clientId) => {
+    const logs = clientLogs[clientId] || [];
+    if (isCrossDept) return logs;
+    return logs.filter(t => {
+      if (!t.departments || !Array.isArray(t.departments)) return true;
+      return t.departments.includes(userDept);
+    });
+  };
 
   const handleAddTaskFromHome = (event) => {
     event.preventDefault();
@@ -115,6 +141,7 @@ const HomeView = ({
       qcRating: null,
       qcFeedback: null,
       qcReviewedAt: null,
+      departments: taskDepartments.length > 0 ? taskDepartments : (currentUser?.department ? [currentUser.department] : null),
     };
     const nextLogs = { ...clientLogs, [selectedClientId]: [newTask, ...(clientLogs[selectedClientId] || [])] };
     setClientLogs(nextLogs);
@@ -134,9 +161,9 @@ const HomeView = ({
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {[
           { label: 'Total Clients', value: accessibleClients.length, icon: <Briefcase size={16} className="text-blue-600"/>, bgColor: 'bg-blue-100', iconBgColor: 'bg-blue-200' },
-          { label: 'Open Tasks', value: allTasks.filter(t => t.status !== 'Done').length, icon: <Clock size={16} className="text-green-600"/>, bgColor: 'bg-green-100', iconBgColor: 'bg-green-200' },
-          { label: 'WIP', value: allTasks.filter(t => t.status === 'WIP').length, icon: <Activity size={16} className="text-orange-500"/>, bgColor: 'bg-orange-100', iconBgColor: 'bg-orange-200' },
-          { label: 'Pending', value: allTasks.filter(t => t.status === 'Pending').length, icon: <AlertTriangle size={16} className="text-red-500"/>, bgColor: 'bg-red-100', iconBgColor: 'bg-red-200' }
+          { label: 'Open Tasks', value: visibleTasks.filter(t => t.status !== 'Done').length, icon: <Clock size={16} className="text-green-600"/>, bgColor: 'bg-green-100', iconBgColor: 'bg-green-200' },
+          { label: 'WIP', value: visibleTasks.filter(t => t.status === 'WIP').length, icon: <Activity size={16} className="text-orange-500"/>, bgColor: 'bg-orange-100', iconBgColor: 'bg-orange-200' },
+          { label: 'Pending', value: visibleTasks.filter(t => t.status === 'Pending').length, icon: <AlertTriangle size={16} className="text-red-500"/>, bgColor: 'bg-red-100', iconBgColor: 'bg-red-200' }
         ].map((stat, i) => (
           <div key={i} className={`${stat.bgColor} p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between h-28 transition-hover hover:shadow-md`}>
             <div className="flex justify-between items-start">
@@ -160,15 +187,18 @@ const HomeView = ({
 
       {/* 2. TASK PIPELINES GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {accessibleClients.map(client => (
+        {accessibleClients.map(client => {
+          const clientTasks = getVisibleClientTasks(client.id);
+          const activeTasks = clientTasks.filter(t => t.status !== 'Done');
+          return (
           <div key={client.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full hover:shadow-lg transition-all duration-300">
             <div className="p-5 flex justify-between items-center">
               <div className="flex items-center gap-3">
                 <h4 className="text-sm font-semibold text-slate-900">{client.name}</h4>
                 <span className={`px-2 py-0.5 rounded-full text-[8px] font-semibold ${
-                  (clientLogs[client.id] || []).length > 0 ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-400'
+                  clientTasks.length > 0 ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-400'
                 }`}>
-                  {(clientLogs[client.id] || []).length > 0 ? 'Active' : 'Inactive'}
+                  {clientTasks.length > 0 ? 'Active' : 'Inactive'}
                 </span>
               </div>
               <button onClick={() => setSelectedClient(client)} className="flex items-center gap-1 text-[10px] font-medium text-slate-500 hover:text-blue-600 transition-colors bg-slate-50 px-3 py-1.5 rounded-lg">
@@ -177,15 +207,18 @@ const HomeView = ({
             </div>
             <div className="flex-1 p-5 pt-0">
               <div className="bg-slate-50/50 rounded-2xl p-4 min-h-[140px] flex flex-col justify-center">
-                {(clientLogs[client.id] || []).filter(t => t.status !== 'Done').length > 0 ? (
+                {activeTasks.length > 0 ? (
                   <div className="space-y-4">
-                    {(clientLogs[client.id] || []).filter(t => t.status !== 'Done').slice(0, 2).map(task => (
+                    {activeTasks.slice(0, 2).map(task => (
                       <div key={task.id} className="flex items-start gap-3 group">
                         <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${task.status === 'WIP' ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]' : 'bg-orange-500'}`} />
                         <div className="flex-1">
                           <p className="text-sm font-medium text-slate-600 leading-snug line-clamp-2">{task.name || task.comment}</p>
-                          <div className="flex items-center gap-2 mt-1">
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
                             <span className="text-[8px] font-semibold text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded">New</span>
+                            {Array.isArray(task.departments) && task.departments.map(dept => (
+                              <span key={dept} className="text-[8px] font-semibold text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">{dept}</span>
+                            ))}
                           </div>
                         </div>
                       </div>
@@ -204,11 +237,12 @@ const HomeView = ({
             <div className="px-5 py-4 bg-slate-50/80 border-t border-slate-50 flex items-center gap-2">
               <Clock size={12} className="text-slate-400"/>
               <span className="text-xs font-medium text-slate-500">
-                Last activity {(clientLogs[client.id] || []).length > 0 ? 'recently' : '1 week ago'}
+                Last activity {clientTasks.length > 0 ? 'recently' : '1 week ago'}
               </span>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* ADD TASK MODAL */}
@@ -417,6 +451,41 @@ const HomeView = ({
                       </div>
                     )}
                   </div>
+
+                  {/* Departments */}
+                  {departments.length > 0 && (
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Departments</label>
+                      <div className="flex flex-wrap gap-2">
+                        {departments.map(dept => {
+                          const isSelected = taskDepartments.includes(dept);
+                          const isCreatorDept = dept === currentUser?.department;
+                          return (
+                            <button
+                              key={dept}
+                              type="button"
+                              disabled={isCreatorDept}
+                              onClick={() => {
+                                if (isCreatorDept) return;
+                                setTaskDepartments(prev =>
+                                  prev.includes(dept) ? prev.filter(d => d !== dept) : [...prev, dept]
+                                );
+                              }}
+                              className={`px-2.5 py-1 rounded-full text-[10px] font-semibold border transition-all ${
+                                isSelected
+                                  ? 'bg-purple-100 border-purple-300 text-purple-700'
+                                  : 'bg-white border-slate-200 text-slate-500 hover:border-purple-300 hover:text-purple-600'
+                              } ${isCreatorDept ? 'cursor-default ring-1 ring-purple-400' : 'cursor-pointer'}`}
+                              title={isCreatorDept ? 'Your department (always included)' : undefined}
+                            >
+                              {dept}{isCreatorDept ? ' ✓' : ''}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="text-[10px] text-slate-400">Your department is pre-selected and cannot be removed.</p>
+                    </div>
+                  )}
 
                 </div>
               </div>

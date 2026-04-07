@@ -5,10 +5,19 @@ import DatePicker from "react-datepicker";
 import { format, subDays, parse } from 'date-fns';
 import "react-datepicker/dist/react-datepicker.css";
 
+const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Business Head'];
+
+const isTaskVisible = (task, currentUser) => {
+  if (CROSS_DEPT_ROLES.includes(currentUser?.role)) return true;
+  if (!Array.isArray(task.departments)) return true;
+  return task.departments.includes(currentUser?.department);
+};
+
 const ClientView = ({ 
   selectedClient, setSelectedClient, clients = [], setClients, 
   clientLogs = {}, setClientLogs, clientSearch = "", setClientSearch,
-  users = [], setUsers, currentUser, taskCategories = [], taskTemplates = [], setNotifications = () => {}
+  users = [], setUsers, currentUser, taskCategories = [], taskTemplates = [], setNotifications = () => {},
+  departments = [],
 }) => {
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
@@ -55,6 +64,8 @@ const ClientView = ({
   const [qcEnabled, setQcEnabled] = useState(true);
   const [qcAssigneeId, setQcAssigneeId] = useState('');
   const [qcAssigneeName, setQcAssigneeName] = useState('');
+  // Department selection for new task
+  const [newTaskDepartments, setNewTaskDepartments] = useState([]);
 
   // QC review state (for management reviewing a sent task)
   const [qcReviewingTaskId, setQcReviewingTaskId] = useState(null);
@@ -281,14 +292,13 @@ const ClientView = ({
   };
 
   const getTaskCounts = (clientId) => {
-    const logs = clientLogs[clientId] || [];
+    const logs = (clientLogs[clientId] || []).filter(t => isTaskVisible(t, currentUser));
     const twoDaysAgo = subDays(new Date(), 2);
 
     return {
       open: logs.filter(l => l.status === 'Pending').length,
       wip: logs.filter(l => l.timerState === 'running').length,
       done: logs.filter(l => l.status === 'Done').length,
-      // Tasks older than 48 hours and not completed yet
       recentPending: logs.filter(l => {
         if (l.status === 'Done') return false;
         try {
@@ -331,7 +341,8 @@ const ClientView = ({
       qcStatus: null,
       qcRating: null,
       qcFeedback: null,
-      qcReviewedAt: null
+      qcReviewedAt: null,
+      departments: newTaskDepartments.length > 0 ? newTaskDepartments : (currentUser?.department ? [currentUser.department] : null),
     };
 
     setNotifications(prev => [
@@ -368,6 +379,7 @@ const ClientView = ({
     setQcEnabled(true);
     setQcAssigneeId('');
     setQcAssigneeName('');
+    setNewTaskDepartments(currentUser?.department ? [currentUser.department] : []);
     setShowTaskForm(false);
   };
 
@@ -410,6 +422,7 @@ const ClientView = ({
     }
 
     const dateStr = format(templateStartDate, 'do MMM yyyy');
+    const creatorDept = currentUser?.department;
     const newTasks = tpl.tasks.map(taskItem => ({
       id: Date.now() + Math.random(),
       date: dateStr,
@@ -429,6 +442,7 @@ const ClientView = ({
       timerStartedAt: null,
       elapsedMs: 0,
       timeTaken: null,
+      departments: creatorDept ? [creatorDept] : [],
     }));
 
     setClientLogs({
@@ -505,7 +519,8 @@ const ClientView = ({
   // --- 1. DEEP VIEW (SINGLE CLIENT) ---
   if (selectedClient) {
     const stats = getTaskCounts(selectedClient.id);
-    const filteredTaskLogs = (clientLogs[selectedClient.id] || []).filter(log =>
+    const visibleTaskLogs = (clientLogs[selectedClient.id] || []).filter(log => isTaskVisible(log, currentUser));
+    const filteredTaskLogs = visibleTaskLogs.filter(log =>
       taskStatusFilter === 'All' ? true : log.status === taskStatusFilter
     );
     const selectedClientRecord = clients.find(client => client.id === selectedClient.id) || selectedClient;
@@ -576,6 +591,7 @@ const ClientView = ({
                 setQcEnabled(true);
                 setQcAssigneeId('');
                 setQcAssigneeName('');
+                setNewTaskDepartments(currentUser?.department ? [currentUser.department] : []);
                 setShowTaskForm(true);
               }}
               className="bg-blue-600 text-white px-3.5 py-2 rounded-lg font-semibold text-xs hover:bg-blue-700 transition-all flex items-center gap-1.5 shadow-md"
@@ -662,6 +678,13 @@ const ClientView = ({
                       {/* Task name */}
                       <td className="px-1.5 py-2">
                         <p className={`text-xs font-semibold text-slate-800 leading-4 break-words ${isExpanded ? '' : 'line-clamp-2'}`}>{log.name || '—'}</p>
+                        {Array.isArray(log.departments) && log.departments.length > 0 && (
+                          <div className="flex flex-wrap gap-0.5 mt-0.5">
+                            {log.departments.map(dept => (
+                              <span key={dept} className="text-[8px] font-semibold text-purple-600 bg-purple-50 px-1 py-0.5 rounded">{dept}</span>
+                            ))}
+                          </div>
+                        )}
                       </td>
 
                       {/* Category */}
@@ -1343,6 +1366,40 @@ const ClientView = ({
                         </div>
                       )}
                     </div>
+                    {/* Departments */}
+                    {departments.length > 0 && (
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Departments</label>
+                        <div className="flex flex-wrap gap-2">
+                          {departments.map(dept => {
+                            const isSelected = newTaskDepartments.includes(dept);
+                            const isCreatorDept = dept === currentUser?.department;
+                            return (
+                              <button
+                                key={dept}
+                                type="button"
+                                disabled={isCreatorDept}
+                                onClick={() => {
+                                  if (isCreatorDept) return;
+                                  setNewTaskDepartments(prev =>
+                                    prev.includes(dept) ? prev.filter(d => d !== dept) : [...prev, dept]
+                                  );
+                                }}
+                                className={`px-2.5 py-1 rounded-full text-[10px] font-semibold border transition-all ${
+                                  isSelected
+                                    ? 'bg-purple-100 border-purple-300 text-purple-700'
+                                    : 'bg-white border-slate-200 text-slate-500 hover:border-purple-300 hover:text-purple-600'
+                                } ${isCreatorDept ? 'cursor-default ring-1 ring-purple-400' : 'cursor-pointer'}`}
+                                title={isCreatorDept ? 'Your department (always included)' : undefined}
+                              >
+                                {dept}{isCreatorDept ? ' ✓' : ''}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <p className="text-[10px] text-slate-400">Your department is pre-selected and cannot be removed.</p>
+                      </div>
+                    )}
                   </div>
                 </div>
                 {taskFormError && (
@@ -1922,8 +1979,8 @@ const ClientView = ({
           const counts = getTaskCounts(c.id);
           const staff = getProjectStaff(c.name);
           
-          // Calculate average time spent per day
-          const projectLogs = clientLogs[c.id] || [];
+          // Calculate average time spent per day (department-filtered)
+          const projectLogs = (clientLogs[c.id] || []).filter(t => isTaskVisible(t, currentUser));
           const dailyTotals = {};
           projectLogs.forEach(log => {
             if (!dailyTotals[log.date]) {

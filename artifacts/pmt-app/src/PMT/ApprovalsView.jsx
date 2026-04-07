@@ -216,6 +216,11 @@ const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed }) => {
                   {task.category}
                 </span>
               )}
+              {Array.isArray(task.departments) && task.departments.map(dept => (
+                <span key={dept} className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-600">
+                  {dept}
+                </span>
+              ))}
             </div>
             <p className="text-sm font-semibold text-slate-800 leading-snug mb-2">{task.comment}</p>
             <div className="flex flex-wrap gap-3 text-xs text-slate-500">
@@ -318,6 +323,8 @@ const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed }) => {
   );
 };
 
+const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Business Head'];
+
 const ApprovalsView = ({ clientLogs, clients, users, currentUser, persistClientLogs }) => {
   const [activeSubTab, setActiveSubTab] = useState('pending');
   const [approvingTask, setApprovingTask] = useState(null);
@@ -332,11 +339,15 @@ const ApprovalsView = ({ clientLogs, clients, users, currentUser, persistClientL
     );
   }
 
+  const isCrossDept = CROSS_DEPT_ROLES.includes(currentUser?.role);
+  const userDept = currentUser?.department;
+
   const allTasksFlat = [];
   Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
     const client = clients.find(c => String(c.id) === String(clientId));
     (logs || []).forEach(task => {
       if (String(task.qcAssigneeId) === String(currentUser.id)) {
+        if (!isCrossDept && Array.isArray(task.departments) && !task.departments.includes(userDept)) return;
         allTasksFlat.push({ ...task, _clientId: clientId, _client: client });
       }
     });

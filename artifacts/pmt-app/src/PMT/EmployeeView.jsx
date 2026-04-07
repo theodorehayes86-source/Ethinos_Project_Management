@@ -22,13 +22,27 @@ const parseTimeTaken = (timeTaken = '') => {
 
 const formatHours = (seconds = 0) => `${(seconds / 3600).toFixed(1)}h`;
 
-const EmployeeView = ({ users = [], regions = [], clients = [], clientLogs = {} }) => {
+const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Business Head'];
+
+const EmployeeView = ({ users = [], regions = [], clients = [], clientLogs = {}, currentUser = null }) => {
   const [rangePreset, setRangePreset] = useState('last7');
   const [customRange, setCustomRange] = useState({ start: '', end: '' });
   const [selectedDirector, setSelectedDirector] = useState('All');
   const [selectedRegion, setSelectedRegion] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
+
+  const filteredClientLogs = useMemo(() => {
+    const isCrossDept = CROSS_DEPT_ROLES.includes(currentUser?.role);
+    const userDept = currentUser?.department;
+    if (isCrossDept) return clientLogs;
+    return Object.fromEntries(
+      Object.entries(clientLogs).map(([clientId, logs]) => [
+        clientId,
+        (logs || []).filter(t => !Array.isArray(t.departments) || t.departments.includes(userDept))
+      ])
+    );
+  }, [clientLogs, currentUser]);
 
   const searchOptions = useMemo(() => {
     const executionUsers = users.filter(user => EXECUTION_ROLES.includes(user.role));
@@ -171,7 +185,7 @@ const EmployeeView = ({ users = [], regions = [], clients = [], clientLogs = {} 
     });
     const perCategory = new Map();
 
-    Object.entries(clientLogs || {}).forEach(([clientId, logs = []]) => {
+    Object.entries(filteredClientLogs || {}).forEach(([clientId, logs = []]) => {
       const projectName = clientNameById[clientId] || '';
       const projectNameLower = projectName.toLowerCase();
       const projectMatchesSearch = !normalizedSearch || projectNameLower.includes(normalizedSearch);
@@ -316,7 +330,7 @@ const EmployeeView = ({ users = [], regions = [], clients = [], clientLogs = {} 
       directorRows,
       categoryRows
     };
-  }, [users, regions, clients, clientLogs, rangePreset, customRange, selectedDirector, selectedRegion, searchQuery]);
+  }, [users, regions, clients, filteredClientLogs, rangePreset, customRange, selectedDirector, selectedRegion, searchQuery]);
 
   const availableRegions = ['All', ...(regions.length ? regions : [...new Set(users.map(user => user.region).filter(Boolean))])];
   const availableDirectors = users.filter(user => user.role === 'Director' || user.role === 'Business Head');

@@ -1,8 +1,22 @@
 import React, { useMemo, useState } from 'react';
 import { Download } from 'lucide-react';
 
-const ReportsView = ({ users = [], clients = [], clientLogs = {} }) => {
+const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Business Head'];
+
+const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = null }) => {
   const [activeView, setActiveView] = useState('client');
+
+  const filteredClientLogs = useMemo(() => {
+    const isCrossDept = CROSS_DEPT_ROLES.includes(currentUser?.role);
+    const userDept = currentUser?.department;
+    if (isCrossDept) return clientLogs;
+    return Object.fromEntries(
+      Object.entries(clientLogs).map(([clientId, logs]) => [
+        clientId,
+        (logs || []).filter(t => !Array.isArray(t.departments) || t.departments.includes(userDept))
+      ])
+    );
+  }, [clientLogs, currentUser]);
 
   const usersById = useMemo(() => {
     const map = new Map();
@@ -27,7 +41,7 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {} }) => {
   const allRows = useMemo(() => {
     const rows = [];
 
-    Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
+    Object.entries(filteredClientLogs || {}).forEach(([clientId, logs]) => {
       const clientRecord = clientsById.get(String(clientId));
       const entityName = clientRecord?.entityName || '-';
       const clientName = clientRecord?.name || 'Unknown Client';
@@ -57,7 +71,7 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {} }) => {
     });
 
     return rows;
-  }, [clientLogs, clientsById, usersById]);
+  }, [filteredClientLogs, clientsById, usersById]);
 
   const clientSummary = useMemo(() => {
     const summaryMap = new Map();

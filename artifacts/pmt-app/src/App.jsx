@@ -341,11 +341,17 @@ const App = () => {
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const canSeeApprovals = managementRoles.includes(currentUser?.role);
 
+  const CROSS_DEPT_ROLES_APP = ['Super Admin', 'Admin', 'Business Head'];
+  const isCrossDeptApp = CROSS_DEPT_ROLES_APP.includes(currentUser?.role);
+  const userDeptApp = currentUser?.department;
   const pendingApprovalsCount = canSeeApprovals
     ? Object.values(clientLogs || {}).reduce((total, logs) => {
-        return total + (logs || []).filter(t =>
-          String(t.qcAssigneeId) === String(currentUser?.id) && t.qcStatus === 'sent'
-        ).length;
+        return total + (logs || []).filter(t => {
+          if (String(t.qcAssigneeId) !== String(currentUser?.id) || t.qcStatus !== 'sent') return false;
+          if (isCrossDeptApp) return true;
+          if (!Array.isArray(t.departments)) return true;
+          return t.departments.includes(userDeptApp);
+        }).length;
       }, 0)
     : 0;
 
@@ -573,6 +579,7 @@ const App = () => {
               currentUser={currentUser}
               taskCategories={taskCategories}
               users={users}
+              departments={departments}
             />
           )}
 
@@ -603,6 +610,7 @@ const App = () => {
               taskTemplates={taskTemplates}
               setNotifications={setNotifications}
               accessibleClients={accessibleClients}
+              departments={departments}
             />
           )}
 
@@ -616,7 +624,7 @@ const App = () => {
           )}
 
           {activeTab === 'employees' && !selectedClient && canSeeEmployeeView && (
-            <EmployeeView users={users} clients={clients} clientLogs={clientLogs} />
+            <EmployeeView users={users} clients={clients} clientLogs={clientLogs} currentUser={currentUser} />
           )}
 
           {activeTab === 'metrics' && !selectedClient && canSeeMetrics && (
@@ -624,7 +632,7 @@ const App = () => {
           )}
 
           {activeTab === 'reports' && !selectedClient && canSeeReports && (
-            <ReportsView users={users} clients={clients} clientLogs={clientLogs} />
+            <ReportsView users={users} clients={clients} clientLogs={clientLogs} currentUser={currentUser} />
           )}
 
           {activeTab === 'settings' && !selectedClient && canSeeSettings && (
