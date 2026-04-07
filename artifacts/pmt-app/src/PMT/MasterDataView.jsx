@@ -667,11 +667,13 @@ const MasterDataView = ({
               <input
                 value={categoryInput}
                 onChange={(e) => setCategoryInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addItem(categoryInput, taskCategories, setTaskCategories, setCategoryInput)}
                 placeholder="Add task category"
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-2 text-sm outline-none"
               />
             </div>
             <button
+              type="button"
               onClick={() => addItem(categoryInput, taskCategories, setTaskCategories, setCategoryInput)}
               className="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1"
             >
@@ -720,11 +722,13 @@ const MasterDataView = ({
               <input
                 value={departmentInput}
                 onChange={(e) => setDepartmentInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addItem(departmentInput, departments, setDepartments, setDepartmentInput)}
                 placeholder="Add department"
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-2 text-sm outline-none"
               />
             </div>
             <button
+              type="button"
               onClick={() => addItem(departmentInput, departments, setDepartments, setDepartmentInput)}
               className="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1"
             >
@@ -773,11 +777,13 @@ const MasterDataView = ({
               <input
                 value={regionInput}
                 onChange={(e) => setRegionInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addRegion()}
                 placeholder="Add region"
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-2 text-sm outline-none"
               />
             </div>
             <button
+              type="button"
               onClick={addRegion}
               className="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1"
             >
