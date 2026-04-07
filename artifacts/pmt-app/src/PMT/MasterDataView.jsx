@@ -1310,7 +1310,11 @@ const MasterDataView = ({
       {activePicker && (
         <UserPickerModal
           title={pickerTitle}
-          users={users || []}
+          users={(users || []).filter(u =>
+            (activePicker === 'edit-leadership' || activePicker === 'add-leadership')
+              ? managementRoles.includes(u.role)
+              : executionRoles.includes(u.role)
+          )}
           selected={pickerSelected}
           onToggle={id => pickerSetSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])}
           onClose={() => setActivePicker(null)}
