@@ -184,6 +184,7 @@ const ClientView = ({
       const shouldReset = log.timerState === 'stopped';
       return {
         ...log,
+        status: 'WIP',
         timerState: 'running',
         timerStartedAt: Date.now(),
         elapsedMs: shouldReset ? 0 : (log.elapsedMs || 0),
@@ -758,13 +759,22 @@ const ClientView = ({
                               value={log.status}
                               onChange={e => {
                                 const newStatus = e.target.value;
-                                const updated = clientLogs[selectedClient.id].map(l =>
-                                  l.id === log.id ? {
+                                const updated = clientLogs[selectedClient.id].map(l => {
+                                  if (l.id !== log.id) return l;
+                                  let timerUpdate = {};
+                                  if (newStatus === 'Done' && (l.timerState === 'running' || l.timerState === 'paused')) {
+                                    const elapsedMs = l.timerState === 'running' && l.timerStartedAt
+                                      ? (l.elapsedMs || 0) + (Date.now() - l.timerStartedAt)
+                                      : (l.elapsedMs || 0);
+                                    timerUpdate = { timerState: 'stopped', timerStartedAt: null, elapsedMs, timeTaken: formatDuration(elapsedMs) };
+                                  }
+                                  return {
                                     ...l,
                                     status: newStatus,
-                                    qcStatus: newStatus !== 'Done' && l.qcStatus === 'sent' ? null : l.qcStatus
-                                  } : l
-                                );
+                                    qcStatus: newStatus !== 'Done' && l.qcStatus === 'sent' ? null : l.qcStatus,
+                                    ...timerUpdate
+                                  };
+                                });
                                 setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
                               }}
                             >
@@ -831,34 +841,36 @@ const ClientView = ({
                               <RotateCcw size={8} /> Returned
                             </button>
                           )}
-                          {/* Timer controls */}
-                          <div className="flex items-center gap-1 mt-0.5">
-                            {(timerState === 'idle' || timerState === 'stopped') && (
-                              <button onClick={() => startTaskTimer(log.id)} className="p-1 rounded border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-all" title="Start timer">
-                                <Play size={11} />
-                              </button>
-                            )}
-                            {timerState === 'running' && (
-                              <>
-                                <button onClick={() => pauseTaskTimer(log.id)} className="p-1 rounded border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 transition-all" title="Pause timer">
-                                  <Pause size={11} />
-                                </button>
-                                <button onClick={() => stopTaskTimer(log.id)} className="p-1 rounded border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-all" title="Stop timer">
-                                  <Square size={11} />
-                                </button>
-                              </>
-                            )}
-                            {timerState === 'paused' && (
-                              <>
-                                <button onClick={() => startTaskTimer(log.id)} className="p-1 rounded border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-all" title="Resume timer">
+                          {/* Timer controls — hidden when Done */}
+                          {log.status !== 'Done' && (
+                            <div className="flex items-center gap-1 mt-0.5">
+                              {(timerState === 'idle' || timerState === 'stopped') && (
+                                <button onClick={() => startTaskTimer(log.id)} className="p-1 rounded border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-all" title="Start timer">
                                   <Play size={11} />
                                 </button>
-                                <button onClick={() => stopTaskTimer(log.id)} className="p-1 rounded border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-all" title="Stop timer">
-                                  <Square size={11} />
-                                </button>
-                              </>
-                            )}
-                          </div>
+                              )}
+                              {timerState === 'running' && (
+                                <>
+                                  <button onClick={() => pauseTaskTimer(log.id)} className="p-1 rounded border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 transition-all" title="Pause timer">
+                                    <Pause size={11} />
+                                  </button>
+                                  <button onClick={() => stopTaskTimer(log.id)} className="p-1 rounded border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-all" title="Stop timer">
+                                    <Square size={11} />
+                                  </button>
+                                </>
+                              )}
+                              {timerState === 'paused' && (
+                                <>
+                                  <button onClick={() => startTaskTimer(log.id)} className="p-1 rounded border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-all" title="Resume timer">
+                                    <Play size={11} />
+                                  </button>
+                                  <button onClick={() => stopTaskTimer(log.id)} className="p-1 rounded border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-all" title="Stop timer">
+                                    <Square size={11} />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </td>
                     </tr>
