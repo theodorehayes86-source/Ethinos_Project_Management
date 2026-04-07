@@ -17,7 +17,7 @@ import ProfileDropdown from './PMT/ProfileDropdown';
 import LoginView from './PMT/LoginView';
 
 const DEFAULT_USERS = [
-  { id: 1, name: "Theo", email: "theo@ethinos.com", role: 'Super Admin', assignedProjects: ["All"], department: 'Growth', region: 'North' },
+  { id: 1, name: "Theo", email: "theo.hayes@ethinos.com", role: 'Super Admin', assignedProjects: ["All"], department: 'Growth', region: 'North' },
   { id: 201, name: "Ankit", email: "ankit@ethinos.com", role: 'Director', assignedProjects: ["KMF", "Durian"], department: 'Growth', region: 'South' },
   { id: 202, name: "Poonam", email: "poonam@ethinos.com", role: 'Director', assignedProjects: ["Bajaj - Chetak", "Bajaj - KTM"], department: 'Client Servicing', region: 'West' },
   { id: 205, name: "Suresh", email: "suresh@ethinos.com", role: 'Director', assignedProjects: ["KMF", "Durian", "Bajaj - Chetak", "Bajaj - KTM"], department: 'Growth', region: 'North' },
@@ -173,9 +173,9 @@ const App = () => {
     if (!firebaseUser) { setCurrentUserId(null); return; }
     const email = firebaseUser.email?.toLowerCase();
     if (!email) return;
-    // Prefer the live users list from Firebase; fall back to hardcoded defaults
-    const pool = users.length > 0 ? users : DEFAULT_USERS;
-    const matched = pool.find(u => u.email?.toLowerCase() === email);
+    // Check Firebase users first, then always fall back to DEFAULT_USERS
+    const matched = users.find(u => u.email?.toLowerCase() === email)
+      || DEFAULT_USERS.find(u => u.email?.toLowerCase() === email);
     if (matched) {
       setCurrentUserId(matched.id);
     } else {
