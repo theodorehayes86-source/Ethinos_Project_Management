@@ -6,6 +6,19 @@ const REPEAT_OPTIONS = ['Daily', 'Weekly', 'Monthly', 'Once'];
 
 const emptyTask = () => ({ comment: '', category: '', repeatFrequency: 'Monthly' });
 
+const DeptAllToggle = ({ isAll, onToggle, locked }) => (
+  <div className={`inline-flex rounded-full border border-slate-200 text-[10px] font-semibold overflow-hidden ${locked ? 'opacity-60 pointer-events-none' : ''}`}>
+    <button type="button" onClick={() => isAll && onToggle()}
+      className={`px-2.5 py-1 transition-all ${!isAll ? 'bg-slate-700 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>
+      Dept
+    </button>
+    <button type="button" onClick={() => !isAll && onToggle()}
+      className={`px-2.5 py-1 transition-all ${isAll ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>
+      All
+    </button>
+  </div>
+);
+
 const CC_TABS = [
   { id: 'users', label: 'Users' },
   { id: 'clients', label: 'Clients' },
@@ -871,15 +884,15 @@ const MasterDataView = ({
                 <thead>
                   <tr className="bg-slate-100 text-slate-600">
                     <th className="px-3 py-2 text-left font-semibold sticky left-0 bg-slate-100 z-10 min-w-[130px]">Role</th>
-                    <th className="px-3 py-2 text-center font-semibold whitespace-nowrap">Metrics — All Depts</th>
-                    <th className="px-3 py-2 text-center font-semibold whitespace-nowrap">Reports — All Depts</th>
+                    <th className="px-3 py-2 text-center font-semibold whitespace-nowrap">Metrics</th>
+                    <th className="px-3 py-2 text-center font-semibold whitespace-nowrap">Reports</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {normalizedRoles.map(role => {
                     const isSuperAdmin = role === 'Super Admin';
-                    const mChecked = isSuperAdmin || metricsAllDataRoles.includes(role);
-                    const rChecked = isSuperAdmin || reportsAllDataRoles.includes(role);
+                    const mAll = isSuperAdmin || metricsAllDataRoles.includes(role);
+                    const rAll = isSuperAdmin || reportsAllDataRoles.includes(role);
                     return (
                       <tr key={role} className={isSuperAdmin ? 'bg-blue-50' : 'hover:bg-slate-50'}>
                         <td className="px-3 py-2 font-medium text-slate-700 sticky left-0 bg-inherit z-10 flex items-center gap-1.5">
@@ -887,14 +900,10 @@ const MasterDataView = ({
                           {role}
                         </td>
                         <td className="px-3 py-2 text-center">
-                          <input type="checkbox" checked={mChecked} disabled={isSuperAdmin}
-                            onChange={() => toggleDataAccessRole(setMetricsAllDataRoles, metricsAllDataRoles, role)}
-                            className="w-4 h-4 accent-blue-600 cursor-pointer disabled:cursor-not-allowed" />
+                          <DeptAllToggle isAll={mAll} locked={isSuperAdmin} onToggle={() => toggleDataAccessRole(setMetricsAllDataRoles, metricsAllDataRoles, role)} />
                         </td>
                         <td className="px-3 py-2 text-center">
-                          <input type="checkbox" checked={rChecked} disabled={isSuperAdmin}
-                            onChange={() => toggleDataAccessRole(setReportsAllDataRoles, reportsAllDataRoles, role)}
-                            className="w-4 h-4 accent-blue-600 cursor-pointer disabled:cursor-not-allowed" />
+                          <DeptAllToggle isAll={rAll} locked={isSuperAdmin} onToggle={() => toggleDataAccessRole(setReportsAllDataRoles, reportsAllDataRoles, role)} />
                         </td>
                       </tr>
                     );
