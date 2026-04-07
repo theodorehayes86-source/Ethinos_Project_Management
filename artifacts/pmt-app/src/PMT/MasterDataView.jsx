@@ -575,6 +575,7 @@ const MasterDataView = ({
       <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center gap-2 flex-wrap">
         {CC_TABS.filter(tab => {
           if (currentUser?.role === 'Super Admin') return true;
+          if (tab.id === 'conditions') return false;
           return (controlCenterTabAccess[tab.id] || []).includes(currentUser?.role);
         }).map(tab => (
           <button
@@ -871,7 +872,7 @@ const MasterDataView = ({
               <thead>
                 <tr className="bg-slate-100 text-slate-600">
                   <th className="px-3 py-2 text-left font-semibold sticky left-0 bg-slate-100 z-10 min-w-[130px]">Role</th>
-                  {CC_TABS.map(tab => (
+                  {CC_TABS.filter(tab => tab.id !== 'conditions').map(tab => (
                     <th key={tab.id} className="px-3 py-2 text-center font-semibold whitespace-nowrap">{tab.label}</th>
                   ))}
                 </tr>
@@ -885,7 +886,7 @@ const MasterDataView = ({
                         {isSuperAdmin && <Crown size={11} className="text-blue-600 flex-shrink-0" />}
                         {role}
                       </td>
-                      {CC_TABS.map(tab => {
+                      {CC_TABS.filter(tab => tab.id !== 'conditions').map(tab => {
                         const checked = isSuperAdmin || (controlCenterTabAccess[tab.id] || []).includes(role);
                         return (
                           <td key={tab.id} className="px-3 py-2 text-center">

@@ -112,7 +112,7 @@ const App = () => {
   const [taskCategories, setTaskCategories] = useState(DEFAULT_TASK_CATEGORIES);
   const [departments, setDepartments] = useState(['Creative', 'Biddable', 'Growth', 'Client Servicing']);
   const [regions, setRegions] = useState(['North', 'South', 'West']);
-  const DEFAULT_CC_TAB_ACCESS = { users: ['Super Admin', 'Director'], clients: ['Super Admin', 'Director'], categories: ['Super Admin', 'Director'], departments: ['Super Admin', 'Director'], regions: ['Super Admin', 'Director'], conditions: ['Super Admin', 'Director'], templates: ['Super Admin', 'Director'] };
+  const DEFAULT_CC_TAB_ACCESS = { users: ['Super Admin', 'Director'], clients: ['Super Admin', 'Director'], categories: ['Super Admin', 'Director'], departments: ['Super Admin', 'Director'], regions: ['Super Admin', 'Director'], conditions: ['Super Admin'], templates: ['Super Admin', 'Director'] };
   const [controlCenterTabAccess, setControlCenterTabAccess] = useState(DEFAULT_CC_TAB_ACCESS);
   const [userManagementAccessRoles, setUserManagementAccessRoles] = useState(['Super Admin', 'Director']);
   const [employeeViewAccessRoles, setEmployeeViewAccessRoles] = useState(['Super Admin', 'Director']);
