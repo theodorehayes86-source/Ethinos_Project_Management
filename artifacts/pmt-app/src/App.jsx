@@ -97,8 +97,27 @@ const App = () => {
       });
     };
 
+    // Seed DEFAULT_USERS into Firebase if the users node is empty
+    const seedUsers = async () => {
+      const snap = await get(ref(db, 'users'));
+      if (!snap.exists()) {
+        await set(ref(db, 'users'), DEFAULT_USERS);
+      }
+    };
+    seedUsers();
+
     const unsubs = [
-      syncRef('users', (val) => setUsers(Array.isArray(val) ? val : Object.values(val))),
+      syncRef('users', (val) => {
+        const firebaseList = Array.isArray(val) ? val : Object.values(val);
+        // Merge: keep all Firebase users and back-fill any DEFAULT_USERS not yet in Firebase
+        const merged = [...firebaseList];
+        DEFAULT_USERS.forEach(du => {
+          if (!merged.find(u => u.email?.toLowerCase() === du.email?.toLowerCase())) {
+            merged.push(du);
+          }
+        });
+        setUsers(merged);
+      }),
       syncRef('clients', (val) => setClients(Array.isArray(val) ? val : Object.values(val))),
       syncRef('clientLogs', (val) => setClientLogs(val || {})),
       syncRef('taskCategories', (val) => setTaskCategories(Array.isArray(val) ? val : DEFAULT_TASK_CATEGORIES)),

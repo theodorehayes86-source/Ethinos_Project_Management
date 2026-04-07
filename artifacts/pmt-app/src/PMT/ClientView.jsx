@@ -1262,6 +1262,20 @@ const ClientView = ({
   // --- GRID VIEW (ALL CLIENTS) ---
   const filteredClients = clients.filter(c => c.name.toLowerCase().includes(clientSearch.toLowerCase()));
 
+  // --- PICKER CONFIG ---
+  const pickerIsLeadership = activePicker === 'addLeadership' || activePicker === 'editLeadership';
+  const pickerAllUsers = users || [];
+  const pickerSelected =
+    activePicker === 'addLeadership' ? selectedAdmins :
+    activePicker === 'addTeam' ? selectedEmployees :
+    activePicker === 'editLeadership' ? editClientAdmins :
+    activePicker === 'editTeam' ? editClientEmployees : [];
+  const pickerSetSelected =
+    activePicker === 'addLeadership' ? setSelectedAdmins :
+    activePicker === 'addTeam' ? setSelectedEmployees :
+    activePicker === 'editLeadership' ? setEditClientAdmins :
+    activePicker === 'editTeam' ? setEditClientEmployees : () => {};
+
   return (
     <div className="p-3 space-y-5 animate-in fade-in duration-500 text-left min-h-full">
       <div className="flex justify-between items-center">
@@ -1565,30 +1579,17 @@ const ClientView = ({
       )}
 
       {/* User Picker Modal */}
-      {activePicker && (() => {
-        const isLeadership = activePicker === 'addLeadership' || activePicker === 'editLeadership';
-        const roleGroup = isLeadership ? managementRoles : executionRoles;
-        const pickerUsers = (users || []).filter(u => roleGroup.includes(u.role));
-        const selected = activePicker === 'addLeadership' ? selectedAdmins
-          : activePicker === 'addTeam' ? selectedEmployees
-          : activePicker === 'editLeadership' ? editClientAdmins
-          : editClientEmployees;
-        const setSelected = activePicker === 'addLeadership' ? setSelectedAdmins
-          : activePicker === 'addTeam' ? setSelectedEmployees
-          : activePicker === 'editLeadership' ? setEditClientAdmins
-          : setEditClientEmployees;
-        return (
-          <UserPickerModal
-            title={isLeadership ? 'Select Leadership' : 'Select Team Members'}
-            users={pickerUsers}
-            selected={selected}
-            onToggle={id => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])}
-            onClose={() => setActivePicker(null)}
-            pickerSearch={pickerSearch}
-            setPickerSearch={setPickerSearch}
-          />
-        );
-      })()}
+      {activePicker && (
+        <UserPickerModal
+          title={pickerIsLeadership ? 'Select Leadership' : 'Select Team Members'}
+          users={pickerAllUsers}
+          selected={pickerSelected}
+          onToggle={id => pickerSetSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])}
+          onClose={() => setActivePicker(null)}
+          pickerSearch={pickerSearch}
+          setPickerSearch={setPickerSearch}
+        />
+      )}
     </div>
   );
 };
