@@ -20,6 +20,7 @@ const HomeView = ({
   const [taskCategoryQuery, setTaskCategoryQuery] = useState('');
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
   const [taskRepeat, setTaskRepeat] = useState('Once');
+  const [taskName, setTaskName] = useState('');
   const [taskComment, setTaskComment] = useState('');
   const [taskError, setTaskError] = useState('');
 
@@ -30,6 +31,7 @@ const HomeView = ({
     setTaskCategoryQuery('');
     setShowCategoryMenu(false);
     setTaskRepeat('Once');
+    setTaskName('');
     setTaskComment('');
     setTaskError('');
     setShowAddTaskModal(true);
@@ -38,14 +40,15 @@ const HomeView = ({
   const handleAddTaskFromHome = (event) => {
     event.preventDefault();
 
-    if (!selectedClientId || !taskCategory || !taskComment.trim() || !selectedDate) {
-      setTaskError('Client, date, category and task description are required.');
+    if (!selectedClientId || !taskCategory || !taskName.trim() || !taskComment.trim() || !selectedDate) {
+      setTaskError('Client, date, task name, category and description are required.');
       return;
     }
 
     const formattedDate = format(selectedDate, 'do MMM yyyy');
     const newTask = {
       id: Date.now(),
+      name: taskName.trim(),
       date: formattedDate,
       comment: taskComment.trim(),
       result: '',
@@ -196,6 +199,7 @@ const HomeView = ({
               <button
                 onClick={() => {
                   setShowAddTaskModal(false);
+                  setTaskName('');
                   setTaskError('');
                   setShowCategoryMenu(false);
                 }}
@@ -264,6 +268,21 @@ const HomeView = ({
                 </div>
 
                 <div className="flex-1 space-y-5">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Task Name <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      placeholder="Short title for this task"
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                      value={taskName}
+                      onChange={e => {
+                        setTaskName(e.target.value);
+                        if (taskError) setTaskError('');
+                      }}
+                      required
+                    />
+                  </div>
+
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Task Category <span className="text-red-500">*</span></label>
                     <div className="relative">
@@ -368,6 +387,7 @@ const HomeView = ({
                   type="button"
                   onClick={() => {
                     setShowAddTaskModal(false);
+                    setTaskName('');
                     setTaskError('');
                     setShowCategoryMenu(false);
                   }}
