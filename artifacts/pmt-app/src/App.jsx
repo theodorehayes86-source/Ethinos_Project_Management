@@ -179,8 +179,22 @@ const App = () => {
     if (matched) {
       setCurrentUserId(matched.id);
     } else {
-      // Signed-in user has no PMT record yet — keep them on login screen
-      setCurrentUserId(null);
+      // No PMT record means manually added via Firebase Console → Super Admin
+      const adminId = `firebase-admin-${firebaseUser.uid}`;
+      const adminRecord = {
+        id: adminId,
+        name: firebaseUser.displayName || email.split('@')[0],
+        email: firebaseUser.email,
+        role: 'Super Admin',
+        assignedProjects: ['All'],
+        department: 'Management',
+        region: 'All',
+      };
+      setUsers(prev => {
+        if (prev.find(u => u.id === adminId)) return prev;
+        return [...prev, adminRecord];
+      });
+      setCurrentUserId(adminId);
     }
   }, [firebaseUser, users]);
 
