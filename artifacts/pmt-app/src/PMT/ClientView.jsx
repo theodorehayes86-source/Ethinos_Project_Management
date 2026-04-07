@@ -219,8 +219,8 @@ const ClientView = ({
 
   const handleSaveEditTask = () => {
     if (!editDraft) return;
-    if (!editDraft.comment.trim() || !editDraft.category || !editDraft.assigneeId) {
-      setEditDraftError('Description, category and assignee are required.');
+    if (!editDraft.name.trim() || !editDraft.comment.trim() || !editDraft.category || !editDraft.assigneeId) {
+      setEditDraftError('Task name, description, category and assignee are all required.');
       return;
     }
     const assignee = (users || []).find(u => String(u.id) === String(editDraft.assigneeId));
@@ -407,8 +407,8 @@ const ClientView = ({
     e.preventDefault();
     const trimmedComment = newTaskComment.trim();
     const selectedAssignee = (users || []).find(u => String(u.id) === String(newTaskAssigneeId));
-    if (!trimmedComment || !newTaskCategory || !selectedAssignee) {
-      setTaskFormError('Task description, task category and assignee are required.');
+    if (!newTaskName.trim() || !trimmedComment || !newTaskCategory || !selectedAssignee) {
+      setTaskFormError('Task name, description, category and assignee are all required.');
       return;
     }
     const newLog = {
@@ -1341,10 +1341,10 @@ const ClientView = ({
                   </div>
                   <div className="flex-1 space-y-5">
                     <div className="space-y-1.5">
-                      <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Task Name</label>
+                      <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Task Name <span className="text-red-500">*</span></label>
                       <input
                         type="text"
-                        placeholder="Short title for this task (optional)"
+                        placeholder="Short title for this task"
                         className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
                         value={newTaskName}
                         onChange={e => setNewTaskName(e.target.value)}
@@ -1670,10 +1670,10 @@ const ClientView = ({
                     {/* Right column: all text fields */}
                     <div className="space-y-4">
                       <div className="space-y-1.5">
-                        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Task Name</label>
+                        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Task Name <span className="text-red-500">*</span></label>
                         <input
                           type="text"
-                          placeholder="Short title for this task (optional)"
+                          placeholder="Short title for this task"
                           className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
                           value={editDraft.name}
                           onChange={e => setEditDraft(d => ({ ...d, name: e.target.value }))}
