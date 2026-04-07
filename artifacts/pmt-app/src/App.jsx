@@ -16,6 +16,8 @@ import Sidebar from './PMT/Sidebar';
 import Notifications from './PMT/Notifications';
 import ProfileDropdown from './PMT/ProfileDropdown';
 import LoginView from './PMT/LoginView';
+import TestModePanel, { TEST_USERS } from './PMT/TestModePanel';
+import { TEST_CLIENT_ID, TEST_CLIENT, buildTestTasks } from './PMT/testFixtures';
 
 const DEFAULT_USERS = [
   { id: 1, name: "Theo", email: "theo.hayes@ethinos.com", role: 'Super Admin', assignedProjects: ["All"], department: 'Growth', region: 'North' },
@@ -35,6 +37,7 @@ const DEFAULT_USERS = [
   { id: 214, name: "Ritwick", email: "ritwick@ethinos.com", role: 'Manager', assignedProjects: ["Durian"], department: 'Growth', region: 'West' },
   { id: 215, name: "Yash Karnawat", email: "yash.karnawat@ethinos.com", role: 'Manager', assignedProjects: ["Bajaj - Chetak"], department: 'Growth', region: 'North' },
   { id: 216, name: "Pranali", email: "pranali@ethinos.com", role: 'Manager', assignedProjects: ["Bajaj - KTM"], department: 'Growth', region: 'South' },
+  ...TEST_USERS,
 ];
 
 const DEFAULT_TASK_CATEGORIES = [
@@ -145,6 +148,7 @@ const App = () => {
   const [clientSearch, setClientSearch] = useState("");
   const [sidebarMinimized, setSidebarMinimized] = useState(false);
   const [dbReady, setDbReady] = useState(false);
+  const [testModeUserId, setTestModeUserId] = useState(null);
 
   // --- FIREBASE AUTH LISTENER ---
   useEffect(() => {
@@ -158,6 +162,77 @@ const App = () => {
     return unsubscribe;
   }, []);
 
+  // --- SEED TEST CLIENT + TEST TASKS (runs on mount, no auth required) ---
+  useEffect(() => {
+    const seedTestData = async () => {
+      try {
+        const clientsSnap = await get(ref(db, 'clients'));
+        const existingClients = clientsSnap.exists()
+          ? (Array.isArray(clientsSnap.val()) ? clientsSnap.val() : Object.values(clientsSnap.val()))
+          : [];
+
+        let resolvedTestClientId = TEST_CLIENT_ID;
+        const alreadyExists = existingClients.find(c => c.id === TEST_CLIENT_ID || c.name === 'Test Client');
+        if (!alreadyExists) {
+          await set(ref(db, 'clients'), [...existingClients, TEST_CLIENT]);
+        } else {
+          resolvedTestClientId = alreadyExists.id;
+        }
+
+        const logsSnap = await get(ref(db, `clientLogs/${resolvedTestClientId}`));
+        if (!logsSnap.exists()) {
+          await set(ref(db, `clientLogs/${resolvedTestClientId}`), buildTestTasks());
+        }
+      } catch {
+        // Non-fatal: if Firebase is unavailable, skip seeding
+      }
+    };
+    seedTestData();
+  }, []);
+
+  // --- TEST MODE: load in-memory test data (works without Firebase auth) ---
+  useEffect(() => {
+    if (!testModeUserId) return;
+    if (firebaseUser) return; // authenticated path handles live sync
+    const testTasks = buildTestTasks();
+    setClients(prev => {
+      const already = prev.find(c => c.id === TEST_CLIENT_ID || c.name === 'Test Client');
+      return already ? prev : [...prev, TEST_CLIENT];
+    });
+    setClientLogs(prev => ({
+      ...prev,
+      [TEST_CLIENT_ID]: prev[TEST_CLIENT_ID] || testTasks,
+    }));
+    setDbReady(true);
+
+    // Also attempt a Firebase sync in the background (succeeds if auth rules allow unauth reads)
+    const tryFirebaseSync = async () => {
+      try {
+        const [clientsSnap, logsSnap] = await Promise.all([
+          get(ref(db, 'clients')),
+          get(ref(db, 'clientLogs')),
+        ]);
+        if (clientsSnap.exists()) {
+          const val = clientsSnap.val();
+          const list = Array.isArray(val) ? val : Object.values(val);
+          setClients(prev => {
+            const merged = [...list];
+            if (!merged.find(c => c.id === TEST_CLIENT_ID || c.name === 'Test Client')) {
+              merged.push(TEST_CLIENT);
+            }
+            return merged;
+          });
+        }
+        if (logsSnap.exists()) {
+          setClientLogs(prev => ({ [TEST_CLIENT_ID]: prev[TEST_CLIENT_ID] || testTasks, ...logsSnap.val() }));
+        }
+      } catch {
+        // Firebase rules likely require auth — in-memory data already loaded above
+      }
+    };
+    tryFirebaseSync();
+  }, [testModeUserId, firebaseUser]);
+
   // --- FIREBASE DATA SYNC (read once on auth) ---
   useEffect(() => {
     if (!firebaseUser) return;
@@ -170,11 +245,23 @@ const App = () => {
       });
     };
 
-    // Seed DEFAULT_USERS into Firebase if the users node is empty
+    // Seed DEFAULT_USERS into Firebase; also upsert test users by email
     const seedUsers = async () => {
       const snap = await get(ref(db, 'users'));
       if (!snap.exists()) {
         await set(ref(db, 'users'), DEFAULT_USERS);
+      } else {
+        // Upsert test users to Firebase so they exist regardless of prior seeding
+        const existing = Array.isArray(snap.val()) ? snap.val() : Object.values(snap.val());
+        let updated = [...existing];
+        let changed = false;
+        TEST_USERS.forEach(tu => {
+          if (!updated.find(u => u.email?.toLowerCase() === tu.email?.toLowerCase())) {
+            updated.push(tu);
+            changed = true;
+          }
+        });
+        if (changed) await set(ref(db, 'users'), updated);
       }
     };
     seedUsers();
@@ -187,6 +274,29 @@ const App = () => {
       }
     };
     seedTaskTemplates();
+
+    // Seed Test Client + test tasks into Firebase (authenticated, so rules allow writes)
+    const seedTestClientAndTasks = async () => {
+      try {
+        const clientsSnap = await get(ref(db, 'clients'));
+        const existingClients = clientsSnap.exists()
+          ? (Array.isArray(clientsSnap.val()) ? clientsSnap.val() : Object.values(clientsSnap.val()))
+          : [];
+        const alreadyHasClient = existingClients.find(c => c.id === TEST_CLIENT_ID || c.name === 'Test Client');
+        if (!alreadyHasClient) {
+          await set(ref(db, 'clients'), [...existingClients, TEST_CLIENT]);
+        }
+        const resolvedId = alreadyHasClient?.id || TEST_CLIENT_ID;
+        const logsSnap = await get(ref(db, `clientLogs/${resolvedId}`));
+        if (!logsSnap.exists()) {
+          await set(ref(db, `clientLogs/${resolvedId}`), buildTestTasks());
+        }
+      } catch {
+        // Non-fatal — test data will be available in-memory via test mode effect
+      }
+    };
+    seedTestClientAndTasks();
+
 
     const unsubs = [
       syncRef('users', (val) => {
@@ -337,7 +447,9 @@ const App = () => {
   }, [firebaseUser, users]);
 
   // --- SHARED LOGIC ---
-  const currentUser = users.find(u => u.id === currentUserId) || null;
+  const effectiveUserId = testModeUserId || currentUserId;
+  const currentUser = users.find(u => u.id === effectiveUserId) || null;
+  const isTestMode = !!testModeUserId;
   const canSeeControlCenter = controlCenterAccessRoles.includes(currentUser?.role);
   const canSeeSettings = settingsAccessRoles.includes(currentUser?.role);
   const canSeeUserManagement = userManagementAccessRoles.includes(currentUser?.role);
@@ -481,8 +593,28 @@ const App = () => {
     );
   }
 
-  // Firebase user signed in but not registered in the PMT system
-  if (firebaseUser && !currentUser) {
+  if (!firebaseUser && !testModeUserId) {
+    return (
+      <>
+        <LoginView onLogin={handleLogin} onGoogleLogin={handleGoogleLogin} onCreateAccount={handleCreateAccount} loginError={loginError} />
+        <TestModePanel
+          currentUser={null}
+          isTestMode={false}
+          onImpersonate={(testUser) => {
+            if (!users.find(u => u.id === testUser.id)) {
+              setUsers(prev => [...prev, testUser]);
+            }
+            setTestModeUserId(testUser.id);
+            setActiveTab('home');
+            setSelectedClient(null);
+          }}
+          onExit={() => setTestModeUserId(null)}
+        />
+      </>
+    );
+  }
+
+  if (!testModeUserId && firebaseUser && !currentUser) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
         <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-lg">
@@ -504,10 +636,6 @@ const App = () => {
         </div>
       </div>
     );
-  }
-
-  if (!firebaseUser || !currentUser) {
-    return <LoginView onLogin={handleLogin} onGoogleLogin={handleGoogleLogin} onCreateAccount={handleCreateAccount} loginError={loginError} />;
   }
 
   return (
@@ -671,6 +799,20 @@ const App = () => {
           )}
         </main>
       </div>
+
+      <TestModePanel
+        currentUser={currentUser}
+        isTestMode={isTestMode}
+        onImpersonate={(testUser) => {
+          if (!users.find(u => u.id === testUser.id)) {
+            setUsers(prev => [...prev, testUser]);
+          }
+          setTestModeUserId(testUser.id);
+          setActiveTab('home');
+          setSelectedClient(null);
+        }}
+        onExit={() => setTestModeUserId(null)}
+      />
     </div>
   );
 };

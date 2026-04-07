@@ -19,6 +19,13 @@ interface TaskLog {
   assignee?: { id: string; name: string } | string;
   timerState?: string;
   timerStartedAt?: number;
+  qcEnabled?: boolean;
+  qcStatus?: string | null;
+  qcRating?: number | null;
+  qcFeedback?: string | null;
+  qcAssigneeName?: string | null;
+  qcReviewerName?: string | null;
+  qcReviewedAt?: string | null;
 }
 
 interface Client {
@@ -172,12 +179,36 @@ router.get("/hours", async (req, res): Promise<void> => {
     entry.tasks.push(task);
   }
 
+  const buildQcSummary = (taskList: FilteredTask[]) => {
+    const qcTasks = taskList.filter(t => t.qcEnabled);
+    const rated = qcTasks.filter(t => t.qcRating != null);
+    const approved = qcTasks.filter(t => t.qcStatus === "approved").length;
+    const returned = qcTasks.filter(t => t.qcStatus === "rejected").length;
+    const avgRating = rated.length > 0
+      ? Math.round((rated.reduce((s, t) => s + (t.qcRating ?? 0), 0) / rated.length) * 10) / 10
+      : null;
+    return {
+      qcTaskCount: qcTasks.length,
+      qcApproved: approved,
+      qcReturned: returned,
+      qcAvgRating: avgRating,
+    };
+  };
+
   const categoryRows = [...byCategory.entries()]
     .map(([category, data]) => ({
       category,
       hours: data.hours,
       taskCount: data.taskCount,
-      ...(includeDetail ? { tasks: data.tasks } : {}),
+      ...buildQcSummary(data.tasks),
+      ...(includeDetail ? {
+        tasks: data.tasks.map(t => ({
+          ...t,
+          qcStatus: t.qcStatus ?? null,
+          qcRating: t.qcRating ?? null,
+          qcFeedback: t.qcFeedback ?? null,
+        })),
+      } : {}),
     }))
     .sort((a, b) => b.hours - a.hours);
 
