@@ -1,8 +1,54 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { format } from 'date-fns';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
-import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search } from 'lucide-react';
+import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, Check } from 'lucide-react';
+
+/* ─── Inline QC Reviewer Picker ─── */
+const QcPickerModal = ({ users, selected, onSelect, onClose, search, setSearch }) => {
+  const q = search.toLowerCase().trim();
+  const filtered = users.filter(u =>
+    !q || (u.name || '').toLowerCase().includes(q) || (u.role || '').toLowerCase().includes(q)
+  );
+  return (
+    <div className="fixed inset-0 z-[900] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4">
+      <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 flex flex-col" style={{maxHeight:'75vh'}}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <ShieldCheck size={15} className="text-indigo-600"/>
+            <h3 className="text-sm font-bold text-slate-800">Select QC Reviewer</h3>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg"><X size={15}/></button>
+        </div>
+        <div className="px-4 py-3 border-b border-slate-100">
+          <div className="relative">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+            <input autoFocus type="text" placeholder="Search by name or role..." className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 ring-blue-500/20" value={search} onChange={e => setSearch(e.target.value)}/>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+          {filtered.length === 0 && <p className="text-center text-sm text-slate-400 py-6">No users found</p>}
+          {filtered.map(u => (
+            <button key={u.id} type="button" onClick={() => { onSelect(u); onClose(); }}
+              className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${selected === u.id ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'}`}
+            >
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0 ${selected === u.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                {selected === u.id ? <Check size={13}/> : (u.name || '?')[0].toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold truncate text-slate-800">{u.name}</p>
+                <p className="text-xs text-slate-400">{u.role}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+        <div className="px-4 py-3 border-t border-slate-100">
+          <button type="button" onClick={onClose} className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm py-2 rounded-lg transition-all">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const HomeView = ({
   accessibleClients,
@@ -11,40 +57,82 @@ const HomeView = ({
   setSelectedClient,
   setClientLogs,
   currentUser,
-  taskCategories = []
+  taskCategories = [],
+  users = [],
 }) => {
   const [showAddTaskModal, setShowAddTaskModal] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState(accessibleClients[0]?.id || '');
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [taskCategory, setTaskCategory] = useState(taskCategories[0] || 'General');
+  const [taskCategory, setTaskCategory] = useState('');
   const [taskCategoryQuery, setTaskCategoryQuery] = useState('');
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
   const [taskRepeat, setTaskRepeat] = useState('Once');
   const [taskName, setTaskName] = useState('');
   const [taskComment, setTaskComment] = useState('');
+  const [taskDueDate, setTaskDueDate] = useState(null);
+  // Assignee
+  const [assigneeId, setAssigneeId] = useState('');
+  const [assigneeName, setAssigneeName] = useState('');
+  const [assigneeQuery, setAssigneeQuery] = useState('');
+  const [showAssigneeMenu, setShowAssigneeMenu] = useState(false);
+  // QC
+  const [qcEnabled, setQcEnabled] = useState(false);
+  const [qcAssigneeId, setQcAssigneeId] = useState('');
+  const [qcAssigneeName, setQcAssigneeName] = useState('');
+  const [showQcPicker, setShowQcPicker] = useState(false);
+  const [qcPickerSearch, setQcPickerSearch] = useState('');
   const [taskError, setTaskError] = useState('');
 
-  const openAddTaskModal = () => {
+  const selectedClient = useMemo(
+    () => accessibleClients.find(c => c.id === selectedClientId),
+    [accessibleClients, selectedClientId]
+  );
+
+  const assignableUsers = useMemo(() => {
+    if (!selectedClient) return users;
+    return users.filter(u => (u.assignedProjects || []).includes(selectedClient.name));
+  }, [users, selectedClient]);
+
+  const filteredAssignees = assignableUsers.filter(u =>
+    !assigneeQuery.trim() || (u.name || '').toLowerCase().includes(assigneeQuery.toLowerCase())
+  );
+
+  const availableTaskCategories = taskCategories.length ? taskCategories : ['General'];
+  const filteredTaskCategories = availableTaskCategories.filter(c =>
+    c.toLowerCase().includes(taskCategoryQuery.toLowerCase())
+  );
+
+  const resetModal = () => {
     setSelectedClientId(accessibleClients[0]?.id || '');
     setSelectedDate(new Date());
-    setTaskCategory(taskCategories[0] || 'General');
+    setTaskCategory('');
     setTaskCategoryQuery('');
     setShowCategoryMenu(false);
     setTaskRepeat('Once');
     setTaskName('');
     setTaskComment('');
+    setTaskDueDate(null);
+    setAssigneeId('');
+    setAssigneeName('');
+    setAssigneeQuery('');
+    setShowAssigneeMenu(false);
+    setQcEnabled(false);
+    setQcAssigneeId('');
+    setQcAssigneeName('');
+    setShowQcPicker(false);
+    setQcPickerSearch('');
     setTaskError('');
-    setShowAddTaskModal(true);
   };
+
+  const openAddTaskModal = () => { resetModal(); setShowAddTaskModal(true); };
+  const closeModal = () => { setShowAddTaskModal(false); resetModal(); };
 
   const handleAddTaskFromHome = (event) => {
     event.preventDefault();
-
     if (!selectedClientId || !taskCategory || !taskName.trim() || !taskComment.trim() || !selectedDate) {
       setTaskError('Client, date, task name, category and description are required.');
       return;
     }
-
     const formattedDate = format(selectedDate, 'do MMM yyyy');
     const newTask = {
       id: Date.now(),
@@ -53,36 +141,29 @@ const HomeView = ({
       comment: taskComment.trim(),
       result: '',
       status: 'Pending',
+      assigneeId: assigneeId || null,
+      assigneeName: assigneeName || null,
       creatorId: currentUser?.id || null,
       creatorName: currentUser?.name || 'Unassigned',
       creatorRole: currentUser?.role || 'Employee',
       category: taskCategory,
       repeatFrequency: taskRepeat,
+      dueDate: taskDueDate ? format(taskDueDate, 'do MMM yyyy') : null,
       timerState: 'idle',
       timerStartedAt: null,
       elapsedMs: 0,
       timeTaken: null,
-      qcEnabled: false,
-      qcAssigneeId: null,
-      qcAssigneeName: null,
+      qcEnabled,
+      qcAssigneeId: qcEnabled ? qcAssigneeId || null : null,
+      qcAssigneeName: qcEnabled ? qcAssigneeName || null : null,
       qcStatus: null,
       qcRating: null,
       qcFeedback: null,
-      qcReviewedAt: null
+      qcReviewedAt: null,
     };
-
-    setClientLogs((prevLogs) => ({
-      ...prevLogs,
-      [selectedClientId]: [newTask, ...(prevLogs[selectedClientId] || [])]
-    }));
-
-    setShowAddTaskModal(false);
+    setClientLogs(prev => ({ ...prev, [selectedClientId]: [newTask, ...(prev[selectedClientId] || [])] }));
+    closeModal();
   };
-
-  const availableTaskCategories = taskCategories.length ? taskCategories : ['General'];
-  const filteredTaskCategories = availableTaskCategories.filter((category) =>
-    category.toLowerCase().includes(taskCategoryQuery.toLowerCase())
-  );
 
   return (
     <div
@@ -93,29 +174,20 @@ const HomeView = ({
       }}
     >
       
-      {/* 1. STATISTICS ROW - Clean, Card-Based Design */}
+      {/* 1. STATISTICS ROW */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {[
-          { label: 'Total Clients', value: accessibleClients.length, icon: <Briefcase size={16} className="text-blue-600"/>, bgColor: 'bg-blue-100', iconBgColor: 'bg-blue-200', trend: '' },
-          { label: 'Open Tasks', value: allTasks.filter(t => t.status !== 'Done').length, icon: <Clock size={16} className="text-green-600"/>, bgColor: 'bg-green-100', iconBgColor: 'bg-green-200', trend: '' },
-          { label: 'WIP', value: allTasks.filter(t => t.status === 'WIP').length, icon: <Activity size={16} className="text-orange-500"/>, bgColor: 'bg-orange-100', iconBgColor: 'bg-orange-200', trend: '' },
-          { label: 'Pending', value: allTasks.filter(t => t.status === 'Pending').length, icon: <AlertTriangle size={16} className="text-red-500"/>, bgColor: 'bg-red-100', iconBgColor: 'bg-red-200', trend: '' }
+          { label: 'Total Clients', value: accessibleClients.length, icon: <Briefcase size={16} className="text-blue-600"/>, bgColor: 'bg-blue-100', iconBgColor: 'bg-blue-200' },
+          { label: 'Open Tasks', value: allTasks.filter(t => t.status !== 'Done').length, icon: <Clock size={16} className="text-green-600"/>, bgColor: 'bg-green-100', iconBgColor: 'bg-green-200' },
+          { label: 'WIP', value: allTasks.filter(t => t.status === 'WIP').length, icon: <Activity size={16} className="text-orange-500"/>, bgColor: 'bg-orange-100', iconBgColor: 'bg-orange-200' },
+          { label: 'Pending', value: allTasks.filter(t => t.status === 'Pending').length, icon: <AlertTriangle size={16} className="text-red-500"/>, bgColor: 'bg-red-100', iconBgColor: 'bg-red-200' }
         ].map((stat, i) => (
           <div key={i} className={`${stat.bgColor} p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between h-28 transition-hover hover:shadow-md`}>
             <div className="flex justify-between items-start">
               <span className="text-xs font-semibold text-slate-500">{stat.label}</span>
               <div className={`p-2 ${stat.iconBgColor} rounded-lg`}>{stat.icon}</div>
             </div>
-            <div>
-              <p className="text-2xl font-bold text-slate-900">{stat.value}</p>
-              {stat.trend && (
-                <div className="flex items-center gap-1 mt-1">
-                  <span className={`text-xs font-medium ${stat.trend.includes('↑') ? 'text-green-500' : 'text-slate-400'}`}>
-                    {stat.trend}
-                  </span>
-                </div>
-              )}
-            </div>
+            <p className="text-2xl font-bold text-slate-900">{stat.value}</p>
           </div>
         ))}
       </div>
@@ -130,11 +202,10 @@ const HomeView = ({
         </button>
       </div>
 
-      {/* 2. TASK PIPELINES GRID - Modern Card Layout */}
+      {/* 2. TASK PIPELINES GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {accessibleClients.map(client => (
           <div key={client.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full hover:shadow-lg transition-all duration-300">
-            {/* Card Header */}
             <div className="p-5 flex justify-between items-center">
               <div className="flex items-center gap-3">
                 <h4 className="text-sm font-semibold text-slate-900">{client.name}</h4>
@@ -144,15 +215,10 @@ const HomeView = ({
                   {(clientLogs[client.id] || []).length > 0 ? 'Active' : 'Inactive'}
                 </span>
               </div>
-              <button 
-                onClick={() => setSelectedClient(client)} 
-                className="flex items-center gap-1 text-[10px] font-medium text-slate-500 hover:text-blue-600 transition-colors bg-slate-50 px-3 py-1.5 rounded-lg"
-              >
+              <button onClick={() => setSelectedClient(client)} className="flex items-center gap-1 text-[10px] font-medium text-slate-500 hover:text-blue-600 transition-colors bg-slate-50 px-3 py-1.5 rounded-lg">
                 View All <ChevronRight size={14}/>
               </button>
             </div>
-            
-            {/* Card Content - Tasks List */}
             <div className="flex-1 p-5 pt-0">
               <div className="bg-slate-50/50 rounded-2xl p-4 min-h-[140px] flex flex-col justify-center">
                 {(clientLogs[client.id] || []).filter(t => t.status !== 'Done').length > 0 ? (
@@ -161,9 +227,9 @@ const HomeView = ({
                       <div key={task.id} className="flex items-start gap-3 group">
                         <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${task.status === 'WIP' ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]' : 'bg-orange-500'}`} />
                         <div className="flex-1">
-                          <p className="text-sm font-medium text-slate-600 leading-snug line-clamp-2">{task.comment}</p>
+                          <p className="text-sm font-medium text-slate-600 leading-snug line-clamp-2">{task.name || task.comment}</p>
                           <div className="flex items-center gap-2 mt-1">
-                             <span className="text-[8px] font-semibold text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded">New</span>
+                            <span className="text-[8px] font-semibold text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded">New</span>
                           </div>
                         </div>
                       </div>
@@ -179,8 +245,6 @@ const HomeView = ({
                 )}
               </div>
             </div>
-
-            {/* Card Footer */}
             <div className="px-5 py-4 bg-slate-50/80 border-t border-slate-50 flex items-center gap-2">
               <Clock size={12} className="text-slate-400"/>
               <span className="text-xs font-medium text-slate-500">
@@ -191,38 +255,30 @@ const HomeView = ({
         ))}
       </div>
 
+      {/* ADD TASK MODAL */}
       {showAddTaskModal && (
         <div className="fixed inset-0 z-[700] flex items-center justify-center bg-slate-900/10 backdrop-blur-md p-4">
           <div className="bg-white w-full max-w-5xl border border-slate-200 shadow-xl rounded-2xl animate-in zoom-in-95 flex flex-col" style={{maxHeight:'92vh'}}>
             <div className="flex-shrink-0 flex justify-between items-center px-8 pt-7 pb-5 border-b border-slate-100">
               <h4 className="text-lg font-semibold text-slate-900">New Task</h4>
-              <button
-                onClick={() => {
-                  setShowAddTaskModal(false);
-                  setTaskName('');
-                  setTaskError('');
-                  setShowCategoryMenu(false);
-                }}
-                className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all"
-              >
+              <button onClick={closeModal} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all">
                 <X size={18} />
               </button>
             </div>
 
             <form onSubmit={handleAddTaskFromHome} className="flex-1 overflow-y-auto space-y-6 px-8 py-6">
               <div className="grid grid-cols-1 lg:grid-cols-[320px,1fr] gap-6">
+
+                {/* LEFT: Client + Date Picker */}
                 <div className="space-y-3">
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Client <span className="text-red-500">*</span></label>
                     <select
                       value={selectedClientId}
-                      onChange={(e) => {
-                        setSelectedClientId(e.target.value);
-                        if (taskError) setTaskError('');
-                      }}
+                      onChange={e => { setSelectedClientId(e.target.value); setAssigneeId(''); setAssigneeName(''); setAssigneeQuery(''); if (taskError) setTaskError(''); }}
                       className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
                     >
-                      {accessibleClients.map((client) => (
+                      {accessibleClients.map(client => (
                         <option key={client.id} value={client.id}>{client.name}</option>
                       ))}
                     </select>
@@ -231,43 +287,28 @@ const HomeView = ({
                   <div className="space-y-2">
                     <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Quick Select</label>
                     <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedDate(new Date())}
-                        className="px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600 transition-all"
-                      >
-                        Today
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedDate(new Date(new Date().setDate(new Date().getDate() + 1)))}
-                        className="px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600 transition-all"
-                      >
-                        Tomorrow
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedDate(new Date(new Date().setDate(new Date().getDate() + 7)))}
-                        className="px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600 transition-all"
-                      >
-                        Next Week
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedDate(new Date(new Date().setDate(new Date().getDate() + 30)))}
-                        className="px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600 transition-all"
-                      >
-                        Next Month
-                      </button>
+                      {[
+                        { label: 'Today', days: 0 },
+                        { label: 'Tomorrow', days: 1 },
+                        { label: 'Next Week', days: 7 },
+                        { label: 'Next Month', days: 30 },
+                      ].map(({ label, days }) => (
+                        <button key={label} type="button"
+                          onClick={() => setSelectedDate(new Date(new Date().setDate(new Date().getDate() + days)))}
+                          className="px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600 transition-all"
+                        >{label}</button>
+                      ))}
                     </div>
                   </div>
-
                   <div className="border border-slate-200 rounded-xl p-3 bg-slate-50">
-                    <DatePicker selected={selectedDate} onChange={(date) => setSelectedDate(date)} inline />
+                    <DatePicker selected={selectedDate} onChange={date => setSelectedDate(date)} inline />
                   </div>
                 </div>
 
+                {/* RIGHT: All task fields */}
                 <div className="flex-1 space-y-5">
+
+                  {/* Task Name */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Task Name <span className="text-red-500">*</span></label>
                     <input
@@ -275,14 +316,12 @@ const HomeView = ({
                       placeholder="Short title for this task"
                       className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
                       value={taskName}
-                      onChange={e => {
-                        setTaskName(e.target.value);
-                        if (taskError) setTaskError('');
-                      }}
+                      onChange={e => { setTaskName(e.target.value); if (taskError) setTaskError(''); }}
                       required
                     />
                   </div>
 
+                  {/* Task Category */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Task Category <span className="text-red-500">*</span></label>
                     <div className="relative">
@@ -293,129 +332,164 @@ const HomeView = ({
                         className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
                         value={taskCategoryQuery}
                         onFocus={() => setShowCategoryMenu(true)}
-                        onChange={(e) => {
-                          setTaskCategoryQuery(e.target.value);
-                          setTaskCategory('');
-                          setShowCategoryMenu(true);
-                          if (taskError) setTaskError('');
-                        }}
+                        onChange={e => { setTaskCategoryQuery(e.target.value); setTaskCategory(''); setShowCategoryMenu(true); if (taskError) setTaskError(''); }}
                       />
                       {showCategoryMenu && (
                         <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-44 overflow-y-auto">
-                          {filteredTaskCategories.length ? (
-                            filteredTaskCategories.map(category => (
-                              <button
-                                key={category}
-                                type="button"
-                                onClick={() => {
-                                  setTaskCategory(category);
-                                  setTaskCategoryQuery(category);
-                                  setShowCategoryMenu(false);
-                                  if (taskError) setTaskError('');
-                                }}
-                                className="w-full text-left px-3 py-2 text-sm font-medium text-black bg-white hover:bg-slate-50 transition-all"
-                              >
-                                {category}
-                              </button>
-                            ))
-                          ) : (
-                            <p className="px-3 py-2 text-sm text-slate-500">No categories found</p>
+                          {filteredTaskCategories.length ? filteredTaskCategories.map(cat => (
+                            <button key={cat} type="button"
+                              onClick={() => { setTaskCategory(cat); setTaskCategoryQuery(cat); setShowCategoryMenu(false); if (taskError) setTaskError(''); }}
+                              className="w-full text-left px-3 py-2 text-sm font-medium text-black bg-white hover:bg-slate-50 transition-all"
+                            >{cat}</button>
+                          )) : <p className="px-3 py-2 text-sm text-slate-500">No categories found</p>}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Assign To */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Assign To <span className="text-red-500">*</span></label>
+                    <div className="relative">
+                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Search assignee"
+                        className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                        value={assigneeQuery}
+                        onFocus={() => setShowAssigneeMenu(true)}
+                        onChange={e => { setAssigneeQuery(e.target.value); setAssigneeId(''); setShowAssigneeMenu(true); if (taskError) setTaskError(''); }}
+                      />
+                      {showAssigneeMenu && (
+                        <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-44 overflow-y-auto">
+                          {filteredAssignees.length ? filteredAssignees.map(u => (
+                            <button key={u.id} type="button"
+                              onClick={() => { setAssigneeId(u.id); setAssigneeName(u.name); setAssigneeQuery(u.name); setShowAssigneeMenu(false); if (taskError) setTaskError(''); }}
+                              className="w-full text-left px-3 py-2 bg-white hover:bg-slate-50 transition-all"
+                            >
+                              <p className="text-sm font-semibold text-slate-700">{u.name}</p>
+                              <p className="text-xs text-slate-500">{u.email || u.role || ''}</p>
+                            </button>
+                          )) : (
+                            <p className="px-3 py-2 text-sm text-slate-500">
+                              {assignableUsers.length ? 'No matching assignee found' : 'No team members assigned to this client'}
+                            </p>
                           )}
                         </div>
                       )}
                     </div>
                   </div>
 
+                  {/* Task Description */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Task Description <span className="text-red-500">*</span></label>
                     <textarea
                       value={taskComment}
-                      onChange={(e) => {
-                        setTaskComment(e.target.value);
-                        if (taskError) setTaskError('');
-                      }}
+                      onChange={e => { setTaskComment(e.target.value); if (taskError) setTaskError(''); }}
                       placeholder="Describe the task details"
-                      className="w-full h-40 p-4 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 resize-none bg-slate-100"
+                      className="w-full h-32 p-4 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 resize-none bg-slate-100"
                     />
                   </div>
 
+                  {/* Repeat Frequency */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Repeat Frequency</label>
-                    <div className="flex gap-3">
-                      <label className="flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-all" style={taskRepeat === 'Once' ? { borderColor: '#2563eb', backgroundColor: '#eff6ff' } : {}}>
-                        <input
-                          type="radio"
-                          name="homeTaskRepeat"
-                          value="Once"
-                          checked={taskRepeat === 'Once'}
-                          onChange={(e) => setTaskRepeat(e.target.value)}
-                          className="w-4 h-4 accent-blue-600 cursor-pointer"
-                        />
-                        <span className="text-xs font-semibold text-slate-700">Once</span>
-                      </label>
-                      <label className="flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-all" style={taskRepeat === 'Daily' ? { borderColor: '#2563eb', backgroundColor: '#eff6ff' } : {}}>
-                        <input
-                          type="radio"
-                          name="homeTaskRepeat"
-                          value="Daily"
-                          checked={taskRepeat === 'Daily'}
-                          onChange={(e) => setTaskRepeat(e.target.value)}
-                          className="w-4 h-4 accent-blue-600 cursor-pointer"
-                        />
-                        <span className="text-xs font-semibold text-slate-700">Daily</span>
-                      </label>
-                      <label className="flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-all" style={taskRepeat === 'Weekly' ? { borderColor: '#2563eb', backgroundColor: '#eff6ff' } : {}}>
-                        <input
-                          type="radio"
-                          name="homeTaskRepeat"
-                          value="Weekly"
-                          checked={taskRepeat === 'Weekly'}
-                          onChange={(e) => setTaskRepeat(e.target.value)}
-                          className="w-4 h-4 accent-blue-600 cursor-pointer"
-                        />
-                        <span className="text-xs font-semibold text-slate-700">Weekly</span>
-                      </label>
-                      <label className="flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-all" style={taskRepeat === 'Monthly' ? { borderColor: '#2563eb', backgroundColor: '#eff6ff' } : {}}>
-                        <input
-                          type="radio"
-                          name="homeTaskRepeat"
-                          value="Monthly"
-                          checked={taskRepeat === 'Monthly'}
-                          onChange={(e) => setTaskRepeat(e.target.value)}
-                          className="w-4 h-4 accent-blue-600 cursor-pointer"
-                        />
-                        <span className="text-xs font-semibold text-slate-700">Monthly</span>
-                      </label>
+                    <div className="flex flex-wrap gap-3">
+                      {['Once', 'Daily', 'Weekly', 'Monthly'].map(freq => (
+                        <label key={freq} className="flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer hover:bg-slate-50 transition-all"
+                          style={taskRepeat === freq ? { borderColor: '#2563eb', backgroundColor: '#eff6ff' } : { borderColor: '#e2e8f0' }}
+                        >
+                          <input type="radio" name="homeTaskRepeat" value={freq} checked={taskRepeat === freq} onChange={e => setTaskRepeat(e.target.value)} className="w-4 h-4 accent-blue-600 cursor-pointer"/>
+                          <span className="text-xs font-semibold text-slate-700">{freq}</span>
+                        </label>
+                      ))}
                     </div>
+                    {taskRepeat === 'Weekly' && <p className="text-[11px] text-blue-600 font-medium">Task will repeat every week on the same day</p>}
                   </div>
+
+                  {/* Due Date */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Due Date</label>
+                    <DatePicker
+                      selected={taskDueDate}
+                      onChange={date => setTaskDueDate(date)}
+                      placeholderText="Select due date"
+                      dateFormat="do MMM yyyy"
+                      minDate={new Date()}
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                    />
+                    {taskDueDate && (
+                      <button type="button" onClick={() => setTaskDueDate(null)} className="text-xs font-semibold text-red-600 hover:text-red-700">
+                        Clear Due Date
+                      </button>
+                    )}
+                  </div>
+
+                  {/* QC Section */}
+                  <div className="space-y-3 border border-slate-200 rounded-xl p-4 bg-slate-50/60">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck size={15} className="text-indigo-600" />
+                        <label className="text-xs font-semibold uppercase tracking-wide text-slate-600">Quality Check</label>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={qcEnabled}
+                        onClick={() => { setQcEnabled(!qcEnabled); if (qcEnabled) { setQcAssigneeId(''); setQcAssigneeName(''); } }}
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${qcEnabled ? 'bg-indigo-600' : 'bg-slate-300'}`}
+                      >
+                        <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${qcEnabled ? 'translate-x-4' : 'translate-x-1'}`} />
+                      </button>
+                    </div>
+                    {qcEnabled && (
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-slate-500">QC Reviewer</label>
+                        <button
+                          type="button"
+                          onClick={() => { setQcPickerSearch(''); setShowQcPicker(true); }}
+                          className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-all ${qcAssigneeId ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-500 hover:border-indigo-300 hover:bg-indigo-50/40'}`}
+                        >
+                          <Users size={13} className={qcAssigneeId ? 'text-indigo-600' : 'text-slate-400'} />
+                          {qcAssigneeId ? qcAssigneeName : 'Select a reviewer (optional)'}
+                          {qcAssigneeId && (
+                            <button type="button" onClick={e => { e.stopPropagation(); setQcAssigneeId(''); setQcAssigneeName(''); }} className="ml-auto text-indigo-400 hover:text-indigo-600">
+                              <X size={12} />
+                            </button>
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
                 </div>
               </div>
 
               {taskError && <p className="text-sm font-medium text-red-600">{taskError}</p>}
 
               <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAddTaskModal(false);
-                    setTaskName('');
-                    setTaskError('');
-                    setShowCategoryMenu(false);
-                  }}
-                  className="px-3.5 py-2 rounded-lg text-xs font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
-                >
+                <button type="button" onClick={closeModal} className="px-3.5 py-2 rounded-lg text-xs font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50">
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  className="px-3.5 py-2 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-all"
-                >
-                  Add Task
+                <button type="submit" className="px-3.5 py-2 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-all">
+                  Add to Log
                 </button>
               </div>
             </form>
           </div>
         </div>
+      )}
+
+      {/* QC Reviewer Picker */}
+      {showQcPicker && (
+        <QcPickerModal
+          users={users}
+          selected={qcAssigneeId}
+          onSelect={u => { setQcAssigneeId(u.id); setQcAssigneeName(u.name); }}
+          onClose={() => setShowQcPicker(false)}
+          search={qcPickerSearch}
+          setSearch={setQcPickerSearch}
+        />
       )}
     </div>
   );

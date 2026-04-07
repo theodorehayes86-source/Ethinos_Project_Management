@@ -700,6 +700,7 @@ const App = () => {
               setClientLogs={persistClientLogs}
               currentUser={currentUser}
               taskCategories={taskCategories}
+              users={users}
             />
           )}
 
