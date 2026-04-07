@@ -84,8 +84,8 @@ const HomeView = ({
 
   const handleAddTaskFromHome = (event) => {
     event.preventDefault();
-    if (!selectedClientId || !taskCategory || !taskName.trim() || !taskComment.trim() || !selectedDate) {
-      setTaskError('Client, date, task name, category and description are required.');
+    if (!selectedClientId || !taskName.trim() || !taskCategory || !assigneeId || !taskComment.trim() || !selectedDate) {
+      setTaskError('Client, task name, category, assignee and description are all required.');
       return;
     }
     const formattedDate = format(selectedDate, 'do MMM yyyy');
