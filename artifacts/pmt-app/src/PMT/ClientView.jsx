@@ -148,6 +148,17 @@ const ClientView = ({
   const isManagement = managementRoles.includes(currentUser?.role);
   const canAddClient = currentUser?.role === 'Super Admin' || currentUser?.role === 'Director';
 
+  // Permission helpers for task-level access
+  const canFullyEditTask = (log) => {
+    if (!currentUser) return false;
+    if (managementRoles.includes(currentUser.role)) return true;
+    return String(log.creatorId) === String(currentUser.id);
+  };
+  const canChangeTaskStatus = (log) => {
+    if (canFullyEditTask(log)) return true;
+    return String(log.assigneeId) === String(currentUser?.id);
+  };
+
   useEffect(() => {
     const hasRunningTimers = Object.values(clientLogs || {}).some(logs =>
       (logs || []).some(log => log.timerState === 'running')
@@ -230,7 +241,9 @@ const ClientView = ({
 
   // --- CORE LOGIC (UNCHANGED) ---
   const handleSaveInline = (logId) => {
-    const updated = (clientLogs[selectedClient.id] || []).map(l => 
+    const log = (clientLogs[selectedClient?.id] || []).find(l => l.id === logId);
+    if (!log || !canFullyEditTask(log)) { setEditingId(null); return; }
+    const updated = (clientLogs[selectedClient.id] || []).map(l =>
       l.id === logId ? { ...l, [editField]: tempValue } : l
     );
     setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
@@ -680,35 +693,48 @@ const ClientView = ({
                         )}
                       </td>
                       <td className="px-1 py-2 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        <select
-                          className={`w-full min-w-0 text-[10px] border-none rounded-md px-1.5 py-1 font-semibold outline-none cursor-pointer ${
+                        {canChangeTaskStatus(log) ? (
+                          <select
+                            className={`w-full min-w-0 text-[10px] border-none rounded-md px-1.5 py-1 font-semibold outline-none cursor-pointer ${
+                              log.status === 'Done' ? 'bg-emerald-100 text-emerald-600' :
+                              log.status === 'WIP' ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'
+                            }`}
+                            value={log.status}
+                            onChange={e => {
+                              const updated = clientLogs[selectedClient.id].map(l => l.id === log.id ? { ...l, status: e.target.value } : l);
+                              setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
+                            }}
+                          >
+                            <option value="Pending">Pending</option>
+                            <option value="WIP">WIP</option>
+                            <option value="Done">Done</option>
+                          </select>
+                        ) : (
+                          <span className={`inline-block text-[10px] rounded-md px-1.5 py-1 font-semibold ${
                             log.status === 'Done' ? 'bg-emerald-100 text-emerald-600' :
                             log.status === 'WIP' ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'
-                          }`}
-                          value={log.status}
-                          onChange={e => {
-                            const updated = clientLogs[selectedClient.id].map(l => l.id === log.id ? { ...l, status: e.target.value } : l);
-                            setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
-                          }}
-                        >
-                          <option value="Pending">Pending</option>
-                          <option value="WIP">WIP</option>
-                          <option value="Done">Done</option>
-                        </select>
+                          }`}>
+                            {log.status}
+                          </span>
+                        )}
                       </td>
                       <td className="px-1.5 py-2" onClick={(e) => e.stopPropagation()}>
-                        <select
-                          className="w-full min-w-0 text-[10px] border border-slate-200 rounded-md px-2 py-1 font-semibold outline-none cursor-pointer bg-white text-slate-700"
-                          value={log.category || taskCategories[0] || 'General'}
-                          onChange={e => {
-                            const updated = clientLogs[selectedClient.id].map(l => l.id === log.id ? { ...l, category: e.target.value } : l);
-                            setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
-                          }}
-                        >
-                          {(taskCategories.length ? taskCategories : ['General']).map(category => (
-                            <option key={category} value={category}>{category}</option>
-                          ))}
-                        </select>
+                        {canFullyEditTask(log) ? (
+                          <select
+                            className="w-full min-w-0 text-[10px] border border-slate-200 rounded-md px-2 py-1 font-semibold outline-none cursor-pointer bg-white text-slate-700"
+                            value={log.category || taskCategories[0] || 'General'}
+                            onChange={e => {
+                              const updated = clientLogs[selectedClient.id].map(l => l.id === log.id ? { ...l, category: e.target.value } : l);
+                              setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
+                            }}
+                          >
+                            {(taskCategories.length ? taskCategories : ['General']).map(category => (
+                              <option key={category} value={category}>{category}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-[10px] font-semibold text-slate-600 px-1">{log.category || 'General'}</span>
+                        )}
                       </td>
                       <td className="px-1.5 py-2 text-xs text-slate-600">
                         <div className="leading-4">
@@ -719,7 +745,7 @@ const ClientView = ({
                         </div>
                       </td>
                       <td className="px-2 py-2">
-                        {editingId === log.id && editField === 'comment' ? (
+                        {editingId === log.id && editField === 'comment' && canFullyEditTask(log) ? (
                           <textarea
                             className="w-full p-2 border border-blue-600 rounded-lg text-sm font-medium bg-white outline-none"
                             value={tempValue}
@@ -735,33 +761,35 @@ const ClientView = ({
                                 {log.comment}
                               </span>
                             </div>
-                            <div className="flex items-center gap-1 opacity-0 group-hover/cell:opacity-100">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setEditingId(log.id);
-                                  setEditField('comment');
-                                  setTempValue(log.comment);
-                                }}
-                                className="p-1 text-blue-400"
-                                title="Edit task"
-                              >
-                                <Edit2 size={12}/>
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (window.confirm("Are you sure you want to delete this task?")) {
-                                    const upd = clientLogs[selectedClient.id].filter(l => l.id !== log.id);
-                                    setClientLogs({ ...clientLogs, [selectedClient.id]: upd });
-                                  }
-                                }}
-                                className="p-1 text-slate-300 hover:text-red-500 transition-all"
-                                title="Delete task"
-                              >
-                                <Trash2 size={14}/>
-                              </button>
-                            </div>
+                            {canFullyEditTask(log) && (
+                              <div className="flex items-center gap-1 opacity-0 group-hover/cell:opacity-100">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingId(log.id);
+                                    setEditField('comment');
+                                    setTempValue(log.comment);
+                                  }}
+                                  className="p-1 text-blue-400"
+                                  title="Edit task"
+                                >
+                                  <Edit2 size={12}/>
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (window.confirm("Are you sure you want to delete this task?")) {
+                                      const upd = clientLogs[selectedClient.id].filter(l => l.id !== log.id);
+                                      setClientLogs({ ...clientLogs, [selectedClient.id]: upd });
+                                    }
+                                  }}
+                                  className="p-1 text-slate-300 hover:text-red-500 transition-all"
+                                  title="Delete task"
+                                >
+                                  <Trash2 size={14}/>
+                                </button>
+                              </div>
+                            )}
                           </div>
                         )}
                       </td>
