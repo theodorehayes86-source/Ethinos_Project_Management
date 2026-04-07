@@ -24,3 +24,13 @@ expertMode = true
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 20000
+
+[userenv]
+
+[userenv.shared]
+VITE_FIREBASE_AUTH_DOMAIN = "ethinos-project-management.firebaseapp.com"
+VITE_FIREBASE_PROJECT_ID = "ethinos-project-management"
+VITE_FIREBASE_STORAGE_BUCKET = "ethinos-project-management.firebasestorage.app"
+VITE_FIREBASE_MESSAGING_SENDER_ID = "418382176848"
+VITE_FIREBASE_APP_ID = "1:418382176848:web:15d900e9837d26fd16e755"
+VITE_FIREBASE_MEASUREMENT_ID = "G-MP6LYE3HSB"
