@@ -12,7 +12,7 @@ const CC_TABS = [
   { id: 'categories', label: 'Task Categories' },
   { id: 'departments', label: 'Departments' },
   { id: 'regions', label: 'Regions' },
-  { id: 'conditions', label: 'Conditions' },
+  { id: 'conditions', label: 'Access Control' },
   { id: 'templates', label: 'Templates' },
 ];
 
