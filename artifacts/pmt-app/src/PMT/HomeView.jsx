@@ -2,53 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { format } from 'date-fns';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
-import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, Check } from 'lucide-react';
-
-/* ─── Inline QC Reviewer Picker ─── */
-const QcPickerModal = ({ users, selected, onSelect, onClose, search, setSearch }) => {
-  const q = search.toLowerCase().trim();
-  const filtered = users.filter(u =>
-    !q || (u.name || '').toLowerCase().includes(q) || (u.role || '').toLowerCase().includes(q)
-  );
-  return (
-    <div className="fixed inset-0 z-[900] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4">
-      <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 flex flex-col" style={{maxHeight:'75vh'}}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-          <div className="flex items-center gap-2">
-            <ShieldCheck size={15} className="text-indigo-600"/>
-            <h3 className="text-sm font-bold text-slate-800">Select QC Reviewer</h3>
-          </div>
-          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg"><X size={15}/></button>
-        </div>
-        <div className="px-4 py-3 border-b border-slate-100">
-          <div className="relative">
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
-            <input autoFocus type="text" placeholder="Search by name or role..." className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 ring-blue-500/20" value={search} onChange={e => setSearch(e.target.value)}/>
-          </div>
-        </div>
-        <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
-          {filtered.length === 0 && <p className="text-center text-sm text-slate-400 py-6">No users found</p>}
-          {filtered.map(u => (
-            <button key={u.id} type="button" onClick={() => { onSelect(u); onClose(); }}
-              className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${selected === u.id ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'}`}
-            >
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0 ${selected === u.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                {selected === u.id ? <Check size={13}/> : (u.name || '?')[0].toUpperCase()}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold truncate text-slate-800">{u.name}</p>
-                <p className="text-xs text-slate-400">{u.role}</p>
-              </div>
-            </button>
-          ))}
-        </div>
-        <div className="px-4 py-3 border-t border-slate-100">
-          <button type="button" onClick={onClose} className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm py-2 rounded-lg transition-all">Cancel</button>
-        </div>
-      </div>
-    </div>
-  );
-};
+import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users } from 'lucide-react';
+import UserPickerModal from './UserPickerModal';
 
 const HomeView = ({
   accessibleClients,
@@ -482,13 +437,21 @@ const HomeView = ({
 
       {/* QC Reviewer Picker */}
       {showQcPicker && (
-        <QcPickerModal
+        <UserPickerModal
+          title="Select QC Reviewer"
           users={users}
-          selected={qcAssigneeId}
-          onSelect={u => { setQcAssigneeId(u.id); setQcAssigneeName(u.name); }}
+          selected={qcAssigneeId ? [qcAssigneeId] : []}
+          onToggle={id => {
+            const picked = users.find(u => u.id === id);
+            if (picked) {
+              setQcAssigneeId(qcAssigneeId === id ? '' : id);
+              setQcAssigneeName(qcAssigneeId === id ? '' : picked.name);
+            }
+            setShowQcPicker(false);
+          }}
           onClose={() => setShowQcPicker(false)}
-          search={qcPickerSearch}
-          setSearch={setQcPickerSearch}
+          pickerSearch={qcPickerSearch}
+          setPickerSearch={setQcPickerSearch}
         />
       )}
     </div>
