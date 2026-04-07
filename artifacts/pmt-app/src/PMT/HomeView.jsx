@@ -58,7 +58,14 @@ const HomeView = ({
       timerState: 'idle',
       timerStartedAt: null,
       elapsedMs: 0,
-      timeTaken: null
+      timeTaken: null,
+      qcEnabled: false,
+      qcAssigneeId: null,
+      qcAssigneeName: null,
+      qcStatus: null,
+      qcRating: null,
+      qcFeedback: null,
+      qcReviewedAt: null
     };
 
     setClientLogs((prevLogs) => ({

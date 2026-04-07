@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Search, ChevronLeft, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, Play, Pause, Square, MoreVertical, Check, Users } from 'lucide-react';
+import { Search, ChevronLeft, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, Play, Pause, Square, MoreVertical, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send } from 'lucide-react';
 
 /* ─── Reusable User Picker Modal ─── */
 const UserPickerModal = ({ title, users, selected, onToggle, onClose, pickerSearch, setPickerSearch }) => {
@@ -142,8 +142,19 @@ const ClientView = ({
   const [editClientEmployees, setEditClientEmployees] = useState([]);
   const [editAdminQuery, setEditAdminQuery] = useState("");
   const [editTeamQuery, setEditTeamQuery] = useState("");
-  const [activePicker, setActivePicker] = useState(null); // 'addLeadership'|'addTeam'|'editLeadership'|'editTeam'
+  const [activePicker, setActivePicker] = useState(null); // 'addLeadership'|'addTeam'|'editLeadership'|'editTeam'|'qcReviewer'
   const [pickerSearch, setPickerSearch] = useState("");
+
+  // QC form state (for new task creation)
+  const [qcEnabled, setQcEnabled] = useState(true);
+  const [qcAssigneeId, setQcAssigneeId] = useState('');
+  const [qcAssigneeName, setQcAssigneeName] = useState('');
+
+  // QC review state (for management reviewing a sent task)
+  const [qcReviewingTaskId, setQcReviewingTaskId] = useState(null);
+  const [qcReviewRating, setQcReviewRating] = useState('');
+  const [qcReviewFeedback, setQcReviewFeedback] = useState('');
+  const [qcReviewDecision, setQcReviewDecision] = useState('approved'); // 'approved' | 'rejected'
 
   const isManagement = managementRoles.includes(currentUser?.role);
   const canAddClient = currentUser?.role === 'Super Admin' || currentUser?.role === 'Director';
@@ -339,7 +350,14 @@ const ClientView = ({
       timerState: 'idle',
       timerStartedAt: null,
       elapsedMs: 0,
-      timeTaken: null
+      timeTaken: null,
+      qcEnabled: qcEnabled,
+      qcAssigneeId: qcEnabled && qcAssigneeId ? qcAssigneeId : null,
+      qcAssigneeName: qcEnabled && qcAssigneeName ? qcAssigneeName : null,
+      qcStatus: null,
+      qcRating: null,
+      qcFeedback: null,
+      qcReviewedAt: null
     };
 
     setNotifications(prev => [
@@ -372,6 +390,9 @@ const ClientView = ({
     setTaskFormError("");
     setNewTaskRepeat('Once');
     setTaskDueDate(null);
+    setQcEnabled(true);
+    setQcAssigneeId('');
+    setQcAssigneeName('');
     setShowTaskForm(false);
   };
 
@@ -600,6 +621,9 @@ const ClientView = ({
                 setTaskFormError('');
                 setNewTaskRepeat('Once');
                 setTaskDueDate(null);
+                setQcEnabled(true);
+                setQcAssigneeId('');
+                setQcAssigneeName('');
                 setShowTaskForm(true);
               }}
               className="bg-blue-600 text-white px-3.5 py-2 rounded-lg font-semibold text-xs hover:bg-blue-700 transition-all flex items-center gap-1.5 shadow-md"
@@ -693,30 +717,92 @@ const ClientView = ({
                         )}
                       </td>
                       <td className="px-1 py-2 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        {canChangeTaskStatus(log) ? (
-                          <select
-                            className={`w-full min-w-0 text-[10px] border-none rounded-md px-1.5 py-1 font-semibold outline-none cursor-pointer ${
+                        <div className="flex flex-col gap-1">
+                          {canChangeTaskStatus(log) ? (
+                            <select
+                              className={`w-full min-w-0 text-[10px] border-none rounded-md px-1.5 py-1 font-semibold outline-none cursor-pointer ${
+                                log.status === 'Done' ? 'bg-emerald-100 text-emerald-600' :
+                                log.status === 'WIP' ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'
+                              }`}
+                              value={log.status}
+                              onChange={e => {
+                                const newStatus = e.target.value;
+                                const updated = clientLogs[selectedClient.id].map(l =>
+                                  l.id === log.id ? {
+                                    ...l,
+                                    status: newStatus,
+                                    qcStatus: newStatus !== 'Done' && l.qcStatus === 'sent' ? null : l.qcStatus
+                                  } : l
+                                );
+                                setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
+                              }}
+                            >
+                              <option value="Pending">Pending</option>
+                              <option value="WIP">WIP</option>
+                              <option value="Done">Done</option>
+                            </select>
+                          ) : (
+                            <span className={`inline-block text-[10px] rounded-md px-1.5 py-1 font-semibold ${
                               log.status === 'Done' ? 'bg-emerald-100 text-emerald-600' :
                               log.status === 'WIP' ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'
-                            }`}
-                            value={log.status}
-                            onChange={e => {
-                              const updated = clientLogs[selectedClient.id].map(l => l.id === log.id ? { ...l, status: e.target.value } : l);
-                              setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
-                            }}
-                          >
-                            <option value="Pending">Pending</option>
-                            <option value="WIP">WIP</option>
-                            <option value="Done">Done</option>
-                          </select>
-                        ) : (
-                          <span className={`inline-block text-[10px] rounded-md px-1.5 py-1 font-semibold ${
-                            log.status === 'Done' ? 'bg-emerald-100 text-emerald-600' :
-                            log.status === 'WIP' ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'
-                          }`}>
-                            {log.status}
-                          </span>
-                        )}
+                            }`}>
+                              {log.status}
+                            </span>
+                          )}
+                          {/* QC Badge */}
+                          {log.qcEnabled && log.status === 'Done' && !log.qcStatus && canChangeTaskStatus(log) && (
+                            <button
+                              onClick={() => {
+                                const updated = clientLogs[selectedClient.id].map(l =>
+                                  l.id === log.id ? { ...l, qcStatus: 'sent' } : l
+                                );
+                                setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
+                              }}
+                              className="flex items-center gap-0.5 text-[9px] font-semibold bg-indigo-50 text-indigo-600 border border-indigo-200 rounded px-1 py-0.5 hover:bg-indigo-100 transition-all whitespace-nowrap"
+                              title="Send for Quality Check"
+                            >
+                              <Send size={8} /> Send for QC
+                            </button>
+                          )}
+                          {log.qcEnabled && log.qcStatus === 'sent' && !isManagement && (
+                            <span className="flex items-center gap-0.5 text-[9px] font-semibold bg-amber-50 text-amber-600 border border-amber-200 rounded px-1 py-0.5 whitespace-nowrap">
+                              <ShieldCheck size={8} /> Pending QC
+                            </span>
+                          )}
+                          {log.qcEnabled && log.qcStatus === 'sent' && isManagement && (
+                            <button
+                              onClick={() => {
+                                setQcReviewingTaskId(log.id);
+                                setQcReviewDecision('approved');
+                                setQcReviewRating('');
+                                setQcReviewFeedback('');
+                              }}
+                              className="flex items-center gap-0.5 text-[9px] font-semibold bg-amber-50 text-amber-600 border border-amber-200 rounded px-1 py-0.5 hover:bg-amber-100 transition-all whitespace-nowrap"
+                              title="Review QC submission"
+                            >
+                              <ShieldCheck size={8} /> Review QC
+                            </button>
+                          )}
+                          {log.qcEnabled && log.qcStatus === 'approved' && (
+                            <span className="flex items-center gap-0.5 text-[9px] font-semibold bg-emerald-50 text-emerald-600 border border-emerald-200 rounded px-1 py-0.5 whitespace-nowrap">
+                              <ThumbsUp size={8} /> Approved{log.qcRating ? ` · ${log.qcRating}/10` : ''}
+                            </span>
+                          )}
+                          {log.qcEnabled && log.qcStatus === 'rejected' && (
+                            <button
+                              onClick={() => {
+                                const updated = clientLogs[selectedClient.id].map(l =>
+                                  l.id === log.id ? { ...l, qcStatus: 'sent' } : l
+                                );
+                                setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
+                              }}
+                              className="flex items-center gap-0.5 text-[9px] font-semibold bg-red-50 text-red-600 border border-red-200 rounded px-1 py-0.5 hover:bg-red-100 transition-all whitespace-nowrap"
+                              title="Resubmit for QC"
+                            >
+                              <RotateCcw size={8} /> Returned
+                            </button>
+                          )}
+                        </div>
                       </td>
                       <td className="px-1.5 py-2" onClick={(e) => e.stopPropagation()}>
                         {canFullyEditTask(log) ? (
@@ -760,6 +846,22 @@ const ClientView = ({
                               <span className={`text-sm font-medium text-slate-700 leading-5 pr-1 break-words ${isExpanded ? '' : 'line-clamp-1'}`}>
                                 {log.comment}
                               </span>
+                              {/* QC Reviewer info (expanded) */}
+                              {isExpanded && log.qcEnabled && log.qcAssigneeName && (
+                                <p className="text-[10px] text-indigo-500 font-medium mt-0.5">
+                                  QC Reviewer: {log.qcAssigneeName}
+                                </p>
+                              )}
+                              {/* QC Feedback banner (rejected tasks) */}
+                              {log.qcEnabled && log.qcStatus === 'rejected' && log.qcFeedback && (
+                                <div className="mt-1.5 flex items-start gap-1.5 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5">
+                                  <ThumbsDown size={11} className="text-red-500 mt-0.5 flex-shrink-0" />
+                                  <div className="min-w-0">
+                                    <p className="text-[10px] font-semibold text-red-700">Manager Feedback{log.qcRating ? ` · ${log.qcRating}/10` : ''}:</p>
+                                    <p className="text-[10px] text-red-600 break-words">{log.qcFeedback}</p>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                             {canFullyEditTask(log) && (
                               <div className="flex items-center gap-1 opacity-0 group-hover/cell:opacity-100">
@@ -1266,6 +1368,50 @@ const ClientView = ({
                         </button>
                       )}
                     </div>
+                    {/* QC Section */}
+                    <div className="space-y-3 border border-slate-200 rounded-xl p-4 bg-slate-50/60">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck size={15} className="text-indigo-600" />
+                          <label className="text-xs font-semibold uppercase tracking-wide text-slate-600">Quality Check</label>
+                        </div>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={qcEnabled}
+                          aria-label="Enable Quality Check"
+                          onClick={() => {
+                            setQcEnabled(!qcEnabled);
+                            if (qcEnabled) { setQcAssigneeId(''); setQcAssigneeName(''); }
+                          }}
+                          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${qcEnabled ? 'bg-indigo-600' : 'bg-slate-300'}`}
+                        >
+                          <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${qcEnabled ? 'translate-x-4' : 'translate-x-1'}`} />
+                        </button>
+                      </div>
+                      {qcEnabled && (
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-slate-500">QC Reviewer</label>
+                          <button
+                            type="button"
+                            onClick={() => { setPickerSearch(''); setActivePicker('qcReviewer'); }}
+                            className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-all ${qcAssigneeId ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-500 hover:border-indigo-300 hover:bg-indigo-50/40'}`}
+                          >
+                            <Users size={13} className={qcAssigneeId ? 'text-indigo-600' : 'text-slate-400'} />
+                            {qcAssigneeId ? qcAssigneeName : 'Select a reviewer (optional)'}
+                            {qcAssigneeId && (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setQcAssigneeId(''); setQcAssigneeName(''); }}
+                                className="ml-auto text-indigo-400 hover:text-indigo-600"
+                              >
+                                <X size={12} />
+                              </button>
+                            )}
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
                 {taskFormError && (
@@ -1284,6 +1430,110 @@ const ClientView = ({
             </div>
           </div>
         )}
+
+        {/* QC Review Modal (management only) */}
+        {qcReviewingTaskId && (() => {
+          const reviewingTask = (clientLogs[selectedClient.id] || []).find(l => l.id === qcReviewingTaskId);
+          if (!reviewingTask) return null;
+          const handleSubmitReview = () => {
+            const ratingNum = parseInt(qcReviewRating, 10);
+            const validRating = !isNaN(ratingNum) && ratingNum >= 1 && ratingNum <= 10 ? ratingNum : null;
+            if (qcReviewDecision === 'rejected' && !qcReviewFeedback.trim()) return;
+            const updated = clientLogs[selectedClient.id].map(l =>
+              l.id === qcReviewingTaskId ? {
+                ...l,
+                qcStatus: qcReviewDecision,
+                qcRating: validRating,
+                qcFeedback: qcReviewFeedback.trim() || null,
+                qcReviewedAt: new Date().toISOString(),
+                qcReviewerName: currentUser?.name || null
+              } : l
+            );
+            setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
+            setQcReviewingTaskId(null);
+            setQcReviewRating('');
+            setQcReviewFeedback('');
+          };
+          return (
+            <div className="fixed inset-0 z-[700] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4">
+              <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck size={17} className="text-indigo-600" />
+                    <h3 className="text-base font-bold text-slate-800">QC Review</h3>
+                  </div>
+                  <button onClick={() => setQcReviewingTaskId(null)} className="p-1.5 hover:bg-slate-100 rounded-lg transition-all"><X size={16}/></button>
+                </div>
+                <div className="px-6 py-4 space-y-4">
+                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-200">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Task</p>
+                    <p className="text-sm font-medium text-slate-700 line-clamp-3">{reviewingTask.comment}</p>
+                    <p className="text-[10px] text-slate-500 mt-1">Assigned to: {reviewingTask.assigneeName}</p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Decision</label>
+                    <div className="flex gap-3">
+                      <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${qcReviewDecision === 'approved' ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                        <input type="radio" name="qcDecision" value="approved" checked={qcReviewDecision === 'approved'} onChange={() => setQcReviewDecision('approved')} className="sr-only" />
+                        <ThumbsUp size={14} /> <span className="text-xs font-semibold">Approve</span>
+                      </label>
+                      <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${qcReviewDecision === 'rejected' ? 'bg-red-50 border-red-300 text-red-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                        <input type="radio" name="qcDecision" value="rejected" checked={qcReviewDecision === 'rejected'} onChange={() => setQcReviewDecision('rejected')} className="sr-only" />
+                        <ThumbsDown size={14} /> <span className="text-xs font-semibold">Return</span>
+                      </label>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Rating (1–10) <span className="text-slate-400 font-normal normal-case">optional</span></label>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {[1,2,3,4,5,6,7,8,9,10].map(n => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => setQcReviewRating(String(n) === qcReviewRating ? '' : String(n))}
+                          className={`w-8 h-8 rounded-lg text-xs font-bold border transition-all ${String(n) === qcReviewRating ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50'}`}
+                        >
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Feedback {qcReviewDecision === 'rejected' && <span className="text-red-500">*</span>}
+                    </label>
+                    <textarea
+                      className="w-full h-24 p-3 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-indigo-500/20 resize-none bg-slate-50"
+                      placeholder={qcReviewDecision === 'rejected' ? 'Describe what needs to be fixed...' : 'Optional comments...'}
+                      value={qcReviewFeedback}
+                      onChange={e => setQcReviewFeedback(e.target.value)}
+                    />
+                    {qcReviewDecision === 'rejected' && !qcReviewFeedback.trim() && (
+                      <p className="text-[10px] text-red-500 font-medium">Feedback is required when returning a task.</p>
+                    )}
+                  </div>
+                </div>
+                <div className="px-6 py-4 border-t border-slate-100 flex gap-3 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setQcReviewingTaskId(null)}
+                    className="px-4 py-2 rounded-lg text-sm font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSubmitReview}
+                    disabled={qcReviewDecision === 'rejected' && !qcReviewFeedback.trim()}
+                    className={`px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${qcReviewDecision === 'approved' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'}`}
+                  >
+                    {qcReviewDecision === 'approved' ? 'Approve Task' : 'Return to Employee'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     );
   }
@@ -1608,7 +1858,7 @@ const ClientView = ({
       )}
 
       {/* User Picker Modal */}
-      {activePicker && (
+      {activePicker && activePicker !== 'qcReviewer' && (
         <UserPickerModal
           title={pickerIsLeadership ? 'Select Leadership' : 'Select Team Members'}
           users={pickerAllUsers}
@@ -1619,6 +1869,29 @@ const ClientView = ({
           setPickerSearch={setPickerSearch}
         />
       )}
+      {/* QC Reviewer Picker (single-select, management only) */}
+      {activePicker === 'qcReviewer' && selectedClient && (() => {
+        const clientStaff = getProjectStaff(selectedClient.name);
+        const managementUsers = clientStaff.admins;
+        return (
+          <UserPickerModal
+            title="Select QC Reviewer"
+            users={managementUsers.length ? managementUsers : (users || []).filter(u => managementRoles.includes(u.role))}
+            selected={qcAssigneeId ? [qcAssigneeId] : []}
+            onToggle={id => {
+              const picked = (managementUsers.length ? managementUsers : (users || []).filter(u => managementRoles.includes(u.role))).find(u => u.id === id);
+              if (picked) {
+                setQcAssigneeId(qcAssigneeId === id ? '' : id);
+                setQcAssigneeName(qcAssigneeId === id ? '' : picked.name);
+              }
+              setActivePicker(null);
+            }}
+            onClose={() => setActivePicker(null)}
+            pickerSearch={pickerSearch}
+            setPickerSearch={setPickerSearch}
+          />
+        );
+      })()}
     </div>
   );
 };
