@@ -14,8 +14,10 @@
     "@workspace/db": "workspace:*",
     "cookie-parser": "^1.4.7",
     "cors": "^2",
+    "date-fns": "^3.6.0",
     "drizzle-orm": "catalog:",
     "express": "^5",
+    "firebase-admin": "^13.7.0",
     "pino": "^9",
     "pino-http": "^10"
   },
