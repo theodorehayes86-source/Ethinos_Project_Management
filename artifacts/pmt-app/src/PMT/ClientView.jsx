@@ -1136,10 +1136,10 @@ const ClientView = ({
 
         {/* Modal: Add Task */}
         {showTaskForm && (
-          <div className="fixed inset-0 z-[600] flex items-start justify-center bg-slate-900/10 backdrop-blur-md overflow-y-auto p-4">
-            <div className="bg-white w-full max-w-5xl border border-slate-200 shadow-xl rounded-2xl animate-in zoom-in-95 flex flex-col my-auto">
+          <div className="fixed inset-0 z-[600] flex items-center justify-center bg-slate-900/10 backdrop-blur-md p-4">
+            <div className="bg-white w-full max-w-5xl border border-slate-200 shadow-xl rounded-2xl animate-in zoom-in-95 flex flex-col" style={{maxHeight:'92vh'}}>
               {/* Sticky header */}
-              <div className="flex justify-between items-center px-8 pt-7 pb-5 border-b border-slate-100">
+              <div className="flex-shrink-0 flex justify-between items-center px-8 pt-7 pb-5 border-b border-slate-100">
                 <h4 className="text-lg font-semibold text-slate-900">New Task</h4>
                 <button
                   onClick={() => {
@@ -1154,7 +1154,7 @@ const ClientView = ({
                   <X size={18}/>
                 </button>
               </div>
-              <form onSubmit={addTaskEntry} className="space-y-6 px-8 py-6 overflow-y-auto">
+              <form onSubmit={addTaskEntry} className="flex-1 overflow-y-auto space-y-6 px-8 py-6">
                 <div className="grid grid-cols-1 lg:grid-cols-[320px,1fr] gap-6">
                   <div className="space-y-3">
                     <div className="space-y-2">
@@ -1449,10 +1449,10 @@ const ClientView = ({
           );
           const managementUsersForQC = assignableUsers.filter(u => managementRoles.includes(u.role));
           return (
-            <div className="fixed inset-0 z-[700] flex items-start justify-center bg-slate-900/20 backdrop-blur-md overflow-y-auto p-4">
-              <div className="bg-white w-full max-w-5xl border border-slate-200 shadow-xl rounded-2xl animate-in zoom-in-95 flex flex-col my-auto">
+            <div className="fixed inset-0 z-[700] flex items-center justify-center bg-slate-900/20 backdrop-blur-md p-4">
+              <div className="bg-white w-full max-w-5xl border border-slate-200 shadow-xl rounded-2xl animate-in zoom-in-95 flex flex-col" style={{maxHeight:'92vh'}}>
                 {/* Header */}
-                <div className="flex justify-between items-center px-8 pt-7 pb-5 border-b border-slate-100">
+                <div className="flex-shrink-0 flex justify-between items-center px-8 pt-7 pb-5 border-b border-slate-100">
                   <div>
                     <h4 className="text-lg font-semibold text-slate-900">Edit Task</h4>
                     {editingTask.name && <p className="text-xs text-slate-500 mt-0.5">{editingTask.name}</p>}
@@ -1464,7 +1464,7 @@ const ClientView = ({
                     <X size={18}/>
                   </button>
                 </div>
-                <div className="space-y-6 px-8 py-6 overflow-y-auto">
+                <div className="flex-1 overflow-y-auto space-y-6 px-8 py-6">
                   <div className="grid grid-cols-1 lg:grid-cols-[300px,1fr] gap-6">
                     {/* Left column: dates + status */}
                     <div className="space-y-4">
