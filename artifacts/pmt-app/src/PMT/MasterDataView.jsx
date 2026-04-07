@@ -6,18 +6,25 @@ const REPEAT_OPTIONS = ['Daily', 'Weekly', 'Monthly', 'Once'];
 
 const emptyTask = () => ({ comment: '', category: '', repeatFrequency: 'Monthly' });
 
-const DeptAllToggle = ({ isAll, onToggle, locked }) => (
-  <div className={`inline-flex rounded-full border border-slate-200 text-[10px] font-semibold overflow-hidden ${locked ? 'opacity-60 pointer-events-none' : ''}`}>
-    <button type="button" onClick={() => isAll && onToggle()}
-      className={`px-2.5 py-1 transition-all ${!isAll ? 'bg-slate-700 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>
-      Dept
-    </button>
-    <button type="button" onClick={() => !isAll && onToggle()}
-      className={`px-2.5 py-1 transition-all ${isAll ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>
-      All
-    </button>
-  </div>
-);
+const OffDeptAllToggle = ({ value, onChange, locked }) => {
+  const opts = ['off', 'dept', 'all'];
+  const styles = {
+    off:  { active: 'bg-slate-700 text-white', inactive: 'bg-white text-slate-400 hover:bg-slate-50' },
+    dept: { active: 'bg-amber-500 text-white', inactive: 'bg-white text-slate-400 hover:bg-slate-50' },
+    all:  { active: 'bg-blue-600 text-white',  inactive: 'bg-white text-slate-400 hover:bg-slate-50' },
+  };
+  const labels = { off: 'Off', dept: 'Dept', all: 'All' };
+  return (
+    <div className={`inline-flex rounded-full border border-slate-200 text-[10px] font-semibold overflow-hidden ${locked ? 'opacity-60 pointer-events-none' : ''}`}>
+      {opts.map(opt => (
+        <button key={opt} type="button" onClick={() => value !== opt && onChange(opt)}
+          className={`px-2.5 py-1 transition-all ${value === opt ? styles[opt].active : styles[opt].inactive}`}>
+          {labels[opt]}
+        </button>
+      ))}
+    </div>
+  );
+};
 
 const CC_TABS = [
   { id: 'users', label: 'Users' },
@@ -162,10 +169,35 @@ const MasterDataView = ({
     setRegionInput('');
   };
 
-  const toggleDataAccessRole = (setter, current, role) => {
+  const applyViewState = (role, view, state) => {
     if (role === 'Super Admin') return;
-    const next = current.includes(role) ? current.filter(r => r !== role) : [...current, role];
-    setter(next);
+    if (view === 'metrics') {
+      const inAccess = metricsAccessRoles.includes(role);
+      const inAll = metricsAllDataRoles.includes(role);
+      if (state === 'off') {
+        if (inAccess) setMetricsAccessRoles(metricsAccessRoles.filter(r => r !== role));
+        if (inAll) setMetricsAllDataRoles(metricsAllDataRoles.filter(r => r !== role));
+      } else if (state === 'dept') {
+        if (!inAccess) setMetricsAccessRoles([...metricsAccessRoles, role]);
+        if (inAll) setMetricsAllDataRoles(metricsAllDataRoles.filter(r => r !== role));
+      } else {
+        if (!inAccess) setMetricsAccessRoles([...metricsAccessRoles, role]);
+        if (!inAll) setMetricsAllDataRoles([...metricsAllDataRoles, role]);
+      }
+    } else {
+      const inAccess = reportsAccessRoles.includes(role);
+      const inAll = reportsAllDataRoles.includes(role);
+      if (state === 'off') {
+        if (inAccess) setReportsAccessRoles(reportsAccessRoles.filter(r => r !== role));
+        if (inAll) setReportsAllDataRoles(reportsAllDataRoles.filter(r => r !== role));
+      } else if (state === 'dept') {
+        if (!inAccess) setReportsAccessRoles([...reportsAccessRoles, role]);
+        if (inAll) setReportsAllDataRoles(reportsAllDataRoles.filter(r => r !== role));
+      } else {
+        if (!inAccess) setReportsAccessRoles([...reportsAccessRoles, role]);
+        if (!inAll) setReportsAllDataRoles([...reportsAllDataRoles, role]);
+      }
+    }
   };
 
   const toggleTabAccess = (tabId, role) => {
@@ -878,7 +910,7 @@ const MasterDataView = ({
 
           <div className="mt-4 pt-4 border-t border-slate-200 space-y-3">
             <p className="text-sm font-semibold text-slate-700">Data Access — Metrics &amp; Reports</p>
-            <p className="text-xs text-slate-500">Choose which roles see data across <strong>all departments</strong>. Roles without this permission will only see data from their own department.</p>
+            <p className="text-xs text-slate-500"><strong>Off</strong> = no access &nbsp;·&nbsp; <strong>Dept</strong> = own department only &nbsp;·&nbsp; <strong>All</strong> = all departments</p>
             <div className="overflow-x-auto border border-slate-200 rounded-lg">
               <table className="w-full border-collapse text-xs">
                 <thead>
@@ -891,8 +923,8 @@ const MasterDataView = ({
                 <tbody className="divide-y divide-slate-100">
                   {normalizedRoles.map(role => {
                     const isSuperAdmin = role === 'Super Admin';
-                    const mAll = isSuperAdmin || metricsAllDataRoles.includes(role);
-                    const rAll = isSuperAdmin || reportsAllDataRoles.includes(role);
+                    const mState = isSuperAdmin ? 'all' : !metricsAccessRoles.includes(role) ? 'off' : metricsAllDataRoles.includes(role) ? 'all' : 'dept';
+                    const rState = isSuperAdmin ? 'all' : !reportsAccessRoles.includes(role) ? 'off' : reportsAllDataRoles.includes(role) ? 'all' : 'dept';
                     return (
                       <tr key={role} className={isSuperAdmin ? 'bg-blue-50' : 'hover:bg-slate-50'}>
                         <td className="px-3 py-2 font-medium text-slate-700 sticky left-0 bg-inherit z-10 flex items-center gap-1.5">
@@ -900,10 +932,10 @@ const MasterDataView = ({
                           {role}
                         </td>
                         <td className="px-3 py-2 text-center">
-                          <DeptAllToggle isAll={mAll} locked={isSuperAdmin} onToggle={() => toggleDataAccessRole(setMetricsAllDataRoles, metricsAllDataRoles, role)} />
+                          <OffDeptAllToggle value={mState} locked={isSuperAdmin} onChange={s => applyViewState(role, 'metrics', s)} />
                         </td>
                         <td className="px-3 py-2 text-center">
-                          <DeptAllToggle isAll={rAll} locked={isSuperAdmin} onToggle={() => toggleDataAccessRole(setReportsAllDataRoles, reportsAllDataRoles, role)} />
+                          <OffDeptAllToggle value={rState} locked={isSuperAdmin} onChange={s => applyViewState(role, 'reports', s)} />
                         </td>
                       </tr>
                     );
