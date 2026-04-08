@@ -488,7 +488,7 @@ const HomeView = ({
                       onChange={date => setTaskDueDate(date)}
                       placeholderText="Select due date"
                       dateFormat="do MMM yyyy"
-                      minDate={new Date()}
+                      minDate={selectedDate || new Date()}
                       className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
                     />
                     {taskDueDate && (

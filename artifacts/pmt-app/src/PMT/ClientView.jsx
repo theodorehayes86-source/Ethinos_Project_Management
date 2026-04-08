@@ -1429,7 +1429,7 @@ const ClientView = ({
                         onChange={(date) => setTaskDueDate(date)}
                         placeholderText="Select due date"
                         dateFormat="do MMM yyyy"
-                        minDate={new Date()}
+                        minDate={selectedDate || new Date()}
                         className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
                       />
                       {taskDueDate && (
@@ -1573,7 +1573,11 @@ const ClientView = ({
                         <div className="border border-slate-200 rounded-xl p-3 bg-slate-50">
                           <DatePicker
                             selected={editDraft.date}
-                            onChange={date => setEditDraft(d => ({ ...d, date: date || new Date() }))}
+                            onChange={date => setEditDraft(d => ({
+                              ...d,
+                              date: date || new Date(),
+                              dueDate: d.dueDate && date && date > d.dueDate ? null : d.dueDate,
+                            }))}
                             inline
                           />
                         </div>
@@ -1585,6 +1589,7 @@ const ClientView = ({
                           onChange={date => setEditDraft(d => ({ ...d, dueDate: date }))}
                           placeholderText="Select due date"
                           dateFormat="do MMM yyyy"
+                          minDate={editDraft.date || new Date()}
                           className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
                         />
                         {editDraft.dueDate && (
@@ -2016,7 +2021,12 @@ const ClientView = ({
                             selected={setAllStartDate}
                             onChange={date => {
                               setSetAllStartDate(date);
-                              setPerTaskConfig(prev => prev.map(cfg => ({ ...cfg, startDate: date })));
+                              if (setAllDueDate && date && date > setAllDueDate) setSetAllDueDate(null);
+                              setPerTaskConfig(prev => prev.map(cfg => ({
+                                ...cfg,
+                                startDate: date,
+                                dueDate: cfg.dueDate && date && date > cfg.dueDate ? null : cfg.dueDate,
+                              })));
                             }}
                             dateFormat="do MMM yyyy"
                             className="w-full border border-slate-200 bg-white rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 ring-blue-500/20"
@@ -2033,6 +2043,7 @@ const ClientView = ({
                             dateFormat="do MMM yyyy"
                             isClearable
                             placeholderText="Optional"
+                            minDate={setAllStartDate || new Date()}
                             className="w-full border border-slate-200 bg-white rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 ring-blue-500/20"
                           />
                         </div>
@@ -2143,7 +2154,10 @@ const ClientView = ({
                                 <label className="text-[10px] font-semibold text-slate-500">Start Date</label>
                                 <DatePicker
                                   selected={cfg.startDate || null}
-                                  onChange={date => updateTaskConfig(idx, 'startDate', date)}
+                                  onChange={date => {
+                                    updateTaskConfig(idx, 'startDate', date);
+                                    if (cfg.dueDate && date && date > cfg.dueDate) updateTaskConfig(idx, 'dueDate', null);
+                                  }}
                                   dateFormat="do MMM yyyy"
                                   placeholderText="Pick date"
                                   className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 ring-blue-500/20"
@@ -2157,6 +2171,7 @@ const ClientView = ({
                                   dateFormat="do MMM yyyy"
                                   isClearable
                                   placeholderText="Optional"
+                                  minDate={cfg.startDate || new Date()}
                                   className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 ring-blue-500/20"
                                 />
                               </div>
