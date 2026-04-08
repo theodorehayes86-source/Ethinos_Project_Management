@@ -41,7 +41,7 @@ jobs:
 
       - name: Install workspace dependencies
         working-directory: .
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
       - name: Install Electron + builder
         run: pnpm add -D electron electron-builder
@@ -126,7 +126,7 @@ jobs:
 
       - name: Install workspace dependencies
         working-directory: .
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
       - name: Install Electron + builder
         run: pnpm add -D electron electron-builder
