@@ -26,7 +26,15 @@ export default function LoginPage() {
   const displayError = localError || error;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex flex-col">
+      {/* Drag handle — lets users move the frameless window on the login screen */}
+      <div
+        className="h-8 flex-shrink-0 flex items-center justify-center select-none"
+        style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+      >
+        <div className="w-10 h-1 rounded-full bg-white/10" />
+      </div>
+    <div className="flex-1 flex items-center justify-center p-4">
       <div
         className="w-full bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 shadow-2xl overflow-hidden"
         style={{ maxWidth: "360px" }}
@@ -90,6 +98,7 @@ export default function LoginPage() {
           </form>
         </div>
       </div>
+    </div>
     </div>
   );
 }

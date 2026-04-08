@@ -31,7 +31,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function resolvePmtUser(fbUser: FirebaseUser) {
     setPmtUserNotFound(false);
     try {
-      const snap = await get(ref(db, "users"));
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("DB read timeout")), 12000)
+      );
+      const snap = await Promise.race([get(ref(db, "users")), timeout]);
       if (!snap.exists()) {
         setPmtUserNotFound(true);
         return;
@@ -46,7 +49,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setPmtUserNotFound(true);
       }
-    } catch {
+    } catch (err) {
+      console.error("[PMT] resolvePmtUser failed:", err);
       setPmtUserNotFound(true);
     }
   }

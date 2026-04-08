@@ -12,6 +12,8 @@ const FIREBASE_ORIGINS = [
   "https://*.googleapis.com",
   "https://*.firebaseio.com",
   "wss://*.firebaseio.com",
+  "https://*.firebasedatabase.app",
+  "wss://*.firebasedatabase.app",
   "https://*.firebase.com",
   "https://*.firebaseapp.com",
   "https://identitytoolkit.googleapis.com",
