@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { Home, Briefcase, Users, Network, SlidersHorizontal, BarChart3, FileSpreadsheet, ChevronLeft, ChevronRight, ClipboardCheck, Download, Monitor, Apple } from 'lucide-react';
 
 const RELEASES_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/latest';
-const WIN_URL = `${RELEASES_URL}/download/PMT.Timer.Setup.exe`;
-const MAC_URL = `${RELEASES_URL}/download/PMT.Timer.Widget.dmg`;
+const WIN_URL = RELEASES_URL;
+const MAC_URL = RELEASES_URL;
 
 const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setIsMinimized, canSeeControlCenter = false, canSeeUserManagement = true, canSeeEmployeeView = true, canSeeMetrics = true, canSeeReports = true, canSeeApprovals = false, pendingApprovalsCount = 0 }) => {
   const [logoError, setLogoError] = useState(false);
