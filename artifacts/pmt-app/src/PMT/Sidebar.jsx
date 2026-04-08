@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { Home, Briefcase, Users, Network, SlidersHorizontal, BarChart3, FileSpreadsheet, ChevronLeft, ChevronRight, ClipboardCheck, Download, Monitor, Apple, Info, X } from 'lucide-react';
 
 const RELEASES_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/latest';
-const WIN_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/download/v1.0.9/PMT.Timer.Widget.Setup.1.0.9.exe';
-const MAC_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/download/v1.0.9/PMT.Timer.Widget-1.0.9-universal.dmg';
+const WIN_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/download/v1.0.15/PMT.Timer.Widget.Setup.1.0.15.exe';
+const MAC_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/download/v1.0.15/PMT.Timer.Widget-1.0.15-universal.dmg';
 
 const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setIsMinimized, canSeeControlCenter = false, canSeeUserManagement = true, canSeeEmployeeView = true, canSeeMetrics = true, canSeeReports = true, canSeeApprovals = false, pendingApprovalsCount = 0 }) => {
   const [logoError, setLogoError] = useState(false);
