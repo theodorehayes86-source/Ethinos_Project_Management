@@ -1,145 +1,262 @@
-import React, { useEffect, useState } from 'react';
-import { User, Lock, LogOut } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { User, Lock, LogOut, Camera, Mail, Phone, Check } from 'lucide-react';
+
+const getInitials = (name) => {
+  if (!name) return '?';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0][0].toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+};
+
+const AvatarCircle = ({ name, photoURL, size = 'md' }) => {
+  const colors = ['bg-indigo-500', 'bg-violet-500', 'bg-pink-500', 'bg-emerald-500', 'bg-amber-500', 'bg-blue-500'];
+  const colorIndex = (name || '').charCodeAt(0) % colors.length;
+  const sizeClass = size === 'lg' ? 'w-16 h-16 text-xl' : size === 'sm' ? 'w-7 h-7 text-[11px]' : 'w-9 h-9 text-sm';
+  if (photoURL) {
+    return <img src={photoURL} alt={name} className={`${sizeClass} rounded-full object-cover flex-shrink-0 border-2 border-white shadow-sm`} />;
+  }
+  return (
+    <div className={`${sizeClass} ${colors[colorIndex]} rounded-full flex items-center justify-center font-bold text-white flex-shrink-0 shadow-sm`}>
+      {getInitials(name)}
+    </div>
+  );
+};
+
+const resizeImageToDataURL = (file, maxDim = 160, quality = 0.72) =>
+  new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(maxDim / img.width, maxDim / img.height, 1);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
 
 const ProfileDropdown = ({
   isProfileOpen,
   setIsProfileOpen,
   setIsNotifOpen,
   currentUser,
-  onUpdateProfileName,
+  onUpdateProfile,
   onChangePassword,
-  onLogout
+  onLogout,
 }) => {
   const [activeMenu, setActiveMenu] = useState('profile');
-  const [nameInput, setNameInput] = useState(currentUser?.name || '');
+  const [nameInput, setNameInput] = useState('');
+  const [secondaryEmail, setSecondaryEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [photoURL, setPhotoURL] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [successNote, setSuccessNote] = useState('');
+  const [photoLoading, setPhotoLoading] = useState(false);
+  const fileRef = useRef();
+  const panelRef = useRef();
 
   useEffect(() => {
     setNameInput(currentUser?.name || '');
-  }, [currentUser?.name]);
+    setSecondaryEmail(currentUser?.secondaryEmail || '');
+    setPhone(currentUser?.phone || '');
+    setPhotoURL(currentUser?.photoURL || '');
+  }, [currentUser?.name, currentUser?.secondaryEmail, currentUser?.phone, currentUser?.photoURL]);
 
-  const handleSaveName = (event) => {
-    event.preventDefault();
+  useEffect(() => {
+    if (!isProfileOpen) return;
+    const handler = (e) => {
+      if (panelRef.current && !panelRef.current.contains(e.target)) setIsProfileOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [isProfileOpen, setIsProfileOpen]);
+
+  const showSuccess = (msg) => { setSuccessNote(msg); setTimeout(() => setSuccessNote(''), 1800); };
+
+  const handleSaveProfile = (e) => {
+    e.preventDefault();
     if (!nameInput.trim()) return;
-    onUpdateProfileName(nameInput.trim());
-    setSuccessNote('Name updated');
-    setTimeout(() => setSuccessNote(''), 1400);
+    onUpdateProfile?.({ name: nameInput.trim(), secondaryEmail: secondaryEmail.trim(), phone: phone.trim(), photoURL });
+    showSuccess('Profile saved');
   };
 
-  const handleSavePassword = (event) => {
-    event.preventDefault();
-    if (!newPassword || !confirmPassword) {
-      setPasswordError('Enter both password fields');
-      return;
-    }
-    if (newPassword.length < 6) {
-      setPasswordError('Password must be at least 6 characters');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setPasswordError('Passwords do not match');
-      return;
-    }
+  const handlePhotoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoLoading(true);
+    const dataURL = await resizeImageToDataURL(file);
+    setPhotoURL(dataURL);
+    setPhotoLoading(false);
+  };
 
-    onChangePassword(newPassword);
+  const handleSavePassword = (e) => {
+    e.preventDefault();
+    if (!newPassword || !confirmPassword) { setPasswordError('Enter both fields'); return; }
+    if (newPassword.length < 6) { setPasswordError('Minimum 6 characters'); return; }
+    if (newPassword !== confirmPassword) { setPasswordError('Passwords do not match'); return; }
+    onChangePassword?.(newPassword);
     setNewPassword('');
     setConfirmPassword('');
     setPasswordError('');
-    setSuccessNote('Password updated');
-    setTimeout(() => setSuccessNote(''), 1400);
+    showSuccess('Password updated');
   };
 
-  const menuButtonClass = (isActive) =>
-    `w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold rounded-lg transition-all ${isActive ? 'text-slate-900 border border-indigo-200/70 bg-white/80' : 'text-slate-900 hover:bg-white/70 border border-transparent bg-white/55'}`;
+  const tabClass = (id) =>
+    `flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold rounded-lg transition-all ${
+      activeMenu === id
+        ? 'bg-white border border-indigo-200/70 text-slate-900 shadow-sm'
+        : 'text-slate-600 hover:text-slate-900 hover:bg-white/70 border border-transparent'
+    }`;
+
+  const displayName = currentUser?.name || '';
 
   return (
-    <div className="relative">
-      <button 
-        onClick={() => { setIsProfileOpen(!isProfileOpen); setIsNotifOpen(false); }} 
-        className="flex items-center gap-3 px-3 py-1.5 rounded-full border border-white/80 bg-white/70 hover:border-indigo-200/70 transition-all backdrop-blur-sm"
+    <div className="relative" ref={panelRef}>
+      <button
+        onClick={() => { setIsProfileOpen(!isProfileOpen); setIsNotifOpen(false); }}
+        className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-full border border-white/80 bg-white/70 hover:border-indigo-200/70 transition-all backdrop-blur-sm"
       >
-        <span className="text-[10px] lowercase italic font-bold text-slate-600">{currentUser.name}</span>
+        <AvatarCircle name={displayName} photoURL={currentUser?.photoURL} size="sm" />
+        <span className="text-[11px] font-semibold text-slate-700 max-w-[120px] truncate normal-case not-italic">
+          {displayName || currentUser?.email?.split('@')[0] || 'Profile'}
+        </span>
       </button>
 
       {isProfileOpen && (
         <div
-          className="absolute right-0 mt-3 w-80 border border-white/80 rounded-2xl shadow-xl z-[300] overflow-hidden text-left font-sans backdrop-blur-md"
+          className="absolute right-0 mt-3 w-88 border border-white/80 rounded-2xl shadow-2xl z-[300] overflow-hidden text-left font-sans backdrop-blur-md"
           style={{
+            width: '22rem',
             background:
-              'radial-gradient(56% 50% at 8% 10%, rgba(241, 94, 88, 0.14) 0%, rgba(241, 94, 88, 0) 64%), radial-gradient(42% 46% at 55% 92%, rgba(82, 110, 255, 0.12) 0%, rgba(82, 110, 255, 0) 66%), radial-gradient(32% 36% at 96% 10%, rgba(236, 232, 123, 0.16) 0%, rgba(236, 232, 123, 0) 62%), rgba(255,255,255,0.92)'
+              'radial-gradient(56% 50% at 8% 10%, rgba(241, 94, 88, 0.12) 0%, transparent 64%), radial-gradient(42% 46% at 55% 92%, rgba(82, 110, 255, 0.10) 0%, transparent 66%), rgba(255,255,255,0.94)',
           }}
         >
-          <div className="p-3 border-b border-white/70 bg-white/45">
-            <p className="text-sm font-semibold text-slate-800">{currentUser?.name}</p>
-            <p className="text-xs text-slate-500 truncate">{currentUser?.email}</p>
+          <div className="p-4 border-b border-white/70 bg-white/40 flex items-center gap-3">
+            <div className="relative flex-shrink-0">
+              <AvatarCircle name={displayName} photoURL={currentUser?.photoURL} size="lg" />
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className="absolute -bottom-0.5 -right-0.5 w-6 h-6 bg-indigo-600 text-white rounded-full flex items-center justify-center shadow-md hover:bg-indigo-700 transition-all"
+                title="Upload photo"
+              >
+                {photoLoading ? <span className="w-3 h-3 border-2 border-white/50 border-t-white rounded-full animate-spin" /> : <Camera size={11} />}
+              </button>
+              <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-slate-900 truncate">{displayName || '—'}</p>
+              <p className="text-xs text-slate-500 truncate">{currentUser?.email}</p>
+              <p className="text-[10px] font-semibold text-indigo-500 mt-0.5">{currentUser?.role} · {currentUser?.department || '—'}</p>
+            </div>
           </div>
 
-          <div className="p-3 space-y-2">
-            <div className="grid grid-cols-3 gap-1">
-              <button type="button" className={menuButtonClass(activeMenu === 'profile')} onClick={() => setActiveMenu('profile')}>
-                <User size={14} /> Profile
+          <div className="p-3 space-y-3">
+            <div className="flex gap-1">
+              <button type="button" className={tabClass('profile')} onClick={() => setActiveMenu('profile')}>
+                <User size={12} /> Profile
               </button>
-              <button type="button" className={menuButtonClass(activeMenu === 'password')} onClick={() => setActiveMenu('password')}>
-                <Lock size={14} /> Password
+              <button type="button" className={tabClass('password')} onClick={() => setActiveMenu('password')}>
+                <Lock size={12} /> Password
               </button>
               <button
                 type="button"
-                className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold rounded-lg transition-all bg-white/75 border border-white/80 text-red-600 hover:bg-red-50"
+                className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-white/75 border border-white/80 text-red-600 hover:bg-red-50 transition-all"
                 onClick={() => onLogout?.()}
               >
-                <LogOut size={14} /> Logout
+                <LogOut size={12} /> Logout
               </button>
             </div>
 
             {activeMenu === 'profile' && (
-              <form onSubmit={handleSaveName} className="space-y-2 p-2 bg-white/70 rounded-lg border border-white/80 backdrop-blur-sm">
-                <label className="text-[11px] font-semibold text-slate-900">Display Name</label>
-                <input
-                  type="text"
-                  value={nameInput}
-                  onChange={(e) => setNameInput(e.target.value)}
-                  className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-900 outline-none focus:border-indigo-500"
-                />
+              <form onSubmit={handleSaveProfile} className="space-y-2.5 p-3 bg-white/70 rounded-xl border border-white/80">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1">
+                    <User size={10} /> Display Name
+                  </label>
+                  <input
+                    type="text"
+                    value={nameInput}
+                    onChange={(e) => setNameInput(e.target.value)}
+                    placeholder="Your full name"
+                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium text-slate-900 outline-none focus:border-indigo-400 transition-all"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1">
+                    <Mail size={10} /> Secondary Email
+                  </label>
+                  <input
+                    type="email"
+                    value={secondaryEmail}
+                    onChange={(e) => setSecondaryEmail(e.target.value)}
+                    placeholder="Personal or backup email"
+                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium text-slate-900 outline-none focus:border-indigo-400 transition-all"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1">
+                    <Phone size={10} /> Phone Number
+                  </label>
+                  <input
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="+91 98765 43210"
+                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium text-slate-900 outline-none focus:border-indigo-400 transition-all"
+                  />
+                </div>
                 <div className="flex justify-end">
-                  <button type="submit" className="px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-900 text-xs font-semibold hover:bg-slate-100 transition-all">Save</button>
+                  <button type="submit" className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-all">
+                    <Check size={11} /> Save Changes
+                  </button>
                 </div>
               </form>
             )}
 
             {activeMenu === 'password' && (
-              <form onSubmit={handleSavePassword} className="space-y-2 p-2 bg-white/70 rounded-lg border border-white/80 backdrop-blur-sm">
-                <label className="text-[11px] font-semibold text-slate-900">New Password</label>
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => {
-                    setNewPassword(e.target.value);
-                    if (passwordError) setPasswordError('');
-                  }}
-                  className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-900 outline-none focus:border-indigo-500"
-                />
-                <label className="text-[11px] font-semibold text-slate-900">Confirm Password</label>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => {
-                    setConfirmPassword(e.target.value);
-                    if (passwordError) setPasswordError('');
-                  }}
-                  className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-900 outline-none focus:border-indigo-500"
-                />
-                {passwordError && <p className="text-[11px] font-semibold text-red-600">{passwordError}</p>}
+              <form onSubmit={handleSavePassword} className="space-y-2.5 p-3 bg-white/70 rounded-xl border border-white/80">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">New Password</label>
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => { setNewPassword(e.target.value); if (passwordError) setPasswordError(''); }}
+                    placeholder="Min. 6 characters"
+                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium text-slate-900 outline-none focus:border-indigo-400 transition-all"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Confirm Password</label>
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => { setConfirmPassword(e.target.value); if (passwordError) setPasswordError(''); }}
+                    placeholder="Re-enter password"
+                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium text-slate-900 outline-none focus:border-indigo-400 transition-all"
+                  />
+                </div>
+                {passwordError && <p className="text-[11px] font-semibold text-red-500">{passwordError}</p>}
                 <div className="flex justify-end">
-                  <button type="submit" className="px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-900 text-xs font-semibold hover:bg-slate-100 transition-all">Update</button>
+                  <button type="submit" className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-all">
+                    <Check size={11} /> Update Password
+                  </button>
                 </div>
               </form>
             )}
 
             {successNote && (
-              <p className="text-[11px] font-semibold text-emerald-600 px-1">{successNote}</p>
+              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg">
+                <Check size={11} className="text-emerald-600" />
+                <p className="text-[11px] font-semibold text-emerald-700">{successNote}</p>
+              </div>
             )}
           </div>
         </div>

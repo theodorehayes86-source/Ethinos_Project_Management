@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ref, onValue, set, get } from 'firebase/database';
-import { signInWithEmailAndPassword, signInWithPopup, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { signInWithEmailAndPassword, signInWithPopup, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, updateProfile } from 'firebase/auth';
 import { db, auth, googleProvider } from './firebase.js';
 
 import HomeView from './PMT/HomeView';
@@ -386,12 +386,29 @@ const App = () => {
 
   const isMinimized = sidebarMinimized || activeTab === 'clients' || selectedClient !== null;
 
-  const handleUpdateProfileName = (updatedName) => {
-    if (!updatedName?.trim() || !currentUser) return;
-    persistUsers(users.map(u => u.id === currentUser.id ? { ...u, name: updatedName.trim() } : u));
+  const handleUpdateProfile = ({ name, secondaryEmail, phone, photoURL }) => {
+    if (!currentUser) return;
+    const updated = {
+      ...currentUser,
+      ...(name?.trim() ? { name: name.trim() } : {}),
+      secondaryEmail: (secondaryEmail || '').trim(),
+      phone: (phone || '').trim(),
+      photoURL: photoURL || '',
+    };
+    persistUsers(users.map(u => u.id === currentUser.id ? updated : u));
+    if (firebaseUser && name?.trim()) {
+      updateProfile(firebaseUser, { displayName: name.trim() }).catch(() => {});
+    }
   };
 
-  const handleChangePassword = () => {};
+  const handleChangePassword = async (newPassword) => {
+    if (!firebaseUser || !newPassword) return;
+    try {
+      await updatePassword(firebaseUser, newPassword);
+    } catch (err) {
+      console.error('Password update failed:', err);
+    }
+  };
 
   const handleLogin = async (email, password) => {
     if (!email || !password) {
@@ -576,7 +593,7 @@ const App = () => {
               setIsProfileOpen={setIsProfileOpen}
               setIsNotifOpen={setIsNotifOpen}
               currentUser={currentUser}
-              onUpdateProfileName={handleUpdateProfileName}
+              onUpdateProfile={handleUpdateProfile}
               onChangePassword={handleChangePassword}
               onLogout={handleLogout}
             />
