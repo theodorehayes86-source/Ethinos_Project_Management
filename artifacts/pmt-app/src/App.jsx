@@ -112,7 +112,7 @@ const App = () => {
   const [taskCategories, setTaskCategories] = useState(DEFAULT_TASK_CATEGORIES);
   const [departments, setDepartments] = useState(['Creative', 'Biddable', 'Growth', 'Client Servicing']);
   const [regions, setRegions] = useState(['North', 'South', 'West']);
-  const DEFAULT_CC_TAB_ACCESS = { users: ['Super Admin', 'Director'], clients: ['Super Admin', 'Director'], categories: ['Super Admin', 'Director'], departments: ['Super Admin', 'Director'], regions: ['Super Admin', 'Director'], conditions: ['Super Admin'], templates: ['Super Admin', 'Director'] };
+  const DEFAULT_CC_TAB_ACCESS = { users: ['Super Admin', 'Director'], clients: ['Super Admin', 'Director'], categories: ['Super Admin', 'Director'], departments: ['Super Admin', 'Director'], regions: ['Super Admin', 'Director'], conditions: ['Super Admin'], templates: ['Super Admin', 'Director'], feedback: ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM', 'Employee', 'Snr Executive', 'Executive', 'Intern'] };
   const [controlCenterTabAccess, setControlCenterTabAccess] = useState(DEFAULT_CC_TAB_ACCESS);
   const [userManagementAccessRoles, setUserManagementAccessRoles] = useState(['Super Admin', 'Director']);
   const [employeeViewAccessRoles, setEmployeeViewAccessRoles] = useState(['Super Admin', 'Director']);
@@ -122,6 +122,7 @@ const App = () => {
   const [reportsAllDataRoles, setReportsAllDataRoles] = useState(['Super Admin', 'Director']);
   const [clientLogs, setClientLogs] = useState({});
   const [taskTemplates, setTaskTemplates] = useState(DEFAULT_TASK_TEMPLATES);
+  const [feedbackItems, setFeedbackItems] = useState([]);
   const [notifications, setNotifications] = useState([
     { id: 1, text: "Permissions system active", time: "Just now", read: false },
   ]);
@@ -196,6 +197,7 @@ const App = () => {
       syncRef('reportsAccessRoles', (val) => setReportsAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
       syncRef('metricsAllDataRoles', (val) => setMetricsAllDataRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
       syncRef('reportsAllDataRoles', (val) => setReportsAllDataRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
+      syncRef('feedbackItems', (val) => setFeedbackItems(val && typeof val === 'object' ? (Array.isArray(val) ? val : Object.values(val)) : [])),
     ];
 
     setDbReady(true);
@@ -269,6 +271,10 @@ const App = () => {
   const persistReportsAllDataRoles = (val) => {
     setReportsAllDataRoles(val);
     if (firebaseUser) set(ref(db, 'reportsAllDataRoles'), val);
+  };
+  const persistFeedbackItems = (val) => {
+    setFeedbackItems(val);
+    if (firebaseUser) set(ref(db, 'feedbackItems'), sanitizeForFirebase(val));
   };
 
   // --- MATCH FIREBASE AUTH USER → PMT USER RECORD ---
@@ -701,6 +707,8 @@ const App = () => {
               setUsers={persistUsers}
               clientLogs={clientLogs}
               setClientLogs={persistClientLogs}
+              feedbackItems={feedbackItems}
+              setFeedbackItems={persistFeedbackItems}
             />
           )}
         </main>

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, Trash2, Search, ShieldCheck, Edit2, X, ChevronUp, ChevronDown, Lock, Users, Crown, Check, Star, UserCheck, UserPlus, Edit3, Mail } from 'lucide-react';
+import { Plus, Trash2, Search, ShieldCheck, Edit2, X, ChevronUp, ChevronDown, Lock, Users, Crown, Check, Star, UserCheck, UserPlus, Edit3, Mail, MessageSquare, Bug, Lightbulb, AlertCircle, CheckCircle2, Clock, Filter } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 
 const REPEAT_OPTIONS = ['Daily', 'Weekly', 'Monthly', 'Once'];
@@ -34,6 +34,7 @@ const CC_TABS = [
   { id: 'regions', label: 'Regions' },
   { id: 'conditions', label: 'Access Control' },
   { id: 'templates', label: 'Templates' },
+  { id: 'feedback', label: 'Feedback' },
 ];
 
 const MasterDataView = ({
@@ -67,6 +68,8 @@ const MasterDataView = ({
   setUsers,
   clientLogs = {},
   setClientLogs,
+  feedbackItems = [],
+  setFeedbackItems,
 }) => {
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
@@ -115,6 +118,13 @@ const MasterDataView = ({
   const [templateDesc, setTemplateDesc] = useState('');
   const [templateTasks, setTemplateTasks] = useState([emptyTask()]);
   const [templateFormError, setTemplateFormError] = useState('');
+
+  // --- FEEDBACK STATE ---
+  const [fbType, setFbType] = useState('Bug');
+  const [fbTitle, setFbTitle] = useState('');
+  const [fbDesc, setFbDesc] = useState('');
+  const [fbSubmitted, setFbSubmitted] = useState(false);
+  const [fbAdminFilter, setFbAdminFilter] = useState('All');
 
   const normalizedRoles = useMemo(() => {
     const defaults = [
@@ -576,6 +586,7 @@ const MasterDataView = ({
         {CC_TABS.filter(tab => {
           if (currentUser?.role === 'Super Admin') return true;
           if (tab.id === 'conditions') return false;
+          if (tab.id === 'feedback') return true;
           return (controlCenterTabAccess[tab.id] || []).includes(currentUser?.role);
         }).map(tab => (
           <button
@@ -1040,6 +1051,191 @@ const MasterDataView = ({
           </div>
         </div>
       )}
+
+      {/* ─── FEEDBACK TAB ─── */}
+      {activeTab === 'feedback' && (() => {
+        const TYPES = [
+          { id: 'Bug', icon: <Bug size={13}/>, color: 'bg-red-100 text-red-700 border-red-200' },
+          { id: 'Suggestion', icon: <Lightbulb size={13}/>, color: 'bg-amber-100 text-amber-700 border-amber-200' },
+          { id: 'General', icon: <MessageSquare size={13}/>, color: 'bg-blue-100 text-blue-700 border-blue-200' },
+        ];
+        const STATUS_META = {
+          'New':         { icon: <AlertCircle size={12}/>,   cls: 'bg-red-50 text-red-600 border-red-200' },
+          'In Progress': { icon: <Clock size={12}/>,         cls: 'bg-amber-50 text-amber-600 border-amber-200' },
+          'Resolved':    { icon: <CheckCircle2 size={12}/>,  cls: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
+        };
+        const isAdmin = currentUser?.role === 'Super Admin';
+        const myItems = feedbackItems.filter(f => f.userId === currentUser?.id).sort((a,b) => b.timestamp - a.timestamp);
+        const adminItems = feedbackItems
+          .filter(f => fbAdminFilter === 'All' || f.status === fbAdminFilter)
+          .sort((a,b) => b.timestamp - a.timestamp);
+
+        const handleSubmit = (e) => {
+          e.preventDefault();
+          if (!fbTitle.trim() || !fbDesc.trim()) return;
+          const newItem = {
+            id: `fb-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
+            userId: currentUser?.id,
+            userName: currentUser?.name || currentUser?.email,
+            userRole: currentUser?.role,
+            userDept: currentUser?.department,
+            type: fbType,
+            title: fbTitle.trim(),
+            description: fbDesc.trim(),
+            timestamp: Date.now(),
+            status: 'New',
+          };
+          setFeedbackItems([...feedbackItems, newItem]);
+          setFbTitle(''); setFbDesc(''); setFbSubmitted(true);
+          setTimeout(() => setFbSubmitted(false), 2500);
+        };
+
+        const updateStatus = (id, status) => {
+          setFeedbackItems(feedbackItems.map(f => f.id === id ? { ...f, status } : f));
+        };
+        const deleteItem = (id) => {
+          setFeedbackItems(feedbackItems.filter(f => f.id !== id));
+        };
+
+        return (
+          <div className="space-y-4">
+            <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+              <div className="flex items-center gap-2 mb-1">
+                <MessageSquare size={15} className="text-blue-600"/>
+                <h3 className="text-sm font-bold text-slate-800">Submit Feedback or Report a Bug</h3>
+              </div>
+              <form onSubmit={handleSubmit} className="space-y-3">
+                <div className="flex gap-2">
+                  {TYPES.map(t => (
+                    <button
+                      key={t.id} type="button"
+                      onClick={() => setFbType(t.id)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${fbType === t.id ? t.color + ' shadow-sm' : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'}`}
+                    >
+                      {t.icon} {t.id}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  value={fbTitle}
+                  onChange={e => setFbTitle(e.target.value)}
+                  placeholder="Short title — what's the issue or idea?"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400 transition-all"
+                  required
+                />
+                <textarea
+                  value={fbDesc}
+                  onChange={e => setFbDesc(e.target.value)}
+                  placeholder="Describe in detail — steps to reproduce, expected vs actual, or your suggestion..."
+                  rows={4}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400 transition-all resize-none"
+                  required
+                />
+                <div className="flex items-center justify-between">
+                  {fbSubmitted && (
+                    <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-600">
+                      <CheckCircle2 size={13}/> Submitted — thank you!
+                    </span>
+                  )}
+                  {!fbSubmitted && <span/>}
+                  <button type="submit" className="px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition-all flex items-center gap-1.5">
+                    <MessageSquare size={12}/> Submit
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {isAdmin ? (
+              <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                    <Filter size={14} className="text-slate-500"/> All Feedback
+                    <span className="text-xs font-semibold text-slate-400">({adminItems.length})</span>
+                  </h3>
+                  <div className="flex gap-1">
+                    {['All','New','In Progress','Resolved'].map(s => (
+                      <button key={s} type="button" onClick={() => setFbAdminFilter(s)}
+                        className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg border transition-all ${fbAdminFilter === s ? 'bg-slate-800 text-white border-slate-800' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}>
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {adminItems.length === 0 ? (
+                  <p className="text-sm text-slate-400 text-center py-6">No feedback yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {adminItems.map(item => {
+                      const typeInfo = TYPES.find(t => t.id === item.type) || TYPES[2];
+                      const sm = STATUS_META[item.status] || STATUS_META['New'];
+                      return (
+                        <div key={item.id} className="border border-slate-100 rounded-xl p-3 space-y-2 bg-slate-50/60 hover:bg-white transition-all">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-semibold ${typeInfo.color}`}>
+                                {typeInfo.icon} {item.type}
+                              </span>
+                              <span className="text-xs font-bold text-slate-800">{item.title}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              <select
+                                value={item.status}
+                                onChange={e => updateStatus(item.id, e.target.value)}
+                                className={`text-[10px] font-semibold border rounded-lg px-2 py-1 outline-none cursor-pointer ${sm.cls}`}
+                              >
+                                <option>New</option>
+                                <option>In Progress</option>
+                                <option>Resolved</option>
+                              </select>
+                              <button onClick={() => deleteItem(item.id)} className="p-1 text-slate-300 hover:text-red-500 transition-all" title="Delete">
+                                <Trash2 size={13}/>
+                              </button>
+                            </div>
+                          </div>
+                          <p className="text-xs text-slate-600 leading-relaxed">{item.description}</p>
+                          <div className="flex items-center gap-3 text-[10px] text-slate-400 font-medium">
+                            <span>{item.userName} · {item.userRole}{item.userDept ? ` · ${item.userDept}` : ''}</span>
+                            <span>{new Date(item.timestamp).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : (
+              myItems.length > 0 && (
+                <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+                  <h3 className="text-sm font-bold text-slate-800">My Submissions</h3>
+                  <div className="space-y-2">
+                    {myItems.map(item => {
+                      const typeInfo = TYPES.find(t => t.id === item.type) || TYPES[2];
+                      const sm = STATUS_META[item.status] || STATUS_META['New'];
+                      return (
+                        <div key={item.id} className="border border-slate-100 rounded-xl p-3 space-y-1.5 bg-slate-50/60">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <span className={`flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-semibold ${typeInfo.color}`}>
+                                {typeInfo.icon} {item.type}
+                              </span>
+                              <span className="text-xs font-bold text-slate-800">{item.title}</span>
+                            </div>
+                            <span className={`flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-semibold ${sm.cls}`}>
+                              {sm.icon} {item.status}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 leading-relaxed">{item.description}</p>
+                          <p className="text-[10px] text-slate-400 font-medium">{new Date(item.timestamp).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )
+            )}
+          </div>
+        );
+      })()}
 
       {/* ─── CLIENTS TAB ─── */}
       {activeTab === 'clients' && (
