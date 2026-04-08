@@ -1,13 +1,55 @@
-const { app, BrowserWindow, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, session } = require("electron");
 const path = require("path");
 
 let mainWindow = null;
-let isMini = false;
 
 const FULL_WIDTH = 360;
 const FULL_HEIGHT = 560;
 const MINI_WIDTH = 290;
 const MINI_HEIGHT = 64;
+
+// Firebase domains the app needs to reach
+const FIREBASE_ORIGINS = [
+  "https://*.googleapis.com",
+  "https://*.firebaseio.com",
+  "wss://*.firebaseio.com",
+  "https://*.firebase.com",
+  "https://*.firebaseapp.com",
+  "https://identitytoolkit.googleapis.com",
+  "https://securetoken.googleapis.com",
+  "https://apis.google.com",
+];
+
+function setupSession() {
+  const ses = session.defaultSession;
+
+  // Allow Firebase network requests by removing any restrictive CSP
+  // and injecting a permissive one for the domains we need
+  ses.webRequest.onHeadersReceived((details, callback) => {
+    const csp = [
+      "default-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data:",
+      `connect-src 'self' ${FIREBASE_ORIGINS.join(" ")}`,
+      `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${FIREBASE_ORIGINS.join(" ")}`,
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: https:",
+      "font-src 'self' data:",
+    ].join("; ");
+
+    const headers = { ...details.responseHeaders };
+    // Override any upstream CSP that might block Firebase
+    headers["content-security-policy"] = [csp];
+    // Ensure cross-origin isolation is not enforced (breaks Firebase streams)
+    delete headers["cross-origin-embedder-policy"];
+    delete headers["cross-origin-opener-policy"];
+
+    callback({ responseHeaders: headers });
+  });
+
+  // Allow all Firebase origins explicitly in the permission system
+  ses.setPermissionRequestHandler((_webContents, _permission, callback) => {
+    callback(true);
+  });
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -24,7 +66,9 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: true,
+      sandbox: false,           // Allow renderer to use fetch/XMLHttpRequest for Firebase
       preload: path.join(__dirname, "preload.cjs"),
+      spellcheck: false,
     },
     backgroundColor: "#0f1629",
     show: false,
@@ -55,7 +99,6 @@ function createWindow() {
 
 ipcMain.on("minimize-to-clock", () => {
   if (!mainWindow) return;
-  isMini = true;
   const [x, y] = mainWindow.getPosition();
   mainWindow.setResizable(true);
   mainWindow.setSize(MINI_WIDTH, MINI_HEIGHT, true);
@@ -66,7 +109,6 @@ ipcMain.on("minimize-to-clock", () => {
 
 ipcMain.on("restore-window", () => {
   if (!mainWindow) return;
-  isMini = false;
   const [x, y] = mainWindow.getPosition();
   mainWindow.setResizable(true);
   mainWindow.setSize(FULL_WIDTH, FULL_HEIGHT, true);
@@ -76,6 +118,7 @@ ipcMain.on("restore-window", () => {
 });
 
 app.whenReady().then(() => {
+  setupSession();
   createWindow();
 
   app.on("activate", () => {

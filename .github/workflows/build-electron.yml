@@ -16,8 +16,11 @@ env:
   VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
 
 jobs:
+  # ──────────────────────────────────────────────────────────────────
+  # Windows — builds on Windows 11 runner, produces signed-ready NSIS .exe
+  # ──────────────────────────────────────────────────────────────────
   build-windows:
-    runs-on: windows-latest
+    runs-on: windows-latest   # Windows Server 2025 / Windows 11-compatible
     defaults:
       run:
         working-directory: artifacts/pmt-timer-widget
@@ -26,7 +29,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -40,7 +43,7 @@ jobs:
         working-directory: .
         run: pnpm install --frozen-lockfile
 
-      - name: Install Electron dependencies
+      - name: Install Electron + builder
         run: pnpm add -D electron electron-builder
 
       - name: Build Vite renderer
@@ -48,6 +51,9 @@ jobs:
 
       - name: Package Windows installer
         run: pnpm electron-builder --config electron-builder.json --win --publish never
+        env:
+          # Skip code-signing — SmartScreen will warn on first run but not block
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
@@ -67,15 +73,26 @@ jobs:
 
             Download the installer for your platform below.
 
-            ### Windows
-            Run **PMT Timer Setup.exe** — installs automatically with a Start Menu shortcut.
+            ---
 
-            ### Mac
-            Open **PMT Timer Widget.dmg**, drag the app to your Applications folder.
+            ### Windows (.exe)
+            1. Download **PMT Timer Setup.exe**
+            2. Run it — Windows SmartScreen may show a warning the first time; click **More info → Run anyway**
+            3. The app installs silently and adds a Start Menu + Desktop shortcut
+            4. It needs internet access to reach Firebase — allow it if Windows Firewall asks
+
+            ### Mac (.dmg)
+            1. Download **PMT Timer Widget.dmg**
+            2. Open it and drag the app to your Applications folder
+            3. **First launch:** right-click the app → **Open** → click **Open** in the dialog (required once because the app is not yet notarized)
+            4. The app needs internet access — allow it in macOS Privacy & Security if prompted
+
+            ---
 
             ### What's included
-            - Always-on-top floating timer widget
-            - Mini clock view — click **–** to shrink to a slim floating bar showing just the running time; click restore to expand
+            - Always-on-top floating timer (Windows 10/11, macOS 12 Monterey and later)
+            - Universal Mac binary — works on both Intel and Apple Silicon Macs
+            - Mini clock view — click **–** to shrink to a slim floating bar; click restore to expand
             - Firebase sync every 10 seconds; offline queue when disconnected
             - Same login credentials as the main PMT web app
           draft: false
@@ -83,8 +100,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # ──────────────────────────────────────────────────────────────────
+  # Mac — universal binary (Intel x64 + Apple Silicon arm64 in one DMG)
+  # Runs on macOS 14 Sonoma runner (latest stable GitHub-hosted)
+  # ──────────────────────────────────────────────────────────────────
   build-mac:
-    runs-on: macos-latest
+    runs-on: macos-14          # Apple Silicon runner — required for arm64/universal builds
     defaults:
       run:
         working-directory: artifacts/pmt-timer-widget
@@ -93,7 +114,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -107,14 +128,19 @@ jobs:
         working-directory: .
         run: pnpm install --frozen-lockfile
 
-      - name: Install Electron dependencies
+      - name: Install Electron + builder
         run: pnpm add -D electron electron-builder
 
-      - name: Build Vite renderer
+      - name: Build Vite renderer (universal)
         run: pnpm build:electron
 
-      - name: Package Mac DMG (x64 + arm64)
+      - name: Package Mac universal DMG
         run: pnpm electron-builder --config electron-builder.json --mac --publish never
+        env:
+          # Skip Apple code-signing — no Developer cert required
+          # Users open via right-click → Open on first launch to bypass Gatekeeper
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          ELECTRON_TEAM_ID: ""
 
       - name: Upload Mac artifact
         uses: actions/upload-artifact@v4
