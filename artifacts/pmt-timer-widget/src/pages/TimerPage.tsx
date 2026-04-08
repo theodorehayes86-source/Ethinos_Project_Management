@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { TaskLog } from "../types";
+import { TaskLog, getTaskName } from "../types";
 import { useTasks } from "../context/TasksContext";
-import { ArrowLeft, Play, Pause, Square, CheckCircle } from "lucide-react";
+import { ArrowLeft, Play, Pause, Square, CheckCircle, Send, RotateCcw, ShieldCheck } from "lucide-react";
 
 interface TimerPageProps {
   task: TaskLog;
@@ -21,27 +21,20 @@ function formatMs(ms: number): string {
 type TimerState = "idle" | "running" | "paused" | "stopped";
 
 export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }: TimerPageProps) {
-  const { updateTaskTimer } = useTasks();
+  const { updateTaskTimer, updateTaskStatus } = useTasks();
 
   const initialTimerState: TimerState =
     task.timerState === "stopped" ? "idle" : (task.timerState as TimerState) ?? "idle";
 
   const [timerState, setTimerState] = useState<TimerState>(initialTimerState);
-
   const [liveStatus, setLiveStatus] = useState<string>(task.status || "TODO");
+  const [liveQcStatus, setLiveQcStatus] = useState<string | null>(task.qcStatus ?? null);
 
   /**
-   * baseElapsedRef: the accumulated elapsed time NOT including the currently-running segment.
-   * When timer is running: total = baseElapsedRef + (Date.now() - startedAtRef)
-   * We always persist baseElapsedRef + timerStartedAt to Firebase, NOT the computed total,
-   * so that on reload the same formula produces the correct result without double-counting.
+   * baseElapsedRef: accumulated elapsed ms NOT including the current running segment.
+   * total = baseElapsedRef + (Date.now() - startedAtRef) when running.
    */
-  const baseElapsedRef = useRef<number>(
-    task.timerState === "running" && task.timerStartedAt
-      ? task.elapsedMs ?? 0
-      : task.elapsedMs ?? 0
-  );
-
+  const baseElapsedRef = useRef<number>(task.elapsedMs ?? 0);
   const startedAtRef = useRef<number | null>(
     initialTimerState === "running" && task.timerStartedAt
       ? task.timerStartedAt
@@ -54,10 +47,12 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
   }, []);
 
   const [elapsedMs, setElapsedMs] = useState<number>(computeElapsed());
-
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [done, setDone] = useState(false);
+
+  // "done" flow states
+  const [showQcPrompt, setShowQcPrompt] = useState(false);
+  const [qcSent, setQcSent] = useState(false);
 
   useEffect(() => {
     if (timerState === "running") {
@@ -81,13 +76,8 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
       return;
     }
 
-    syncIntervalRef.current = setInterval(async () => {
-      /**
-       * Periodic sync: write baseElapsedRef (NOT computeElapsed) and the original timerStartedAt.
-       * On reload, Firebase has: elapsedMs = base, timerStartedAt = T
-       * Widget computes: base + (now - T) = correct total. No double-count.
-       */
-      await updateTaskTimer(task.clientId, task.taskIndex, task.id, {
+    syncIntervalRef.current = setInterval(() => {
+      void updateTaskTimer(task.clientId, task.taskIndex, task.id, {
         elapsedMs: baseElapsedRef.current,
         timerState: "running",
         timerStartedAt: startedAtRef.current,
@@ -100,13 +90,21 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
     };
   }, [timerState, task, updateTaskTimer, liveStatus]);
 
-  const handleStart = useCallback(async () => {
+  /** Stop the sync interval immediately to prevent race-condition overwrites. */
+  const stopSyncInterval = useCallback(() => {
+    if (syncIntervalRef.current) {
+      clearInterval(syncIntervalRef.current);
+      syncIntervalRef.current = null;
+    }
+  }, []);
+
+  const handleStart = useCallback(() => {
     const now = Date.now();
     startedAtRef.current = now;
     const nextStatus = liveStatus === "TODO" ? "WIP" : liveStatus;
     setTimerState("running");
     setLiveStatus(nextStatus);
-    await updateTaskTimer(task.clientId, task.taskIndex, task.id, {
+    void updateTaskTimer(task.clientId, task.taskIndex, task.id, {
       elapsedMs: baseElapsedRef.current,
       timerState: "running",
       timerStartedAt: now,
@@ -114,7 +112,8 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
     });
   }, [task, updateTaskTimer, liveStatus]);
 
-  const handlePause = useCallback(async () => {
+  const handlePause = useCallback(() => {
+    stopSyncInterval();
     if (startedAtRef.current !== null) {
       baseElapsedRef.current = computeElapsed();
     }
@@ -122,15 +121,17 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
     const snapped = baseElapsedRef.current;
     setElapsedMs(snapped);
     setTimerState("paused");
-    await updateTaskTimer(task.clientId, task.taskIndex, task.id, {
+    // Fire-and-forget — UI is already updated
+    void updateTaskTimer(task.clientId, task.taskIndex, task.id, {
       elapsedMs: snapped,
       timerState: "paused",
       timerStartedAt: null,
       status: liveStatus,
     });
-  }, [task, updateTaskTimer, computeElapsed, liveStatus]);
+  }, [task, updateTaskTimer, computeElapsed, liveStatus, stopSyncInterval]);
 
-  const handleStop = useCallback(async () => {
+  const handleStop = useCallback(() => {
+    stopSyncInterval();
     if (startedAtRef.current !== null) {
       baseElapsedRef.current = computeElapsed();
     }
@@ -138,15 +139,18 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
     const snapped = baseElapsedRef.current;
     setElapsedMs(snapped);
     setTimerState("stopped");
-    await updateTaskTimer(task.clientId, task.taskIndex, task.id, {
+    // Fire-and-forget — UI is already updated
+    void updateTaskTimer(task.clientId, task.taskIndex, task.id, {
       elapsedMs: snapped,
       timerState: "stopped",
       timerStartedAt: null,
       status: liveStatus,
     });
-  }, [task, updateTaskTimer, computeElapsed, liveStatus]);
+  }, [task, updateTaskTimer, computeElapsed, liveStatus, stopSyncInterval]);
 
-  const handleDone = useCallback(async () => {
+  /** Called when user clicks the Done button — stop timer and show QC prompt if enabled. */
+  const handleDone = useCallback(() => {
+    stopSyncInterval();
     if (startedAtRef.current !== null) {
       baseElapsedRef.current = computeElapsed();
     }
@@ -154,20 +158,65 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
     const snapped = baseElapsedRef.current;
     setElapsedMs(snapped);
     setTimerState("stopped");
+
+    if (task.qcEnabled) {
+      // Stop the timer first, then ask about QC
+      void updateTaskTimer(task.clientId, task.taskIndex, task.id, {
+        elapsedMs: snapped,
+        timerState: "stopped",
+        timerStartedAt: null,
+        status: liveStatus,
+      });
+      setShowQcPrompt(true);
+    } else {
+      // No QC — mark done immediately
+      setLiveStatus("Done");
+      void updateTaskTimer(task.clientId, task.taskIndex, task.id, {
+        elapsedMs: snapped,
+        timerState: "stopped",
+        timerStartedAt: null,
+        status: "Done",
+      });
+      setTimeout(onBack, 1000);
+    }
+  }, [task, updateTaskTimer, computeElapsed, liveStatus, onBack, stopSyncInterval]);
+
+  const handleMarkDoneSkipQC = useCallback(() => {
+    setShowQcPrompt(false);
     setLiveStatus("Done");
-    setDone(true);
-    await updateTaskTimer(task.clientId, task.taskIndex, task.id, {
-      elapsedMs: snapped,
-      timerState: "stopped",
-      timerStartedAt: null,
+    void updateTaskStatus(task.clientId, task.taskIndex, task.id, {
       status: "Done",
+      qcStatus: null,
     });
-    setTimeout(onBack, 1200);
-  }, [task, updateTaskTimer, computeElapsed, onBack]);
+    setTimeout(onBack, 1000);
+  }, [task, updateTaskStatus, onBack]);
+
+  const handleSendToQC = useCallback(() => {
+    setShowQcPrompt(false);
+    setLiveStatus("Done");
+    setLiveQcStatus("sent");
+    setQcSent(true);
+    void updateTaskStatus(task.clientId, task.taskIndex, task.id, {
+      status: "Done",
+      qcStatus: "sent",
+    });
+    setTimeout(onBack, 1400);
+  }, [task, updateTaskStatus, onBack]);
+
+  const handleResetToWIP = useCallback(() => {
+    setLiveStatus("WIP");
+    setLiveQcStatus(null);
+    void updateTaskStatus(task.clientId, task.taskIndex, task.id, {
+      status: "WIP",
+      qcStatus: null,
+    });
+    setTimeout(onBack, 800);
+  }, [task, updateTaskStatus, onBack]);
 
   const isRunning = timerState === "running";
   const isPaused = timerState === "paused";
   const isStopped = timerState === "stopped" || timerState === "idle";
+  const isQcRejected = liveQcStatus === "rejected";
 
   return (
     <div className="flex-1 flex flex-col">
@@ -183,7 +232,7 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
             {clientName}
           </p>
           <p className="text-white text-sm font-semibold leading-tight truncate">
-            {task.taskName || "Untitled Task"}
+            {getTaskName(task)}
           </p>
         </div>
       </div>
@@ -221,12 +270,57 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
           </div>
         </div>
 
-        {done ? (
+        {/* QC sent confirmation */}
+        {qcSent && (
           <div className="flex flex-col items-center gap-2">
-            <CheckCircle size={32} className="text-emerald-400" />
-            <p className="text-emerald-300 font-bold text-sm">Task marked done!</p>
+            <ShieldCheck size={32} className="text-indigo-400" />
+            <p className="text-indigo-300 font-bold text-sm">Sent for QC!</p>
           </div>
-        ) : (
+        )}
+
+        {/* QC prompt */}
+        {showQcPrompt && !qcSent && (
+          <div className="w-full bg-white/8 border border-white/15 rounded-2xl p-4 space-y-3">
+            <div className="text-center">
+              <p className="text-white font-bold text-sm">Task complete — what's next?</p>
+              <p className="text-slate-400 text-xs mt-0.5">This task has a QC reviewer assigned.</p>
+            </div>
+            <button
+              onClick={handleSendToQC}
+              className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl py-2.5 text-sm transition-all"
+            >
+              <Send size={14} />
+              Send for QC Review
+            </button>
+            <button
+              onClick={handleMarkDoneSkipQC}
+              className="w-full flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-slate-300 font-semibold rounded-xl py-2.5 text-sm transition-all border border-white/10"
+            >
+              <CheckCircle size={14} />
+              Mark Done (skip QC)
+            </button>
+          </div>
+        )}
+
+        {/* QC Rejected banner + Reset to WIP */}
+        {isQcRejected && !showQcPrompt && !qcSent && (
+          <div className="w-full bg-red-500/10 border border-red-400/30 rounded-2xl p-4 space-y-3">
+            <div className="text-center">
+              <p className="text-red-300 font-bold text-sm">QC Rejected</p>
+              <p className="text-slate-400 text-xs mt-0.5">You can rework and resubmit, or reset to WIP.</p>
+            </div>
+            <button
+              onClick={handleResetToWIP}
+              className="w-full flex items-center justify-center gap-2 bg-amber-600/80 hover:bg-amber-500 text-white font-bold rounded-xl py-2.5 text-sm transition-all"
+            >
+              <RotateCcw size={14} />
+              Reset to WIP
+            </button>
+          </div>
+        )}
+
+        {/* Normal controls */}
+        {!showQcPrompt && !qcSent && !isQcRejected && (
           <div className="flex items-center gap-3">
             {isStopped && (
               <button

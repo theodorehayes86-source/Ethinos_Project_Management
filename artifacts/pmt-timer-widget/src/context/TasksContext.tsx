@@ -26,6 +26,12 @@ interface TasksContextValue {
     taskId: string,
     payload: Partial<TaskLog>
   ) => Promise<void>;
+  updateTaskStatus: (
+    clientId: number | string,
+    taskIndex: number,
+    taskId: string,
+    fields: { status?: string; qcStatus?: string | null }
+  ) => Promise<void>;
   flushQueue: () => Promise<void>;
 }
 
@@ -155,6 +161,45 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
     [doWrite]
   );
 
+  const updateTaskStatus = useCallback(
+    async (
+      clientId: number | string,
+      taskIndex: number,
+      taskId: string,
+      fields: { status?: string; qcStatus?: string | null }
+    ) => {
+      const payload: Record<string, unknown> = {};
+      if (fields.status !== undefined) payload.status = fields.status;
+      if ("qcStatus" in fields) payload.qcStatus = fields.qcStatus ?? null;
+
+      const queueItem: QueuedWrite = {
+        id: `status-${taskId}`,
+        clientId,
+        taskIndex,
+        payload,
+        timestamp: Date.now(),
+      };
+
+      if (!navigator.onLine) {
+        enqueue(queueItem);
+        setSyncStatus({ state: "offline", pendingCount: loadQueue().length });
+        return;
+      }
+
+      try {
+        await doWrite(clientId, taskIndex, payload);
+        setSyncStatus((prev) => ({
+          state: prev.pendingCount > 0 ? "pending" : "synced",
+          pendingCount: prev.pendingCount,
+        }));
+      } catch {
+        enqueue(queueItem);
+        setSyncStatus({ state: "pending", pendingCount: loadQueue().length });
+      }
+    },
+    [doWrite]
+  );
+
   const flushQueue = useCallback(async () => {
     const queue = loadQueue();
     if (!queue.length) {
@@ -199,7 +244,7 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <TasksContext.Provider
-      value={{ groupedTasks, loading, syncStatus, updateTaskTimer, flushQueue }}
+      value={{ groupedTasks, loading, syncStatus, updateTaskTimer, updateTaskStatus, flushQueue }}
     >
       {children}
     </TasksContext.Provider>

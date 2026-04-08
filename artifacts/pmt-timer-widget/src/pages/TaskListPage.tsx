@@ -1,7 +1,7 @@
 import React from "react";
 import { useTasks } from "../context/TasksContext";
-import { GroupedTasks, TaskLog } from "../types";
-import { ChevronRight, Clock, CheckCircle, Circle, Loader2, AlertCircle } from "lucide-react";
+import { GroupedTasks, TaskLog, getTaskName } from "../types";
+import { ChevronRight, Clock, CheckCircle, Circle, Loader2, AlertCircle, ShieldCheck, ShieldX } from "lucide-react";
 
 interface TaskListPageProps {
   onSelectTask: (task: TaskLog, clientName: string) => void;
@@ -46,25 +46,60 @@ function formatDuration(ms: number): string {
   return `${h}:${m}:${s}`;
 }
 
+function QcBadge({ qcStatus }: { qcStatus?: string | null }) {
+  if (!qcStatus) return null;
+  if (qcStatus === "sent") {
+    return (
+      <span className="flex items-center gap-1 text-[10px] font-semibold text-indigo-300 bg-indigo-500/15 border border-indigo-500/25 rounded-full px-2 py-0.5">
+        <ShieldCheck size={8} />
+        Pending QC
+      </span>
+    );
+  }
+  if (qcStatus === "approved") {
+    return (
+      <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-300 bg-emerald-500/15 border border-emerald-500/25 rounded-full px-2 py-0.5">
+        <ShieldCheck size={8} />
+        QC Approved
+      </span>
+    );
+  }
+  if (qcStatus === "rejected") {
+    return (
+      <span className="flex items-center gap-1 text-[10px] font-semibold text-red-300 bg-red-500/15 border border-red-500/25 rounded-full px-2 py-0.5">
+        <ShieldX size={8} />
+        QC Rejected
+      </span>
+    );
+  }
+  return null;
+}
+
 function TaskRow({ task, onSelect }: { task: TaskLog; onSelect: () => void }) {
   const isRunning = task.timerState === "running";
+  const isQcRejected = task.qcStatus === "rejected";
 
   return (
     <button
       onClick={onSelect}
-      className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 transition-all duration-150 text-left group"
+      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all duration-150 text-left group ${
+        isQcRejected
+          ? "border-red-400/30 bg-red-500/8 hover:bg-red-500/15"
+          : "border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20"
+      }`}
     >
       <div className="flex-shrink-0 mt-0.5">
         {getStatusIcon(task.status)}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-white text-sm font-medium truncate">{task.taskName || "Untitled Task"}</p>
-        <div className="flex items-center gap-2 mt-0.5">
+        <p className="text-white text-sm font-medium truncate">{getTaskName(task)}</p>
+        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
           <span
             className={`text-[10px] font-semibold uppercase tracking-wide border rounded-full px-2 py-0.5 ${getStatusBadgeClass(task.status)}`}
           >
             {task.status || "TODO"}
           </span>
+          {task.qcEnabled && <QcBadge qcStatus={task.qcStatus} />}
           {(task.elapsedMs ?? 0) > 0 && (
             <span className="flex items-center gap-1 text-[10px] text-slate-500">
               <Clock size={9} />

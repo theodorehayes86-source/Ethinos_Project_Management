@@ -14,7 +14,9 @@ export interface Client {
 
 export interface TaskLog {
   id: string;
-  taskName: string;
+  /** The PMT app stores the task name as `name`. `taskName` kept for compatibility. */
+  name?: string;
+  taskName?: string;
   status: string;
   assigneeId: number | string;
   elapsedMs?: number;
@@ -25,6 +27,9 @@ export interface TaskLog {
   taskIndex: number;
   description?: string;
   category?: string;
+  qcEnabled?: boolean;
+  qcStatus?: string | null;
+  qcAssigneeName?: string | null;
 }
 
 export interface GroupedTasks {
@@ -33,3 +38,7 @@ export interface GroupedTasks {
   tasks: TaskLog[];
 }
 
+/** Returns the display name for a task, handling both field name variants. */
+export function getTaskName(task: TaskLog): string {
+  return task.taskName || task.name || "Untitled Task";
+}
