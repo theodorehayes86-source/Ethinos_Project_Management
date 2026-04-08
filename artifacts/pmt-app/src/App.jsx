@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ref, onValue, set, get } from 'firebase/database';
-import { signInWithEmailAndPassword, signInWithPopup, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, updateProfile } from 'firebase/auth';
+import { signInWithEmailAndPassword, signInWithPopup, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, updateProfile, sendPasswordResetEmail } from 'firebase/auth';
 import { db, auth, googleProvider } from './firebase.js';
 
 import HomeView from './PMT/HomeView';
@@ -429,6 +429,11 @@ const App = () => {
     }
   };
 
+  const handleResetPassword = async (email) => {
+    if (!email) throw new Error('Please enter your email address.');
+    await sendPasswordResetEmail(auth, email);
+  };
+
   const handleLogin = async (email, password) => {
     if (!email || !password) {
       setLoginError('Enter both email and password');
@@ -526,7 +531,7 @@ const App = () => {
   if (!firebaseUser && !testModeUserId) {
     return (
       <>
-        <LoginView onLogin={handleLogin} onGoogleLogin={handleGoogleLogin} onCreateAccount={handleCreateAccount} loginError={loginError} />
+        <LoginView onLogin={handleLogin} onGoogleLogin={handleGoogleLogin} onCreateAccount={handleCreateAccount} onResetPassword={handleResetPassword} loginError={loginError} />
         <TestModePanel
           currentUser={null}
           isTestMode={false}

@@ -12,8 +12,8 @@ const Field = ({ label, children }) => (
 
 const inputCls = "w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 placeholder:text-slate-500 outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200";
 
-const LoginView = ({ onLogin, onGoogleLogin, onCreateAccount, loginError }) => {
-  const [mode, setMode] = useState('signin'); // 'signin' | 'register'
+const LoginView = ({ onLogin, onGoogleLogin, onCreateAccount, onResetPassword, loginError }) => {
+  const [mode, setMode] = useState('signin'); // 'signin' | 'register' | 'reset'
 
   // Sign-in state
   const [email, setEmail] = useState('');
@@ -28,9 +28,19 @@ const LoginView = ({ onLogin, onGoogleLogin, onCreateAccount, loginError }) => {
   const [regRegion, setRegRegion] = useState('');
   const [regError, setRegError] = useState('');
   const [regLoading, setRegLoading] = useState(false);
+
+  // Reset password state
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetError, setResetError] = useState('');
+  const [resetSent, setResetSent] = useState(false);
+
   const switchMode = (next) => {
     setMode(next);
     setRegError('');
+    setResetError('');
+    setResetSent(false);
+    setResetEmail('');
   };
 
   const handleSignIn = (e) => {
@@ -60,6 +70,26 @@ const LoginView = ({ onLogin, onGoogleLogin, onCreateAccount, loginError }) => {
       setRegError('Something went wrong. Please try again.');
     } finally {
       setRegLoading(false);
+    }
+  };
+
+  const handleReset = async (e) => {
+    e.preventDefault();
+    setResetError('');
+    if (!resetEmail.trim()) { setResetError('Please enter your email address.'); return; }
+    setResetLoading(true);
+    try {
+      await onResetPassword?.(resetEmail.trim());
+      setResetSent(true);
+    } catch (err) {
+      const msg = err?.message || '';
+      if (msg.includes('user-not-found') || msg.includes('invalid-email')) {
+        setResetError('No account found with that email address.');
+      } else {
+        setResetError('Could not send reset email. Please try again.');
+      }
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -93,7 +123,9 @@ const LoginView = ({ onLogin, onGoogleLogin, onCreateAccount, loginError }) => {
               <p className="mt-2 text-sm text-white">
                 {mode === 'signin'
                   ? 'Sign in with your Ethinos work email to access your workspace.'
-                  : 'Create your account to get started. Your manager will assign your projects once you are set up.'}
+                  : mode === 'register'
+                  ? 'Create your account to get started. Your manager will assign your projects once you are set up.'
+                  : 'Enter your email and we\'ll send you a link to reset your password.'}
               </p>
             </div>
           </section>
@@ -101,7 +133,7 @@ const LoginView = ({ onLogin, onGoogleLogin, onCreateAccount, loginError }) => {
           {/* Right panel */}
           <section className="border-l border-white/30 bg-white/82 p-8 backdrop-blur-md sm:p-10">
 
-            {mode === 'signin' ? (
+            {mode === 'signin' && (
               <>
                 <div className="mb-6">
                   <img src="/ethinos-logo.png" alt="Ethinos" className="mb-4 h-7 w-auto object-contain md:hidden" />
@@ -114,8 +146,20 @@ const LoginView = ({ onLogin, onGoogleLogin, onCreateAccount, loginError }) => {
                     <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@ethinos.com" className={inputCls} required />
                   </Field>
                   <Field label="Password">
-                    <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter password" className={inputCls} required />
+                    <div className="relative">
+                      <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter password" className={inputCls} required />
+                    </div>
                   </Field>
+
+                  <div className="flex justify-end -mt-1">
+                    <button
+                      type="button"
+                      onClick={() => switchMode('reset')}
+                      className="text-xs font-semibold text-indigo-600 hover:underline"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
 
                   {loginError && <p className="text-xs font-semibold text-red-600">{loginError}</p>}
 
@@ -131,7 +175,65 @@ const LoginView = ({ onLogin, onGoogleLogin, onCreateAccount, loginError }) => {
                   </button>
                 </p>
               </>
-            ) : (
+            )}
+
+            {mode === 'reset' && (
+              <>
+                <div className="mb-6">
+                  <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-900">Reset Password</h2>
+                  <p className="mt-1 text-sm text-slate-600">Enter your work email and we'll send a reset link.</p>
+                </div>
+
+                {resetSent ? (
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-6 text-center">
+                    <p className="text-2xl mb-2">📬</p>
+                    <p className="text-sm font-bold text-emerald-800">Reset email sent!</p>
+                    <p className="mt-1 text-xs text-emerald-700">
+                      Check your inbox at <span className="font-semibold">{resetEmail}</span> and follow the link to set a new password.
+                    </p>
+                    <button
+                      onClick={() => switchMode('signin')}
+                      className="mt-4 text-xs font-semibold text-indigo-600 hover:underline"
+                    >
+                      Back to sign in
+                    </button>
+                  </div>
+                ) : (
+                  <form className="space-y-4" onSubmit={handleReset}>
+                    <Field label="Work Email">
+                      <input
+                        type="email"
+                        value={resetEmail}
+                        onChange={e => setResetEmail(e.target.value)}
+                        placeholder="you@ethinos.com"
+                        className={inputCls}
+                        required
+                        autoFocus
+                      />
+                    </Field>
+
+                    {resetError && <p className="text-xs font-semibold text-red-600">{resetError}</p>}
+
+                    <button
+                      type="submit"
+                      disabled={resetLoading}
+                      className="w-full rounded-xl border border-indigo-500 bg-gradient-to-r from-rose-500 via-indigo-500 to-blue-500 py-2.5 text-sm font-semibold text-white transition-all hover:brightness-110 disabled:opacity-60"
+                    >
+                      {resetLoading ? 'Sending…' : 'Send Reset Link'}
+                    </button>
+                  </form>
+                )}
+
+                <p className="mt-5 text-center text-sm text-slate-500">
+                  Remembered it?{' '}
+                  <button onClick={() => switchMode('signin')} className="font-semibold text-indigo-600 hover:underline">
+                    Back to sign in
+                  </button>
+                </p>
+              </>
+            )}
+
+            {mode === 'register' && (
               <>
                 <div className="mb-5">
                   <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-900">Create Account</h2>
