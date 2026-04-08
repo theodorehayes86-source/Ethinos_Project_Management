@@ -103,8 +103,8 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
         {!isMinimized ? (
           <div className="px-3 py-3 bg-indigo-50/80 rounded-2xl border border-indigo-200/60 shadow-sm backdrop-blur-sm">
             <div className="flex items-center gap-2 mb-2">
-              <div className="w-6 h-6 rounded-lg bg-indigo-500/15 border border-indigo-300/40 flex items-center justify-center flex-shrink-0">
-                <Download size={11} className="text-indigo-500" />
+              <div className="w-6 h-6 rounded-lg bg-white border border-indigo-200/60 flex items-center justify-center flex-shrink-0 overflow-hidden p-0.5">
+                <img src="/ethinos-logo.png" alt="Ethinos" className="w-full h-full object-contain" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest leading-none">Ethinos Timer Pro</p>

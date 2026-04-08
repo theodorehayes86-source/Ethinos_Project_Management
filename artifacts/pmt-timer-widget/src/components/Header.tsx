@@ -1,5 +1,5 @@
 import React from "react";
-import { LogOut, Timer, Minus } from "lucide-react";
+import { LogOut, Minus } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useTasks } from "../context/TasksContext";
 import SyncIndicator from "./SyncIndicator";
@@ -26,8 +26,8 @@ export default function Header({ onMinimize }: HeaderProps) {
       } as React.CSSProperties}
     >
       <div className="flex items-center gap-2 flex-1 min-w-0">
-        <div className="w-7 h-7 rounded-lg bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center flex-shrink-0">
-          <Timer size={14} className="text-indigo-300" />
+        <div className="w-7 h-7 rounded-lg bg-white/10 border border-white/20 flex items-center justify-center flex-shrink-0 overflow-hidden p-1">
+          <img src="./ethinos-logo.png" alt="Ethinos" className="w-full h-full object-contain" />
         </div>
         <div className="min-w-0">
           <p className="text-white text-xs font-bold leading-tight truncate">Ethinos Timer Pro</p>
