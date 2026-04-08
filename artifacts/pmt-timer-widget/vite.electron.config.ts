@@ -6,7 +6,7 @@ import path from "path";
 const ELECTRON_DEV_PORT = 5173;
 
 export default defineConfig({
-  base: "/",
+  base: "./",
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
