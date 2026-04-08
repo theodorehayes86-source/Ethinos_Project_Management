@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Home, Briefcase, Users, Network, SlidersHorizontal, BarChart3, FileSpreadsheet, ChevronLeft, ChevronRight, ClipboardCheck, Download, Monitor, Apple } from 'lucide-react';
+import { Home, Briefcase, Users, Network, SlidersHorizontal, BarChart3, FileSpreadsheet, ChevronLeft, ChevronRight, ClipboardCheck, Download, Monitor, Apple, Info, X } from 'lucide-react';
 
 const RELEASES_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/latest';
 const WIN_URL = RELEASES_URL;
@@ -7,6 +7,7 @@ const MAC_URL = RELEASES_URL;
 
 const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setIsMinimized, canSeeControlCenter = false, canSeeUserManagement = true, canSeeEmployeeView = true, canSeeMetrics = true, canSeeReports = true, canSeeApprovals = false, pendingApprovalsCount = 0 }) => {
   const [logoError, setLogoError] = useState(false);
+  const [showMacInfo, setShowMacInfo] = useState(false);
 
   const menuItems = [
     { id: 'home', label: 'Home', icon: <Home size={18}/> },
@@ -105,11 +106,12 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
               <div className="w-6 h-6 rounded-lg bg-indigo-500/15 border border-indigo-300/40 flex items-center justify-center flex-shrink-0">
                 <Download size={11} className="text-indigo-500" />
               </div>
-              <div>
+              <div className="flex-1 min-w-0">
                 <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest leading-none">PMT Timer Widget</p>
                 <p className="text-[8px] text-slate-400 leading-none mt-0.5">Desktop app · always on top</p>
               </div>
             </div>
+
             <div className="flex gap-1.5">
               <a
                 href={WIN_URL}
@@ -131,7 +133,35 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
                 <Apple size={10} />
                 Mac
               </a>
+              <button
+                onClick={() => setShowMacInfo(v => !v)}
+                className="w-7 flex items-center justify-center rounded-lg bg-amber-50 border border-amber-200 hover:bg-amber-100 transition-all"
+                title="Mac installation help"
+              >
+                {showMacInfo ? <X size={9} className="text-amber-600" /> : <Info size={9} className="text-amber-500" />}
+              </button>
             </div>
+
+            {/* Mac Gatekeeper bypass instructions */}
+            {showMacInfo && (
+              <div className="mt-2 p-2 bg-amber-50 border border-amber-200/80 rounded-xl">
+                <p className="text-[8px] font-black text-amber-700 uppercase tracking-widest mb-1.5">Mac installation fix</p>
+                <ol className="space-y-1">
+                  {[
+                    'Download the .dmg and drag app to Applications',
+                    'Try to open it — macOS will block it',
+                    'Go to System Settings → Privacy & Security',
+                    'Scroll down and click "Open Anyway"',
+                    'Confirm by clicking Open — done ✓',
+                  ].map((step, i) => (
+                    <li key={i} className="flex items-start gap-1.5">
+                      <span className="text-[7px] font-black text-amber-500 mt-0.5 flex-shrink-0">{i + 1}.</span>
+                      <span className="text-[7.5px] text-amber-800 leading-tight">{step}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
           </div>
         ) : (
           <a
