@@ -107,10 +107,9 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
 
     return Array.from(summaryMap.values()).map((item) => {
       const avgHours = item.taskCount ? item.totalHours / item.taskCount : 0;
-      const categoryText = Array.from(item.categories.entries())
+      const categoriesArr = Array.from(item.categories.entries())
         .sort((a, b) => b[1] - a[1])
-        .map(([name, hours]) => `${name} (${hours.toFixed(2)}h)`)
-        .join(', ');
+        .map(([name, hours]) => ({ name, hours: Number(hours.toFixed(2)) }));
 
       return {
         entityName: item.entityName,
@@ -118,7 +117,7 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
         avgHours: Number(avgHours.toFixed(2)),
         totalHours: Number(item.totalHours.toFixed(2)),
         taskCount: item.taskCount,
-        categories: categoryText || '-'
+        categories: categoriesArr
       };
     }).sort((a, b) => b.totalHours - a.totalHours);
   }, [allRows]);
@@ -149,13 +148,11 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
       const avgHours = item.taskCount ? item.totalHours / item.taskCount : 0;
       const clientBreakdown = Array.from(item.clients.entries())
         .sort((a, b) => b[1] - a[1])
-        .map(([name, hours]) => `${name} (${hours.toFixed(2)}h)`)
-        .join(', ');
+        .map(([name, hours]) => ({ name, hours: Number(hours.toFixed(2)) }));
 
       const taskBreakdown = Array.from(item.categories.entries())
         .sort((a, b) => b[1] - a[1])
-        .map(([name, hours]) => `${name} (${hours.toFixed(2)}h)`)
-        .join(', ');
+        .map(([name, hours]) => ({ name, hours: Number(hours.toFixed(2)) }));
 
       return {
         employeeName: item.employeeName,
@@ -163,8 +160,8 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
         totalHours: Number(item.totalHours.toFixed(2)),
         taskCount: item.taskCount,
         clientsWorked: item.clients.size,
-        clientBreakdown: clientBreakdown || '-',
-        taskBreakdown: taskBreakdown || '-'
+        clientBreakdown,
+        taskBreakdown
       };
     }).sort((a, b) => b.totalHours - a.totalHours);
   }, [allRows]);
@@ -213,7 +210,7 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
   const handleDownload = () => {
     if (activeView === 'client') {
       const headers = ['Entity Name', 'Client Name', 'Avg Hours Spent', 'Total Hours', 'Task Count', 'Category Breakdown'];
-      const rows = clientSummary.map((row) => [row.entityName, row.clientName, row.avgHours, row.totalHours, row.taskCount, row.categories]);
+      const rows = clientSummary.map((row) => [row.entityName, row.clientName, row.avgHours, row.totalHours, row.taskCount, row.categories.map(c => `${c.name} (${c.hours}h)`).join('; ')]);
       downloadCsv('client-reports.csv', headers, rows);
       return;
     }
@@ -226,8 +223,8 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
         row.totalHours,
         row.clientsWorked,
         row.taskCount,
-        row.clientBreakdown,
-        row.taskBreakdown
+        row.clientBreakdown.map(c => `${c.name} (${c.hours}h)`).join('; '),
+        row.taskBreakdown.map(c => `${c.name} (${c.hours}h)`).join('; ')
       ]);
       downloadCsv('employee-reports.csv', headers, rows);
       return;
@@ -332,7 +329,15 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
                     <td className="px-4 py-3 text-sm text-right font-medium text-slate-700">{row.avgHours}</td>
                     <td className="px-4 py-3 text-sm text-right font-medium text-slate-700">{row.totalHours}</td>
                     <td className="px-4 py-3 text-sm text-right font-medium text-slate-700">{row.taskCount}</td>
-                    <td className="px-4 py-3 text-sm text-slate-700">{row.categories}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {row.categories.length ? row.categories.map(({ name, hours }) => (
+                          <span key={name} className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-xs font-medium text-slate-700 whitespace-nowrap">
+                            {name} <span className="text-blue-600 font-semibold">{hours}h</span>
+                          </span>
+                        )) : <span className="text-xs text-slate-400">—</span>}
+                      </div>
+                    </td>
                   </tr>
                 ))}
                 {!clientSummary.length && (
@@ -367,8 +372,24 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
                     <td className="px-4 py-3 text-sm text-right font-medium text-slate-700">{row.avgHours}</td>
                     <td className="px-4 py-3 text-sm text-right font-medium text-slate-700">{row.totalHours}</td>
                     <td className="px-4 py-3 text-sm text-right font-medium text-slate-700">{row.clientsWorked}</td>
-                    <td className="px-4 py-3 text-sm text-slate-700">{row.clientBreakdown}</td>
-                    <td className="px-4 py-3 text-sm text-slate-700">{row.taskBreakdown}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {row.clientBreakdown.length ? row.clientBreakdown.map(({ name, hours }) => (
+                          <span key={name} className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-xs font-medium text-slate-700 whitespace-nowrap">
+                            {name} <span className="text-emerald-600 font-semibold">{hours}h</span>
+                          </span>
+                        )) : <span className="text-xs text-slate-400">—</span>}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {row.taskBreakdown.length ? row.taskBreakdown.map(({ name, hours }) => (
+                          <span key={name} className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-xs font-medium text-slate-700 whitespace-nowrap">
+                            {name} <span className="text-blue-600 font-semibold">{hours}h</span>
+                          </span>
+                        )) : <span className="text-xs text-slate-400">—</span>}
+                      </div>
+                    </td>
                   </tr>
                 ))}
                 {!employeeSummary.length && (
