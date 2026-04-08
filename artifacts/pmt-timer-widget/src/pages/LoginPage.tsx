@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import { Timer } from "lucide-react";
 
 export default function LoginPage() {
   const { login, error } = useAuth();
@@ -41,8 +42,8 @@ export default function LoginPage() {
         >
           <div className="p-8">
             <div className="flex flex-col items-center mb-8">
-              <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 overflow-hidden">
-                <img src="./ethinos-logo.png" alt="Ethinos" className="w-full h-full object-contain" />
+              <div className="w-14 h-14 bg-indigo-500/20 border border-indigo-400/30 rounded-2xl flex items-center justify-center mb-4">
+                <Timer className="text-indigo-300" size={28} />
               </div>
               <h1 className="text-2xl font-bold text-white tracking-tight">
                 Ethinos Timer Pro
