@@ -19,24 +19,15 @@
       {
         "target": "nsis",
         "arch": ["x64"]
-      },
-      {
-        "target": "msi",
-        "arch": ["x64"]
       }
     ],
     "icon": "build/icon.ico"
   },
   "nsis": {
-    "oneClick": false,
-    "allowToChangeInstallationDirectory": true,
+    "oneClick": true,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
     "shortcutName": "PMT Timer"
-  },
-  "msi": {
-    "oneClick": false,
-    "createDesktopShortcut": true
   },
   "mac": {
     "target": [
@@ -55,8 +46,9 @@
       { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
     ]
   },
-  "linux": {
-    "target": ["AppImage", "deb"],
-    "category": "Office"
+  "publish": {
+    "provider": "github",
+    "owner": "theodorehayes86-source",
+    "repo": "Ethinos_Project_Management"
   }
 }

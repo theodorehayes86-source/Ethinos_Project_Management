@@ -7,6 +7,7 @@ interface TimerPageProps {
   task: TaskLog;
   clientName: string;
   onBack: () => void;
+  onElapsedUpdate?: (ms: number, isRunning: boolean) => void;
 }
 
 function formatMs(ms: number): string {
@@ -19,7 +20,7 @@ function formatMs(ms: number): string {
 
 type TimerState = "idle" | "running" | "paused" | "stopped";
 
-export default function TimerPage({ task, clientName, onBack }: TimerPageProps) {
+export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }: TimerPageProps) {
   const { updateTaskTimer } = useTasks();
 
   const initialTimerState: TimerState =
@@ -61,15 +62,18 @@ export default function TimerPage({ task, clientName, onBack }: TimerPageProps) 
   useEffect(() => {
     if (timerState === "running") {
       intervalRef.current = setInterval(() => {
-        setElapsedMs(computeElapsed());
+        const ms = computeElapsed();
+        setElapsedMs(ms);
+        onElapsedUpdate?.(ms, true);
       }, 200);
     } else {
       if (intervalRef.current) clearInterval(intervalRef.current);
+      onElapsedUpdate?.(elapsedMs, false);
     }
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [timerState, computeElapsed]);
+  }, [timerState, computeElapsed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (timerState !== "running") {

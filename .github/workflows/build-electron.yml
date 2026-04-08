@@ -1,0 +1,82 @@
+name: Build PMT Timer Widget
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: artifacts/pmt-timer-widget
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Install workspace dependencies
+        working-directory: .
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Electron dependencies
+        run: pnpm add -D electron electron-builder --save-exact
+
+      - name: Build Vite renderer
+        run: pnpm build:electron
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_DATABASE_URL: ${{ secrets.VITE_FIREBASE_DATABASE_URL }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+
+      - name: Package Windows installer
+        run: pnpm electron-builder --config electron-builder.json --win --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PMT-Timer-Widget-Windows
+          path: artifacts/pmt-timer-widget/dist-electron/*.exe
+          retention-days: 30
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/pmt-timer-widget/dist-electron/*.exe
+          name: PMT Timer Widget ${{ github.ref_name }}
+          body: |
+            ## PMT Timer Widget — Desktop App for Windows
+
+            ### Installation
+            1. Download **PMT Timer Setup.exe** below
+            2. Run the installer — it sets up automatically and adds a Start Menu shortcut
+            3. The app floats above all other windows and syncs with Firebase in real time
+
+            ### What's included
+            - Always-on-top floating timer widget
+            - Mini clock view — shrink to a slim bar showing just the running time
+            - Firebase sync every 10 seconds; offline queue when disconnected
+            - Same login as the main PMT web app
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
