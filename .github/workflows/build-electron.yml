@@ -39,7 +39,7 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v3
         with:
-          version: 9
+          version: 10
 
       - name: Install workspace dependencies
         working-directory: .
@@ -47,10 +47,14 @@ jobs:
 
       - name: Set version from tag
         if: startsWith(github.ref, 'refs/tags/')
-        run: node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='${{ github.ref_name }}'.replace(/^v/,'');fs.writeFileSync('package.json',JSON.stringify(p,null,2))"
+        shell: bash
+        run: |
+          TAG="${{ github.ref_name }}"
+          VER="${TAG#v}"
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='${VER}';fs.writeFileSync('package.json',JSON.stringify(p,null,2));"
 
       - name: Install Electron + builder
-        run: pnpm add -D electron electron-builder
+        run: pnpm add -D electron electron-builder --ignore-workspace
 
       - name: Build Vite renderer
         run: pnpm build:electron
@@ -128,7 +132,7 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v3
         with:
-          version: 9
+          version: 10
 
       - name: Install workspace dependencies
         working-directory: .
@@ -136,10 +140,13 @@ jobs:
 
       - name: Set version from tag
         if: startsWith(github.ref, 'refs/tags/')
-        run: node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='${{ github.ref_name }}'.replace(/^v/,'');fs.writeFileSync('package.json',JSON.stringify(p,null,2))"
+        run: |
+          TAG="${{ github.ref_name }}"
+          VER="${TAG#v}"
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='${VER}';fs.writeFileSync('package.json',JSON.stringify(p,null,2));"
 
       - name: Install Electron + builder
-        run: pnpm add -D electron electron-builder
+        run: pnpm add -D electron electron-builder --ignore-workspace
 
       - name: Build Vite renderer (universal)
         run: pnpm build:electron
