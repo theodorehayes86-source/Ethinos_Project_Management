@@ -17,10 +17,12 @@ env:
 
 jobs:
   # ──────────────────────────────────────────────────────────────────
-  # Windows — builds on Windows 11 runner, produces signed-ready NSIS .exe
+  # Windows — builds on Windows 11 runner, produces NSIS .exe
   # ──────────────────────────────────────────────────────────────────
   build-windows:
-    runs-on: windows-latest   # Windows Server 2025 / Windows 11-compatible
+    runs-on: windows-latest
+    permissions:
+      contents: write
     defaults:
       run:
         working-directory: artifacts/pmt-timer-widget
@@ -52,7 +54,6 @@ jobs:
       - name: Package Windows installer
         run: pnpm electron-builder --config electron-builder.json --win --publish never
         env:
-          # Skip code-signing — SmartScreen will warn on first run but not block
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
       - name: Upload Windows artifact
@@ -79,13 +80,13 @@ jobs:
             1. Download **PMT Timer Setup.exe**
             2. Run it — Windows SmartScreen may show a warning the first time; click **More info → Run anyway**
             3. The app installs silently and adds a Start Menu + Desktop shortcut
-            4. It needs internet access to reach Firebase — allow it if Windows Firewall asks
+            4. Allow internet access if Windows Firewall asks (needed for Firebase sync)
 
             ### Mac (.dmg)
             1. Download **PMT Timer Widget.dmg**
             2. Open it and drag the app to your Applications folder
-            3. **First launch:** right-click the app → **Open** → click **Open** in the dialog (required once because the app is not yet notarized)
-            4. The app needs internet access — allow it in macOS Privacy & Security if prompted
+            3. **First launch:** right-click the app → **Open** → click **Open** in the dialog (required once as the app is unsigned)
+            4. Allow internet access in macOS Privacy & Security if prompted
 
             ---
 
@@ -102,10 +103,11 @@ jobs:
 
   # ──────────────────────────────────────────────────────────────────
   # Mac — universal binary (Intel x64 + Apple Silicon arm64 in one DMG)
-  # Runs on macOS 14 Sonoma runner (latest stable GitHub-hosted)
   # ──────────────────────────────────────────────────────────────────
   build-mac:
-    runs-on: macos-14          # Apple Silicon runner — required for arm64/universal builds
+    runs-on: macos-14
+    permissions:
+      contents: write
     defaults:
       run:
         working-directory: artifacts/pmt-timer-widget
@@ -137,8 +139,6 @@ jobs:
       - name: Package Mac universal DMG
         run: pnpm electron-builder --config electron-builder.json --mac --publish never
         env:
-          # Skip Apple code-signing — no Developer cert required
-          # Users open via right-click → Open on first launch to bypass Gatekeeper
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           ELECTRON_TEAM_ID: ""
 
