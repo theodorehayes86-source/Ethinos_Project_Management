@@ -1,6 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Bell, Clock, UserPlus, Briefcase, CheckCircle, AlertTriangle } from 'lucide-react';
 import { parse, differenceInHours } from 'date-fns';
+
+const DISMISSED_KEY = 'pmt_dismissed_notifications';
 
 const TAB_FOR_TYPE = {
   'alert': 'clients',
@@ -23,6 +25,23 @@ const Notifications = ({
   setActiveTab,
   setSelectedClient,
 }) => {
+
+  const [dismissedIds, setDismissedIds] = useState(() => {
+    try {
+      const stored = localStorage.getItem(DISMISSED_KEY);
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
+  const dismiss = (ids) => {
+    setDismissedIds(prev => {
+      const next = new Set([...prev, ...ids]);
+      try { localStorage.setItem(DISMISSED_KEY, JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  };
 
   const getNotificationStyle = (type) => {
     if (type === 'alert') {
@@ -129,8 +148,8 @@ const Notifications = ({
       });
     }
 
-    return list.reverse();
-  }, [clientLogs, currentUser, users, clients, notifications]);
+    return list.reverse().filter(n => !dismissedIds.has(n.id));
+  }, [clientLogs, currentUser, users, clients, notifications, dismissedIds]);
 
   const handleNotifClick = (n) => {
     const tab = n.tab || TAB_FOR_TYPE[n.type] || 'home';
@@ -140,6 +159,7 @@ const Notifications = ({
   };
 
   const handleClearAll = () => {
+    dismiss(activeNotifications.map(n => n.id));
     if (setNotifications) setNotifications([]);
   };
 
