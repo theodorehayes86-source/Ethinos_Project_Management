@@ -43,9 +43,9 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
         >
           {!logoError ? (
             <img
-              src="/ethinos-logo.png"
+              src={isMinimized ? '/ethinos-icon.png' : '/ethinos-logo.png'}
               alt="Ethinos"
-              className={`${isMinimized ? 'h-5' : 'h-6'} w-auto object-contain`}
+              className={`${isMinimized ? 'h-8 w-8' : 'h-8 w-auto'} object-contain`}
               onError={() => setLogoError(true)}
             />
           ) : (
@@ -104,7 +104,7 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
           <div className="px-3 py-3 bg-indigo-50/80 rounded-2xl border border-indigo-200/60 shadow-sm backdrop-blur-sm">
             <div className="flex items-center gap-2 mb-2">
               <div className="w-6 h-6 rounded-lg bg-white border border-indigo-200/60 flex items-center justify-center flex-shrink-0 overflow-hidden p-0.5">
-                <img src="/ethinos-logo.png" alt="Ethinos" className="w-full h-full object-contain" />
+                <img src="/ethinos-icon.png" alt="Ethinos" className="w-full h-full object-contain" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest leading-none">Ethinos Timer Pro</p>
