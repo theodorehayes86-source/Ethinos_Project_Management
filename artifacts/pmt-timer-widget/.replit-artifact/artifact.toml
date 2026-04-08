@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/pmt-timer-widget/"
+title = "PMT Timer Widget"
+version = "1.0.0"
+id = "artifacts/pmt-timer-widget"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/pmt-timer-widget/" ]
+localPort = 22109
+
+[services.development]
+run = "pnpm --filter @workspace/pmt-timer-widget run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/pmt-timer-widget", "run", "build" ]
+publicDir = "artifacts/pmt-timer-widget/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22109"
+BASE_PATH = "/pmt-timer-widget/"

@@ -1,0 +1,213 @@
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+} from "react";
+import { ref, onValue, update } from "firebase/database";
+import { db } from "../firebase";
+import { useAuth } from "./AuthContext";
+import { Client, GroupedTasks, TaskLog } from "../types";
+import { enqueue, loadQueue, dequeueByKey, QueuedWrite } from "../offlineQueue";
+
+interface SyncStatus {
+  state: "synced" | "pending" | "offline";
+  pendingCount: number;
+}
+
+interface TasksContextValue {
+  groupedTasks: GroupedTasks[];
+  loading: boolean;
+  syncStatus: SyncStatus;
+  updateTaskTimer: (
+    clientId: number | string,
+    taskIndex: number,
+    taskId: string,
+    payload: Partial<TaskLog>
+  ) => Promise<void>;
+  flushQueue: () => Promise<void>;
+}
+
+const TasksContext = createContext<TasksContextValue | null>(null);
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const h = String(Math.floor(totalSeconds / 3600)).padStart(2, "0");
+  const m = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, "0");
+  const s = String(totalSeconds % 60).padStart(2, "0");
+  return `${h}:${m}:${s}`;
+}
+
+export function TasksProvider({ children }: { children: React.ReactNode }) {
+  const { pmtUser } = useAuth();
+  const [clients, setClients] = useState<Client[]>([]);
+  const [rawLogs, setRawLogs] = useState<Record<string, TaskLog[]>>({});
+  const [loading, setLoading] = useState(true);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => ({
+    state: navigator.onLine ? (loadQueue().length > 0 ? "pending" : "synced") : "offline",
+    pendingCount: loadQueue().length,
+  }));
+
+  useEffect(() => {
+    if (!pmtUser) return;
+    const unsubs: (() => void)[] = [];
+
+    const u1 = onValue(ref(db, "clients"), (snap) => {
+      const val = snap.val();
+      if (!val) return;
+      const list: Client[] = Array.isArray(val) ? val : Object.values(val);
+      setClients(list);
+    });
+    unsubs.push(u1);
+
+    const u2 = onValue(ref(db, "clientLogs"), (snap) => {
+      const val = snap.val();
+      setRawLogs(val || {});
+      setLoading(false);
+    });
+    unsubs.push(u2);
+
+    return () => unsubs.forEach((u) => u());
+  }, [pmtUser]);
+
+  const groupedTasks = React.useMemo<GroupedTasks[]>(() => {
+    if (!pmtUser) return [];
+
+    const assignedProjects: string[] = (pmtUser.assignedProjects as string[]) || [];
+    const isAll =
+      pmtUser.role === "Super Admin" ||
+      pmtUser.role === "Admin" ||
+      assignedProjects.includes("All");
+
+    const accessibleClients = isAll
+      ? clients
+      : clients.filter((c) => assignedProjects.includes(c.name));
+
+    return accessibleClients
+      .map((client) => {
+        const allLogs = rawLogs[String(client.id)] || [];
+        const arr: TaskLog[] = Array.isArray(allLogs)
+          ? allLogs
+          : Object.values(allLogs);
+
+        const tasks = arr
+          .map((log, idx) => ({ ...log, clientId: client.id, taskIndex: idx }))
+          .filter((log) => String(log.assigneeId) === String(pmtUser.id));
+
+        return {
+          clientId: client.id,
+          clientName: client.name,
+          tasks,
+        };
+      })
+      .filter((g) => g.tasks.length > 0);
+  }, [clients, rawLogs, pmtUser]);
+
+  const doWrite = useCallback(
+    async (
+      clientId: number | string,
+      taskIndex: number,
+      payload: Record<string, unknown>
+    ) => {
+      await update(ref(db, `clientLogs/${clientId}/${taskIndex}`), payload);
+    },
+    []
+  );
+
+  const updateTaskTimer = useCallback(
+    async (
+      clientId: number | string,
+      taskIndex: number,
+      taskId: string,
+      partial: Partial<TaskLog>
+    ) => {
+      const elapsedMs = partial.elapsedMs ?? 0;
+      const payload: Record<string, unknown> = {
+        elapsedMs,
+        timeTaken: formatDuration(elapsedMs),
+        timerState: partial.timerState ?? "idle",
+        timerStartedAt: partial.timerStartedAt ?? null,
+      };
+      if (partial.status !== undefined) {
+        payload.status = partial.status;
+      }
+
+      const queueItem: QueuedWrite = { id: taskId, clientId, taskIndex, payload, timestamp: Date.now() };
+
+      if (!navigator.onLine) {
+        enqueue(queueItem);
+        setSyncStatus({ state: "offline", pendingCount: loadQueue().length });
+        return;
+      }
+
+      try {
+        await doWrite(clientId, taskIndex, payload);
+        setSyncStatus((prev) => ({
+          state: prev.pendingCount > 0 ? "pending" : "synced",
+          pendingCount: prev.pendingCount,
+        }));
+      } catch {
+        enqueue(queueItem);
+        setSyncStatus({ state: "pending", pendingCount: loadQueue().length });
+      }
+    },
+    [doWrite]
+  );
+
+  const flushQueue = useCallback(async () => {
+    const queue = loadQueue();
+    if (!queue.length) {
+      setSyncStatus({ state: "synced", pendingCount: 0 });
+      return;
+    }
+    setSyncStatus({ state: "pending", pendingCount: queue.length });
+
+    for (const item of queue) {
+      try {
+        await doWrite(item.clientId, item.taskIndex, item.payload);
+        dequeueByKey(item);
+      } catch {
+      }
+    }
+
+    const remaining = loadQueue().length;
+    setSyncStatus({
+      state: remaining > 0 ? "pending" : "synced",
+      pendingCount: remaining,
+    });
+  }, [doWrite]);
+
+  useEffect(() => {
+    function handleOnline() {
+      setSyncStatus((prev) => ({
+        ...prev,
+        state: prev.pendingCount > 0 ? "pending" : "synced",
+      }));
+      flushQueue();
+    }
+    function handleOffline() {
+      setSyncStatus((prev) => ({ ...prev, state: "offline" }));
+    }
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, [flushQueue]);
+
+  return (
+    <TasksContext.Provider
+      value={{ groupedTasks, loading, syncStatus, updateTaskTimer, flushQueue }}
+    >
+      {children}
+    </TasksContext.Provider>
+  );
+}
+
+export function useTasks() {
+  const ctx = useContext(TasksContext);
+  if (!ctx) throw new Error("useTasks must be used within TasksProvider");
+  return ctx;
+}
