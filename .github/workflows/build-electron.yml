@@ -17,7 +17,7 @@ env:
 
 jobs:
   # ──────────────────────────────────────────────────────────────────
-  # Windows — builds on Windows 11 runner, produces NSIS .exe
+  # Windows — builds on Windows runner, produces NSIS .exe
   # ──────────────────────────────────────────────────────────────────
   build-windows:
     runs-on: windows-latest
@@ -49,12 +49,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
         run: |
-          TAG="${{ github.ref_name }}"
-          VER="${TAG#v}"
+          VER="${{ github.ref_name }}"
+          VER="${VER#v}"
           node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='${VER}';fs.writeFileSync('package.json',JSON.stringify(p,null,2));"
-
-      - name: Install Electron + builder
-        run: pnpm add -D electron electron-builder --ignore-workspace
 
       - name: Build Vite renderer
         run: pnpm build:electron
@@ -85,7 +82,7 @@ jobs:
             ---
 
             ### Windows (.exe)
-            1. Download **PMT Timer Setup.exe**
+            1. Download **PMT Timer Widget Setup.exe**
             2. Run it — Windows SmartScreen may show a warning the first time; click **More info → Run anyway**
             3. The app installs silently and adds a Start Menu + Desktop shortcut
             4. Allow internet access if Windows Firewall asks (needed for Firebase sync)
@@ -141,12 +138,9 @@ jobs:
       - name: Set version from tag
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          TAG="${{ github.ref_name }}"
-          VER="${TAG#v}"
+          VER="${{ github.ref_name }}"
+          VER="${VER#v}"
           node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='${VER}';fs.writeFileSync('package.json',JSON.stringify(p,null,2));"
-
-      - name: Install Electron + builder
-        run: pnpm add -D electron electron-builder --ignore-workspace
 
       - name: Build Vite renderer (universal)
         run: pnpm build:electron

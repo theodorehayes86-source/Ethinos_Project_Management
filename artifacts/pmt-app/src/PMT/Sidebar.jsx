@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { Home, Briefcase, Users, Network, SlidersHorizontal, BarChart3, FileSpreadsheet, ChevronLeft, ChevronRight, ClipboardCheck, Download, Monitor, Apple, Info, X } from 'lucide-react';
 
-const RELEASES_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/tag/v1.0.10';
-const WIN_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/download/v1.0.10/PMT%20Timer%20Widget%20Setup%201.0.10.exe';
-const MAC_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/download/v1.0.10/PMT%20Timer%20Widget-1.0.10.dmg';
+const RELEASES_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/tag/v1.0.11';
+const WIN_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/download/v1.0.11/PMT%20Timer%20Widget%20Setup%201.0.11.exe';
+const MAC_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/download/v1.0.11/PMT%20Timer%20Widget-1.0.11.dmg';
 
 const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setIsMinimized, canSeeControlCenter = false, canSeeUserManagement = true, canSeeEmployeeView = true, canSeeMetrics = true, canSeeReports = true, canSeeApprovals = false, pendingApprovalsCount = 0 }) => {
   const [logoError, setLogoError] = useState(false);
