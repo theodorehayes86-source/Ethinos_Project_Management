@@ -41,9 +41,9 @@ function setupSession() {
     "default-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data: app:",
     `connect-src 'self' app: ${FIREBASE_ORIGINS.join(" ")}`,
     `script-src 'self' 'unsafe-inline' 'unsafe-eval' app: ${FIREBASE_ORIGINS.join(" ")}`,
-    "style-src 'self' 'unsafe-inline' app:",
+    "style-src 'self' 'unsafe-inline' app: https://fonts.googleapis.com",
     "img-src 'self' data: https: app:",
-    "font-src 'self' data: app:",
+    "font-src 'self' data: app: https://fonts.gstatic.com",
   ].join("; ");
 
   ses.webRequest.onHeadersReceived((details, callback) => {
@@ -119,8 +119,6 @@ function createWindow() {
 
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
-    // DEBUG: open DevTools in detached window so we can see console errors
-    mainWindow.webContents.openDevTools({ mode: "detach" });
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

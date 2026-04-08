@@ -3,13 +3,13 @@ import { getDatabase } from "firebase/database";
 import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyAC3-FnGQH3HoIbG8fllYtJK6t8YWt--Nk",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "ethinos-project-management.firebaseapp.com",
+  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL || "https://ethinos-project-management-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "ethinos-project-management",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "ethinos-project-management.firebasestorage.app",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "418382176848",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:418382176848:web:15d900e9837d26fd16e755",
 };
 
 const app = initializeApp(firebaseConfig);
