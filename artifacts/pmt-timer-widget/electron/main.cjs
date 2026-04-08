@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, session } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, session, protocol, net } = require("electron");
 const path = require("path");
 
 let mainWindow = null;
@@ -8,7 +8,6 @@ const FULL_HEIGHT = 560;
 const MINI_WIDTH = 290;
 const MINI_HEIGHT = 64;
 
-// Firebase domains the app needs to reach
 const FIREBASE_ORIGINS = [
   "https://*.googleapis.com",
   "https://*.firebaseio.com",
@@ -20,34 +19,59 @@ const FIREBASE_ORIGINS = [
   "https://apis.google.com",
 ];
 
+// Must be called before app.whenReady — registers 'app://' as a
+// fully-privileged secure scheme so it behaves like https://, not file://
+// This fixes Mac App Translocation and file:// CSP/security restrictions.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "app",
+    privileges: {
+      secure: true,
+      standard: true,
+      supportFetchAPI: true,
+      corsEnabled: false,
+    },
+  },
+]);
+
 function setupSession() {
   const ses = session.defaultSession;
 
-  // Allow Firebase network requests by removing any restrictive CSP
-  // and injecting a permissive one for the domains we need
-  ses.webRequest.onHeadersReceived((details, callback) => {
-    const csp = [
-      "default-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data:",
-      `connect-src 'self' ${FIREBASE_ORIGINS.join(" ")}`,
-      `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${FIREBASE_ORIGINS.join(" ")}`,
-      "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: https:",
-      "font-src 'self' data:",
-    ].join("; ");
+  const csp = [
+    "default-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data: app:",
+    `connect-src 'self' app: ${FIREBASE_ORIGINS.join(" ")}`,
+    `script-src 'self' 'unsafe-inline' 'unsafe-eval' app: ${FIREBASE_ORIGINS.join(" ")}`,
+    "style-src 'self' 'unsafe-inline' app:",
+    "img-src 'self' data: https: app:",
+    "font-src 'self' data: app:",
+  ].join("; ");
 
+  ses.webRequest.onHeadersReceived((details, callback) => {
     const headers = { ...details.responseHeaders };
-    // Override any upstream CSP that might block Firebase
     headers["content-security-policy"] = [csp];
-    // Ensure cross-origin isolation is not enforced (breaks Firebase streams)
     delete headers["cross-origin-embedder-policy"];
     delete headers["cross-origin-opener-policy"];
-
     callback({ responseHeaders: headers });
   });
 
-  // Allow all Firebase origins explicitly in the permission system
   ses.setPermissionRequestHandler((_webContents, _permission, callback) => {
     callback(true);
+  });
+}
+
+function registerAppProtocol() {
+  // Serve files from the packaged dist/public directory via app://
+  // Using app.getAppPath() is safe even under macOS App Translocation
+  // (unlike __dirname which can be randomized for unsigned apps)
+  const distDir = path.join(app.getAppPath(), "dist", "public");
+
+  protocol.handle("app", (request) => {
+    let urlPath = new URL(request.url).pathname;
+    // Default to index.html for SPA routing
+    if (!urlPath || urlPath === "/") urlPath = "/index.html";
+
+    const filePath = path.join(distDir, urlPath);
+    return net.fetch(`file://${filePath}`);
   });
 }
 
@@ -65,8 +89,8 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: true,
-      sandbox: false,           // Allow renderer to use fetch/XMLHttpRequest for Firebase
+      webSecurity: false,        // Required for custom protocol + Firebase fetch
+      sandbox: false,
       preload: path.join(__dirname, "preload.cjs"),
       spellcheck: false,
     },
@@ -80,8 +104,18 @@ function createWindow() {
   if (isDev) {
     mainWindow.loadURL("http://localhost:5173/");
   } else {
-    mainWindow.loadFile(path.join(__dirname, "../dist/public/index.html"));
+    mainWindow.loadURL("app://./index.html");
   }
+
+  // Fallback: if the custom protocol fails for any reason, try loadFile
+  mainWindow.webContents.on("did-fail-load", (_e, code, desc, url) => {
+    console.error(`[PMT] Load failed (${code} ${desc}) for ${url}`);
+    if (!isDev && url.startsWith("app://")) {
+      const fallback = path.join(app.getAppPath(), "dist", "public", "index.html");
+      console.log("[PMT] Falling back to loadFile:", fallback);
+      mainWindow.loadFile(fallback);
+    }
+  });
 
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
@@ -119,6 +153,7 @@ ipcMain.on("restore-window", () => {
 
 app.whenReady().then(() => {
   setupSession();
+  registerAppProtocol();
   createWindow();
 
   app.on("activate", () => {
