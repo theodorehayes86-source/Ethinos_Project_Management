@@ -349,7 +349,7 @@ const App = () => {
   const canSeeApprovals = managementRoles.includes(currentUser?.role);
 
   const CROSS_DEPT_ROLES_APP = ['Super Admin', 'Admin', 'Business Head'];
-  const isCrossDeptApp = CROSS_DEPT_ROLES_APP.includes(currentUser?.role);
+  const isCrossDeptApp = CROSS_DEPT_ROLES_APP.includes(currentUser?.role) || currentUser?.department === 'All';
   const userDeptApp = currentUser?.department;
   const myClientNames = (currentUser?.assignedProjects || []);
   const pendingApprovalsCount = canSeeApprovals

@@ -56,8 +56,10 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUse
     setSelectedDepts(prev => prev.includes(dept) ? prev.filter(d => d !== dept) : [...prev, dept]);
   };
 
+  const effectiveAllData = canSeeAllData || currentUser?.department === 'All';
+
   const effectiveLogs = useMemo(() => {
-    if (canSeeAllData) {
+    if (effectiveAllData) {
       if (selectedDepts.length === 0) return clientLogs;
       return Object.fromEntries(
         Object.entries(clientLogs).map(([clientId, logs]) => [
@@ -76,7 +78,7 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUse
         (logs || []).filter(log => !Array.isArray(log.departments) || log.departments.length === 0 || log.departments.includes(userDept))
       ])
     );
-  }, [clientLogs, canSeeAllData, selectedDepts, currentUser]);
+  }, [clientLogs, effectiveAllData, selectedDepts, currentUser]);
 
   const { rangeStart, rangeEnd } = useMemo(() => {
     const now = new Date();
@@ -354,7 +356,7 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUse
         </div>
 
         <div className="flex flex-wrap gap-2 items-center">
-          {canSeeAllData && departments.length > 0 && (
+          {effectiveAllData && departments.length > 0 && (
             <div className="relative">
               <button
                 type="button"

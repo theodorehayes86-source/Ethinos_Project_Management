@@ -1417,6 +1417,7 @@ const MasterDataView = ({
                       required
                     >
                       <option value="">Select Department</option>
+                      <option value="All">All Departments</option>
                       {departments.map(d => <option key={d} value={d}>{d}</option>)}
                     </select>
                     <ChevronDown size={18} className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
@@ -1431,6 +1432,7 @@ const MasterDataView = ({
                       required
                     >
                       <option value="">Select Region</option>
+                      <option value="All">All Regions</option>
                       {regions.map(r => <option key={r} value={r}>{r}</option>)}
                     </select>
                     <ChevronDown size={18} className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>

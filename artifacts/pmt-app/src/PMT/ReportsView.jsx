@@ -10,8 +10,10 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
     setSelectedDepts(prev => prev.includes(dept) ? prev.filter(d => d !== dept) : [...prev, dept]);
   };
 
+  const effectiveAllData = canSeeAllData || currentUser?.department === 'All';
+
   const filteredClientLogs = useMemo(() => {
-    if (canSeeAllData) {
+    if (effectiveAllData) {
       if (selectedDepts.length === 0) return clientLogs;
       return Object.fromEntries(
         Object.entries(clientLogs).map(([clientId, logs]) => [
@@ -27,7 +29,7 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
         (logs || []).filter(t => !Array.isArray(t.departments) || t.departments.length === 0 || t.departments.includes(userDept))
       ])
     );
-  }, [clientLogs, currentUser, canSeeAllData, selectedDepts]);
+  }, [clientLogs, currentUser, effectiveAllData, selectedDepts]);
 
   const usersById = useMemo(() => {
     const map = new Map();
@@ -253,7 +255,7 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {canSeeAllData && departments.length > 0 && (
+          {effectiveAllData && departments.length > 0 && (
             <div className="relative">
               <button
                 type="button"
