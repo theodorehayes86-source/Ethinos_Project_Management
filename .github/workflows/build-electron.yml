@@ -6,6 +6,15 @@ on:
       - "v*"
   workflow_dispatch:
 
+env:
+  VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+  VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+  VITE_FIREBASE_DATABASE_URL: ${{ secrets.VITE_FIREBASE_DATABASE_URL }}
+  VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+  VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+  VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+  VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -32,50 +41,94 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install Electron dependencies
-        run: pnpm add -D electron electron-builder --save-exact
+        run: pnpm add -D electron electron-builder
 
       - name: Build Vite renderer
         run: pnpm build:electron
-        env:
-          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
-          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
-          VITE_FIREBASE_DATABASE_URL: ${{ secrets.VITE_FIREBASE_DATABASE_URL }}
-          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
-          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
-          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
-          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
 
       - name: Package Windows installer
         run: pnpm electron-builder --config electron-builder.json --win --publish never
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload installer artifact
+      - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: PMT-Timer-Widget-Windows
           path: artifacts/pmt-timer-widget/dist-electron/*.exe
           retention-days: 30
 
-      - name: Create GitHub Release
+      - name: Publish to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/pmt-timer-widget/dist-electron/*.exe
           name: PMT Timer Widget ${{ github.ref_name }}
           body: |
-            ## PMT Timer Widget — Desktop App for Windows
+            ## PMT Timer Widget — Desktop App
 
-            ### Installation
-            1. Download **PMT Timer Setup.exe** below
-            2. Run the installer — it sets up automatically and adds a Start Menu shortcut
-            3. The app floats above all other windows and syncs with Firebase in real time
+            Download the installer for your platform below.
+
+            ### Windows
+            Run **PMT Timer Setup.exe** — installs automatically with a Start Menu shortcut.
+
+            ### Mac
+            Open **PMT Timer Widget.dmg**, drag the app to your Applications folder.
 
             ### What's included
             - Always-on-top floating timer widget
-            - Mini clock view — shrink to a slim bar showing just the running time
+            - Mini clock view — click **–** to shrink to a slim floating bar showing just the running time; click restore to expand
             - Firebase sync every 10 seconds; offline queue when disconnected
-            - Same login as the main PMT web app
+            - Same login credentials as the main PMT web app
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-mac:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: artifacts/pmt-timer-widget
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Install workspace dependencies
+        working-directory: .
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Electron dependencies
+        run: pnpm add -D electron electron-builder
+
+      - name: Build Vite renderer
+        run: pnpm build:electron
+
+      - name: Package Mac DMG (x64 + arm64)
+        run: pnpm electron-builder --config electron-builder.json --mac --publish never
+
+      - name: Upload Mac artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PMT-Timer-Widget-Mac
+          path: artifacts/pmt-timer-widget/dist-electron/*.dmg
+          retention-days: 30
+
+      - name: Publish to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/pmt-timer-widget/dist-electron/*.dmg
+          name: PMT Timer Widget ${{ github.ref_name }}
           draft: false
           prerelease: false
         env:
