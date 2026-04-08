@@ -618,6 +618,7 @@ const App = () => {
               taskCategories={taskCategories}
               users={users}
               departments={departments}
+              onNavigateToClients={() => setActiveTab('clients')}
             />
           )}
 

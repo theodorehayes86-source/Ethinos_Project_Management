@@ -17,6 +17,7 @@ const HomeView = ({
   taskCategories = [],
   users = [],
   departments = [],
+  onNavigateToClients,
 }) => {
   const [showAddTaskModal, setShowAddTaskModal] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState(accessibleClients[0]?.id || '');
@@ -180,12 +181,16 @@ const HomeView = ({
       {/* PERSONAL STATS */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'My Clients', value: accessibleClients.length, icon: <Briefcase size={16} className="text-blue-600"/>, bgColor: 'bg-blue-50', iconBgColor: 'bg-blue-100', border: 'border-blue-100' },
+          { label: 'My Clients', value: accessibleClients.length, icon: <Briefcase size={16} className="text-blue-600"/>, bgColor: 'bg-blue-50', iconBgColor: 'bg-blue-100', border: 'border-blue-100', onClick: onNavigateToClients },
           { label: 'Open Tasks', value: myOpenTasks.length, icon: <Clock size={16} className="text-green-600"/>, bgColor: 'bg-green-50', iconBgColor: 'bg-green-100', border: 'border-green-100' },
           { label: 'WIP', value: myWip.length, icon: <Activity size={16} className="text-orange-500"/>, bgColor: 'bg-orange-50', iconBgColor: 'bg-orange-100', border: 'border-orange-100' },
           { label: 'Pending', value: myPending.length, icon: <AlertTriangle size={16} className="text-red-500"/>, bgColor: 'bg-red-50', iconBgColor: 'bg-red-100', border: 'border-red-100' },
         ].map((stat, i) => (
-          <div key={i} className={`${stat.bgColor} p-4 rounded-2xl shadow-sm border ${stat.border} flex flex-col justify-between h-24`}>
+          <div
+            key={i}
+            onClick={stat.onClick}
+            className={`${stat.bgColor} p-4 rounded-2xl shadow-sm border ${stat.border} flex flex-col justify-between h-24 ${stat.onClick ? 'cursor-pointer hover:shadow-md hover:scale-[1.02] transition-all' : ''}`}
+          >
             <div className="flex justify-between items-start">
               <span className="text-xs font-semibold text-slate-500">{stat.label}</span>
               <div className={`p-2 ${stat.iconBgColor} rounded-lg`}>{stat.icon}</div>
