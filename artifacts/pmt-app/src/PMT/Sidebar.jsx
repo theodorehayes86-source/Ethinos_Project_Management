@@ -94,8 +94,9 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
       {/* Sidebar Footer */}
       <div className="p-4">
         {!isMinimized && (
-          <div className="p-4 bg-white/70 rounded-2xl border border-white/80 mb-3 shadow-sm backdrop-blur-sm">
-            <p className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">Powered by Ethinos Digital Marketing Pvt Ltd</p>
+          <div className="px-3 py-3 bg-white/60 rounded-2xl border border-white/80 mb-3 shadow-sm backdrop-blur-sm text-center">
+            <p className="text-[8px] font-semibold text-slate-400 uppercase tracking-widest mb-0.5">Powered by</p>
+            <p className="text-[10px] font-bold text-slate-600 leading-snug">Ethinos Digital Marketing Pvt Ltd</p>
           </div>
         )}
         <button
