@@ -41,6 +41,18 @@ jobs:
         with:
           version: 10
 
+      - name: Remove Windows platform exclusions from workspace overrides
+        working-directory: .
+        shell: bash
+        run: |
+          node -e "
+          const fs = require('fs');
+          const lines = fs.readFileSync('pnpm-workspace.yaml', 'utf8').split('\n');
+          const filtered = lines.filter(l => !l.includes('win32'));
+          fs.writeFileSync('pnpm-workspace.yaml', filtered.join('\n'));
+          console.log('Removed win32 exclusions from pnpm-workspace.yaml');
+          "
+
       - name: Install workspace dependencies
         working-directory: .
         run: pnpm install --no-frozen-lockfile
@@ -133,6 +145,17 @@ jobs:
         uses: pnpm/action-setup@v3
         with:
           version: 10
+
+      - name: Remove macOS platform exclusions from workspace overrides
+        working-directory: .
+        run: |
+          node -e "
+          const fs = require('fs');
+          const lines = fs.readFileSync('pnpm-workspace.yaml', 'utf8').split('\n');
+          const filtered = lines.filter(l => !l.includes('darwin'));
+          fs.writeFileSync('pnpm-workspace.yaml', filtered.join('\n'));
+          console.log('Removed darwin exclusions from pnpm-workspace.yaml');
+          "
 
       - name: Install workspace dependencies
         working-directory: .

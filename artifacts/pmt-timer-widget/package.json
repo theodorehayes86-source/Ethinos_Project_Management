@@ -1,6 +1,6 @@
 {
   "name": "@workspace/pmt-timer-widget",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "private": true,
   "type": "module",
   "scripts": {
@@ -64,6 +64,8 @@
     "cmdk": "^1.1.1",
     "concurrently": "^9.1.2",
     "date-fns": "^3.6.0",
+    "electron": "^41.1.1",
+    "electron-builder": "^26.8.1",
     "embla-carousel-react": "^8.6.0",
     "framer-motion": "catalog:",
     "input-otp": "^1.4.2",
