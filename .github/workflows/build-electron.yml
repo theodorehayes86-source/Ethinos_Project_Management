@@ -1,4 +1,4 @@
-name: Build PMT Timer Widget
+name: Build Ethinos Timer Pro
 
 on:
   push:
@@ -88,22 +88,22 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/pmt-timer-widget/dist-electron/*.exe
-          name: PMT Timer Widget ${{ github.ref_name }}
+          name: Ethinos Timer Pro ${{ github.ref_name }}
           body: |
-            ## PMT Timer Widget — Desktop App
+            ## Ethinos Timer Pro — Desktop App
 
             Download the installer for your platform below.
 
             ---
 
             ### Windows (.exe)
-            1. Download **PMT Timer Widget Setup.exe**
+            1. Download **Ethinos Timer Pro Setup.exe**
             2. Run it — Windows SmartScreen may show a warning the first time; click **More info → Run anyway**
             3. The app installs silently and adds a Start Menu + Desktop shortcut
             4. Allow internet access if Windows Firewall asks (needed for Firebase sync)
 
             ### Mac (.dmg)
-            1. Download **PMT Timer Widget.dmg**
+            1. Download **Ethinos Timer Pro.dmg**
             2. Open it and drag the app to your Applications folder
             3. **First launch:** right-click the app → **Open** → click **Open** in the dialog (required once as the app is unsigned)
             4. Allow internet access in macOS Privacy & Security if prompted
@@ -192,7 +192,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/pmt-timer-widget/dist-electron/*.dmg
-          name: PMT Timer Widget ${{ github.ref_name }}
+          name: Ethinos Timer Pro ${{ github.ref_name }}
           draft: false
           prerelease: false
         env:

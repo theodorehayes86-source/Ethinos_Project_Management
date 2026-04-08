@@ -1,6 +1,6 @@
 {
-  "appId": "com.ethinos.pmt-timer-widget",
-  "productName": "PMT Timer Widget",
+  "appId": "com.ethinos.timer-pro",
+  "productName": "Ethinos Timer Pro",
   "copyright": "Copyright © 2024 Ethinos Digital Marketing Pvt Ltd",
   "directories": {
     "output": "dist-electron",
@@ -26,9 +26,10 @@
   },
   "nsis": {
     "oneClick": true,
+    "artifactName": "Ethinos.Timer.Pro.Setup.${version}.exe",
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "PMT Timer",
+    "shortcutName": "Ethinos Timer Pro",
     "installerLanguages": ["en_US"],
     "allowElevation": true
   },
@@ -52,7 +53,8 @@
     }
   },
   "dmg": {
-    "title": "PMT Timer Widget",
+    "title": "Ethinos Timer Pro",
+    "artifactName": "Ethinos.Timer.Pro-${version}-universal.dmg",
     "contents": [
       { "x": 130, "y": 220 },
       { "x": 410, "y": 220, "type": "link", "path": "/Applications" }

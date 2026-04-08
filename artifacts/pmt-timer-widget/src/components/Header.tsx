@@ -30,7 +30,7 @@ export default function Header({ onMinimize }: HeaderProps) {
           <Timer size={14} className="text-indigo-300" />
         </div>
         <div className="min-w-0">
-          <p className="text-white text-xs font-bold leading-tight truncate">PMT Timer</p>
+          <p className="text-white text-xs font-bold leading-tight truncate">Ethinos Timer Pro</p>
           {pmtUser && (
             <p className="text-slate-500 text-[10px] truncate">{pmtUser.name || pmtUser.email}</p>
           )}

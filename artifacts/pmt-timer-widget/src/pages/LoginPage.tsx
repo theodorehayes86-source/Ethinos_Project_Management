@@ -46,7 +46,7 @@ export default function LoginPage() {
                 <Timer className="text-indigo-300" size={28} />
               </div>
               <h1 className="text-2xl font-bold text-white tracking-tight">
-                PMT Timer
+                Ethinos Timer Pro
               </h1>
               <p className="text-slate-400 text-sm mt-1">
                 Ethinos Consulting Tracker

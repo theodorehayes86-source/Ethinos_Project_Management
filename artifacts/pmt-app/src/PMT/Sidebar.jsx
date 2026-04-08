@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { Home, Briefcase, Users, Network, SlidersHorizontal, BarChart3, FileSpreadsheet, ChevronLeft, ChevronRight, ClipboardCheck, Download, Monitor, Apple, Info, X } from 'lucide-react';
 
 const RELEASES_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/latest';
-const WIN_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/download/v1.0.15/PMT.Timer.Widget.Setup.1.0.15.exe';
-const MAC_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/download/v1.0.15/PMT.Timer.Widget-1.0.15-universal.dmg';
+const WIN_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/download/v1.0.16/Ethinos.Timer.Pro.Setup.1.0.16.exe';
+const MAC_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/download/v1.0.16/Ethinos.Timer.Pro-1.0.16-universal.dmg';
 
 const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setIsMinimized, canSeeControlCenter = false, canSeeUserManagement = true, canSeeEmployeeView = true, canSeeMetrics = true, canSeeReports = true, canSeeApprovals = false, pendingApprovalsCount = 0 }) => {
   const [logoError, setLogoError] = useState(false);
@@ -107,7 +107,7 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
                 <Download size={11} className="text-indigo-500" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest leading-none">PMT Timer Widget</p>
+                <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest leading-none">Ethinos Timer Pro</p>
                 <p className="text-[8px] text-slate-400 leading-none mt-0.5">Desktop app · always on top</p>
               </div>
             </div>
@@ -168,7 +168,7 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
             href={RELEASES_URL}
             target="_blank"
             rel="noopener noreferrer"
-            title="Download PMT Timer Widget"
+            title="Download Ethinos Timer Pro"
             className="w-full flex items-center justify-center py-2.5 rounded-xl bg-indigo-50/80 border border-indigo-200/60 hover:bg-indigo-100/80 transition-all"
           >
             <Download size={14} className="text-indigo-500" />
