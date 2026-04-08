@@ -79,10 +79,16 @@ const ClientView = ({
   const [templateSearch, setTemplateSearch] = useState('');
   const [selectedTemplateId, setSelectedTemplateId] = useState(null);
   const [templateStep, setTemplateStep] = useState(1); // 1 = pick template, 2 = set date + assignee
-  const [templateStartDate, setTemplateStartDate] = useState(new Date());
-  const [templateAssigneeId, setTemplateAssigneeId] = useState('');
-  const [templateAssigneeQuery, setTemplateAssigneeQuery] = useState('');
   const [templateApplyError, setTemplateApplyError] = useState('');
+  // Per-task config array: one entry per task in selected template
+  const [perTaskConfig, setPerTaskConfig] = useState([]);
+  // "Set all" defaults row state
+  const [setAllStartDate, setSetAllStartDate] = useState(new Date());
+  const [setAllDueDate, setSetAllDueDate] = useState(null);
+  const [setAllAssigneeId, setSetAllAssigneeId] = useState('');
+  const [setAllAssigneeQuery, setSetAllAssigneeQuery] = useState('');
+  const [setAllQcAssigneeId, setSetAllQcAssigneeId] = useState('');
+  const [setAllQcAssigneeQuery, setSetAllQcAssigneeQuery] = useState('');
 
   const isManagement = managementRoles.includes(currentUser?.role);
 
@@ -450,13 +456,21 @@ const ClientView = ({
   };
 
   // --- TEMPLATE APPLY HELPERS ---
+  const resetPerTaskDefaults = () => {
+    setSetAllStartDate(new Date());
+    setSetAllDueDate(null);
+    setSetAllAssigneeId('');
+    setSetAllAssigneeQuery('');
+    setSetAllQcAssigneeId('');
+    setSetAllQcAssigneeQuery('');
+  };
+
   const openTemplateModal = () => {
     setTemplateSearch('');
     setSelectedTemplateId(null);
     setTemplateStep(1);
-    setTemplateStartDate(new Date());
-    setTemplateAssigneeId('');
-    setTemplateAssigneeQuery('');
+    setPerTaskConfig([]);
+    resetPerTaskDefaults();
     setTemplateApplyError('');
     setShowTemplateModal(true);
   };
@@ -466,8 +480,8 @@ const ClientView = ({
     setSelectedTemplateId(null);
     setTemplateStep(1);
     setTemplateSearch('');
-    setTemplateAssigneeId('');
-    setTemplateAssigneeQuery('');
+    setPerTaskConfig([]);
+    resetPerTaskDefaults();
     setTemplateApplyError('');
   };
 
@@ -475,41 +489,65 @@ const ClientView = ({
     if (!selectedTemplateId || !selectedClient) return;
     const tpl = taskTemplates.find(t => t.id === selectedTemplateId);
     if (!tpl) return;
-    const assignee = (users || []).find(u => String(u.id) === String(templateAssigneeId));
-    if (!assignee) { setTemplateApplyError('Please select an assignee.'); return; }
+
     const clientTeam = getProjectStaff(selectedClient.name);
     const clientMemberIds = new Set([
       ...clientTeam.admins.map(u => String(u.id)),
       ...clientTeam.employees.map(u => String(u.id)),
     ]);
-    if (!clientMemberIds.has(String(assignee.id))) {
-      setTemplateApplyError('The selected assignee is not on this client\'s team.');
+
+    // Validate each task has an assignee
+    const missingAssignee = perTaskConfig.some(cfg => !cfg.assigneeId);
+    if (missingAssignee) {
+      setTemplateApplyError('Please select an assignee for every task.');
       return;
     }
 
-    const dateStr = format(templateStartDate, 'do MMM yyyy');
+    // Validate all assignees are on the client team
+    const badAssignee = perTaskConfig.find(cfg => !clientMemberIds.has(String(cfg.assigneeId)));
+    if (badAssignee) {
+      setTemplateApplyError('One or more assignees are not on this client\'s team.');
+      return;
+    }
+
+    // Validate QC assignees (if set) are also on the client team
+    const badQcAssignee = perTaskConfig.find(cfg => cfg.qcAssigneeId && !clientMemberIds.has(String(cfg.qcAssigneeId)));
+    if (badQcAssignee) {
+      setTemplateApplyError('One or more QC assignees are not on this client\'s team.');
+      return;
+    }
+
     const creatorDept = currentUser?.department;
-    const newTasks = tpl.tasks.map(taskItem => ({
-      id: Date.now() + Math.random(),
-      date: dateStr,
-      dueDate: null,
-      comment: taskItem.comment,
-      result: '',
-      status: 'Pending',
-      creatorId: currentUser?.id || null,
-      creatorName: currentUser?.name || 'Unassigned',
-      creatorRole: currentUser?.role || 'Employee',
-      assigneeId: assignee.id,
-      assigneeName: assignee.name,
-      assigneeEmail: assignee.email || '',
-      category: taskItem.category || '',
-      repeatFrequency: taskItem.repeatFrequency || 'Once',
-      timerState: 'idle',
-      timerStartedAt: null,
-      elapsedMs: 0,
-      timeTaken: null,
-      departments: creatorDept ? [creatorDept] : [],
-    }));
+    const newTasks = tpl.tasks.map((taskItem, idx) => {
+      const cfg = perTaskConfig[idx] || {};
+      const assignee = (users || []).find(u => String(u.id) === String(cfg.assigneeId));
+      const qcAssignee = cfg.qcAssigneeId ? (users || []).find(u => String(u.id) === String(cfg.qcAssigneeId)) : null;
+      const hasQc = !!qcAssignee;
+      return {
+        id: Date.now() + Math.random(),
+        date: cfg.startDate ? format(cfg.startDate, 'do MMM yyyy') : format(new Date(), 'do MMM yyyy'),
+        dueDate: cfg.dueDate ? format(cfg.dueDate, 'do MMM yyyy') : null,
+        comment: taskItem.comment,
+        result: '',
+        status: 'Pending',
+        creatorId: currentUser?.id || null,
+        creatorName: currentUser?.name || 'Unassigned',
+        creatorRole: currentUser?.role || 'Employee',
+        assigneeId: assignee?.id || null,
+        assigneeName: assignee?.name || '',
+        assigneeEmail: assignee?.email || '',
+        category: taskItem.category || '',
+        repeatFrequency: taskItem.repeatFrequency || 'Once',
+        timerState: 'idle',
+        timerStartedAt: null,
+        elapsedMs: 0,
+        timeTaken: null,
+        departments: creatorDept ? [creatorDept] : [],
+        qcEnabled: hasQc,
+        qcAssigneeId: hasQc ? qcAssignee.id : null,
+        qcAssigneeName: hasQc ? qcAssignee.name : null,
+      };
+    });
 
     setClientLogs({
       ...clientLogs,
@@ -1841,9 +1879,6 @@ const ClientView = ({
         {showTemplateModal && (() => {
           const projectStaffForTpl = getProjectStaff(selectedClient.name);
           const assignableForTpl = [...projectStaffForTpl.admins, ...projectStaffForTpl.employees];
-          const filteredAssigneesForTpl = templateAssigneeQuery.trim()
-            ? assignableForTpl.filter(u => u.name.toLowerCase().includes(templateAssigneeQuery.toLowerCase()))
-            : assignableForTpl;
           const filteredTpls = templateSearch.trim()
             ? taskTemplates.filter(t => t.name.toLowerCase().includes(templateSearch.toLowerCase()))
             : taskTemplates;
@@ -1854,6 +1889,24 @@ const ClientView = ({
             if (freq === 'Monthly') return 'bg-blue-100 text-blue-700';
             return 'bg-slate-100 text-slate-600';
           };
+
+          // Per-task config helpers
+          const updateTaskConfig = (idx, field, value) => {
+            setPerTaskConfig(prev => {
+              const next = [...prev];
+              next[idx] = { ...next[idx], [field]: value };
+              return next;
+            });
+            setTemplateApplyError('');
+          };
+
+          // "Set all" filtered lists
+          const filteredSetAllAssignees = setAllAssigneeQuery.trim()
+            ? assignableForTpl.filter(u => u.name.toLowerCase().includes(setAllAssigneeQuery.toLowerCase()))
+            : assignableForTpl;
+          const filteredSetAllQc = setAllQcAssigneeQuery.trim()
+            ? assignableForTpl.filter(u => u.name.toLowerCase().includes(setAllQcAssigneeQuery.toLowerCase()))
+            : assignableForTpl;
           return (
             <div className="fixed inset-0 z-[700] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4">
               <div className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl border border-slate-200 flex flex-col" style={{maxHeight:'88vh'}}>
@@ -1866,7 +1919,7 @@ const ClientView = ({
                     <p className="text-[11px] text-slate-500 mt-0.5">
                       {templateStep === 1
                         ? 'Select a template to preview its tasks, then continue.'
-                        : 'Set the start date and assignee for all tasks.'}
+                        : 'Configure dates and assignees for each task individually.'}
                     </p>
                   </div>
                   <button onClick={closeTemplateModal} className="p-1.5 hover:bg-slate-100 rounded-lg transition-all"><X size={16}/></button>
@@ -1949,57 +2002,255 @@ const ClientView = ({
                   </div>
                 )}
 
-                {/* Step 2: Date + assignee */}
+                {/* Step 2: Per-task configuration */}
                 {templateStep === 2 && (
-                  <div className="flex-1 overflow-y-auto p-6 space-y-5">
-                    {/* Date */}
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-slate-700">Start Date</label>
-                      <DatePicker
-                        selected={templateStartDate}
-                        onChange={date => setTemplateStartDate(date)}
-                        dateFormat="do MMM yyyy"
-                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 ring-blue-500/20"
-                      />
+                  <div className="flex-1 overflow-y-auto p-4 space-y-4">
+
+                    {/* "Set all" defaults row */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+                      <p className="text-[11px] font-bold text-slate-600 uppercase tracking-wide">Set All (apply defaults to every task)</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-semibold text-slate-500">Start Date</label>
+                          <DatePicker
+                            selected={setAllStartDate}
+                            onChange={date => {
+                              setSetAllStartDate(date);
+                              setPerTaskConfig(prev => prev.map(cfg => ({ ...cfg, startDate: date })));
+                            }}
+                            dateFormat="do MMM yyyy"
+                            className="w-full border border-slate-200 bg-white rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 ring-blue-500/20"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-semibold text-slate-500">Due Date</label>
+                          <DatePicker
+                            selected={setAllDueDate}
+                            onChange={date => {
+                              setSetAllDueDate(date);
+                              setPerTaskConfig(prev => prev.map(cfg => ({ ...cfg, dueDate: date })));
+                            }}
+                            dateFormat="do MMM yyyy"
+                            isClearable
+                            placeholderText="Optional"
+                            className="w-full border border-slate-200 bg-white rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 ring-blue-500/20"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-semibold text-slate-500">Assignee</label>
+                          <div className="relative">
+                            <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400"/>
+                            <input
+                              value={setAllAssigneeQuery}
+                              onChange={e => { setSetAllAssigneeQuery(e.target.value); setSetAllAssigneeId(''); }}
+                              placeholder="Search..."
+                              className="w-full bg-white border border-slate-200 rounded-lg pl-6 pr-2 py-1.5 text-xs outline-none focus:ring-2 ring-blue-500/20"
+                            />
+                          </div>
+                          {setAllAssigneeQuery.trim() && (
+                            <div className="max-h-28 overflow-y-auto border border-slate-200 rounded-lg bg-white shadow-sm">
+                              {filteredSetAllAssignees.map(u => (
+                                <button
+                                  key={u.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSetAllAssigneeId(u.id);
+                                    setSetAllAssigneeQuery(u.name);
+                                    setPerTaskConfig(prev => prev.map(cfg => ({ ...cfg, assigneeId: u.id })));
+                                  }}
+                                  className={`w-full text-left flex items-center gap-2 px-2 py-1.5 text-xs hover:bg-slate-50 ${String(setAllAssigneeId) === String(u.id) ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-700'}`}
+                                >
+                                  <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-600 text-[9px] font-bold flex items-center justify-center flex-shrink-0">{(u.name||'?')[0].toUpperCase()}</span>
+                                  {u.name}
+                                </button>
+                              ))}
+                              {filteredSetAllAssignees.length === 0 && <p className="text-xs text-slate-400 text-center py-2">No results</p>}
+                            </div>
+                          )}
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-semibold text-slate-500">QC Assignee <span className="text-slate-400">(optional)</span></label>
+                          <div className="relative">
+                            <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400"/>
+                            <input
+                              value={setAllQcAssigneeQuery}
+                              onChange={e => { setSetAllQcAssigneeQuery(e.target.value); setSetAllQcAssigneeId(''); }}
+                              placeholder="Search..."
+                              className="w-full bg-white border border-slate-200 rounded-lg pl-6 pr-2 py-1.5 text-xs outline-none focus:ring-2 ring-blue-500/20"
+                            />
+                          </div>
+                          {setAllQcAssigneeQuery.trim() && (
+                            <div className="max-h-28 overflow-y-auto border border-slate-200 rounded-lg bg-white shadow-sm">
+                              {filteredSetAllQc.map(u => (
+                                <button
+                                  key={u.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSetAllQcAssigneeId(u.id);
+                                    setSetAllQcAssigneeQuery(u.name);
+                                    setPerTaskConfig(prev => prev.map(cfg => ({ ...cfg, qcAssigneeId: u.id })));
+                                  }}
+                                  className={`w-full text-left flex items-center gap-2 px-2 py-1.5 text-xs hover:bg-slate-50 ${String(setAllQcAssigneeId) === String(u.id) ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-700'}`}
+                                >
+                                  <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-600 text-[9px] font-bold flex items-center justify-center flex-shrink-0">{(u.name||'?')[0].toUpperCase()}</span>
+                                  {u.name}
+                                </button>
+                              ))}
+                              {filteredSetAllQc.length === 0 && <p className="text-xs text-slate-400 text-center py-2">No results</p>}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
 
-                    {/* Assignee */}
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-slate-700">Assignee <span className="text-red-500">*</span></label>
-                      <div className="relative">
-                        <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
-                        <input
-                          value={templateAssigneeQuery}
-                          onChange={e => { setTemplateAssigneeQuery(e.target.value); setTemplateAssigneeId(''); }}
-                          placeholder="Search team member..."
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-2 text-sm outline-none focus:ring-2 ring-blue-500/20"
-                        />
-                      </div>
-                      <div className="space-y-1 max-h-52 overflow-y-auto">
-                        {filteredAssigneesForTpl.map(u => (
-                          <button
-                            key={u.id}
-                            type="button"
-                            onClick={() => { setTemplateAssigneeId(u.id); setTemplateAssigneeQuery(u.name); setTemplateApplyError(''); }}
-                            className={`w-full text-left flex items-center gap-3 p-2.5 rounded-lg border transition-all ${
-                              String(templateAssigneeId) === String(u.id)
-                                ? 'bg-blue-50 border-blue-200'
-                                : 'bg-white border-slate-200 hover:bg-slate-50'
-                            }`}
-                          >
-                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${String(templateAssigneeId) === String(u.id) ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                              {(u.name || '?')[0].toUpperCase()}
+                    {/* Per-task rows */}
+                    <div className="space-y-3">
+                      {(selectedTpl?.tasks || []).map((taskItem, idx) => {
+                        const cfg = perTaskConfig[idx] || {};
+                        const assignee = assignableForTpl.find(u => String(u.id) === String(cfg.assigneeId));
+                        const qcAssignee = cfg.qcAssigneeId ? assignableForTpl.find(u => String(u.id) === String(cfg.qcAssigneeId)) : null;
+                        const rowAssigneeQuery = cfg._assigneeQuery || (assignee ? assignee.name : '');
+                        const rowQcQuery = cfg._qcQuery || (qcAssignee ? qcAssignee.name : '');
+                        const filteredRowAssignees = (cfg._assigneeQuery || '') !== '' && !assignee
+                          ? assignableForTpl.filter(u => u.name.toLowerCase().includes((cfg._assigneeQuery||'').toLowerCase()))
+                          : [];
+                        const filteredRowQc = (cfg._qcQuery || '') !== '' && !qcAssignee
+                          ? assignableForTpl.filter(u => u.name.toLowerCase().includes((cfg._qcQuery||'').toLowerCase()))
+                          : [];
+                        const missingAssignee = !cfg.assigneeId;
+
+                        return (
+                          <div key={idx} className={`border rounded-xl p-3 space-y-2 ${missingAssignee ? 'border-red-200 bg-red-50/30' : 'border-slate-200 bg-white'}`}>
+                            {/* Task header */}
+                            <div className="flex items-start gap-2">
+                              <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-500 text-[9px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{idx + 1}</span>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-medium text-slate-700 leading-snug">{taskItem.comment}</p>
+                                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                  {taskItem.category && (
+                                    <span className="text-[9px] font-medium text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded-full">{taskItem.category}</span>
+                                  )}
+                                  <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${repeatBadge(taskItem.repeatFrequency)}`}>{taskItem.repeatFrequency}</span>
+                                </div>
+                              </div>
                             </div>
-                            <div>
-                              <p className="text-xs font-semibold text-slate-800">{u.name}</p>
-                              <p className="text-[10px] text-slate-400">{u.role}</p>
+
+                            {/* Row controls */}
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-semibold text-slate-500">Start Date</label>
+                                <DatePicker
+                                  selected={cfg.startDate || null}
+                                  onChange={date => updateTaskConfig(idx, 'startDate', date)}
+                                  dateFormat="do MMM yyyy"
+                                  placeholderText="Pick date"
+                                  className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 ring-blue-500/20"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-semibold text-slate-500">Due Date</label>
+                                <DatePicker
+                                  selected={cfg.dueDate || null}
+                                  onChange={date => updateTaskConfig(idx, 'dueDate', date)}
+                                  dateFormat="do MMM yyyy"
+                                  isClearable
+                                  placeholderText="Optional"
+                                  className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 ring-blue-500/20"
+                                />
+                              </div>
                             </div>
-                          </button>
-                        ))}
-                        {filteredAssigneesForTpl.length === 0 && (
-                          <p className="text-xs text-slate-400 text-center py-4">No team members found</p>
-                        )}
-                      </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              {/* Assignee picker per task */}
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-semibold text-slate-500">Assignee <span className="text-red-500">*</span></label>
+                                <div className="relative">
+                                  <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400"/>
+                                  <input
+                                    value={rowAssigneeQuery}
+                                    onChange={e => {
+                                      updateTaskConfig(idx, '_assigneeQuery', e.target.value);
+                                      updateTaskConfig(idx, 'assigneeId', '');
+                                    }}
+                                    placeholder="Search..."
+                                    className={`w-full border rounded-lg pl-6 pr-2 py-1.5 text-xs outline-none focus:ring-2 ring-blue-500/20 ${missingAssignee ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-white'}`}
+                                  />
+                                </div>
+                                {(cfg._assigneeQuery || '') !== '' && !cfg.assigneeId && (
+                                  <div className="max-h-24 overflow-y-auto border border-slate-200 rounded-lg bg-white shadow-sm">
+                                    {filteredRowAssignees.map(u => (
+                                      <button
+                                        key={u.id}
+                                        type="button"
+                                        onClick={() => {
+                                          updateTaskConfig(idx, 'assigneeId', u.id);
+                                          updateTaskConfig(idx, '_assigneeQuery', u.name);
+                                        }}
+                                        className="w-full text-left flex items-center gap-2 px-2 py-1.5 text-xs hover:bg-slate-50 text-slate-700"
+                                      >
+                                        <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-600 text-[9px] font-bold flex items-center justify-center flex-shrink-0">{(u.name||'?')[0].toUpperCase()}</span>
+                                        {u.name}
+                                      </button>
+                                    ))}
+                                    {filteredRowAssignees.length === 0 && <p className="text-xs text-slate-400 text-center py-2">No results</p>}
+                                  </div>
+                                )}
+                                {assignee && (
+                                  <div className="flex items-center gap-1.5 mt-1">
+                                    <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0">{(assignee.name||'?')[0].toUpperCase()}</span>
+                                    <span className="text-[10px] font-semibold text-blue-700">{assignee.name}</span>
+                                    <button type="button" onClick={() => { updateTaskConfig(idx, 'assigneeId', ''); updateTaskConfig(idx, '_assigneeQuery', ''); }} className="ml-auto text-slate-400 hover:text-red-500"><X size={10}/></button>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* QC picker per task */}
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-semibold text-slate-500">QC Assignee <span className="text-slate-400">(optional)</span></label>
+                                <div className="relative">
+                                  <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400"/>
+                                  <input
+                                    value={rowQcQuery}
+                                    onChange={e => {
+                                      updateTaskConfig(idx, '_qcQuery', e.target.value);
+                                      updateTaskConfig(idx, 'qcAssigneeId', '');
+                                    }}
+                                    placeholder="Search..."
+                                    className="w-full border border-slate-200 bg-white rounded-lg pl-6 pr-2 py-1.5 text-xs outline-none focus:ring-2 ring-blue-500/20"
+                                  />
+                                </div>
+                                {(cfg._qcQuery || '') !== '' && !cfg.qcAssigneeId && (
+                                  <div className="max-h-24 overflow-y-auto border border-slate-200 rounded-lg bg-white shadow-sm">
+                                    {filteredRowQc.map(u => (
+                                      <button
+                                        key={u.id}
+                                        type="button"
+                                        onClick={() => {
+                                          updateTaskConfig(idx, 'qcAssigneeId', u.id);
+                                          updateTaskConfig(idx, '_qcQuery', u.name);
+                                        }}
+                                        className="w-full text-left flex items-center gap-2 px-2 py-1.5 text-xs hover:bg-slate-50 text-slate-700"
+                                      >
+                                        <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-600 text-[9px] font-bold flex items-center justify-center flex-shrink-0">{(u.name||'?')[0].toUpperCase()}</span>
+                                        {u.name}
+                                      </button>
+                                    ))}
+                                    {filteredRowQc.length === 0 && <p className="text-xs text-slate-400 text-center py-2">No results</p>}
+                                  </div>
+                                )}
+                                {qcAssignee && (
+                                  <div className="flex items-center gap-1.5 mt-1">
+                                    <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0">{(qcAssignee.name||'?')[0].toUpperCase()}</span>
+                                    <span className="text-[10px] font-semibold text-indigo-700">{qcAssignee.name}</span>
+                                    <button type="button" onClick={() => { updateTaskConfig(idx, 'qcAssigneeId', ''); updateTaskConfig(idx, '_qcQuery', ''); }} className="ml-auto text-slate-400 hover:text-red-500"><X size={10}/></button>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
 
                     {templateApplyError && (
@@ -2019,7 +2270,21 @@ const ClientView = ({
                   {templateStep === 1 ? (
                     <button
                       disabled={!selectedTemplateId}
-                      onClick={() => setTemplateStep(2)}
+                      onClick={() => {
+                        const tpl = taskTemplates.find(t => t.id === selectedTemplateId);
+                        if (tpl) {
+                          resetPerTaskDefaults();
+                          setPerTaskConfig((tpl.tasks || []).map(() => ({
+                            startDate: new Date(),
+                            dueDate: null,
+                            assigneeId: '',
+                            qcAssigneeId: '',
+                            _assigneeQuery: '',
+                            _qcQuery: '',
+                          })));
+                        }
+                        setTemplateStep(2);
+                      }}
                       className="px-5 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       Continue
