@@ -8,14 +8,22 @@ interface HeaderProps {
   onMinimize?: () => void;
 }
 
+/** On macOS with titleBarStyle:'hidden', traffic lights sit at ~x:12 y:8.
+ *  We need ~76px left padding so content starts after the three dots. */
+const isMac = window.electronAPI?.platform === "darwin";
+
 export default function Header({ onMinimize }: HeaderProps) {
   const { pmtUser, logout } = useAuth();
   const { syncStatus, flushQueue } = useTasks();
 
   return (
     <div
-      className="flex items-center px-4 py-3 border-b border-white/10 flex-shrink-0 select-none"
-      style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+      className="flex items-center py-3 border-b border-white/10 flex-shrink-0 select-none"
+      style={{
+        paddingLeft: isMac ? 80 : 16,
+        paddingRight: 16,
+        WebkitAppRegion: "drag",
+      } as React.CSSProperties}
     >
       <div className="flex items-center gap-2 flex-1 min-w-0">
         <div className="w-7 h-7 rounded-lg bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center flex-shrink-0">

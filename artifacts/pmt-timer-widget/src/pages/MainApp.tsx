@@ -4,7 +4,7 @@ import Header from "../components/Header";
 import MiniClockBar from "../components/MiniClockBar";
 import TaskListPage from "./TaskListPage";
 import TimerPage from "./TimerPage";
-import { TaskLog } from "../types";
+import { TaskLog, getTaskName } from "../types";
 
 interface SelectedTask {
   task: TaskLog;
@@ -18,6 +18,7 @@ declare global {
       restoreWindow: () => void;
       onMiniModeChange: (cb: (isMini: boolean) => void) => () => void;
       isElectron: boolean;
+      platform: string;
     };
   }
 }
@@ -63,7 +64,7 @@ export default function MainApp() {
         <div className="fixed inset-0 z-50 bg-[#0f1629] border border-indigo-500/30 rounded-lg overflow-hidden">
           <MiniClockBar
             elapsedMs={liveElapsedMs}
-            taskName={selected.task.taskName || "Untitled Task"}
+            taskName={getTaskName(selected.task)}
             clientName={selected.clientName}
             isRunning={liveIsRunning}
             onRestore={handleRestore}

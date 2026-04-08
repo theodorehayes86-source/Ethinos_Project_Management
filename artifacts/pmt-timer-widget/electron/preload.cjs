@@ -9,4 +9,5 @@ contextBridge.exposeInMainWorld("electronAPI", {
     return () => ipcRenderer.removeListener("mini-mode-changed", handler);
   },
   isElectron: true,
+  platform: process.platform,
 });

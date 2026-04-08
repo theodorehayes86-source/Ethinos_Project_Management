@@ -17,6 +17,8 @@ function formatMs(ms: number): string {
   return `${h}:${m}:${s}`;
 }
 
+const isMac = window.electronAPI?.platform === "darwin";
+
 export default function MiniClockBar({
   elapsedMs,
   taskName,
@@ -26,8 +28,12 @@ export default function MiniClockBar({
 }: MiniClockBarProps) {
   return (
     <div
-      className="flex items-center h-screen px-3 gap-2 select-none"
-      style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+      className="flex items-center h-screen gap-2 select-none"
+      style={{
+        paddingLeft: isMac ? 80 : 12,
+        paddingRight: 12,
+        WebkitAppRegion: "drag",
+      } as React.CSSProperties}
     >
       <div
         className={`w-2 h-2 rounded-full flex-shrink-0 transition-colors ${
