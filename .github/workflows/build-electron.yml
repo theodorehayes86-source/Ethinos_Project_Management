@@ -53,6 +53,9 @@ jobs:
           VER="${VER#v}"
           node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='${VER}';fs.writeFileSync('package.json',JSON.stringify(p,null,2));"
 
+      - name: Install Electron + builder
+        run: pnpm add -D electron electron-builder
+
       - name: Build Vite renderer
         run: pnpm build:electron
 
@@ -141,6 +144,9 @@ jobs:
           VER="${{ github.ref_name }}"
           VER="${VER#v}"
           node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='${VER}';fs.writeFileSync('package.json',JSON.stringify(p,null,2));"
+
+      - name: Install Electron + builder
+        run: pnpm add -D electron electron-builder
 
       - name: Build Vite renderer (universal)
         run: pnpm build:electron
