@@ -119,6 +119,8 @@ function createWindow() {
 
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
+    // DEBUG: open DevTools in detached window so we can see console errors
+    mainWindow.webContents.openDevTools({ mode: "detach" });
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
