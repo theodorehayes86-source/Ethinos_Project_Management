@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Search, ChevronLeft, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus } from 'lucide-react';
+import { Search, ChevronLeft, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus, Hourglass } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import DatePicker from "react-datepicker";
 import { format, subDays, parse } from 'date-fns';
@@ -2071,8 +2071,10 @@ const ClientView = ({
   const accessibleClientIds = new Set(accessibleClients.map(c => c.id));
 
   const myClients = clients.filter(c => accessibleClientIds.has(c.id) && c.name.toLowerCase().includes(clientSearch.toLowerCase()));
-  const availableClients = clients.filter(c => !accessibleClientIds.has(c.id) && c.name.toLowerCase().includes(clientSearch.toLowerCase()));
-  const filteredClients = clientViewFilter === 'mine' ? myClients : availableClients;
+  const pendingClients = clients.filter(c => !accessibleClientIds.has(c.id) && (c.joinRequests || []).some(r => r.requesterId === currentUser?.id) && c.name.toLowerCase().includes(clientSearch.toLowerCase()));
+  const pendingClientIds = new Set(pendingClients.map(c => c.id));
+  const availableClients = clients.filter(c => !accessibleClientIds.has(c.id) && !pendingClientIds.has(c.id) && c.name.toLowerCase().includes(clientSearch.toLowerCase()));
+  const filteredClients = clientViewFilter === 'mine' ? myClients : clientViewFilter === 'pending' ? pendingClients : availableClients;
 
   // --- PICKER CONFIG (only qcReviewer remains here) ---
   const pickerAllUsers = users || [];
@@ -2089,6 +2091,12 @@ const ClientView = ({
             onClick={() => setClientViewFilter('mine')}
             className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${clientViewFilter === 'mine' ? 'bg-white text-blue-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
           >My Clients <span className="ml-1 text-[10px] font-bold text-blue-500">{myClients.length}</span></button>
+          {pendingClients.length > 0 && (
+            <button
+              onClick={() => setClientViewFilter('pending')}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${clientViewFilter === 'pending' ? 'bg-white text-amber-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+            >Waiting for Approval <span className="ml-1 text-[10px] font-bold text-amber-500">{pendingClients.length}</span></button>
+          )}
           <button
             onClick={() => setClientViewFilter('available')}
             className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${clientViewFilter === 'available' ? 'bg-white text-violet-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
@@ -2099,7 +2107,9 @@ const ClientView = ({
       {filteredClients.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16 text-slate-400">
           <Users size={36} className="mb-3 opacity-40" />
-          <p className="text-sm font-medium">{clientViewFilter === 'mine' ? 'No clients assigned to you yet.' : 'No available clients to request.'}</p>
+          <p className="text-sm font-medium">
+            {clientViewFilter === 'mine' ? 'No clients assigned to you yet.' : clientViewFilter === 'pending' ? 'No pending requests.' : 'No available clients to request.'}
+          </p>
         </div>
       )}
 
@@ -2108,11 +2118,11 @@ const ClientView = ({
           const counts = getTaskCounts(c.id);
           const staff = getProjectStaff(c.name);
           const isAvailable = clientViewFilter === 'available';
-          const alreadyRequested = (c.joinRequests || []).some(r => r.requesterId === currentUser?.id);
+          const isPending = clientViewFilter === 'pending';
 
           // Calculate average time spent per day (department-filtered) — only for my clients
           let avgTimeStr = '—';
-          if (!isAvailable) {
+          if (!isAvailable && !isPending) {
             const projectLogs = (clientLogs[c.id] || []).filter(t => isTaskVisible(t, currentUser));
             const dailyTotals = {};
             projectLogs.forEach(log => {
@@ -2130,13 +2140,19 @@ const ClientView = ({
           return (
             <div
               key={c.id}
-              onClick={!isAvailable ? () => setSelectedClient(c) : undefined}
-              className={`group bg-white border-2 rounded-2xl p-4 shadow-sm transition-all ${isAvailable ? 'border-slate-200 hover:border-violet-300 hover:shadow-md' : 'border-slate-200 hover:shadow-lg hover:border-blue-400 cursor-pointer'}`}
+              onClick={!isAvailable && !isPending ? () => setSelectedClient(c) : undefined}
+              className={`group bg-white border-2 rounded-2xl p-4 shadow-sm transition-all ${
+                isPending
+                  ? 'border-amber-200 bg-amber-50/30'
+                  : isAvailable
+                    ? 'border-slate-200 hover:border-violet-300 hover:shadow-md'
+                    : 'border-slate-200 hover:shadow-lg hover:border-blue-400 cursor-pointer'
+              }`}
             >
               {/* Header */}
               <div className="mb-3 flex items-start justify-between gap-2">
-                <h3 className={`text-base font-bold uppercase tracking-tight transition-all ${isAvailable ? 'text-slate-700' : 'text-slate-900 group-hover:text-blue-600'}`}>{c.name}</h3>
-                {!isAvailable && (
+                <h3 className={`text-base font-bold uppercase tracking-tight transition-all ${isAvailable || isPending ? 'text-slate-700' : 'text-slate-900 group-hover:text-blue-600'}`}>{c.name}</h3>
+                {!isAvailable && !isPending && (
                   <div className="bg-purple-50 px-1.5 py-0.5 rounded-md border border-purple-200 flex-shrink-0">
                     <p className="text-[8px] font-semibold text-purple-600">AVG</p>
                     <p className="text-xs font-bold text-purple-700">{avgTimeStr}</p>
@@ -2144,6 +2160,11 @@ const ClientView = ({
                 )}
                 {isAvailable && (
                   <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-violet-50 text-violet-600 border border-violet-200">Unassigned</span>
+                )}
+                {isPending && (
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-300 flex items-center gap-1">
+                    <Hourglass size={9} /> Pending
+                  </span>
                 )}
               </div>
 
@@ -2177,7 +2198,7 @@ const ClientView = ({
               )}
 
               {/* Status Cards — only for assigned clients */}
-              {!isAvailable && (
+              {!isAvailable && !isPending && (
                 <div className="grid grid-cols-3 gap-1.5 mb-3">
                   <div className="bg-orange-50 px-2 py-2 rounded-xl border border-orange-200 text-center">
                     <Clock size={14} className="text-orange-500 mx-auto mb-0.5" />
@@ -2198,13 +2219,19 @@ const ClientView = ({
               )}
 
               {/* Action Button */}
-              {isAvailable ? (
+              {isPending ? (
+                <button
+                  disabled
+                  className="w-full py-2.5 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 bg-amber-50 text-amber-600 border border-amber-300 cursor-default"
+                >
+                  <Hourglass size={14} /> Waiting for Approval
+                </button>
+              ) : isAvailable ? (
                 <button
                   onClick={() => handleRequestClientAssignment(c)}
-                  disabled={alreadyRequested}
-                  className={`w-full py-2.5 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 transition-all shadow-sm ${alreadyRequested ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-default' : 'bg-gradient-to-r from-violet-600 to-violet-500 text-white hover:from-violet-700 hover:to-violet-600 shadow-md'}`}
+                  className="w-full py-2.5 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 transition-all shadow-sm bg-gradient-to-r from-violet-600 to-violet-500 text-white hover:from-violet-700 hover:to-violet-600 shadow-md"
                 >
-                  {alreadyRequested ? <><Check size={14} /> Requested</> : <><UserPlus size={14} /> Request to Join</>}
+                  <UserPlus size={14} /> Request to Join
                 </button>
               ) : (
                 <button
