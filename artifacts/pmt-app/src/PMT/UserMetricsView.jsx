@@ -115,6 +115,7 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUse
     const userMap = new Map();
     const projectMap = new Map();
     const categoryMap = new Map();
+    const categoryTaskCountMap = new Map();
 
     const filteredLogs = [];
 
@@ -150,6 +151,7 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUse
 
       projectMap.set(projectName, (projectMap.get(projectName) || 0) + durationInSeconds);
       categoryMap.set(categoryName, (categoryMap.get(categoryName) || 0) + durationInSeconds);
+      categoryTaskCountMap.set(categoryName, (categoryTaskCountMap.get(categoryName) || 0) + 1);
 
       const key = userId || `${userName}-${userRole}`;
 
@@ -185,12 +187,17 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUse
       .sort((left, right) => right.seconds - left.seconds);
 
     const categoryRows = Array.from(categoryMap.entries())
-      .map(([name, seconds]) => ({ name, seconds }))
+      .map(([name, seconds]) => ({
+        name,
+        seconds,
+        taskCount: categoryTaskCountMap.get(name) || 0,
+        avgSeconds: categoryTaskCountMap.get(name) ? Math.round(seconds / categoryTaskCountMap.get(name)) : 0,
+      }))
       .sort((left, right) => right.seconds - left.seconds);
 
     const totalSeconds = rows.reduce((total, row) => total + row.totalSeconds, 0);
     const totalTasks = rows.reduce((total, row) => total + row.taskCount, 0);
-    const avgTaskSeconds = totalTasks > 0 ? Math.floor(totalSeconds / totalTasks) : 0;
+    const avgTaskSeconds = totalTasks > 0 ? Math.round(totalSeconds / totalTasks) : 0;
 
     const dailyMap = new Map();
     filteredLogs.forEach(log => {
@@ -408,6 +415,7 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUse
               <input
                 type="date"
                 value={customRange.end}
+                min={customRange.start || undefined}
                 onChange={(e) => setCustomRange(prev => ({ ...prev, end: e.target.value }))}
                 className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold text-slate-700 outline-none"
               />
@@ -475,7 +483,9 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUse
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-semibold uppercase tracking-wider text-slate-700">
                     <th className="px-4 py-2 text-left">Task Category</th>
-                    <th className="px-4 py-2 text-left">Time Spent</th>
+                    <th className="px-4 py-2 text-right">Tasks</th>
+                    <th className="px-4 py-2 text-left">Total Time</th>
+                    <th className="px-4 py-2 text-left">Avg / Task</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -483,12 +493,14 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUse
                     metrics.categoryRows.map(row => (
                       <tr key={row.name} className="hover:bg-slate-50 transition-all">
                         <td className="px-4 py-2.5 text-sm font-medium text-slate-800">{row.name}</td>
+                        <td className="px-4 py-2.5 text-xs font-semibold text-slate-500 text-right">{row.taskCount}</td>
                         <td className="px-4 py-2.5 text-xs font-semibold text-emerald-700">{formatDuration(row.seconds)}</td>
+                        <td className="px-4 py-2.5 text-xs font-semibold text-indigo-600">{formatDuration(row.avgSeconds)}</td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={2} className="px-4 py-8 text-center text-xs font-medium text-slate-500">
+                      <td colSpan={4} className="px-4 py-8 text-center text-xs font-medium text-slate-500">
                         No category time data for selected range.
                       </td>
                     </tr>

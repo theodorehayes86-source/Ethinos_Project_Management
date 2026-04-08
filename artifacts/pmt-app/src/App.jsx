@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ref, onValue, set, get } from 'firebase/database';
-import { signInWithEmailAndPassword, signInWithPopup, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, updateProfile, sendPasswordResetEmail } from 'firebase/auth';
+import { signInWithEmailAndPassword, signInWithPopup, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, updateProfile, sendPasswordResetEmail, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
 import { db, auth, googleProvider } from './firebase.js';
 
 import HomeView from './PMT/HomeView';
@@ -420,13 +420,11 @@ const App = () => {
     }
   };
 
-  const handleChangePassword = async (newPassword) => {
-    if (!firebaseUser || !newPassword) return;
-    try {
-      await updatePassword(firebaseUser, newPassword);
-    } catch (err) {
-      console.error('Password update failed:', err);
-    }
+  const handleChangePassword = async (currentPassword, newPassword) => {
+    if (!firebaseUser || !currentPassword || !newPassword) throw new Error('All fields are required.');
+    const credential = EmailAuthProvider.credential(firebaseUser.email, currentPassword);
+    await reauthenticateWithCredential(firebaseUser, credential);
+    await updatePassword(firebaseUser, newPassword);
   };
 
   const handleResetPassword = async (email) => {
