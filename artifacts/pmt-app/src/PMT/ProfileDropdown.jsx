@@ -22,17 +22,20 @@ const AvatarCircle = ({ name, photoURL, size = 'md' }) => {
   );
 };
 
-const resizeImageToDataURL = (file, maxDim = 160, quality = 0.72) =>
+const resizeImageToDataURL = (file, size = 160, quality = 0.80) =>
   new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = new Image();
       img.onload = () => {
-        const scale = Math.min(maxDim / img.width, maxDim / img.height, 1);
         const canvas = document.createElement('canvas');
-        canvas.width = Math.round(img.width * scale);
-        canvas.height = Math.round(img.height * scale);
-        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        const side = Math.min(img.width, img.height);
+        const sx = (img.width - side) / 2;
+        const sy = (img.height - side) / 2;
+        ctx.drawImage(img, sx, sy, side, side, 0, 0, size, size);
         resolve(canvas.toDataURL('image/jpeg', quality));
       };
       img.src = e.target.result;
@@ -90,10 +93,18 @@ const ProfileDropdown = ({
   const handlePhotoUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = '';
     setPhotoLoading(true);
     const dataURL = await resizeImageToDataURL(file);
     setPhotoURL(dataURL);
     setPhotoLoading(false);
+    onUpdateProfile?.({
+      name: nameInput.trim() || currentUser?.name || '',
+      secondaryEmail: secondaryEmail.trim(),
+      phone: phone.trim(),
+      photoURL: dataURL,
+    });
+    showSuccess('Photo updated');
   };
 
   const handleSavePassword = (e) => {
