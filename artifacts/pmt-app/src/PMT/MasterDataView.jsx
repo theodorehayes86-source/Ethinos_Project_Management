@@ -453,10 +453,12 @@ const MasterDataView = ({
   };
 
   const toggleUserProject = (projectName) => {
-    const updated = newUser.assignedProjects.includes(projectName)
-      ? newUser.assignedProjects.filter(p => p !== projectName)
-      : [...newUser.assignedProjects, projectName];
-    setNewUser({ ...newUser, assignedProjects: updated });
+    setNewUser(prev => {
+      const updated = prev.assignedProjects.includes(projectName)
+        ? prev.assignedProjects.filter(p => p !== projectName)
+        : [...prev.assignedProjects, projectName];
+      return { ...prev, assignedProjects: updated };
+    });
   };
 
   const filteredUsers = (users || []).filter(u =>
@@ -1574,7 +1576,7 @@ const MasterDataView = ({
                     placeholder="Full Name..."
                     className="w-full p-5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 ring-blue-500/5 font-bold transition-all"
                     value={newUser.name}
-                    onChange={e => setNewUser({...newUser, name: e.target.value})}
+                    onChange={e => setNewUser(prev => ({...prev, name: e.target.value}))}
                     required
                   />
                 </div>
@@ -1585,7 +1587,7 @@ const MasterDataView = ({
                     placeholder="Email Address..."
                     className="w-full p-5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 ring-blue-500/5 font-bold transition-all"
                     value={newUser.email}
-                    onChange={e => setNewUser({...newUser, email: e.target.value})}
+                    onChange={e => setNewUser(prev => ({...prev, email: e.target.value}))}
                     required
                   />
                 </div>
@@ -1597,7 +1599,7 @@ const MasterDataView = ({
                     <select
                       className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none text-slate-900 font-medium text-sm appearance-none cursor-pointer"
                       value={newUser.role}
-                      onChange={e => setNewUser({...newUser, role: e.target.value})}
+                      onChange={e => setNewUser(prev => ({...prev, role: e.target.value}))}
                     >
                       {normalizedRoles.map(r => <option key={r} value={r}>{r}</option>)}
                     </select>
@@ -1609,7 +1611,7 @@ const MasterDataView = ({
                     <select
                       className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none text-slate-900 font-medium text-sm appearance-none cursor-pointer"
                       value={newUser.department}
-                      onChange={e => setNewUser({...newUser, department: e.target.value})}
+                      onChange={e => setNewUser(prev => ({...prev, department: e.target.value}))}
                       required
                     >
                       <option value="">Select Department</option>
@@ -1624,7 +1626,7 @@ const MasterDataView = ({
                     <select
                       className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none text-slate-900 font-medium text-sm appearance-none cursor-pointer"
                       value={newUser.region}
-                      onChange={e => setNewUser({...newUser, region: e.target.value})}
+                      onChange={e => setNewUser(prev => ({...prev, region: e.target.value}))}
                       required
                     >
                       <option value="">Select Region</option>

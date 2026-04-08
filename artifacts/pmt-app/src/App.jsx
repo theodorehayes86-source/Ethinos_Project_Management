@@ -179,6 +179,19 @@ const App = () => {
     };
     seedTaskTemplates();
 
+    // Seed default departments & regions if they don't exist in Firebase yet
+    const seedDepartmentsRegions = async () => {
+      const dSnap = await get(ref(db, 'departments'));
+      if (!dSnap.exists()) {
+        await set(ref(db, 'departments'), ['Creative', 'Biddable', 'Growth', 'Client Servicing']);
+      }
+      const rSnap = await get(ref(db, 'regions'));
+      if (!rSnap.exists()) {
+        await set(ref(db, 'regions'), ['North', 'South', 'West']);
+      }
+    };
+    seedDepartmentsRegions();
+
     const unsubs = [
       syncRef('users', (val) => {
         const firebaseList = Array.isArray(val) ? val : Object.values(val);
