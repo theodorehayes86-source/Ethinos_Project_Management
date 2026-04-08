@@ -138,24 +138,9 @@ const ProfileDropdown = ({
               'radial-gradient(56% 50% at 8% 10%, rgba(241, 94, 88, 0.12) 0%, transparent 64%), radial-gradient(42% 46% at 55% 92%, rgba(82, 110, 255, 0.10) 0%, transparent 66%), rgba(255,255,255,0.94)',
           }}
         >
-          <div className="p-4 border-b border-white/70 bg-white/40 flex items-center gap-3">
-            <div className="relative flex-shrink-0">
-              <AvatarCircle name={displayName} photoURL={currentUser?.photoURL} size="lg" />
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                className="absolute -bottom-0.5 -right-0.5 w-6 h-6 bg-indigo-600 text-white rounded-full flex items-center justify-center shadow-md hover:bg-indigo-700 transition-all"
-                title="Upload photo"
-              >
-                {photoLoading ? <span className="w-3 h-3 border-2 border-white/50 border-t-white rounded-full animate-spin" /> : <Camera size={11} />}
-              </button>
-              <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-bold text-slate-900 truncate">{displayName || '—'}</p>
-              <p className="text-xs text-slate-500 truncate">{currentUser?.email}</p>
-              <p className="text-[10px] font-semibold text-indigo-500 mt-0.5">{currentUser?.role} · {currentUser?.department || '—'}</p>
-            </div>
+          <div className="px-4 pt-4 pb-3 border-b border-white/70 bg-white/40">
+            <p className="text-xs text-slate-500 truncate">{currentUser?.email}</p>
+            <p className="text-[10px] font-semibold text-indigo-500 mt-0.5">{currentUser?.role} · {currentUser?.department || '—'}</p>
           </div>
 
           <div className="p-3 space-y-3">
@@ -177,17 +162,31 @@ const ProfileDropdown = ({
 
             {activeMenu === 'profile' && (
               <form onSubmit={handleSaveProfile} className="space-y-2.5 p-3 bg-white/70 rounded-xl border border-white/80">
+                <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1">
                     <User size={10} /> Display Name
                   </label>
-                  <input
-                    type="text"
-                    value={nameInput}
-                    onChange={(e) => setNameInput(e.target.value)}
-                    placeholder="Your full name"
-                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium text-slate-900 outline-none focus:border-indigo-400 transition-all"
-                  />
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-shrink-0">
+                      <AvatarCircle name={nameInput || displayName} photoURL={photoURL} size="sm" />
+                      <button
+                        type="button"
+                        onClick={() => fileRef.current?.click()}
+                        className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-indigo-600 text-white rounded-full flex items-center justify-center shadow hover:bg-indigo-700 transition-all"
+                        title="Upload photo"
+                      >
+                        {photoLoading ? <span className="w-2 h-2 border border-white/50 border-t-white rounded-full animate-spin" /> : <Camera size={8} />}
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      value={nameInput}
+                      onChange={(e) => setNameInput(e.target.value)}
+                      placeholder="Your full name"
+                      className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium text-slate-900 outline-none focus:border-indigo-400 transition-all"
+                    />
+                  </div>
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1">
