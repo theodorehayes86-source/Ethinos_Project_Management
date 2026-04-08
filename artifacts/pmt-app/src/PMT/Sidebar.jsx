@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
-import { Home, Briefcase, Users, Network, SlidersHorizontal, BarChart3, FileSpreadsheet, ChevronLeft, ChevronRight, ClipboardCheck } from 'lucide-react';
+import { Home, Briefcase, Users, Network, SlidersHorizontal, BarChart3, FileSpreadsheet, ChevronLeft, ChevronRight, ClipboardCheck, Download, Monitor, Apple } from 'lucide-react';
+
+const RELEASES_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/latest';
+const WIN_URL = `${RELEASES_URL}/download/PMT.Timer.Setup.exe`;
+const MAC_URL = `${RELEASES_URL}/download/PMT.Timer.Widget.dmg`;
 
 const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setIsMinimized, canSeeControlCenter = false, canSeeUserManagement = true, canSeeEmployeeView = true, canSeeMetrics = true, canSeeReports = true, canSeeApprovals = false, pendingApprovalsCount = 0 }) => {
   const [logoError, setLogoError] = useState(false);
@@ -92,13 +96,62 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
       </nav>
 
       {/* Sidebar Footer */}
-      <div className="p-4">
+      <div className="p-4 space-y-3">
+
+        {/* Download Timer Widget card */}
+        {!isMinimized ? (
+          <div className="px-3 py-3 bg-indigo-50/80 rounded-2xl border border-indigo-200/60 shadow-sm backdrop-blur-sm">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-6 h-6 rounded-lg bg-indigo-500/15 border border-indigo-300/40 flex items-center justify-center flex-shrink-0">
+                <Download size={11} className="text-indigo-500" />
+              </div>
+              <div>
+                <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest leading-none">PMT Timer Widget</p>
+                <p className="text-[8px] text-slate-400 leading-none mt-0.5">Desktop app · always on top</p>
+              </div>
+            </div>
+            <div className="flex gap-1.5">
+              <a
+                href={WIN_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 transition-all text-[9px] font-bold text-slate-600 hover:text-indigo-700"
+                title="Download for Windows"
+              >
+                <Monitor size={10} />
+                Windows
+              </a>
+              <a
+                href={MAC_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 transition-all text-[9px] font-bold text-slate-600 hover:text-indigo-700"
+                title="Download for Mac"
+              >
+                <Apple size={10} />
+                Mac
+              </a>
+            </div>
+          </div>
+        ) : (
+          <a
+            href={RELEASES_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Download PMT Timer Widget"
+            className="w-full flex items-center justify-center py-2.5 rounded-xl bg-indigo-50/80 border border-indigo-200/60 hover:bg-indigo-100/80 transition-all"
+          >
+            <Download size={14} className="text-indigo-500" />
+          </a>
+        )}
+
         {!isMinimized && (
-          <div className="px-3 py-3 bg-white/60 rounded-2xl border border-white/80 mb-3 shadow-sm backdrop-blur-sm text-center">
+          <div className="px-3 py-3 bg-white/60 rounded-2xl border border-white/80 shadow-sm backdrop-blur-sm text-center">
             <p className="text-[8px] font-semibold text-slate-400 uppercase tracking-widest mb-0.5">Powered by</p>
             <p className="text-[10px] font-bold text-slate-600 leading-snug">Ethinos Digital Marketing Pvt Ltd</p>
           </div>
         )}
+
         <button
           onClick={() => setIsMinimized && setIsMinimized(!isMinimized)}
           className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-bold text-[11px] uppercase tracking-widest text-slate-600 border border-white/80 hover:bg-white/90 hover:border-indigo-200/70 hover:text-slate-900 transition-all duration-200 bg-white/70 shadow-sm backdrop-blur-sm"
