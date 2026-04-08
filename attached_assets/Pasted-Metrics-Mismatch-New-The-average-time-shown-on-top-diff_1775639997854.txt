@@ -1,0 +1,80 @@
+Metrics Mismatch
+
+New
+
+The average time shown on top differs from the average time displayed in the graph
+
+ligen.pereira · Super Admin · All
+8 Apr 2026, 02:48 pm
+Bug
+Assignments issue in "Approval" tab
+
+New
+
+On approving the assignment request from an Executive or any other level, the assignment isn't latching on or getting assigned to the user
+
+ligen.pereira · Super Admin · All
+8 Apr 2026, 01:33 pm
+Bug
+Region mis match on "Sign up"
+
+New
+
+When the user signs up, in the region department there is an option called "Pan India", after selecting that, on the manager has to reselect the region as "All" as "Pan India" option is not availabe in the "Control Center > User" Tab
+
+ligen.pereira · Super Admin · All
+8 Apr 2026, 01:28 pm
+Bug
+Not able to set initial password for new users
+
+New
+
+Not able to set initial password for new users in "Control Center" tab, same is the case with the "User Management " Tab
+
+ligen.pereira · Super Admin · All
+8 Apr 2026, 01:12 pm
+Suggestion
+Interactive Tabs in "Home" tab
+
+New
+
+"My Task" tab in "Home", should be interactive to change the status of the task, else we need to go to the clients, then select the client and then change the status from there
+
+ligen.pereira · Super Admin · All
+8 Apr 2026, 01:08 pm
+Suggestion
+Acionable Notification clicks
+
+New
+
+On clicking a particular notification, it should redirect to the general tab that the notification belongs to
+
+ligen.pereira · Super Admin · All
+8 Apr 2026, 01:01 pm
+Bug
+Notification button
+
+New
+
+"Clear All Notifications" button doesn't work
+
+ligen.pereira · Super Admin · All
+8 Apr 2026, 01:00 pm
+Bug
+Start and Due date for adding task is not synced
+
+New
+
+If the user selects the start date of the task as the next day or any other day further, there is an option to select the due date before that date
+
+ligen.pereira · Super Admin · Management
+8 Apr 2026, 12:52 pm
+Bug
+Unable to edit department and region from "User Management" tab
+
+New
+
+Unable to edit department and region from "User Management" tab, same issue while adding a new user...... although, it is enabled in the "Control center"tab
+
+ligen.pereira · Super Admin · Management
+8 Apr 2026, 12:47 pm
