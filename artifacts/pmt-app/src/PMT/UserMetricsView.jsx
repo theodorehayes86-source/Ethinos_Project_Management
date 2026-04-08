@@ -429,7 +429,7 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUse
 
             <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
               <div>
-                <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Avg Time Logged</p>
+                <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Avg Time / Task</p>
                 <p className="text-lg font-bold text-slate-900 mt-0.5">{formatDuration(metrics.avgTaskSeconds)}</p>
               </div>
               <div className="p-2 bg-orange-50 rounded-lg"><Users size={14} className="text-orange-600" /></div>

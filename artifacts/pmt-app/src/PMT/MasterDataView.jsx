@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, Trash2, Search, ShieldCheck, Edit2, X, ChevronUp, ChevronDown, Lock, Users, Crown, Check, Star, UserCheck, UserPlus, Edit3, Mail, MessageSquare, Bug, Lightbulb, AlertCircle, CheckCircle2, Clock, Filter } from 'lucide-react';
+import { Plus, Trash2, Search, ShieldCheck, Edit2, X, ChevronUp, ChevronDown, Lock, Users, Crown, Check, Star, UserCheck, UserPlus, Edit3, Mail, MessageSquare, Bug, Lightbulb, AlertCircle, CheckCircle2, Clock, Filter, Eye, EyeOff } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 
 const REPEAT_OPTIONS = ['Daily', 'Weekly', 'Monthly', 'Once'];
@@ -70,6 +70,7 @@ const MasterDataView = ({
   setClientLogs,
   feedbackItems = [],
   setFeedbackItems,
+  createFirebaseUser,
 }) => {
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
@@ -107,8 +108,11 @@ const MasterDataView = ({
   const [editingUserId, setEditingUserId] = useState(null);
   const [showDeleteUserConfirm, setShowDeleteUserConfirm] = useState(null);
   const [userProjectSearch, setUserProjectSearch] = useState('');
-  const emptyNewUser = () => ({ name: '', email: '', role: 'Executive', department: '', region: '', assignedProjects: [] });
+  const emptyNewUser = () => ({ name: '', email: '', password: '', role: 'Executive', department: '', region: '', assignedProjects: [] });
   const [newUser, setNewUser] = useState(emptyNewUser());
+  const [showPassword, setShowPassword] = useState(false);
+  const [userSaving, setUserSaving] = useState(false);
+  const [userSaveError, setUserSaveError] = useState('');
 
   // --- TEMPLATE STATE ---
   const [templateSearch, setTemplateSearch] = useState('');
@@ -434,17 +438,45 @@ const MasterDataView = ({
     setEditingUserId(null);
     setNewUser(emptyNewUser());
     setUserProjectSearch('');
+    setUserSaveError('');
+    setShowPassword(false);
   };
 
-  const handleSaveUser = (e) => {
+  const handleSaveUser = async (e) => {
     e.preventDefault();
     if (!newUser.name || !newUser.email || !newUser.department || !newUser.region) return;
-    if (editingUserId) {
-      setUsers((users || []).map(u => u.id === editingUserId ? { ...newUser, id: u.id } : u));
-    } else {
-      setUsers([...(users || []), { ...newUser, id: `user-${Date.now()}` }]);
+    setUserSaveError('');
+    setUserSaving(true);
+    try {
+      if (editingUserId) {
+        setUsers((users || []).map(u => u.id === editingUserId ? { ...newUser, id: u.id, password: undefined } : u));
+        closeUserModal();
+      } else {
+        if (!newUser.password || newUser.password.length < 6) {
+          setUserSaveError('Password must be at least 6 characters.');
+          setUserSaving(false);
+          return;
+        }
+        if (createFirebaseUser) {
+          await createFirebaseUser(newUser.email.trim().toLowerCase(), newUser.password);
+        }
+        const { password: _pw, ...userRecord } = newUser;
+        setUsers([...(users || []), { ...userRecord, id: `user-${Date.now()}`, email: userRecord.email.trim().toLowerCase() }]);
+        closeUserModal();
+      }
+    } catch (err) {
+      if (err?.code === 'auth/email-already-in-use') {
+        setUserSaveError('An account with this email already exists.');
+      } else if (err?.code === 'auth/weak-password') {
+        setUserSaveError('Password must be at least 6 characters.');
+      } else if (err?.code === 'auth/invalid-email') {
+        setUserSaveError('Please enter a valid email address.');
+      } else {
+        setUserSaveError(err?.message || 'Failed to create user. Please try again.');
+      }
+    } finally {
+      setUserSaving(false);
     }
-    closeUserModal();
   };
 
   const confirmDeleteUser = () => {
@@ -1589,9 +1621,29 @@ const MasterDataView = ({
                     value={newUser.email}
                     onChange={e => setNewUser(prev => ({...prev, email: e.target.value}))}
                     required
+                    disabled={!!editingUserId}
                   />
                 </div>
               </div>
+              {!editingUserId && (
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-slate-600 ml-1">Initial Password</label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      placeholder="Min. 6 characters..."
+                      className="w-full p-5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 ring-blue-500/5 font-bold transition-all pr-14"
+                      value={newUser.password}
+                      onChange={e => setNewUser(prev => ({...prev, password: e.target.value}))}
+                      required={!editingUserId}
+                      minLength={6}
+                    />
+                    <button type="button" onClick={() => setShowPassword(v => !v)} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                      {showPassword ? <EyeOff size={18}/> : <Eye size={18}/>}
+                    </button>
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-8 items-start">
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-slate-600 ml-1">Designation</label>
@@ -1670,8 +1722,13 @@ const MasterDataView = ({
                   </div>
                 </div>
               </div>
-              <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold text-sm tracking-wide shadow-md hover:bg-blue-700 transition-all">
-                {editingUserId ? 'Update User Access' : 'Confirm Launch'}
+              {userSaveError && (
+                <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-600 text-sm font-medium">
+                  {userSaveError}
+                </div>
+              )}
+              <button type="submit" disabled={userSaving} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold text-sm tracking-wide shadow-md hover:bg-blue-700 transition-all disabled:opacity-60">
+                {userSaving ? 'Creating…' : editingUserId ? 'Update User Access' : 'Confirm Launch'}
               </button>
             </form>
           </div>

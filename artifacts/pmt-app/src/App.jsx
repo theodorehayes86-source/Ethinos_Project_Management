@@ -602,10 +602,13 @@ const App = () => {
               setIsNotifOpen={setIsNotifOpen}
               setIsProfileOpen={setIsProfileOpen}
               notifications={notifications}
+              setNotifications={setNotifications}
               currentUser={currentUser}
               users={users}
               clients={clients}
               clientLogs={clientLogs}
+              setActiveTab={setActiveTab}
+              setSelectedClient={setSelectedClient}
             />
             <ProfileDropdown
               isProfileOpen={isProfileOpen}
@@ -674,6 +677,9 @@ const App = () => {
               setUsers={persistUsers}
               currentUser={currentUser}
               clients={clients}
+              departments={departments}
+              regions={regions}
+              createFirebaseUser={(email, password) => createUserWithEmailAndPassword(auth, email, password)}
             />
           )}
 
@@ -721,6 +727,7 @@ const App = () => {
               setUsers={persistUsers}
               clientLogs={clientLogs}
               setClientLogs={persistClientLogs}
+              createFirebaseUser={(email, password) => createUserWithEmailAndPassword(auth, email, password)}
               feedbackItems={feedbackItems}
               setFeedbackItems={persistFeedbackItems}
             />

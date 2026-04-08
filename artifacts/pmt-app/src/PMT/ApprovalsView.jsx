@@ -451,13 +451,13 @@ const ApprovalsView = ({ clientLogs, clients, users, currentUser, persistClientL
   const handleAcceptClientJoin = (client, request) => {
     if (!setClients || !setUsers) return;
     const updatedClient = { ...client, joinRequests: (client.joinRequests || []).filter(r => String(r.requesterId) !== String(request.requesterId)) };
-    setClients((clients || []).map(c => String(c.id) === String(client.id) ? updatedClient : c));
-    if (setUsers) {
-      setUsers(prev => prev.map(u => String(u.id) === String(request.requesterId)
-        ? { ...u, assignedProjects: [...new Set([...(u.assignedProjects || []), client.name])] }
-        : u
-      ));
-    }
+    const updatedClients = (clients || []).map(c => String(c.id) === String(client.id) ? updatedClient : c);
+    setClients(updatedClients);
+    const updatedUsers = (users || []).map(u => String(u.id) === String(request.requesterId)
+      ? { ...u, assignedProjects: [...new Set([...(u.assignedProjects || []), client.name])] }
+      : u
+    );
+    setUsers(updatedUsers);
   };
 
   const handleDeclineClientJoin = (client, request) => {

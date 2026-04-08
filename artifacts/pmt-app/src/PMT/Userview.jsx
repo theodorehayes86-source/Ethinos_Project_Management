@@ -1,40 +1,67 @@
 import React, { useState } from 'react';
-import { Search, Plus, X, Star, Trash2, Check, ChevronDown, UserPlus, Mail, Edit3, Crown, UserCheck } from 'lucide-react';
+import { Search, Plus, X, Star, Trash2, Check, ChevronDown, UserPlus, Mail, Edit3, Crown, UserCheck, Eye, EyeOff } from 'lucide-react';
 
-const UserView = ({ users = [], setUsers, clients = [], settingsSearch = "", setSettingsSearch, departments = [], regions = [] }) => {
+const UserView = ({ users = [], setUsers, clients = [], settingsSearch = "", setSettingsSearch, departments = [], regions = [], createFirebaseUser }) => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
-  const [editingUserId, setEditingUserId] = useState(null); // Track if we are editing
+  const [editingUserId, setEditingUserId] = useState(null);
   const [projectSearch, setProjectSearch] = useState("");
-  const [newUser, setNewUser] = useState({ name: "", email: "", role: "Executive", department: "", region: "", assignedProjects: [] });
+  const [newUser, setNewUser] = useState({ name: "", email: "", password: "", role: "Executive", department: "", region: "", assignedProjects: [] });
+  const [showPassword, setShowPassword] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
-  // --- CORE HANDLERS ---
-  const handleSaveUser = (e) => {
+  const handleSaveUser = async (e) => {
     e.preventDefault();
     if (!newUser.name || !newUser.email || !newUser.department || !newUser.region) return;
+    setSaveError("");
+    setSaving(true);
 
-    if (editingUserId) {
-      // Update existing user logic
-      setUsers(users.map(u => u.id === editingUserId ? { ...newUser, id: u.id } : u));
-    } else {
-      // Add new user logic
-      setUsers([...users, { ...newUser, id: Date.now() }]);
+    try {
+      if (editingUserId) {
+        setUsers(users.map(u => u.id === editingUserId ? { ...newUser, id: u.id, password: undefined } : u));
+        closeModal();
+      } else {
+        if (!newUser.password || newUser.password.length < 6) {
+          setSaveError("Password must be at least 6 characters.");
+          setSaving(false);
+          return;
+        }
+        if (createFirebaseUser) {
+          await createFirebaseUser(newUser.email.trim().toLowerCase(), newUser.password);
+        }
+        const { password: _pw, ...userRecord } = newUser;
+        setUsers([...users, { ...userRecord, id: Date.now(), email: userRecord.email.trim().toLowerCase() }]);
+        closeModal();
+      }
+    } catch (err) {
+      if (err?.code === 'auth/email-already-in-use') {
+        setSaveError("An account with this email already exists.");
+      } else if (err?.code === 'auth/weak-password') {
+        setSaveError("Password must be at least 6 characters.");
+      } else if (err?.code === 'auth/invalid-email') {
+        setSaveError("Please enter a valid email address.");
+      } else {
+        setSaveError(err?.message || "Failed to create user. Please try again.");
+      }
+    } finally {
+      setSaving(false);
     }
-
-    closeModal();
   };
 
   const openEditModal = (user) => {
     setEditingUserId(user.id);
-    setNewUser({ name: user.name, email: user.email, role: user.role, department: user.department || "", region: user.region || "", assignedProjects: user.assignedProjects || [] });
+    setNewUser({ name: user.name, email: user.email, password: "", role: user.role, department: user.department || "", region: user.region || "", assignedProjects: user.assignedProjects || [] });
     setShowAddModal(true);
   };
 
   const closeModal = () => {
     setShowAddModal(false);
     setEditingUserId(null);
-    setNewUser({ name: "", email: "", role: "Executive", department: "", region: "", assignedProjects: [] });
+    setNewUser({ name: "", email: "", password: "", role: "Executive", department: "", region: "", assignedProjects: [] });
     setProjectSearch("");
+    setSaveError("");
+    setShowPassword(false);
   };
 
   const toggleProject = (projectName) => {
@@ -50,8 +77,8 @@ const UserView = ({ users = [], setUsers, clients = [], settingsSearch = "", set
   };
 
   const filteredUsers = (users || []).filter(u => 
-    u.name.toLowerCase().includes(settingsSearch.toLowerCase()) || 
-    u.email.toLowerCase().includes(settingsSearch.toLowerCase())
+    u.name.toLowerCase().includes((settingsSearch || "").toLowerCase()) || 
+    u.email.toLowerCase().includes((settingsSearch || "").toLowerCase())
   );
 
   const filteredProjects = (clients || []).filter(c => 
@@ -73,7 +100,6 @@ const UserView = ({ users = [], setUsers, clients = [], settingsSearch = "", set
   return (
     <div className="w-full space-y-4 p-4 min-h-full font-sans text-left animate-in fade-in duration-500">
       
-      {/* 1. HEADER SECTION */}
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-xl font-bold text-slate-900 tracking-tight">User Directory</h2>
@@ -88,7 +114,7 @@ const UserView = ({ users = [], setUsers, clients = [], settingsSearch = "", set
               placeholder="Filter users..." 
               className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-xs font-medium outline-none focus:ring-2 ring-blue-500/20 shadow-sm text-slate-700" 
               value={settingsSearch} 
-              onChange={(e) => setSettingsSearch(e.target.value)} 
+              onChange={(e) => setSettingsSearch && setSettingsSearch(e.target.value)} 
             />
           </div>
           <button 
@@ -100,7 +126,6 @@ const UserView = ({ users = [], setUsers, clients = [], settingsSearch = "", set
         </div>
       </div>
 
-      {/* 2. USER TABLE */}
       <div className="flex-1 border border-slate-200 rounded-xl overflow-x-auto overflow-y-hidden bg-white shadow-sm">
         <table className="w-full text-left border-collapse">
           <thead className="bg-slate-100 border-b border-slate-200">
@@ -144,9 +169,8 @@ const UserView = ({ users = [], setUsers, clients = [], settingsSearch = "", set
                     ))}
                   </div>
                 </td>
-                  <td className="px-5 py-2.5 text-right">
+                <td className="px-5 py-2.5 text-right">
                   <div className="flex justify-end gap-2">
-                    {/* Fixed Edit Icon */}
                     <button 
                       onClick={() => openEditModal(user)}
                       className="p-1.5 bg-blue-50 text-blue-400 hover:text-blue-600 rounded-lg transition-all"
@@ -167,7 +191,6 @@ const UserView = ({ users = [], setUsers, clients = [], settingsSearch = "", set
         </table>
       </div>
 
-      {/* 3. MODAL (ADD & EDIT) */}
       {showAddModal && (
         <div className="fixed inset-0 z-[700] flex items-center justify-center bg-slate-900/10 backdrop-blur-md p-4">
           <div className="bg-white w-full max-w-[900px] border border-slate-100 shadow-2xl rounded-[3rem] flex flex-col animate-in zoom-in-95 duration-300 overflow-y-auto" style={{maxHeight:'92vh'}}>
@@ -187,9 +210,34 @@ const UserView = ({ users = [], setUsers, clients = [], settingsSearch = "", set
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-slate-600 ml-1">Work Email</label>
-                  <input type="email" placeholder="Email Address..." className="w-full p-5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 ring-blue-500/5 font-bold transition-all" value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} required />
+                  <input type="email" placeholder="Email Address..." className="w-full p-5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 ring-blue-500/5 font-bold transition-all" value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} required disabled={!!editingUserId} />
                 </div>
               </div>
+
+              {!editingUserId && (
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-slate-600 ml-1">Initial Password</label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Min. 6 characters..."
+                      className="w-full p-5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 ring-blue-500/5 font-bold transition-all pr-14"
+                      value={newUser.password}
+                      onChange={e => setNewUser({...newUser, password: e.target.value})}
+                      required={!editingUserId}
+                      minLength={6}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(v => !v)}
+                      className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      {showPassword ? <EyeOff size={18}/> : <Eye size={18}/>}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-8 items-start">
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-slate-600 ml-1">Designation</label>
@@ -212,6 +260,7 @@ const UserView = ({ users = [], setUsers, clients = [], settingsSearch = "", set
                   <div className="relative">
                     <select className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none text-slate-900 font-medium text-sm appearance-none cursor-pointer" onChange={e => setNewUser({...newUser, department: e.target.value})} value={newUser.department} required>
                       <option value="">Select Department</option>
+                      <option value="All">All Departments</option>
                       {departments.map(department => <option key={department} value={department}>{department}</option>)}
                     </select>
                     <ChevronDown size={18} className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
@@ -221,6 +270,7 @@ const UserView = ({ users = [], setUsers, clients = [], settingsSearch = "", set
                   <div className="relative">
                     <select className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none text-slate-900 font-medium text-sm appearance-none cursor-pointer" onChange={e => setNewUser({...newUser, region: e.target.value})} value={newUser.region} required>
                       <option value="">Select Region</option>
+                      <option value="All">All Regions</option>
                       {regions.map(region => <option key={region} value={region}>{region}</option>)}
                     </select>
                     <ChevronDown size={18} className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
@@ -245,15 +295,21 @@ const UserView = ({ users = [], setUsers, clients = [], settingsSearch = "", set
                   </div>
                 </div>
               </div>
-              <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold text-sm tracking-wide shadow-md hover:bg-blue-700 transition-all">
-                {editingUserId ? "Update User Access" : "Confirm Launch"}
+
+              {saveError && (
+                <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-600 text-sm font-medium">
+                  {saveError}
+                </div>
+              )}
+
+              <button type="submit" disabled={saving} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold text-sm tracking-wide shadow-md hover:bg-blue-700 transition-all disabled:opacity-60">
+                {saving ? "Creating…" : editingUserId ? "Update User Access" : "Confirm Launch"}
               </button>
             </form>
           </div>
         </div>
       )}
 
-      {/* 4. DELETE CONFIRMATION */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 z-[800] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
           <div className="bg-white p-10 rounded-[2.5rem] shadow-2xl border border-slate-100 max-w-sm w-full text-center space-y-6 animate-in zoom-in-95">

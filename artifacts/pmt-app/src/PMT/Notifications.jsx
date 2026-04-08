@@ -2,7 +2,27 @@ import React, { useMemo } from 'react';
 import { Bell, Clock, UserPlus, Briefcase, CheckCircle, AlertTriangle } from 'lucide-react';
 import { parse, differenceInHours } from 'date-fns';
 
-const Notifications = ({ isNotifOpen, setIsNotifOpen, setIsProfileOpen, currentUser, users = [], clients = [], clientLogs = {}, notifications = [] }) => {
+const TAB_FOR_TYPE = {
+  'alert': 'clients',
+  'assignment': 'clients',
+  'assignment-request': 'approvals',
+  'client-join-request': 'approvals',
+  'team': 'clients',
+};
+
+const Notifications = ({
+  isNotifOpen,
+  setIsNotifOpen,
+  setIsProfileOpen,
+  currentUser,
+  users = [],
+  clients = [],
+  clientLogs = {},
+  notifications = [],
+  setNotifications,
+  setActiveTab,
+  setSelectedClient,
+}) => {
 
   const getNotificationStyle = (type) => {
     if (type === 'alert') {
@@ -23,19 +43,16 @@ const Notifications = ({ isNotifOpen, setIsNotifOpen, setIsProfileOpen, currentU
     return { icon: <AlertTriangle size={12} className="text-slate-500" />, bg: 'bg-slate-100' };
   };
   
-  // --- AUTOMATED TRIGGER LOGIC ---
   const activeNotifications = useMemo(() => {
     const list = [];
     const now = new Date();
 
-    // 0. MANUAL IN-APP NOTIFICATIONS (e.g. task assignment)
+    // 0. MANUAL IN-APP NOTIFICATIONS
     (notifications || []).forEach((item) => {
-      // Assignment-request notifications are only shown to targeted leaders
       if (item.type === 'assignment-request') {
         const isTargeted = (item.leaderIds || []).some(id => String(id) === String(currentUser?.id));
         if (!isTargeted) return;
       }
-      // Client join request notifications are only shown to the targeted recipient
       if (item.type === 'client-join-request') {
         if (String(item.recipientId) !== String(currentUser?.id)) return;
       }
@@ -46,7 +63,8 @@ const Notifications = ({ isNotifOpen, setIsNotifOpen, setIsProfileOpen, currentU
         time: item.time || 'recently',
         type: item.type || 'general',
         icon: style.icon,
-        bg: style.bg
+        bg: style.bg,
+        isManual: true,
       });
     });
 
@@ -68,7 +86,8 @@ const Notifications = ({ isNotifOpen, setIsNotifOpen, setIsProfileOpen, currentU
                 time: log.date,
                 type: 'alert',
                 icon: <Clock size={12} className="text-orange-500" />,
-                bg: 'bg-orange-50'
+                bg: 'bg-orange-50',
+                tab: 'clients',
               });
             }
           } catch (e) { /* silent date fail */ }
@@ -85,7 +104,8 @@ const Notifications = ({ isNotifOpen, setIsNotifOpen, setIsProfileOpen, currentU
           time: 'recently',
           type: 'assignment',
           icon: <Briefcase size={12} className="text-blue-500" />,
-          bg: 'bg-blue-50'
+          bg: 'bg-blue-50',
+          tab: 'clients',
         });
       });
     }
@@ -101,15 +121,27 @@ const Notifications = ({ isNotifOpen, setIsNotifOpen, setIsProfileOpen, currentU
               time: 'system',
               type: 'team',
               icon: <UserPlus size={12} className="text-emerald-500" />,
-              bg: 'bg-emerald-50'
+              bg: 'bg-emerald-50',
+              tab: 'clients',
             });
           });
         }
       });
     }
 
-    return list.reverse(); // Newest first
+    return list.reverse();
   }, [clientLogs, currentUser, users, clients, notifications]);
+
+  const handleNotifClick = (n) => {
+    const tab = n.tab || TAB_FOR_TYPE[n.type] || 'home';
+    if (setActiveTab) setActiveTab(tab);
+    if (setSelectedClient) setSelectedClient(null);
+    setIsNotifOpen(false);
+  };
+
+  const handleClearAll = () => {
+    if (setNotifications) setNotifications([]);
+  };
 
   return (
     <div className="relative">
@@ -125,7 +157,6 @@ const Notifications = ({ isNotifOpen, setIsNotifOpen, setIsProfileOpen, currentU
 
       {isNotifOpen && (
         <>
-          {/* Backdrop to close */}
           <div className="fixed inset-0 z-[290]" onClick={() => setIsNotifOpen(false)} />
           
           <div className="absolute right-0 mt-4 w-96 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[300] overflow-hidden animate-in slide-in-from-top-2 duration-200">
@@ -141,7 +172,11 @@ const Notifications = ({ isNotifOpen, setIsNotifOpen, setIsProfileOpen, currentU
             <div className="max-h-[450px] overflow-y-auto no-scrollbar">
               {activeNotifications.length > 0 ? (
                 activeNotifications.map(n => (
-                  <div key={n.id} className="p-5 border-b border-slate-200 hover:bg-slate-50 transition-all bg-white flex gap-4 items-start">
+                  <button
+                    key={n.id}
+                    onClick={() => handleNotifClick(n)}
+                    className="w-full text-left p-5 border-b border-slate-200 hover:bg-slate-50 transition-all bg-white flex gap-4 items-start cursor-pointer"
+                  >
                     <div className={`p-2 rounded-lg shrink-0 ${n.bg}`}>
                       {n.icon}
                     </div>
@@ -151,7 +186,7 @@ const Notifications = ({ isNotifOpen, setIsNotifOpen, setIsProfileOpen, currentU
                       </p>
                       <span className="text-xs font-medium text-slate-400">{n.time}</span>
                     </div>
-                  </div>
+                  </button>
                 ))
               ) : (
                 <div className="p-12 text-center flex flex-col items-center">
@@ -161,7 +196,10 @@ const Notifications = ({ isNotifOpen, setIsNotifOpen, setIsProfileOpen, currentU
               )}
             </div>
             
-            <button className="w-full py-3 bg-slate-100 text-xs font-medium text-slate-600 hover:text-blue-600 transition-colors">
+            <button
+              onClick={handleClearAll}
+              className="w-full py-3 bg-slate-100 text-xs font-medium text-slate-600 hover:text-blue-600 hover:bg-slate-200 transition-colors"
+            >
               Clear All Notifications
             </button>
           </div>
