@@ -69,6 +69,8 @@ autoInstallPeers: false
 
 onlyBuiltDependencies:
   - '@swc/core'
+  - app-builder-bin
+  - electron
   - esbuild
   - msw
   - unrs-resolver
