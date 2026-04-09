@@ -1,0 +1,220 @@
+Bug
+Add position to profile
+
+New
+
+
+Please add positions to profile
+
+Imran Shaikh · Super Admin · All
+9 Apr 2026, 03:50 pm
+Bug
+User resetting the password
+
+New
+
+
+Please add forgot my password tab while any user resetting the password. Also, a notification should be sent to super admin when a user clicks on forget my password. Please enable.
+
+Imran Shaikh · Super Admin · All
+9 Apr 2026, 03:48 pm
+Bug
+password Reset option and show password option missing
+
+New
+
+
+while resetting the password in the user's profile tab, show/ hide password option is missing, if a super admin is resetting the password for any user, the tab for reset password is missing. Please add.
+
+Imran Shaikh · Super Admin · All
+9 Apr 2026, 03:44 pm
+Bug
+Minimise and close button
+
+New
+
+
+Missing on Ethinos Timer Pro App all screens required (Windows), Also please add a warning whether capslock is on both mac and windows
+
+Theo · Super Admin · Growth
+9 Apr 2026, 03:32 pm
+Bug
+Departments and Regions not updating
+
+New
+
+
+Login screen is not updating the regions and departments properly. Also PAn India and East got delete from CC and reappeared.
+
+Theo · Super Admin · Growth
+9 Apr 2026, 03:30 pm
+Bug
+Login Screen Issue and region deletion issue
+
+New
+
+
+Departments/regions not reflecting properly in the drop down list when creating a new account. Secondly had deleted East and Pan India and replaced with all regions (Control Center). But these regions have reappeared.
+
+Imran Shaikh · Super Admin · All
+9 Apr 2026, 03:11 pm
+Suggestion
+Task Category by Department
+
+New
+
+
+Categories should be visible only to those in the department as tasks are department specific. Some Categories will be universal such as training. So when creating categorise we need to be able to decide which department are able to see them. This means there is not too many options for teams to incorrectly categorise tasks.
+
+Theo · Super Admin · Growth
+9 Apr 2026, 11:07 am
+Bug
+Login only through ethinos domain
+
+New
+
+
+Rules for Firebase need to be added before rollout.
+
+Theo · Super Admin · Growth
+8 Apr 2026, 07:53 pm
+Suggestion
+Microsoft 365 Office integration
+
+New
+
+
+Login through microsoft365 integration
+
+Theo · Super Admin · Growth
+8 Apr 2026, 07:51 pm
+Suggestion
+Email and Whatsapp Notifications for Approval
+
+New
+
+
+Phase 2 rollout
+
+Theo · Super Admin · Growth
+8 Apr 2026, 07:50 pm
+Suggestion
+Upgrade the widget functionality
+
+New
+
+
+auto pause the timer when the screensaver is on or laptop is locked
+
+Theo · Super Admin · Growth
+8 Apr 2026, 07:45 pm
+Suggestion
+Task - Billable / Non Billable
+
+New
+
+
+Need a reporting toggle for task billable or not billable
+
+Theo · Super Admin · Growth
+8 Apr 2026, 07:25 pm
+Suggestion
+Estimated Time for Tasks
+
+New
+
+
+Add estimated time in tasks and put into reporting and API
+
+Theo · Super Admin · Growth
+8 Apr 2026, 07:23 pm
+Bug
+For the Timer Widget resize options
+
+New
+
+
+There are no options to resize widget or close widget for windows. Missing standard window buttons. Also ensure scroll feature for multiple tasks and collapsable by client. (both platform). Also please add a warning whether capslock is on both mac and windows
+
+Theo · Super Admin · Growth
+8 Apr 2026, 07:18 pm
+Bug
+Approval Tab Error
+
+In Progress
+
+
+In the "Approval"tab, tasks names are not appearing, only descriptions are shown, please have it mention the Task name as well
+
+ligen.pereira · Super Admin · All
+8 Apr 2026, 07:17 pm
+Bug
+Wrong Average task time
+
+New
+
+
+Currently in the "Metrics" tab, the manual calculation for average time in the "Task Category View" matches with the "AVG Time Logged" card but the graph "Last 7 Days - Daily Avg Time/User " shows a wrong number
+
+ligen.pereira · Super Admin · All
+8 Apr 2026, 05:01 pm
+Bug
+Edit access for user
+
+New
+
+
+The user at Executive level is able to make changes and edit the configuration of the task assigned by the senior, we need it in such a way that the executive cannot changes or edit inside the task created by a higher level employee
+
+ligen.pereira · Super Admin · All
+8 Apr 2026, 04:16 pm
+Bug
+Due Date and Start Date on calendars
+
+Awaiting Testing
+
+
+Due date can only be selected after start date, however if due date is selected, then start date can be changed to be after due date. This is a loop hole Please fix
+
+Theo · Super Admin · Growth
+8 Apr 2026, 04:07 pm
+Bug
+Control Centre -> Tab issues.
+
+Awaiting Testing
+
+
+Add Button for department and region is not working
+
+Theo · Super Admin · Growth
+8 Apr 2026, 04:05 pm
+Bug
+Widget to Dashboard Mismatch
+
+Awaiting Testing
+
+
+The task name on the "PMT Timer" widget comes as "Untitled Task" even tho it has been given a specific name whille creating the task in the "Clients" tab on the dashboard
+
+ligen.pereira · Super Admin · All
+8 Apr 2026, 03:15 pm
+Bug
+Metrics Mismatch
+
+In Progress
+
+
+The average time shown on top differs from the average time displayed in the graph
+
+ligen.pereira · Super Admin · All
+8 Apr 2026, 02:48 pm
+Bug
+Start and Due date for adding task is not synced
+
+Awaiting Testing
+
+
+If the user selects the start date of the task as the next day or any other day further, there is an option to select the due date before that date
+
+ligen.pereira · Super Admin · Management
+8 Apr 2026, 12:52 pm
