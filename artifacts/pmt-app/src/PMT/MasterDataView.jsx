@@ -1437,10 +1437,11 @@ const MasterDataView = ({
                   </div>
                 )}
               </div>
-            ) : (
-              myItems.length > 0 && (
-                <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
-                  <h3 className="text-sm font-bold text-slate-800">My Submissions</h3>
+            ) : null}
+
+            {myItems.length > 0 && (
+              <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+                <h3 className="text-sm font-bold text-slate-800">My Submissions</h3>
                   <div className="space-y-2">
                     {myItems.map(item => {
                       const typeInfo = TYPES.find(t => t.id === item.type) || TYPES[2];
@@ -1464,8 +1465,7 @@ const MasterDataView = ({
                       );
                     })}
                   </div>
-                </div>
-              )
+              </div>
             )}
           </div>
         );
