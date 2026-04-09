@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, Trash2, Search, ShieldCheck, Edit2, X, ChevronUp, ChevronDown, Lock, Users, Crown, Check, Star, UserCheck, UserPlus, Edit3, Mail, MessageSquare, Bug, Lightbulb, AlertCircle, CheckCircle2, Clock, Filter, Eye, EyeOff } from 'lucide-react';
+import { Plus, Trash2, Search, ShieldCheck, Edit2, X, ChevronUp, ChevronDown, Lock, Users, Crown, Check, Star, UserCheck, UserPlus, Edit3, Mail, MessageSquare, Bug, Lightbulb, AlertCircle, CheckCircle2, Clock, Filter, Eye, EyeOff, FlaskConical } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 
 const REPEAT_OPTIONS = ['Daily', 'Weekly', 'Monthly', 'Once'];
@@ -1094,9 +1094,10 @@ const MasterDataView = ({
           { id: 'General', icon: <MessageSquare size={13}/>, color: 'bg-blue-100 text-blue-700 border-blue-200' },
         ];
         const STATUS_META = {
-          'New':         { icon: <AlertCircle size={12}/>,   cls: 'bg-red-50 text-red-600 border-red-200' },
-          'In Progress': { icon: <Clock size={12}/>,         cls: 'bg-amber-50 text-amber-600 border-amber-200' },
-          'Resolved':    { icon: <CheckCircle2 size={12}/>,  cls: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
+          'New':               { icon: <AlertCircle size={12}/>,    cls: 'bg-red-50 text-red-600 border-red-200' },
+          'In Progress':       { icon: <Clock size={12}/>,          cls: 'bg-amber-50 text-amber-600 border-amber-200' },
+          'Awaiting Testing':  { icon: <FlaskConical size={12}/>,   cls: 'bg-purple-50 text-purple-600 border-purple-200' },
+          'Resolved':          { icon: <CheckCircle2 size={12}/>,   cls: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
         };
         const isAdmin = currentUser?.role === 'Super Admin';
         const myItems = feedbackItems.filter(f => f.userId === currentUser?.id).sort((a,b) => b.timestamp - a.timestamp);
@@ -1187,7 +1188,7 @@ const MasterDataView = ({
                     <span className="text-xs font-semibold text-slate-400">({adminItems.length})</span>
                   </h3>
                   <div className="flex gap-1">
-                    {['All','New','In Progress','Resolved'].map(s => (
+                    {['All','New','In Progress','Awaiting Testing','Resolved'].map(s => (
                       <button key={s} type="button" onClick={() => setFbAdminFilter(s)}
                         className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg border transition-all ${fbAdminFilter === s ? 'bg-slate-800 text-white border-slate-800' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}>
                         {s}
@@ -1219,6 +1220,7 @@ const MasterDataView = ({
                               >
                                 <option>New</option>
                                 <option>In Progress</option>
+                                <option>Awaiting Testing</option>
                                 <option>Resolved</option>
                               </select>
                               <button onClick={() => deleteItem(item.id)} className="p-1 text-slate-300 hover:text-red-500 transition-all" title="Delete">
