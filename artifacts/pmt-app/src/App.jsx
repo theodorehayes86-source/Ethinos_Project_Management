@@ -299,9 +299,14 @@ const App = () => {
   };
 
   // --- MATCH FIREBASE AUTH USER → PMT USER RECORD ---
-  // Runs whenever auth state changes or the users list loads from Firebase.
+  // Runs whenever auth state changes, the users list loads from Firebase, or dbReady changes.
   useEffect(() => {
     if (!firebaseUser) { setCurrentUserId(null); return; }
+    // Wait until Firebase data has finished loading before making a role decision.
+    // Without this guard the effect runs with an empty users list and can't find
+    // the real record — previously it fell through to create a fake Super Admin.
+    if (!dbReady) return;
+
     const email = firebaseUser.email?.toLowerCase();
     if (!email) return;
     // Check Firebase users first, then fall back to DEFAULT_USERS
@@ -332,24 +337,11 @@ const App = () => {
       });
       setCurrentUserId(matched.id);
     } else {
-      // No PMT record means manually added via Firebase Console → Super Admin
-      const adminId = `firebase-admin-${firebaseUser.uid}`;
-      const adminRecord = {
-        id: adminId,
-        name: firebaseUser.displayName || email.split('@')[0],
-        email: firebaseUser.email,
-        role: 'Super Admin',
-        assignedProjects: ['All'],
-        department: 'Management',
-        region: 'All',
-      };
-      setUsers(prev => {
-        if (prev.find(u => u.id === adminId)) return prev;
-        return [...prev, adminRecord];
-      });
-      setCurrentUserId(adminId);
+      // Valid @ethinos.com account but not yet added to the PMT system by an admin.
+      // Leave currentUserId as null → shows the "Access Not Set Up" screen.
+      setCurrentUserId(null);
     }
-  }, [firebaseUser, users]);
+  }, [firebaseUser, users, dbReady]);
 
   // --- SHARED LOGIC ---
   const effectiveUserId = testModeUserId || currentUserId;
