@@ -429,12 +429,21 @@ const App = () => {
 
   const handleResetPassword = async (email) => {
     if (!email) throw new Error('Please enter your email address.');
+    if (!email.toLowerCase().endsWith('@ethinos.com')) {
+      throw new Error('Password reset is only available for Ethinos work accounts (@ethinos.com).');
+    }
     await sendPasswordResetEmail(auth, email);
   };
+
+  const isEthinosDomain = (email) => email?.toLowerCase().endsWith('@ethinos.com');
 
   const handleLogin = async (email, password) => {
     if (!email || !password) {
       setLoginError('Enter both email and password');
+      return;
+    }
+    if (!isEthinosDomain(email)) {
+      setLoginError('Access is restricted to Ethinos work accounts (@ethinos.com).');
       return;
     }
     try {
@@ -448,7 +457,11 @@ const App = () => {
   const handleGoogleLogin = async () => {
     try {
       setLoginError('');
-      await signInWithPopup(auth, googleProvider);
+      const result = await signInWithPopup(auth, googleProvider);
+      if (!isEthinosDomain(result.user?.email)) {
+        await signOut(auth);
+        setLoginError('Access is restricted to Ethinos work accounts (@ethinos.com).');
+      }
     } catch (err) {
       if (err.code === 'auth/popup-blocked') {
         setLoginError('Pop-up was blocked by your browser. Please allow pop-ups for this site and try again.');
@@ -461,6 +474,10 @@ const App = () => {
   };
 
   const handleCreateAccount = async ({ name, email, password, department, region }) => {
+    if (!isEthinosDomain(email)) {
+      setLoginError('Registration is restricted to Ethinos work accounts (@ethinos.com).');
+      return;
+    }
     try {
       setLoginError('');
       // 1. Create the Firebase Auth account (auto signs them in)

@@ -71,6 +71,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function login(email: string, password: string) {
     setError(null);
+    if (!email.toLowerCase().endsWith("@ethinos.com")) {
+      const msg = "Access is restricted to Ethinos work accounts (@ethinos.com).";
+      setError(msg);
+      throw new Error(msg);
+    }
     try {
       await signInWithEmailAndPassword(auth, email, password);
     } catch (err: unknown) {
