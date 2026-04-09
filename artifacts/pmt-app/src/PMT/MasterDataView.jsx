@@ -130,6 +130,8 @@ const MasterDataView = ({
   const [fbSubmitted, setFbSubmitted] = useState(false);
   const [fbAdminFilter, setFbAdminFilter] = useState('All');
   const [showArchived, setShowArchived] = useState(false);
+  const [editingFbId, setEditingFbId] = useState(null);
+  const [editingFbDraft, setEditingFbDraft] = useState({});
 
   const normalizedRoles = useMemo(() => {
     const defaults = [
@@ -1141,6 +1143,15 @@ const MasterDataView = ({
         const unarchiveItem = (id) => {
           setFeedbackItems(feedbackItems.map(f => f.id === id ? { ...f, archived: false, archivedAt: null } : f));
         };
+        const startEdit = (item) => {
+          setEditingFbId(item.id);
+          setEditingFbDraft({ type: item.type, title: item.title, description: item.description });
+        };
+        const saveEdit = (id) => {
+          setFeedbackItems(feedbackItems.map(f => f.id === id ? { ...f, ...editingFbDraft } : f));
+          setEditingFbId(null);
+        };
+        const cancelEdit = () => setEditingFbId(null);
 
         return (
           <div className="space-y-4">
@@ -1215,39 +1226,79 @@ const MasterDataView = ({
                       const sm = STATUS_META[item.status] || STATUS_META['New'];
                       return (
                         <div key={item.id} className="border border-slate-100 rounded-xl p-3 space-y-2 bg-slate-50/60 hover:bg-white transition-all">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className={`flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-semibold ${typeInfo.color}`}>
-                                {typeInfo.icon} {item.type}
-                              </span>
-                              <span className="text-xs font-bold text-slate-800">{item.title}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5 flex-shrink-0">
-                              <select
-                                value={item.status}
-                                onChange={e => updateStatus(item.id, e.target.value)}
-                                className={`text-[10px] font-semibold border rounded-lg px-2 py-1 outline-none cursor-pointer ${sm.cls}`}
-                              >
-                                <option>New</option>
-                                <option>In Progress</option>
-                                <option>Awaiting Testing</option>
-                                <option>Resolved</option>
-                              </select>
-                              {item.status === 'Resolved' && (
-                                <button onClick={() => archiveItem(item.id)} className="p-1 text-slate-300 hover:text-slate-600 transition-all" title="Archive this resolved item">
-                                  <Archive size={13}/>
+                          {editingFbId === item.id ? (
+                            <div className="space-y-2">
+                              <div className="flex gap-1.5 flex-wrap">
+                                {TYPES.map(t => (
+                                  <button key={t.id} type="button" onClick={() => setEditingFbDraft(d => ({...d, type: t.id}))}
+                                    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[10px] font-semibold transition-all ${editingFbDraft.type === t.id ? t.color : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'}`}>
+                                    {t.icon} {t.id}
+                                  </button>
+                                ))}
+                              </div>
+                              <input
+                                value={editingFbDraft.title}
+                                onChange={e => setEditingFbDraft(d => ({...d, title: e.target.value}))}
+                                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-blue-400 transition-all font-semibold"
+                                placeholder="Title"
+                              />
+                              <textarea
+                                value={editingFbDraft.description}
+                                onChange={e => setEditingFbDraft(d => ({...d, description: e.target.value}))}
+                                rows={3}
+                                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-blue-400 transition-all resize-none"
+                                placeholder="Description"
+                              />
+                              <div className="flex items-center justify-end gap-2">
+                                <button type="button" onClick={cancelEdit} className="px-3 py-1 text-[11px] font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all">
+                                  Cancel
                                 </button>
-                              )}
-                              <button onClick={() => deleteItem(item.id)} className="p-1 text-slate-300 hover:text-red-500 transition-all" title="Delete">
-                                <Trash2 size={13}/>
-                              </button>
+                                <button type="button" onClick={() => saveEdit(item.id)} disabled={!editingFbDraft.title?.trim() || !editingFbDraft.description?.trim()}
+                                  className="px-3 py-1 text-[11px] font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all disabled:opacity-50">
+                                  Save
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                          <p className="text-xs text-slate-600 leading-relaxed">{item.description}</p>
-                          <div className="flex items-center gap-3 text-[10px] text-slate-400 font-medium">
-                            <span>{item.userName} · {item.userRole}{item.userDept ? ` · ${item.userDept}` : ''}</span>
-                            <span>{new Date(item.timestamp).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })}</span>
-                          </div>
+                          ) : (
+                            <>
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className={`flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-semibold ${typeInfo.color}`}>
+                                    {typeInfo.icon} {item.type}
+                                  </span>
+                                  <span className="text-xs font-bold text-slate-800">{item.title}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 flex-shrink-0">
+                                  <select
+                                    value={item.status}
+                                    onChange={e => updateStatus(item.id, e.target.value)}
+                                    className={`text-[10px] font-semibold border rounded-lg px-2 py-1 outline-none cursor-pointer ${sm.cls}`}
+                                  >
+                                    <option>New</option>
+                                    <option>In Progress</option>
+                                    <option>Awaiting Testing</option>
+                                    <option>Resolved</option>
+                                  </select>
+                                  <button onClick={() => startEdit(item)} className="p-1 text-slate-300 hover:text-blue-500 transition-all" title="Edit">
+                                    <Edit2 size={13}/>
+                                  </button>
+                                  {item.status === 'Resolved' && (
+                                    <button onClick={() => archiveItem(item.id)} className="p-1 text-slate-300 hover:text-slate-600 transition-all" title="Archive this resolved item">
+                                      <Archive size={13}/>
+                                    </button>
+                                  )}
+                                  <button onClick={() => deleteItem(item.id)} className="p-1 text-slate-300 hover:text-red-500 transition-all" title="Delete">
+                                    <Trash2 size={13}/>
+                                  </button>
+                                </div>
+                              </div>
+                              <p className="text-xs text-slate-600 leading-relaxed">{item.description}</p>
+                              <div className="flex items-center gap-3 text-[10px] text-slate-400 font-medium">
+                                <span>{item.userName} · {item.userRole}{item.userDept ? ` · ${item.userDept}` : ''}</span>
+                                <span>{new Date(item.timestamp).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })}</span>
+                              </div>
+                            </>
+                          )}
                         </div>
                       );
                     })}
