@@ -53,7 +53,7 @@ const ApproveModal = ({ task, onConfirm, onClose }) => {
               <CheckCircle size={20} className="text-emerald-600" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-800">Approve Task</h3>
+              <h3 className="text-base font-bold text-slate-800">{task.name || 'Approve Task'}</h3>
               <p className="text-xs text-slate-500 mt-0.5 truncate max-w-xs">{task.comment}</p>
             </div>
           </div>
@@ -122,7 +122,7 @@ const ReturnModal = ({ task, onConfirm, onClose }) => {
               <XCircle size={20} className="text-red-600" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-800">Return for Revision</h3>
+              <h3 className="text-base font-bold text-slate-800">{task.name ? `Return: ${task.name}` : 'Return for Revision'}</h3>
               <p className="text-xs text-slate-500 mt-0.5 truncate max-w-xs">{task.comment}</p>
             </div>
           </div>
@@ -222,7 +222,8 @@ const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed }) => {
                 </span>
               ))}
             </div>
-            <p className="text-sm font-semibold text-slate-800 leading-snug mb-2">{task.comment}</p>
+            {task.name && <p className="text-sm font-bold text-slate-900 leading-snug mb-1">{task.name}</p>}
+            <p className="text-sm font-semibold text-slate-600 leading-snug mb-2">{task.comment}</p>
             <div className="flex flex-wrap gap-3 text-xs text-slate-500">
               <span className="flex items-center gap-1">
                 <User size={11} />

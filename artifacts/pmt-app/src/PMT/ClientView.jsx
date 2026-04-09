@@ -525,6 +525,7 @@ const ClientView = ({
       const hasQc = !!qcAssignee;
       return {
         id: Date.now() + Math.random(),
+        name: taskItem.name || taskItem.comment,
         date: cfg.startDate ? format(cfg.startDate, 'do MMM yyyy') : format(new Date(), 'do MMM yyyy'),
         dueDate: cfg.dueDate ? format(cfg.dueDate, 'do MMM yyyy') : null,
         comment: taskItem.comment,
@@ -1226,38 +1227,37 @@ const ClientView = ({
                     <div className="space-y-2">
                       <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Quick Select</label>
                       <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedDate(new Date())}
-                          className="px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600 transition-all"
-                        >
-                          Today
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedDate(new Date(new Date().setDate(new Date().getDate() + 1)))}
-                          className="px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600 transition-all"
-                        >
-                          Tomorrow
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedDate(new Date(new Date().setDate(new Date().getDate() + 7)))}
-                          className="px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600 transition-all"
-                        >
-                          Next Week
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedDate(new Date(new Date().setDate(new Date().getDate() + 30)))}
-                          className="px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600 transition-all"
-                        >
-                          Next Month
-                        </button>
+                        {[
+                          { label: 'Today', days: 0 },
+                          { label: 'Tomorrow', days: 1 },
+                          { label: 'Next Week', days: 7 },
+                          { label: 'Next Month', days: 30 },
+                        ].map(({ label, days }) => (
+                          <button
+                            key={label}
+                            type="button"
+                            onClick={() => {
+                              const d = new Date();
+                              d.setDate(d.getDate() + days);
+                              setSelectedDate(d);
+                              if (taskDueDate && d > taskDueDate) setTaskDueDate(null);
+                            }}
+                            className="px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600 transition-all"
+                          >
+                            {label}
+                          </button>
+                        ))}
                       </div>
                     </div>
                     <div className="border border-slate-200 rounded-xl p-3 bg-slate-50">
-                      <DatePicker selected={selectedDate} onChange={(date) => setSelectedDate(date)} inline />
+                      <DatePicker
+                        selected={selectedDate}
+                        onChange={(date) => {
+                          setSelectedDate(date);
+                          if (taskDueDate && date && date > taskDueDate) setTaskDueDate(null);
+                        }}
+                        inline
+                      />
                     </div>
                   </div>
                   <div className="flex-1 space-y-5">
