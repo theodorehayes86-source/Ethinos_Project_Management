@@ -1,18 +1,19 @@
 import React from "react";
-import { LogOut, Timer, Minus } from "lucide-react";
+import { LogOut, Timer, Minus, X } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useTasks } from "../context/TasksContext";
 import SyncIndicator from "./SyncIndicator";
 
 interface HeaderProps {
   onMinimize?: () => void;
+  onClose?: () => void;
 }
 
 /** On macOS with titleBarStyle:'hidden', traffic lights sit at ~x:12 y:8.
  *  We need ~76px left padding so content starts after the three dots. */
 const isMac = window.electronAPI?.platform === "darwin";
 
-export default function Header({ onMinimize }: HeaderProps) {
+export default function Header({ onMinimize, onClose }: HeaderProps) {
   const { pmtUser, logout } = useAuth();
   const { syncStatus, flushQueue } = useTasks();
 
@@ -64,6 +65,16 @@ export default function Header({ onMinimize }: HeaderProps) {
         >
           <LogOut size={12} className="text-slate-400" />
         </button>
+
+        {!isMac && onClose && (
+          <button
+            onClick={onClose}
+            className="w-7 h-7 rounded-lg bg-white/5 hover:bg-red-500/40 border border-white/10 flex items-center justify-center transition-all"
+            title="Close"
+          >
+            <X size={12} className="text-slate-400" />
+          </button>
+        )}
       </div>
     </div>
   );

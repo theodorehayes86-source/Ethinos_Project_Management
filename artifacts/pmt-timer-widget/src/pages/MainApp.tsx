@@ -79,6 +79,7 @@ export default function MainApp() {
       >
         <Header
           onMinimize={isElectron && selected ? handleMinimize : undefined}
+          onClose={isElectron ? () => window.electronAPI?.closeWindow?.() : undefined}
         />
         {selected ? (
           <TimerPage

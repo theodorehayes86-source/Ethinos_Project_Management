@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useAuth } from "../context/AuthContext";
-import { Timer } from "lucide-react";
+import { Timer, Eye, EyeOff, AlertTriangle } from "lucide-react";
 
 export default function LoginPage() {
   const { login, error } = useAuth();
@@ -8,6 +8,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [capsLockOn, setCapsLockOn] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -22,6 +24,10 @@ export default function LoginPage() {
       setLoading(false);
     }
   }
+
+  const handlePasswordKeyUp = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    setCapsLockOn(e.getModifierState("CapsLock"));
+  };
 
   const displayError = localError || error;
 
@@ -72,15 +78,32 @@ export default function LoginPage() {
                 <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5">
                   Password
                 </label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  autoComplete="current-password"
-                  placeholder="••••••••"
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-400/50 transition-all"
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onKeyUp={handlePasswordKeyUp}
+                    required
+                    autoComplete="current-password"
+                    placeholder="••••••••"
+                    className="w-full bg-white/10 border border-white/20 rounded-xl px-4 pr-12 py-3 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-400/50 transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+                {capsLockOn && (
+                  <div className="flex items-center gap-1.5 mt-1.5 text-amber-400 text-xs">
+                    <AlertTriangle size={12} />
+                    <span>Caps Lock is on</span>
+                  </div>
+                )}
               </div>
 
               {displayError && (

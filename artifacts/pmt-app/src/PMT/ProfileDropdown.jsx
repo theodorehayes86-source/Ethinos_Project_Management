@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { User, Lock, LogOut, Camera, Mail, Phone, Check } from 'lucide-react';
+import { User, Lock, LogOut, Camera, Mail, Phone, Check, Eye, EyeOff, Briefcase } from 'lucide-react';
 
 const getInitials = (name) => {
   if (!name) return '?';
@@ -63,6 +63,9 @@ const ProfileDropdown = ({
   const [passwordError, setPasswordError] = useState('');
   const [successNote, setSuccessNote] = useState('');
   const [photoLoading, setPhotoLoading] = useState(false);
+  const [showCurrentPwd, setShowCurrentPwd] = useState(false);
+  const [showNewPwd, setShowNewPwd] = useState(false);
+  const [showConfirmPwd, setShowConfirmPwd] = useState(false);
   const fileRef = useRef();
   const panelRef = useRef();
 
@@ -122,6 +125,9 @@ const ProfileDropdown = ({
       setNewPassword('');
       setConfirmPassword('');
       setPasswordError('');
+      setShowCurrentPwd(false);
+      setShowNewPwd(false);
+      setShowConfirmPwd(false);
       showSuccess('Password updated');
     } catch (err) {
       const code = err?.code || '';
@@ -141,6 +147,8 @@ const ProfileDropdown = ({
         ? 'bg-white border border-indigo-200/70 text-slate-900 shadow-sm'
         : 'text-slate-600 hover:text-slate-900 hover:bg-white/70 border border-transparent'
     }`;
+
+  const pwdToggleClass = "absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors";
 
   const displayName = currentUser?.name || '';
 
@@ -215,6 +223,16 @@ const ProfileDropdown = ({
                     />
                   </div>
                 </div>
+                {currentUser?.position && (
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1">
+                      <Briefcase size={10} /> Position
+                    </label>
+                    <div className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium text-slate-500">
+                      {currentUser.position}
+                    </div>
+                  </div>
+                )}
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1">
                     <Mail size={10} /> Secondary Email
@@ -251,37 +269,52 @@ const ProfileDropdown = ({
               <form onSubmit={handleSavePassword} className="space-y-2.5 p-3 bg-white/70 rounded-xl border border-white/80">
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Current Password</label>
-                  <input
-                    type="password"
-                    value={currentPassword}
-                    onChange={(e) => { setCurrentPassword(e.target.value); if (passwordError) setPasswordError(''); }}
-                    placeholder="Enter current password"
-                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium text-slate-900 outline-none focus:border-indigo-400 transition-all"
-                    autoComplete="current-password"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showCurrentPwd ? 'text' : 'password'}
+                      value={currentPassword}
+                      onChange={(e) => { setCurrentPassword(e.target.value); if (passwordError) setPasswordError(''); }}
+                      placeholder="Enter current password"
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 pr-9 py-2 text-xs font-medium text-slate-900 outline-none focus:border-indigo-400 transition-all"
+                      autoComplete="current-password"
+                    />
+                    <button type="button" onClick={() => setShowCurrentPwd(v => !v)} className={pwdToggleClass}>
+                      {showCurrentPwd ? <EyeOff size={13} /> : <Eye size={13} />}
+                    </button>
+                  </div>
                 </div>
                 <div className="border-t border-slate-200 pt-2.5 space-y-2.5">
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">New Password</label>
-                    <input
-                      type="password"
-                      value={newPassword}
-                      onChange={(e) => { setNewPassword(e.target.value); if (passwordError) setPasswordError(''); }}
-                      placeholder="Min. 6 characters"
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium text-slate-900 outline-none focus:border-indigo-400 transition-all"
-                      autoComplete="new-password"
-                    />
+                    <div className="relative">
+                      <input
+                        type={showNewPwd ? 'text' : 'password'}
+                        value={newPassword}
+                        onChange={(e) => { setNewPassword(e.target.value); if (passwordError) setPasswordError(''); }}
+                        placeholder="Min. 6 characters"
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 pr-9 py-2 text-xs font-medium text-slate-900 outline-none focus:border-indigo-400 transition-all"
+                        autoComplete="new-password"
+                      />
+                      <button type="button" onClick={() => setShowNewPwd(v => !v)} className={pwdToggleClass}>
+                        {showNewPwd ? <EyeOff size={13} /> : <Eye size={13} />}
+                      </button>
+                    </div>
                   </div>
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Confirm New Password</label>
-                    <input
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(e) => { setConfirmPassword(e.target.value); if (passwordError) setPasswordError(''); }}
-                      placeholder="Re-enter new password"
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium text-slate-900 outline-none focus:border-indigo-400 transition-all"
-                      autoComplete="new-password"
-                    />
+                    <div className="relative">
+                      <input
+                        type={showConfirmPwd ? 'text' : 'password'}
+                        value={confirmPassword}
+                        onChange={(e) => { setConfirmPassword(e.target.value); if (passwordError) setPasswordError(''); }}
+                        placeholder="Re-enter new password"
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 pr-9 py-2 text-xs font-medium text-slate-900 outline-none focus:border-indigo-400 transition-all"
+                        autoComplete="new-password"
+                      />
+                      <button type="button" onClick={() => setShowConfirmPwd(v => !v)} className={pwdToggleClass}>
+                        {showConfirmPwd ? <EyeOff size={13} /> : <Eye size={13} />}
+                      </button>
+                    </div>
                   </div>
                 </div>
                 {passwordError && <p className="text-[11px] font-semibold text-red-500">{passwordError}</p>}

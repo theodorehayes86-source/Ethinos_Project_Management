@@ -71,6 +71,7 @@ const MasterDataView = ({
   feedbackItems = [],
   setFeedbackItems,
   createFirebaseUser,
+  onSendPasswordReset = null,
 }) => {
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
@@ -120,7 +121,7 @@ const MasterDataView = ({
   const [editingUserId, setEditingUserId] = useState(null);
   const [showDeleteUserConfirm, setShowDeleteUserConfirm] = useState(null);
   const [userProjectSearch, setUserProjectSearch] = useState('');
-  const emptyNewUser = () => ({ name: '', email: '', password: '', role: 'Executive', department: '', region: '', assignedProjects: [] });
+  const emptyNewUser = () => ({ name: '', email: '', password: '', role: 'Executive', department: '', region: '', position: '', assignedProjects: [] });
   const [newUser, setNewUser] = useState(emptyNewUser());
   const [showPassword, setShowPassword] = useState(false);
   const [userSaving, setUserSaving] = useState(false);
@@ -173,14 +174,9 @@ const MasterDataView = ({
   }, [taskCategories]);
 
   const addItem = (value, list, setter, clear, resetFilter) => {
-    console.log('[addItem] value=', JSON.stringify(value), 'list=', list);
     const trimmed = value.trim();
-    if (!trimmed) { console.log('[addItem] BLOCKED: empty value'); return 'empty'; }
-    if (list.some(item => item.toLowerCase() === trimmed.toLowerCase())) {
-      console.log('[addItem] BLOCKED: duplicate -', trimmed);
-      return 'duplicate';
-    }
-    console.log('[addItem] ADDING:', trimmed);
+    if (!trimmed) return 'empty';
+    if (list.some(item => item.toLowerCase() === trimmed.toLowerCase())) return 'duplicate';
     setter([...list, trimmed], list);
     clear('');
     if (resetFilter) resetFilter('All');
@@ -245,14 +241,9 @@ const MasterDataView = ({
   };
 
   const addRegion = () => {
-    console.log('[addRegion] regionInput=', JSON.stringify(regionInput), 'regions=', regions);
     const trimmed = regionInput.trim();
-    if (!trimmed) { console.log('[addRegion] BLOCKED: empty'); return 'empty'; }
-    if (regions.some(item => item.toLowerCase() === trimmed.toLowerCase())) {
-      console.log('[addRegion] BLOCKED: duplicate -', trimmed);
-      return 'duplicate';
-    }
-    console.log('[addRegion] ADDING:', trimmed);
+    if (!trimmed) return 'empty';
+    if (regions.some(item => item.toLowerCase() === trimmed.toLowerCase())) return 'duplicate';
     setRegions([...regions, trimmed], regions);
     setRegionInput('');
     setRegionFilter('All');
@@ -504,7 +495,7 @@ const MasterDataView = ({
 
   const openEditUser = (user) => {
     setEditingUserId(user.id);
-    setNewUser({ name: user.name, email: user.email, role: user.role, department: user.department || '', region: user.region || '', assignedProjects: user.assignedProjects || [] });
+    setNewUser({ name: user.name, email: user.email, role: user.role, department: user.department || '', region: user.region || '', position: user.position || '', assignedProjects: user.assignedProjects || [] });
     setUserProjectSearch('');
     setShowUserModal(true);
   };
@@ -794,6 +785,22 @@ const MasterDataView = ({
                           >
                             <Edit3 size={14}/>
                           </button>
+                          {onSendPasswordReset && user.email && (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await onSendPasswordReset(user.email);
+                                  alert(`Password reset email sent to ${user.email}`);
+                                } catch {
+                                  alert('Failed to send reset email. Please try again.');
+                                }
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                              title="Send password reset email"
+                            >
+                              <Mail size={14}/>
+                            </button>
+                          )}
                           <button
                             onClick={() => setShowDeleteUserConfirm(user.id)}
                             className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
@@ -1824,6 +1831,16 @@ const MasterDataView = ({
                     disabled={!!editingUserId}
                   />
                 </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-600 ml-1">Position / Job Title <span className="font-normal text-slate-400">(optional — shown on the user's profile)</span></label>
+                <input
+                  type="text"
+                  placeholder="e.g. Senior Account Manager, Digital Strategist..."
+                  className="w-full p-5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 ring-blue-500/5 font-medium transition-all"
+                  value={newUser.position || ''}
+                  onChange={e => setNewUser(prev => ({...prev, position: e.target.value}))}
+                />
               </div>
               {!editingUserId && (
                 <div className="space-y-2">

@@ -203,10 +203,11 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUse
     filteredLogs.forEach(log => {
       const dateKey = format(log.date, 'yyyy-MM-dd');
       if (!dailyMap.has(dateKey)) {
-        dailyMap.set(dateKey, { totalSeconds: 0, users: new Set() });
+        dailyMap.set(dateKey, { totalSeconds: 0, taskCount: 0, users: new Set() });
       }
       const item = dailyMap.get(dateKey);
       item.totalSeconds += log.durationInSeconds;
+      item.taskCount += 1;
       item.users.add(log.userId || `${log.userName}-${log.userRole}`);
     });
 
@@ -215,8 +216,8 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUse
       trendData = eachDayOfInterval({ start: rangeStart, end: startOfDay(rangeEnd) }).map(day => {
         const dateKey = format(day, 'yyyy-MM-dd');
         const daily = dailyMap.get(dateKey);
-        const activeUsers = daily?.users.size || 0;
-        const avgSeconds = activeUsers > 0 ? Math.floor(daily.totalSeconds / activeUsers) : 0;
+        const taskCount = daily?.taskCount || 0;
+        const avgSeconds = taskCount > 0 ? Math.floor(daily.totalSeconds / taskCount) : 0;
         return {
           date: format(day, 'dd MMM'),
           avgSeconds
@@ -511,7 +512,7 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUse
 
             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm lg:col-span-2">
               <div className="px-4 py-3 border-b border-slate-200 bg-slate-100">
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-700">{rangeLabels[rangePreset]} - Daily Avg Time/User</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-700">{rangeLabels[rangePreset]} - Daily Avg Time/Task</p>
               </div>
               <div className="p-3" style={{ minHeight: '220px' }}>
                 {metrics.trendData.length > 0 ? (

@@ -96,6 +96,7 @@ const ClientView = ({
   const canFullyEditTask = (log) => {
     if (!currentUser) return false;
     if (managementRoles.includes(currentUser.role)) return true;
+    if (executionRoles.includes(currentUser.role) && managementRoles.includes(log.creatorRole)) return false;
     return String(log.creatorId) === String(currentUser.id);
   };
   const canChangeTaskStatus = (log) => {
@@ -1587,9 +1588,9 @@ const ClientView = ({
                         <DatePicker
                           selected={editDraft.dueDate}
                           onChange={date => setEditDraft(d => ({ ...d, dueDate: date }))}
+                          minDate={editDraft.date || new Date()}
                           placeholderText="Select due date"
                           dateFormat="do MMM yyyy"
-                          minDate={editDraft.date || new Date()}
                           className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
                         />
                         {editDraft.dueDate && (

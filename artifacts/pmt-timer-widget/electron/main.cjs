@@ -133,6 +133,11 @@ function createWindow() {
   });
 }
 
+ipcMain.on("close-window", () => {
+  if (!mainWindow) return;
+  mainWindow.close();
+});
+
 ipcMain.on("minimize-to-clock", () => {
   if (!mainWindow) return;
   const [x, y] = mainWindow.getPosition();

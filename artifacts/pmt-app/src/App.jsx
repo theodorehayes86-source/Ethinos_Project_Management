@@ -188,10 +188,6 @@ const App = () => {
       const rSnap = await get(ref(db, 'regions'));
       if (!rSnap.exists()) {
         await set(ref(db, 'regions'), ['North', 'South', 'East', 'West', 'Pan India']);
-      } else {
-        const existing = Array.isArray(rSnap.val()) ? rSnap.val() : Object.values(rSnap.val());
-        const toAdd = ['East', 'Pan India'].filter(r => !existing.includes(r));
-        if (toAdd.length > 0) await set(ref(db, 'regions'), [...existing, ...toAdd]);
       }
     };
     seedDepartmentsRegions();
@@ -750,6 +746,7 @@ const App = () => {
               createFirebaseUser={(email, password) => createUserWithEmailAndPassword(auth, email, password)}
               feedbackItems={feedbackItems}
               setFeedbackItems={persistFeedbackItems}
+              onSendPasswordReset={currentUser?.role === 'Super Admin' ? handleResetPassword : null}
             />
           )}
         </main>
