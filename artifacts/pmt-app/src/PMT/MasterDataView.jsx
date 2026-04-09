@@ -84,6 +84,15 @@ const MasterDataView = ({
   const [departmentFilter, setDepartmentFilter] = useState('All');
   const [regionFilter, setRegionFilter] = useState('All');
 
+  const [catMsg, setCatMsg] = useState('');
+  const [deptMsg, setDeptMsg] = useState('');
+  const [regionMsg, setRegionMsg] = useState('');
+
+  const flashMsg = (setter, text) => {
+    setter(text);
+    setTimeout(() => setter(''), 3000);
+  };
+
   // --- CLIENT STATE ---
   const [clientSearch, setClientSearch] = useState('');
   // Edit
@@ -161,12 +170,18 @@ const MasterDataView = ({
   }, [taskCategories]);
 
   const addItem = (value, list, setter, clear, resetFilter) => {
+    console.log('[addItem] value=', JSON.stringify(value), 'list=', list);
     const trimmed = value.trim();
-    if (!trimmed) return;
-    if (list.some(item => item.toLowerCase() === trimmed.toLowerCase())) return;
+    if (!trimmed) { console.log('[addItem] BLOCKED: empty value'); return 'empty'; }
+    if (list.some(item => item.toLowerCase() === trimmed.toLowerCase())) {
+      console.log('[addItem] BLOCKED: duplicate -', trimmed);
+      return 'duplicate';
+    }
+    console.log('[addItem] ADDING:', trimmed);
     setter([...list, trimmed], list);
     clear('');
     if (resetFilter) resetFilter('All');
+    return 'ok';
   };
 
   const removeCategory = (category) => {
@@ -182,12 +197,18 @@ const MasterDataView = ({
   };
 
   const addRegion = () => {
+    console.log('[addRegion] regionInput=', JSON.stringify(regionInput), 'regions=', regions);
     const trimmed = regionInput.trim();
-    if (!trimmed) return;
-    if (regions.some(item => item.toLowerCase() === trimmed.toLowerCase())) return;
+    if (!trimmed) { console.log('[addRegion] BLOCKED: empty'); return 'empty'; }
+    if (regions.some(item => item.toLowerCase() === trimmed.toLowerCase())) {
+      console.log('[addRegion] BLOCKED: duplicate -', trimmed);
+      return 'duplicate';
+    }
+    console.log('[addRegion] ADDING:', trimmed);
     setRegions([...regions, trimmed], regions);
     setRegionInput('');
     setRegionFilter('All');
+    return 'ok';
   };
 
   const applyViewState = (role, view, state) => {
@@ -769,18 +790,19 @@ const MasterDataView = ({
               <input
                 value={categoryInput}
                 onChange={(e) => setCategoryInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && addItem(categoryInput, taskCategories, setTaskCategories, setCategoryInput)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { const r = addItem(categoryInput, taskCategories, setTaskCategories, setCategoryInput); flashMsg(setCatMsg, r === 'ok' ? '✓ Added' : r === 'duplicate' ? 'Already exists' : 'Enter a name first'); } }}
                 placeholder="Add task category"
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-2 text-sm outline-none"
               />
             </div>
             <button
               type="button"
-              onClick={() => addItem(categoryInput, taskCategories, setTaskCategories, setCategoryInput)}
+              onClick={() => { const r = addItem(categoryInput, taskCategories, setTaskCategories, setCategoryInput); flashMsg(setCatMsg, r === 'ok' ? '✓ Added' : r === 'duplicate' ? 'Already exists' : 'Enter a name first'); }}
               className="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1"
             >
               <Plus size={12} /> Add
             </button>
+            {catMsg && <span className={`text-xs font-medium ${catMsg.startsWith('✓') ? 'text-green-600' : 'text-red-500'}`}>{catMsg}</span>}
           </div>
 
           <div className="border border-slate-200 rounded-lg overflow-hidden">
@@ -824,18 +846,19 @@ const MasterDataView = ({
               <input
                 value={departmentInput}
                 onChange={(e) => setDepartmentInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && addItem(departmentInput, departments, setDepartments, setDepartmentInput, setDepartmentFilter)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { const r = addItem(departmentInput, departments, setDepartments, setDepartmentInput, setDepartmentFilter); flashMsg(setDeptMsg, r === 'ok' ? '✓ Added' : r === 'duplicate' ? 'Already exists' : 'Enter a name first'); } }}
                 placeholder="Add department"
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-2 text-sm outline-none"
               />
             </div>
             <button
               type="button"
-              onClick={() => addItem(departmentInput, departments, setDepartments, setDepartmentInput, setDepartmentFilter)}
+              onClick={() => { const r = addItem(departmentInput, departments, setDepartments, setDepartmentInput, setDepartmentFilter); flashMsg(setDeptMsg, r === 'ok' ? '✓ Added' : r === 'duplicate' ? 'Already exists' : 'Enter a name first'); }}
               className="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1"
             >
               <Plus size={12} /> Add
             </button>
+            {deptMsg && <span className={`text-xs font-medium ${deptMsg.startsWith('✓') ? 'text-green-600' : 'text-red-500'}`}>{deptMsg}</span>}
           </div>
 
           <div className="border border-slate-200 rounded-lg overflow-hidden">
@@ -879,18 +902,19 @@ const MasterDataView = ({
               <input
                 value={regionInput}
                 onChange={(e) => setRegionInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && addRegion()}
+                onKeyDown={(e) => { if (e.key === 'Enter') { const r = addRegion(); flashMsg(setRegionMsg, r === 'ok' ? '✓ Added' : r === 'duplicate' ? 'Already exists' : 'Enter a name first'); } }}
                 placeholder="Add region"
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-2 text-sm outline-none"
               />
             </div>
             <button
               type="button"
-              onClick={addRegion}
+              onClick={() => { const r = addRegion(); flashMsg(setRegionMsg, r === 'ok' ? '✓ Added' : r === 'duplicate' ? 'Already exists' : 'Enter a name first'); }}
               className="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1"
             >
               <Plus size={12} /> Add
             </button>
+            {regionMsg && <span className={`text-xs font-medium ${regionMsg.startsWith('✓') ? 'text-green-600' : 'text-red-500'}`}>{regionMsg}</span>}
           </div>
 
           <div className="border border-slate-200 rounded-lg overflow-hidden">
