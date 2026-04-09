@@ -253,13 +253,17 @@ const App = () => {
     setTaskTemplates(val);
     if (firebaseUser) set(ref(db, 'taskTemplates'), sanitizeForFirebase(val));
   };
-  const persistDepartments = (val) => {
+  const persistDepartments = (val, prevVal) => {
     setDepartments(val);
-    if (firebaseUser) set(ref(db, 'departments'), sanitizeForFirebase(val));
+    if (firebaseUser) set(ref(db, 'departments'), sanitizeForFirebase(val)).catch(() => {
+      if (prevVal !== undefined) setDepartments(prevVal);
+    });
   };
-  const persistRegions = (val) => {
+  const persistRegions = (val, prevVal) => {
     setRegions(val);
-    if (firebaseUser) set(ref(db, 'regions'), sanitizeForFirebase(val));
+    if (firebaseUser) set(ref(db, 'regions'), sanitizeForFirebase(val)).catch(() => {
+      if (prevVal !== undefined) setRegions(prevVal);
+    });
   };
   const persistControlCenterTabAccess = (val) => {
     setControlCenterTabAccess(val);

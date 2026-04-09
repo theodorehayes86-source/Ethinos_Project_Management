@@ -160,12 +160,13 @@ const MasterDataView = ({
     return [...new Set(taskCategories.map(getCategoryGroup))].sort((left, right) => left.localeCompare(right));
   }, [taskCategories]);
 
-  const addItem = (value, list, setter, clear) => {
+  const addItem = (value, list, setter, clear, resetFilter) => {
     const trimmed = value.trim();
     if (!trimmed) return;
     if (list.some(item => item.toLowerCase() === trimmed.toLowerCase())) return;
-    setter([...list, trimmed]);
+    setter([...list, trimmed], list);
     clear('');
+    if (resetFilter) resetFilter('All');
   };
 
   const removeCategory = (category) => {
@@ -175,15 +176,18 @@ const MasterDataView = ({
 
   const removeDepartment = (department) => {
     if (departments.length <= 1) return;
-    setDepartments(departments.filter(item => item !== department));
+    const next = departments.filter(item => item !== department);
+    setDepartments(next, departments);
+    setDepartmentFilter('All');
   };
 
   const addRegion = () => {
     const trimmed = regionInput.trim();
     if (!trimmed) return;
     if (regions.some(item => item.toLowerCase() === trimmed.toLowerCase())) return;
-    setRegions([...regions, trimmed]);
+    setRegions([...regions, trimmed], regions);
     setRegionInput('');
+    setRegionFilter('All');
   };
 
   const applyViewState = (role, view, state) => {
@@ -758,7 +762,7 @@ const MasterDataView = ({
               className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium text-slate-700 outline-none"
             >
               <option value="All">All Categories</option>
-              {categoryGroups.map(group => <option key={group} value={group}>{group}</option>)}
+              {categoryGroups.map(group => <option key={`opt-${group}`} value={group}>{group}</option>)}
             </select>
             <div className="relative w-full max-w-md">
               <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
@@ -813,21 +817,21 @@ const MasterDataView = ({
               className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium text-slate-700 outline-none"
             >
               <option value="All">All Departments</option>
-              {departments.map(department => <option key={department} value={department}>{department}</option>)}
+              {departments.map(department => <option key={`opt-${department}`} value={department}>{department}</option>)}
             </select>
             <div className="relative w-full max-w-md">
               <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
               <input
                 value={departmentInput}
                 onChange={(e) => setDepartmentInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && addItem(departmentInput, departments, setDepartments, setDepartmentInput)}
+                onKeyDown={(e) => e.key === 'Enter' && addItem(departmentInput, departments, setDepartments, setDepartmentInput, setDepartmentFilter)}
                 placeholder="Add department"
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-2 text-sm outline-none"
               />
             </div>
             <button
               type="button"
-              onClick={() => addItem(departmentInput, departments, setDepartments, setDepartmentInput)}
+              onClick={() => addItem(departmentInput, departments, setDepartments, setDepartmentInput, setDepartmentFilter)}
               className="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1"
             >
               <Plus size={12} /> Add
@@ -868,7 +872,7 @@ const MasterDataView = ({
               className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium text-slate-700 outline-none"
             >
               <option value="All">All Regions</option>
-              {regions.map(region => <option key={region} value={region}>{region}</option>)}
+              {regions.map(region => <option key={`opt-${region}`} value={region}>{region}</option>)}
             </select>
             <div className="relative w-full max-w-md">
               <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
