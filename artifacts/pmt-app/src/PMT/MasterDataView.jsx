@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, Trash2, Search, ShieldCheck, Edit2, X, ChevronUp, ChevronDown, Lock, Users, Crown, Check, Star, UserCheck, UserPlus, Edit3, Mail, MessageSquare, Bug, Lightbulb, AlertCircle, CheckCircle2, Clock, Filter, Eye, EyeOff, FlaskConical } from 'lucide-react';
+import { Plus, Trash2, Search, ShieldCheck, Edit2, X, ChevronUp, ChevronDown, Lock, Users, Crown, Check, Star, UserCheck, UserPlus, Edit3, Mail, MessageSquare, Bug, Lightbulb, AlertCircle, CheckCircle2, Clock, Filter, Eye, EyeOff, FlaskConical, Archive, ArchiveRestore, ChevronRight } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 
 const REPEAT_OPTIONS = ['Daily', 'Weekly', 'Monthly', 'Once'];
@@ -129,6 +129,7 @@ const MasterDataView = ({
   const [fbDesc, setFbDesc] = useState('');
   const [fbSubmitted, setFbSubmitted] = useState(false);
   const [fbAdminFilter, setFbAdminFilter] = useState('All');
+  const [showArchived, setShowArchived] = useState(false);
 
   const normalizedRoles = useMemo(() => {
     const defaults = [
@@ -1102,7 +1103,10 @@ const MasterDataView = ({
         const isAdmin = currentUser?.role === 'Super Admin';
         const myItems = feedbackItems.filter(f => f.userId === currentUser?.id).sort((a,b) => b.timestamp - a.timestamp);
         const adminItems = feedbackItems
-          .filter(f => fbAdminFilter === 'All' || f.status === fbAdminFilter)
+          .filter(f => !f.archived && (fbAdminFilter === 'All' || f.status === fbAdminFilter))
+          .sort((a,b) => b.timestamp - a.timestamp);
+        const archivedItems = feedbackItems
+          .filter(f => f.archived)
           .sort((a,b) => b.timestamp - a.timestamp);
 
         const handleSubmit = (e) => {
@@ -1130,6 +1134,12 @@ const MasterDataView = ({
         };
         const deleteItem = (id) => {
           setFeedbackItems(feedbackItems.filter(f => f.id !== id));
+        };
+        const archiveItem = (id) => {
+          setFeedbackItems(feedbackItems.map(f => f.id === id ? { ...f, archived: true, archivedAt: Date.now() } : f));
+        };
+        const unarchiveItem = (id) => {
+          setFeedbackItems(feedbackItems.map(f => f.id === id ? { ...f, archived: false, archivedAt: null } : f));
         };
 
         return (
@@ -1223,6 +1233,11 @@ const MasterDataView = ({
                                 <option>Awaiting Testing</option>
                                 <option>Resolved</option>
                               </select>
+                              {item.status === 'Resolved' && (
+                                <button onClick={() => archiveItem(item.id)} className="p-1 text-slate-300 hover:text-slate-600 transition-all" title="Archive this resolved item">
+                                  <Archive size={13}/>
+                                </button>
+                              )}
                               <button onClick={() => deleteItem(item.id)} className="p-1 text-slate-300 hover:text-red-500 transition-all" title="Delete">
                                 <Trash2 size={13}/>
                               </button>
@@ -1236,6 +1251,56 @@ const MasterDataView = ({
                         </div>
                       );
                     })}
+                  </div>
+                )}
+
+                {archivedItems.length > 0 && (
+                  <div className="border-t border-slate-100 pt-3 mt-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowArchived(v => !v)}
+                      className="flex items-center gap-2 text-[11px] font-semibold text-slate-400 hover:text-slate-600 transition-all w-full"
+                    >
+                      <ChevronRight size={13} className={`transition-transform ${showArchived ? 'rotate-90' : ''}`}/>
+                      <Archive size={12}/>
+                      Archived ({archivedItems.length})
+                    </button>
+                    {showArchived && (
+                      <div className="space-y-2 mt-2">
+                        {archivedItems.map(item => {
+                          const typeInfo = TYPES.find(t => t.id === item.type) || TYPES[2];
+                          return (
+                            <div key={item.id} className="border border-slate-100 rounded-xl p-3 space-y-2 bg-slate-50/40 opacity-70 hover:opacity-100 transition-all">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className={`flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-semibold ${typeInfo.color}`}>
+                                    {typeInfo.icon} {item.type}
+                                  </span>
+                                  <span className="text-xs font-bold text-slate-600">{item.title}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 flex-shrink-0">
+                                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-semibold bg-emerald-50 text-emerald-600 border-emerald-200">
+                                    <CheckCircle2 size={10}/> Resolved
+                                  </span>
+                                  <button onClick={() => unarchiveItem(item.id)} className="p-1 text-slate-300 hover:text-blue-500 transition-all" title="Restore to active list">
+                                    <ArchiveRestore size={13}/>
+                                  </button>
+                                  <button onClick={() => deleteItem(item.id)} className="p-1 text-slate-300 hover:text-red-500 transition-all" title="Delete permanently">
+                                    <Trash2 size={13}/>
+                                  </button>
+                                </div>
+                              </div>
+                              <p className="text-xs text-slate-500 leading-relaxed">{item.description}</p>
+                              <div className="flex items-center gap-3 text-[10px] text-slate-400 font-medium">
+                                <span>{item.userName} · {item.userRole}{item.userDept ? ` · ${item.userDept}` : ''}</span>
+                                <span>Submitted: {new Date(item.timestamp).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}</span>
+                                {item.archivedAt && <span>Archived: {new Date(item.archivedAt).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}</span>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
