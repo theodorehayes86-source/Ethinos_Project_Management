@@ -93,6 +93,9 @@ const MasterDataView = ({
     setTimeout(() => setter(''), 3000);
   };
 
+  const [deleteBlocker, setDeleteBlocker] = useState(null);
+  // { kind: 'department'|'region'|'category', name: string, items: string[] }
+
   // --- CLIENT STATE ---
   const [clientSearch, setClientSearch] = useState('');
   // Edit
@@ -186,11 +189,40 @@ const MasterDataView = ({
 
   const removeCategory = (category) => {
     if (taskCategories.length <= 1) return;
+    const allTasks = Object.values(clientLogs).flat();
+    const linked = allTasks.filter(t => t.category === category);
+    if (linked.length > 0) {
+      const clientNames = [...new Set(
+        linked.map(t => {
+          const match = Object.entries(clientLogs).find(([, tasks]) => tasks.some(x => x.id === t.id));
+          if (!match) return null;
+          const client = clients.find(c => c.id === match[0]);
+          return client ? client.name : match[0];
+        }).filter(Boolean)
+      )];
+      setDeleteBlocker({
+        kind: 'category',
+        name: category,
+        items: clientNames.length > 0
+          ? [`${linked.length} task${linked.length !== 1 ? 's' : ''} across: ${clientNames.join(', ')}`]
+          : [`${linked.length} task${linked.length !== 1 ? 's' : ''}`],
+      });
+      return;
+    }
     setTaskCategories(taskCategories.filter(item => item !== category));
   };
 
   const removeDepartment = (department) => {
     if (departments.length <= 1) return;
+    const linked = users.filter(u => u.department === department);
+    if (linked.length > 0) {
+      setDeleteBlocker({
+        kind: 'department',
+        name: department,
+        items: linked.map(u => u.name || u.email),
+      });
+      return;
+    }
     const next = departments.filter(item => item !== department);
     setDepartments(next, departments);
     setDepartmentFilter('All');
@@ -198,6 +230,15 @@ const MasterDataView = ({
 
   const removeRegion = (region) => {
     if (regions.length <= 1) return;
+    const linked = users.filter(u => u.region === region);
+    if (linked.length > 0) {
+      setDeleteBlocker({
+        kind: 'region',
+        name: region,
+        items: linked.map(u => u.name || u.email),
+      });
+      return;
+    }
     const next = regions.filter(item => item !== region);
     setRegions(next, regions);
     setRegionFilter('All');
@@ -2039,6 +2080,50 @@ const MasterDataView = ({
                 className="px-5 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-all shadow-sm"
               >
                 {editingTemplate ? 'Save Changes' : 'Create Template'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Association blocker modal */}
+      {deleteBlocker && (
+        <div className="fixed inset-0 z-[900] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">Cannot delete "{deleteBlocker.name}"</h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  {deleteBlocker.kind === 'category'
+                    ? 'This task category is still in use:'
+                    : `The following ${deleteBlocker.kind === 'department' ? 'employees' : 'employees'} are assigned to this ${deleteBlocker.kind}:`}
+                </p>
+              </div>
+            </div>
+            <ul className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 space-y-1 max-h-48 overflow-y-auto">
+              {deleteBlocker.items.map((item, i) => (
+                <li key={i} className="text-sm text-slate-700 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
+                  {item}
+                </li>
+              ))}
+            </ul>
+            <p className="text-xs text-slate-500">
+              {deleteBlocker.kind === 'category'
+                ? 'Reassign those tasks to a different category first, then try again.'
+                : `Reassign or remove those employees from this ${deleteBlocker.kind} first, then try again.`}
+            </p>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setDeleteBlocker(null)}
+                className="px-5 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-all"
+              >
+                Got it
               </button>
             </div>
           </div>
