@@ -196,6 +196,13 @@ const MasterDataView = ({
     setDepartmentFilter('All');
   };
 
+  const removeRegion = (region) => {
+    if (regions.length <= 1) return;
+    const next = regions.filter(item => item !== region);
+    setRegions(next, regions);
+    setRegionFilter('All');
+  };
+
   const addRegion = () => {
     console.log('[addRegion] regionInput=', JSON.stringify(regionInput), 'regions=', regions);
     const trimmed = regionInput.trim();
@@ -922,12 +929,18 @@ const MasterDataView = ({
               <thead>
                 <tr className="bg-slate-100 text-xs font-semibold text-slate-600">
                   <th className="px-3 py-2 text-left">Region</th>
+                  <th className="px-3 py-2 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredRegions.map(region => (
                   <tr key={region}>
                     <td className="px-3 py-2 text-sm font-medium text-slate-700">{region}</td>
+                    <td className="px-3 py-2 text-right">
+                      <button onClick={() => removeRegion(region)} className="p-1.5 text-slate-400 hover:text-red-500 transition-all">
+                        <Trash2 size={14} />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
