@@ -381,7 +381,14 @@ const HomeView = ({
                     </div>
                   </div>
                   <div className="border border-slate-200 rounded-xl p-3 bg-slate-50">
-                    <DatePicker selected={selectedDate} onChange={date => setSelectedDate(date)} inline />
+                    <DatePicker
+                      selected={selectedDate}
+                      onChange={date => {
+                        setSelectedDate(date);
+                        if (taskDueDate && date && date > taskDueDate) setTaskDueDate(null);
+                      }}
+                      inline
+                    />
                   </div>
                 </div>
 
