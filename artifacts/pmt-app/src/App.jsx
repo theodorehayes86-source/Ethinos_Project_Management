@@ -243,6 +243,15 @@ const App = () => {
   const [sidebarMinimized, setSidebarMinimized] = useState(false);
   const [dbReady, setDbReady] = useState(false);
   const [testModeUserId, setTestModeUserId] = useState(null);
+  const msalReady = useRef(false);
+
+  // --- MSAL EAGER INIT (runs once on mount so loginPopup has no awaits in front of it) ---
+  useEffect(() => {
+    try {
+      const msal = getMsalInstance();
+      msal.initialize().then(() => { msalReady.current = true; }).catch(() => {});
+    } catch { /* Azure not configured — email/password only */ }
+  }, []);
 
   // --- FIREBASE AUTH LISTENER ---
   useEffect(() => {
@@ -624,30 +633,41 @@ const App = () => {
   };
 
   const handleMicrosoftLogin = async () => {
+    setLoginError('');
+    let msal;
     try {
-      setLoginError('');
-      const msal = getMsalInstance();
-      await msal.initialize();
-      // Always use popup — the popup's redirectUri points to a lightweight
-      // auth-redirect.html page so Replit's dev banner never interferes.
-      let msalResult;
-      try {
-        msalResult = await msal.loginPopup(loginRequest);
-      } catch (popupErr) {
-        if (
-          popupErr?.errorCode === 'user_cancelled' ||
-          popupErr?.errorCode === 'popup_window_error' ||
-          popupErr?.name === 'BrowserAuthError'
-        ) return;
-        throw popupErr;
+      msal = getMsalInstance();
+    } catch (err) {
+      setLoginError('Microsoft login is not configured. Please use email/password to sign in.');
+      return;
+    }
+
+    // If MSAL hasn't finished its async init yet, wait for it — but only do
+    // this when actually needed (avoids breaking the user-gesture chain on the
+    // hot path where msalReady.current is already true).
+    if (!msalReady.current) {
+      try { await msal.initialize(); msalReady.current = true; } catch { /* ignore */ }
+    }
+
+    // Call loginPopup() immediately — no awaits between here and window.open()
+    // so the browser treats it as a direct user-gesture and won't block the popup.
+    let msalResult;
+    try {
+      msalResult = await msal.loginPopup(loginRequest);
+    } catch (popupErr) {
+      if (popupErr?.errorCode === 'user_cancelled') return;
+      if (popupErr?.errorCode === 'popup_window_error') {
+        setLoginError('Popup was blocked. Please allow popups for this site and try again.');
+        return;
       }
+      setLoginError('Microsoft sign-in failed. Please try again.');
+      return;
+    }
+
+    try {
       await finishMsLogin(msalResult);
     } catch (err) {
-      if (err?.message?.includes('VITE_AZURE_CLIENT_ID is not set')) {
-        setLoginError('Microsoft login is not configured. Please use email/password to sign in.');
-      } else {
-        setLoginError('Microsoft sign-in failed. Please try again.');
-      }
+      setLoginError('Microsoft sign-in failed. Please try again.');
     }
   };
 
