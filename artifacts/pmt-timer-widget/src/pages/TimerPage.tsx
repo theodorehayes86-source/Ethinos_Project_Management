@@ -53,6 +53,7 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
   // "done" flow states
   const [showQcPrompt, setShowQcPrompt] = useState(false);
   const [qcSent, setQcSent] = useState(false);
+  const [autoPaused, setAutoPaused] = useState(false);
 
   useEffect(() => {
     if (timerState === "running") {
@@ -98,10 +99,45 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
     }
   }, []);
 
+  // Subscribe to auto-pause events from Electron (screen lock / suspend)
+  useEffect(() => {
+    const api = (window as unknown as { electronAPI?: { onAutoPause?: (cb: () => void) => () => void } }).electronAPI;
+    if (!api?.onAutoPause) return;
+
+    const unsub = api.onAutoPause(() => {
+      // Check startedAtRef: if it's non-null, the timer was running
+      if (startedAtRef.current === null) return;
+
+      // Stop the sync interval first — same as manual pause — to prevent
+      // a near-simultaneous 10 s tick from overwriting the paused state
+      stopSyncInterval();
+
+      // Snapshot elapsed
+      baseElapsedRef.current = baseElapsedRef.current + (Date.now() - startedAtRef.current);
+      startedAtRef.current = null;
+      const snapped = baseElapsedRef.current;
+
+      setElapsedMs(snapped);
+      setAutoPaused(true);
+      setTimerState("paused");
+
+      // Sync to Firebase (fire-and-forget)
+      void updateTaskTimer(task.clientId, task.taskIndex, task.id, {
+        elapsedMs: snapped,
+        timerState: "paused",
+        timerStartedAt: null,
+        status: liveStatus,
+      });
+    });
+
+    return unsub;
+  }, [task, updateTaskTimer, liveStatus, stopSyncInterval]);
+
   const handleStart = useCallback(() => {
     const now = Date.now();
     startedAtRef.current = now;
     const nextStatus = liveStatus === "TODO" ? "WIP" : liveStatus;
+    setAutoPaused(false);
     setTimerState("running");
     setLiveStatus(nextStatus);
     void updateTaskTimer(task.clientId, task.taskIndex, task.id, {
@@ -266,6 +302,11 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
               <p className="text-xs text-slate-500 uppercase tracking-widest mt-1">
                 {isRunning ? "Running" : isPaused ? "Paused" : "Stopped"}
               </p>
+              {isPaused && autoPaused && (
+                <p className="text-[10px] text-amber-400/80 uppercase tracking-widest mt-1">
+                  Auto-paused (screen locked)
+                </p>
+              )}
             </div>
           </div>
         </div>

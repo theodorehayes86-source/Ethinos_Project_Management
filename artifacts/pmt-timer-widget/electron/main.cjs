@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, session, protocol, net } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, session, protocol, net, powerMonitor } = require("electron");
 const path = require("path");
 
 let mainWindow = null;
@@ -162,6 +162,15 @@ app.whenReady().then(() => {
   setupSession();
   registerAppProtocol();
   createWindow();
+
+  // Auto-pause the timer when the screen is locked or the system suspends
+  function sendAutoPause() {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("auto-pause-timer");
+    }
+  }
+  powerMonitor.on("lock-screen", sendAutoPause);
+  powerMonitor.on("suspend", sendAutoPause);
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

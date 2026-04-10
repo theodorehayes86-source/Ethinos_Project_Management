@@ -9,6 +9,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("mini-mode-changed", handler);
     return () => ipcRenderer.removeListener("mini-mode-changed", handler);
   },
+  onAutoPause: (cb) => {
+    const handler = () => cb();
+    ipcRenderer.on("auto-pause-timer", handler);
+    return () => ipcRenderer.removeListener("auto-pause-timer", handler);
+  },
   isElectron: true,
   platform: process.platform,
 });
