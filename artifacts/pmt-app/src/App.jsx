@@ -688,20 +688,24 @@ const App = () => {
       return;
     }
 
-    const storedState = localStorage.getItem('ms_auth_state');
-    const verifier    = localStorage.getItem('ms_pkce_verifier');
-    const redirectUri = localStorage.getItem('ms_redirect_uri');
-
-    console.log('[MS auth-redirect] state match:', state === storedState, 'verifier present:', !!verifier);
-
-    if (!storedState || state !== storedState || !verifier) {
-      setMsAuthRedirectError('State mismatch — please go back to the original tab and try again.');
-      return;
+    // Decode verifier and redirectUri from the state param — they were embedded
+    // by handleMicrosoftLogin so no localStorage (cross-partition) access is needed.
+    let verifier, redirectUri;
+    try {
+      const padded = state.replace(/-/g, '+').replace(/_/g, '/');
+      const decoded = JSON.parse(atob(padded + '='.repeat((4 - padded.length % 4) % 4)));
+      verifier    = decoded.v;
+      redirectUri = decoded.r;
+    } catch {
+      verifier = null;
     }
 
-    localStorage.removeItem('ms_auth_state');
-    localStorage.removeItem('ms_pkce_verifier');
-    localStorage.removeItem('ms_redirect_uri');
+    console.log('[MS auth-redirect] verifier decoded from state:', !!verifier, 'redirectUri:', redirectUri);
+
+    if (!verifier || !redirectUri) {
+      setMsAuthRedirectError('Invalid authentication state — please close this tab and try again.');
+      return;
+    }
 
     const clientId = import.meta.env.VITE_AZURE_CLIENT_ID;
     const tenantId = import.meta.env.VITE_AZURE_TENANT_ID;
@@ -741,8 +745,10 @@ const App = () => {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Open a Microsoft login tab using a custom PKCE flow.
-  // We redirect back to the ROOT URL of this app so the app itself can
-  // process the auth code — bypassing all postMessage/sandbox issues.
+  // The PKCE verifier and redirectUri are encoded inside the OAuth `state`
+  // parameter so they travel through Azure's redirect URL with zero reliance
+  // on localStorage (which is storage-partitioned when the app runs inside
+  // a Replit preview iframe on a different top-level origin).
   const handleMicrosoftLogin = async () => {
     setLoginError('');
     setMsLoginStatus('');
@@ -756,22 +762,20 @@ const App = () => {
       return;
     }
 
-    // Redirect back to the root of this app — already registered in Azure.
     const redirectUri = window.location.origin + '/';
-
     const { verifier, challenge } = await generatePkce();
-    const state = crypto.randomUUID();
 
-    localStorage.setItem('ms_pkce_verifier', verifier);
-    localStorage.setItem('ms_auth_state',    state);
-    localStorage.setItem('ms_redirect_uri',  redirectUri);
+    // Encode verifier + redirectUri into the state string so the auth tab
+    // can read them directly from the URL — no cross-partition storage needed.
+    const statePayload = btoa(JSON.stringify({ v: verifier, r: redirectUri }))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
     const authUrl = new URL(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize`);
     authUrl.searchParams.set('client_id',             clientId);
     authUrl.searchParams.set('response_type',         'code');
     authUrl.searchParams.set('redirect_uri',          redirectUri);
     authUrl.searchParams.set('scope',                 'openid profile email User.Read');
-    authUrl.searchParams.set('state',                 state);
+    authUrl.searchParams.set('state',                 statePayload);
     authUrl.searchParams.set('code_challenge',        challenge);
     authUrl.searchParams.set('code_challenge_method', 'S256');
     authUrl.searchParams.set('response_mode',         'query');
@@ -785,13 +789,12 @@ const App = () => {
     );
 
     if (!tab) {
-      // window.open() was blocked — redirect the current window instead.
       console.warn('[MS login] Popup blocked, falling back to same-window redirect');
       window.location.href = authUrl.toString();
       return;
     }
 
-    console.log('[MS login] Auth tab opened — waiting for Firebase auth-state sync…');
+    console.log('[MS login] Auth tab opened — waiting for Firebase cross-tab auth-state sync…');
     setMsLoginStatus('Waiting for Microsoft sign-in… (you can return to this tab after signing in)');
   };
 
