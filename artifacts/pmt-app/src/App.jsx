@@ -208,6 +208,13 @@ const MicrosoftProfileSetup = ({ firebaseUser, departments, regions, onComplete,
   );
 };
 
+// Detect if this window was opened as a popup (e.g. by MSAL's loginPopup()).
+// We render a minimal screen so the user doesn't see the login page flash,
+// and MSAL closes the popup automatically after posting back to the parent.
+const isPopupWindow = (() => {
+  try { return !!window.opener && window.opener !== window; } catch { return false; }
+})();
+
 const App = () => {
   const [activeTab, setActiveTab] = useState('home');
   const [currentUserId, setCurrentUserId] = useState(null);
@@ -256,10 +263,13 @@ const App = () => {
       const msal = getMsalInstance();
       msal.initialize().then(async () => {
         msalReady.current = true;
-        // Handles the popup redirect case: if this window was opened as a
-        // popup by loginPopup(), MSAL detects window.opener and resolves the
-        // auth code silently without affecting the parent's auth state.
-        await msal.handleRedirectPromise();
+        // In a popup window: handleRedirectPromise() processes the auth code,
+        // posts the result back to the parent via window.opener.postMessage(),
+        // then closes this popup. This is what makes loginPopup() resolve.
+        const result = await msal.handleRedirectPromise();
+        if (result && isPopupWindow) {
+          try { window.close(); } catch { /* ignore */ }
+        }
       }).catch(() => {});
     } catch { /* Azure not configured — email/password only */ }
   }, []);
@@ -743,6 +753,17 @@ const App = () => {
     if (activeTab === 'reports' && !canSeeReports) setActiveTab('home');
     if (activeTab === 'approvals' && !canSeeApprovals) setActiveTab('home');
   }, [activeTab, canSeeControlCenter, canSeeEmployeeView, canSeeMetrics, canSeeReports, canSeeApprovals]);
+
+  // If this window is a popup opened by loginPopup(), show a minimal screen.
+  // MSAL will process the auth code via handleRedirectPromise(), post the
+  // result back to the parent window, and close this popup automatically.
+  if (isPopupWindow) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-slate-50">
+        <div className="text-sm font-semibold text-slate-500">Completing sign-in…</div>
+      </div>
+    );
+  }
 
   if (authLoading) {
     return (
