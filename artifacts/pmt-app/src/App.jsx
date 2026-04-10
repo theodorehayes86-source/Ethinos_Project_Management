@@ -239,7 +239,15 @@ const App = () => {
   const [firebaseUser, setFirebaseUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [msLoginPending, setMsLoginPending] = useState(false);
-  const [msLoginStatus, setMsLoginStatus] = useState(''); // debug step display
+  const [msLoginStatus, setMsLoginStatus] = useState('');
+
+  // True when this window was opened by Microsoft's redirect after auth.
+  // We detect it once at init time (before React clears the URL).
+  const [isAuthRedirectMode] = useState(() => {
+    const p = new URLSearchParams(window.location.search);
+    return !!(p.get('code') && p.get('state'));
+  });
+  const [msAuthRedirectError, setMsAuthRedirectError] = useState('');
 
   const [clients, setClients] = useState([]);
   const [users, setUsers] = useState(DEFAULT_USERS);
@@ -647,173 +655,144 @@ const App = () => {
     }
   };
 
-  // Stable ref so event listeners set up once always call the latest finishMsLogin.
+  // Stable ref so the auth-redirect useEffect can call finishMsLogin safely.
   const finishMsLoginRef = useRef(finishMsLogin);
   finishMsLoginRef.current = finishMsLogin;
 
-  // Process the auth result received from auth-redirect.html (via postMessage OR storage event).
-  const processMsAuthResult = React.useCallback(async (data) => {
-    const { code, state: responseState, error, errorDesc } = data;
-    console.log('[MS login] processMsAuthResult called', { code: code?.slice(0,12), responseState: responseState?.slice(0,12), error });
+  // -------------------------------------------------------------------------
+  // Auth-redirect processing — runs once on mount when this tab is the one
+  // Azure redirected back to (URL has ?code=&state=).
+  // Strategy: redirect back to the ROOT URL of the main app (already registered
+  // in Azure). The app running in this auth tab exchanges the PKCE code for a
+  // token, signs in with Firebase, then tries to close itself.
+  // The ORIGINAL tab detects the sign-in via Firebase's cross-tab auth
+  // persistence (onAuthStateChanged fires there within ~1 s). No postMessage
+  // or storage events needed.
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    if (!isAuthRedirectMode) return;
+
+    const p           = new URLSearchParams(window.location.search);
+    const code        = p.get('code');
+    const state       = p.get('state');
+    const error       = p.get('error');
+    const errorDesc   = p.get('error_description');
+
+    // Clean the URL so a manual reload doesn't re-trigger this.
+    window.history.replaceState({}, '', window.location.pathname);
+
+    console.log('[MS auth-redirect] code present:', !!code, 'state present:', !!state, 'error:', error);
 
     if (error) {
-      console.error('[MS login] Auth error from Azure:', error, errorDesc);
-      setMsLoginStatus('');
-      setLoginError(errorDesc || error);
+      setMsAuthRedirectError(errorDesc || error);
       return;
     }
 
-    const storedState   = localStorage.getItem('ms_auth_state');
-    const verifier      = localStorage.getItem('ms_pkce_verifier');
-    const redirectUri   = localStorage.getItem('ms_redirect_uri');
-    console.log('[MS login] Stored state match:', responseState === storedState, 'verifier present:', !!verifier);
+    const storedState = localStorage.getItem('ms_auth_state');
+    const verifier    = localStorage.getItem('ms_pkce_verifier');
+    const redirectUri = localStorage.getItem('ms_redirect_uri');
 
-    if (!storedState || responseState !== storedState) {
-      console.error('[MS login] State mismatch!', { responseState, storedState });
-      setMsLoginStatus('');
-      setLoginError('Authentication failed: state mismatch. Please try again.');
+    console.log('[MS auth-redirect] state match:', state === storedState, 'verifier present:', !!verifier);
+
+    if (!storedState || state !== storedState || !verifier) {
+      setMsAuthRedirectError('State mismatch — please go back to the original tab and try again.');
       return;
     }
 
     localStorage.removeItem('ms_auth_state');
     localStorage.removeItem('ms_pkce_verifier');
     localStorage.removeItem('ms_redirect_uri');
-    localStorage.removeItem('ms_auth_result');
 
     const clientId = import.meta.env.VITE_AZURE_CLIENT_ID;
     const tenantId = import.meta.env.VITE_AZURE_TENANT_ID;
 
-    try {
-      setMsLoginStatus('Exchanging code for token…');
-      console.log('[MS login] Calling Azure token endpoint…');
-      const tokenRes = await fetch(
-        `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({
-            grant_type:    'authorization_code',
-            client_id:     clientId,
-            code,
-            redirect_uri:  redirectUri,
-            code_verifier: verifier,
-          }),
-        },
-      );
-      const tokenData = await tokenRes.json();
-      console.log('[MS login] Token endpoint response:', tokenData.error ? `ERROR: ${tokenData.error}` : 'OK, got access_token');
-      if (tokenData.error) throw new Error(tokenData.error_description || tokenData.error);
-
-      setMsLoginStatus('Signing in to Ethinos…');
-      await finishMsLoginRef.current({ accessToken: tokenData.access_token });
-      setMsLoginStatus('');
-      console.log('[MS login] Sign-in complete ✓');
-    } catch (err) {
-      console.error('[MS login] Error during token exchange / Firebase sign-in:', err);
-      setMsLoginStatus('');
-      setLoginError(err.message || 'Microsoft sign-in failed. Please try again.');
-    }
-  }, [setLoginError]);
-
-  const processMsAuthResultRef = useRef(processMsAuthResult);
-  processMsAuthResultRef.current = processMsAuthResult;
-
-  // --- Dual-channel listener: postMessage (popup) + storage event (new tab) ---
-  useEffect(() => {
-    // Channel 1: postMessage — fires when auth-redirect.html has window.opener
-    const onMessage = (event) => {
-      if (event.origin !== window.location.origin) return;
-      if (event.data?.type !== 'ms-auth-callback') return;
-      console.log('[MS login] postMessage received from popup ✓', event.data?.code?.slice(0,12));
-      processMsAuthResultRef.current(event.data);
-    };
-
-    // Channel 2: storage event — fires when auth-redirect.html writes to localStorage
-    // (this is the fallback for when the popup opens as a new tab with no opener)
-    const onStorage = (event) => {
-      if (event.key !== 'ms_auth_result') return;
-      if (!event.newValue) return;
-      console.log('[MS login] localStorage storage event received ✓');
+    (async () => {
       try {
-        const data = JSON.parse(event.newValue);
-        processMsAuthResultRef.current(data);
-      } catch (e) {
-        console.error('[MS login] Failed to parse ms_auth_result from storage', e);
+        console.log('[MS auth-redirect] Exchanging code at Azure token endpoint…');
+        const tokenRes = await fetch(
+          `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+              grant_type:    'authorization_code',
+              client_id:     clientId,
+              code,
+              redirect_uri:  redirectUri,
+              code_verifier: verifier,
+            }),
+          },
+        );
+        const tokenData = await tokenRes.json();
+        console.log('[MS auth-redirect] Token response:', tokenData.error || 'OK');
+        if (tokenData.error) throw new Error(tokenData.error_description || tokenData.error);
+
+        console.log('[MS auth-redirect] Calling finishMsLogin…');
+        await finishMsLoginRef.current({ accessToken: tokenData.access_token });
+        console.log('[MS auth-redirect] Firebase sign-in complete ✓ — trying to close tab');
+        // Give the parent tab a moment to receive the Firebase auth-state change,
+        // then try to close this auth tab.
+        setTimeout(() => window.close(), 800);
+      } catch (err) {
+        console.error('[MS auth-redirect] Error:', err);
+        setMsAuthRedirectError(err.message || 'Sign-in failed. Please close this tab and try again.');
       }
-    };
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    window.addEventListener('message', onMessage);
-    window.addEventListener('storage', onStorage);
-
-    // Also check localStorage immediately in case we missed the event
-    // (e.g. the auth tab completed before this listener was registered)
-    const existing = localStorage.getItem('ms_auth_result');
-    if (existing) {
-      console.log('[MS login] Found existing ms_auth_result in localStorage on mount');
-      try {
-        processMsAuthResultRef.current(JSON.parse(existing));
-      } catch {}
-    }
-
-    return () => {
-      window.removeEventListener('message', onMessage);
-      window.removeEventListener('storage', onStorage);
-    };
-  }, []);
-
-  // Open a Microsoft login popup (or new tab) using a custom PKCE flow.
-  // We build the auth URL ourselves; auth-redirect.html sends back the code
-  // via postMessage (popup) or localStorage storage event (new tab).
+  // Open a Microsoft login tab using a custom PKCE flow.
+  // We redirect back to the ROOT URL of this app so the app itself can
+  // process the auth code — bypassing all postMessage/sandbox issues.
   const handleMicrosoftLogin = async () => {
     setLoginError('');
     setMsLoginStatus('');
     const clientId = import.meta.env.VITE_AZURE_CLIENT_ID;
     const tenantId = import.meta.env.VITE_AZURE_TENANT_ID;
 
-    console.log('[MS login] handleMicrosoftLogin called, clientId present:', !!clientId, 'tenantId present:', !!tenantId);
+    console.log('[MS login] clientId present:', !!clientId, 'tenantId present:', !!tenantId);
 
     if (!clientId || !tenantId) {
       setLoginError('Microsoft login is not configured. Please use email/password to sign in.');
       return;
     }
 
-    const redirectUri = window.location.origin + '/auth-redirect.html';
+    // Redirect back to the root of this app — already registered in Azure.
+    const redirectUri = window.location.origin + '/';
+
     const { verifier, challenge } = await generatePkce();
     const state = crypto.randomUUID();
 
-    // Use localStorage so the storage-event fallback can also read these values.
     localStorage.setItem('ms_pkce_verifier', verifier);
-    localStorage.setItem('ms_auth_state', state);
-    localStorage.setItem('ms_redirect_uri', redirectUri);
-    // Clear any stale result from a previous attempt.
-    localStorage.removeItem('ms_auth_result');
+    localStorage.setItem('ms_auth_state',    state);
+    localStorage.setItem('ms_redirect_uri',  redirectUri);
 
     const authUrl = new URL(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize`);
-    authUrl.searchParams.set('client_id',              clientId);
-    authUrl.searchParams.set('response_type',          'code');
-    authUrl.searchParams.set('redirect_uri',           redirectUri);
-    authUrl.searchParams.set('scope',                  'openid profile email User.Read');
-    authUrl.searchParams.set('state',                  state);
-    authUrl.searchParams.set('code_challenge',         challenge);
-    authUrl.searchParams.set('code_challenge_method',  'S256');
-    authUrl.searchParams.set('response_mode',          'query');
+    authUrl.searchParams.set('client_id',             clientId);
+    authUrl.searchParams.set('response_type',         'code');
+    authUrl.searchParams.set('redirect_uri',          redirectUri);
+    authUrl.searchParams.set('scope',                 'openid profile email User.Read');
+    authUrl.searchParams.set('state',                 state);
+    authUrl.searchParams.set('code_challenge',        challenge);
+    authUrl.searchParams.set('code_challenge_method', 'S256');
+    authUrl.searchParams.set('response_mode',         'query');
 
     console.log('[MS login] Opening auth URL, redirectUri:', redirectUri);
 
-    const popup = window.open(
+    const tab = window.open(
       authUrl.toString(),
-      'ms-auth-popup',
+      'ms-auth-tab',
       'width=520,height=680,menubar=no,toolbar=no,location=no,resizable=yes',
     );
 
-    if (!popup) {
-      console.warn('[MS login] Popup blocked — window.open() returned null');
-      setLoginError('Popup was blocked. Please allow popups for this site and try again.');
+    if (!tab) {
+      // window.open() was blocked — redirect the current window instead.
+      console.warn('[MS login] Popup blocked, falling back to same-window redirect');
+      window.location.href = authUrl.toString();
       return;
     }
 
-    console.log('[MS login] Popup/tab opened, waiting for auth result…');
-    setMsLoginStatus('Waiting for Microsoft sign-in…');
+    console.log('[MS login] Auth tab opened — waiting for Firebase auth-state sync…');
+    setMsLoginStatus('Waiting for Microsoft sign-in… (you can return to this tab after signing in)');
   };
 
   const handleCreateAccount = async ({ name, email, password, department, region }) => {
@@ -878,13 +857,28 @@ const App = () => {
     if (activeTab === 'approvals' && !canSeeApprovals) setActiveTab('home');
   }, [activeTab, canSeeControlCenter, canSeeEmployeeView, canSeeMetrics, canSeeReports, canSeeApprovals]);
 
-  // If this window is a popup opened by loginPopup(), show a minimal screen.
-  // MSAL will process the auth code via handleRedirectPromise(), post the
-  // result back to the parent window, and close this popup automatically.
-  if (isPopupWindow) {
+  // This tab was the Azure redirect target — show a simple "completing" screen.
+  // The parent tab gets signed in via Firebase's cross-tab auth persistence.
+  if (isAuthRedirectMode && !firebaseUser) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-slate-50">
-        <div className="text-sm font-semibold text-slate-500">Completing sign-in…</div>
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+                    minHeight:'100vh', background:'#f8fafc', gap:'16px', fontFamily:'system-ui,sans-serif',
+                    padding:'32px', textAlign:'center' }}>
+        {msAuthRedirectError ? (
+          <>
+            <div style={{ fontSize:'15px', fontWeight:'600', color:'#dc2626' }}>Sign-in error</div>
+            <div style={{ fontSize:'13px', color:'#64748b', maxWidth:'360px' }}>{msAuthRedirectError}</div>
+            <div style={{ fontSize:'12px', color:'#94a3b8' }}>Please close this tab and try again in the original tab.</div>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize:'15px', fontWeight:'600', color:'#1e293b' }}>Completing sign-in…</div>
+            <div style={{ fontSize:'13px', color:'#64748b' }}>Verifying your Microsoft account. Please wait.</div>
+            <div style={{ fontSize:'11px', color:'#94a3b8', marginTop:'8px' }}>
+              This tab will close automatically. If it doesn't, you can close it and return to the original tab.
+            </div>
+          </>
+        )}
       </div>
     );
   }
