@@ -8,10 +8,11 @@ export const msalConfig = {
     clientId: clientId || '',
     authority: `https://login.microsoftonline.com/${tenantId || 'common'}`,
     redirectUri: window.location.origin + (import.meta.env.BASE_URL || '/'),
+    navigateToLoginRequestUrl: false,
   },
   cache: {
-    cacheLocation: 'sessionStorage',
-    storeAuthStateInCookie: false,
+    cacheLocation: 'localStorage',
+    storeAuthStateInCookie: true,
   },
 };
 

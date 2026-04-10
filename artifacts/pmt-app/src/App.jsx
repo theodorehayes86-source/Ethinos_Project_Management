@@ -215,6 +215,7 @@ const App = () => {
   const [firebaseUser, setFirebaseUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [msLoginPending, setMsLoginPending] = useState(false);
+  const [msRedirectLoading, setMsRedirectLoading] = useState(true);
 
   const [clients, setClients] = useState([]);
   const [users, setUsers] = useState(DEFAULT_USERS);
@@ -254,6 +255,53 @@ const App = () => {
       }
     });
     return unsubscribe;
+  }, []);
+
+  // --- MICROSOFT REDIRECT HANDLER (runs on every page load) ---
+  // Safari and other browsers that block popups use loginRedirect(); this effect
+  // processes the auth code that Microsoft appends to the return URL.
+  useEffect(() => {
+    let cancelled = false;
+    const processRedirect = async () => {
+      try {
+        const msal = getMsalInstance();
+        await msal.initialize();
+        const result = await msal.handleRedirectPromise();
+        if (!result || cancelled) return;
+
+        const msEmail = result?.account?.username || result?.account?.idTokenClaims?.email;
+        if (!msEmail || !msEmail.toLowerCase().endsWith('@ethinos.com')) {
+          if (!cancelled) setLoginError('Access is restricted to Ethinos work accounts (@ethinos.com).');
+          return;
+        }
+
+        const apiBase = import.meta.env.VITE_API_BASE_URL || '/api';
+        const resp = await fetch(`${apiBase}/auth/ms-token-exchange`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ msIdToken: result.idToken, email: msEmail }),
+        });
+
+        if (resp.ok) {
+          const { customToken } = await resp.json();
+          if (!cancelled) {
+            setMsLoginPending(true);
+            await signInWithCustomToken(auth, customToken);
+          }
+        } else {
+          const data = await resp.json().catch(() => ({}));
+          if (!cancelled) setLoginError(data.error || 'Microsoft sign-in failed. Please contact your administrator.');
+        }
+      } catch (err) {
+        if (!cancelled && !err?.message?.includes('VITE_AZURE_CLIENT_ID is not set')) {
+          setLoginError('Microsoft sign-in failed. Please try again.');
+        }
+      } finally {
+        if (!cancelled) setMsRedirectLoading(false);
+      }
+    };
+    processRedirect();
+    return () => { cancelled = true; };
   }, []);
 
 
@@ -608,44 +656,9 @@ const App = () => {
       setLoginError('');
       const msal = getMsalInstance();
       await msal.initialize();
-
-      let msalResult;
-      try {
-        msalResult = await msal.loginPopup(loginRequest);
-      } catch (err) {
-        if (
-          err?.errorCode === 'user_cancelled' ||
-          err?.errorCode === 'popup_window_error' ||
-          err?.name === 'BrowserAuthError'
-        ) {
-          return;
-        }
-        throw err;
-      }
-
-      const msEmail = msalResult?.account?.username || msalResult?.account?.idTokenClaims?.email;
-
-      if (!msEmail || !isEthinosDomain(msEmail)) {
-        setLoginError('Access is restricted to Ethinos work accounts (@ethinos.com).');
-        return;
-      }
-
-      // Exchange the Microsoft ID token for a Firebase custom token via API
-      const apiBase = import.meta.env.VITE_API_BASE_URL || '/api';
-      const resp = await fetch(`${apiBase}/auth/ms-token-exchange`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ msIdToken: msalResult.idToken, email: msEmail }),
-      });
-
-      if (resp.ok) {
-        const { customToken } = await resp.json();
-        setMsLoginPending(true);
-        await signInWithCustomToken(auth, customToken);
-      } else {
-        const data = await resp.json().catch(() => ({}));
-        setLoginError(data.error || 'Microsoft sign-in failed. Please contact your administrator.');
-      }
+      // Use redirect flow — works on Safari (popup flow is blocked by Safari ITP).
+      // handleRedirectPromise() in the mount effect will process the result on return.
+      await msal.loginRedirect(loginRequest);
     } catch (err) {
       if (err?.message?.includes('VITE_AZURE_CLIENT_ID is not set')) {
         setLoginError('Microsoft login is not configured. Please use email/password to sign in.');
@@ -717,10 +730,12 @@ const App = () => {
     if (activeTab === 'approvals' && !canSeeApprovals) setActiveTab('home');
   }, [activeTab, canSeeControlCenter, canSeeEmployeeView, canSeeMetrics, canSeeReports, canSeeApprovals]);
 
-  if (authLoading) {
+  if (authLoading || msRedirectLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-slate-50">
-        <div className="text-sm font-semibold text-slate-500">Loading...</div>
+        <div className="text-sm font-semibold text-slate-500">
+          {msRedirectLoading ? 'Completing sign-in…' : 'Loading…'}
+        </div>
       </div>
     );
   }
