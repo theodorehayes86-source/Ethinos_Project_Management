@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { X, Plus, Trash2, Send, Link, Check, ExternalLink } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { X, Plus, Trash2, Send, Link, Check, ExternalLink, AtSign } from 'lucide-react';
 import { format } from 'date-fns';
 
 const statusColors = {
@@ -8,7 +8,31 @@ const statusColors = {
   Pending: 'bg-orange-100 text-orange-700',
 };
 
-const TaskDetailPanel = ({ task, currentUser, onClose, onUpdate }) => {
+const parseMentions = (text) => {
+  const regex = /@(\w[\w\s]*?)(?=\s@|\s*$|[^a-zA-Z\s])/g;
+  const matches = [];
+  let m;
+  while ((m = regex.exec(text)) !== null) {
+    matches.push(m[1].trim());
+  }
+  return matches;
+};
+
+const renderMessageText = (text) => {
+  const parts = text.split(/(@\S[\w\s]*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('@')) {
+      return (
+        <span key={i} className="font-semibold text-blue-300 bg-blue-900/30 px-0.5 rounded">
+          {part}
+        </span>
+      );
+    }
+    return part;
+  });
+};
+
+const TaskDetailPanel = ({ task, currentUser, users = [], setNotifications = () => {}, onClose, onUpdate }) => {
   const [steps, setSteps] = useState(() => task.steps || []);
   const [messages, setMessages] = useState(() => task.messages || []);
   const [links, setLinks] = useState(() => task.links || []);
@@ -18,21 +42,63 @@ const TaskDetailPanel = ({ task, currentUser, onClose, onUpdate }) => {
   const [newLinkUrl, setNewLinkUrl] = useState('');
   const [newLinkLabel, setNewLinkLabel] = useState('');
 
+  // @mention state
+  const [mentionQuery, setMentionQuery] = useState('');
+  const [showMentionMenu, setShowMentionMenu] = useState(false);
+  const [mentionStartIndex, setMentionStartIndex] = useState(null);
+  const msgInputRef = useRef(null);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const saveUpdate = (updatedTask) => {
-    onUpdate(updatedTask);
+  const saveUpdate = (updatedTask) => onUpdate(updatedTask);
+
+  // --- Mention helpers ---
+  const mentionableUsers = users.filter(u => String(u.id) !== String(currentUser?.id));
+  const filteredMentions = mentionQuery
+    ? mentionableUsers.filter(u => u.name?.toLowerCase().includes(mentionQuery.toLowerCase()))
+    : mentionableUsers;
+
+  const handleMessageChange = (e) => {
+    const val = e.target.value;
+    setNewMessage(val);
+
+    const cursor = e.target.selectionStart;
+    const textUpToCursor = val.slice(0, cursor);
+    const atIdx = textUpToCursor.lastIndexOf('@');
+
+    if (atIdx !== -1) {
+      const query = textUpToCursor.slice(atIdx + 1);
+      if (/^[\w\s]*$/.test(query)) {
+        setMentionQuery(query);
+        setMentionStartIndex(atIdx);
+        setShowMentionMenu(true);
+        return;
+      }
+    }
+    setShowMentionMenu(false);
+    setMentionQuery('');
+    setMentionStartIndex(null);
   };
 
+  const handleSelectMention = (user) => {
+    const before = newMessage.slice(0, mentionStartIndex);
+    const after = newMessage.slice(mentionStartIndex + 1 + mentionQuery.length);
+    const inserted = `@${user.name} `;
+    setNewMessage(before + inserted + after);
+    setShowMentionMenu(false);
+    setMentionQuery('');
+    setMentionStartIndex(null);
+    setTimeout(() => msgInputRef.current?.focus(), 0);
+  };
+
+  // --- Steps ---
   const handleAddStep = () => {
     const label = newStepLabel.trim();
     if (!label) return;
-    const newStep = { id: `step-${Date.now()}`, label, checked: false };
-    const updated = [...steps, newStep];
+    const updated = [...steps, { id: `step-${Date.now()}`, label, checked: false }];
     setSteps(updated);
     setNewStepLabel('');
     saveUpdate({ ...task, steps: updated, messages, links });
@@ -50,11 +116,13 @@ const TaskDetailPanel = ({ task, currentUser, onClose, onUpdate }) => {
     saveUpdate({ ...task, steps: updated, messages, links });
   };
 
+  // --- Messages ---
   const handleSendMessage = () => {
     const text = newMessage.trim();
     if (!text) return;
+    const msgId = `msg-${Date.now()}`;
     const msg = {
-      id: `msg-${Date.now()}`,
+      id: msgId,
       authorId: currentUser?.id || null,
       authorName: currentUser?.name || 'Anonymous',
       text,
@@ -63,19 +131,33 @@ const TaskDetailPanel = ({ task, currentUser, onClose, onUpdate }) => {
     const updated = [...messages, msg];
     setMessages(updated);
     setNewMessage('');
+    setShowMentionMenu(false);
     saveUpdate({ ...task, steps, messages: updated, links });
+
+    // Fire notifications for @mentioned users
+    const mentionedNames = parseMentions(text);
+    mentionedNames.forEach(name => {
+      const mentioned = users.find(u => u.name?.toLowerCase() === name.toLowerCase());
+      if (!mentioned || String(mentioned.id) === String(currentUser?.id)) return;
+      setNotifications(prev => [{
+        id: `mention-${msgId}-${mentioned.id}`,
+        type: 'mention',
+        recipientId: mentioned.id,
+        text: `${currentUser?.name || 'Someone'} mentioned you in "${task.name || task.comment}": "${text.length > 60 ? text.slice(0, 60) + '…' : text}"`,
+        time: 'Just now',
+        read: false,
+        taskId: task.id,
+        clientId: task.cid,
+      }, ...prev]);
+    });
   };
 
+  // --- Links ---
   const handleAddLink = () => {
     const url = newLinkUrl.trim();
     if (!url) return;
     const normalized = /^https?:\/\//i.test(url) ? url : `https://${url}`;
-    const link = {
-      id: `link-${Date.now()}`,
-      url: normalized,
-      label: newLinkLabel.trim() || normalized,
-    };
-    const updated = [...links, link];
+    const updated = [...links, { id: `link-${Date.now()}`, url: normalized, label: newLinkLabel.trim() || normalized }];
     setLinks(updated);
     setNewLinkUrl('');
     setNewLinkLabel('');
@@ -93,10 +175,7 @@ const TaskDetailPanel = ({ task, currentUser, onClose, onUpdate }) => {
 
   return (
     <div className="fixed inset-0 z-[800] flex justify-end" onClick={onClose}>
-      <div
-        className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm"
-        aria-hidden="true"
-      />
+      <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" aria-hidden="true" />
       <div
         className="relative flex flex-col bg-white shadow-2xl w-full max-w-lg h-full overflow-hidden animate-in slide-in-from-right duration-300"
         onClick={e => e.stopPropagation()}
@@ -193,7 +272,6 @@ const TaskDetailPanel = ({ task, currentUser, onClose, onUpdate }) => {
               )}
             </div>
 
-            {/* Add step input */}
             <div className="flex gap-2">
               <input
                 type="text"
@@ -216,14 +294,17 @@ const TaskDetailPanel = ({ task, currentUser, onClose, onUpdate }) => {
 
           {/* Messages */}
           <section>
-            <h3 className="text-xs font-bold uppercase tracking-wide text-slate-700 mb-2">
-              Messages
-              {messages.length > 0 && (
-                <span className="ml-1.5 text-slate-400 font-normal normal-case">
-                  {messages.length}
-                </span>
-              )}
-            </h3>
+            <div className="flex items-center gap-1.5 mb-2">
+              <h3 className="text-xs font-bold uppercase tracking-wide text-slate-700">
+                Messages
+                {messages.length > 0 && (
+                  <span className="ml-1.5 text-slate-400 font-normal normal-case">{messages.length}</span>
+                )}
+              </h3>
+              <span className="text-[9px] text-slate-400 font-medium flex items-center gap-0.5">
+                <AtSign size={9} /> to mention a teammate
+              </span>
+            </div>
 
             <div className="space-y-2 mb-3 max-h-52 overflow-y-auto pr-1">
               {messages.length === 0 && (
@@ -234,7 +315,7 @@ const TaskDetailPanel = ({ task, currentUser, onClose, onUpdate }) => {
                 return (
                   <div key={msg.id} className={`flex flex-col ${isMine ? 'items-end' : 'items-start'}`}>
                     <div className={`max-w-[85%] rounded-xl px-3 py-2 ${isMine ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-800'}`}>
-                      <p className="text-xs leading-relaxed">{msg.text}</p>
+                      <p className="text-xs leading-relaxed">{renderMessageText(msg.text)}</p>
                     </div>
                     <div className="flex items-center gap-1.5 mt-0.5 px-1">
                       <span className="text-[9px] font-semibold text-slate-500">{msg.authorName}</span>
@@ -248,24 +329,55 @@ const TaskDetailPanel = ({ task, currentUser, onClose, onUpdate }) => {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* New message input */}
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={newMessage}
-                onChange={e => setNewMessage(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
-                placeholder="Write a message..."
-                className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
-              />
-              <button
-                onClick={handleSendMessage}
-                disabled={!newMessage.trim()}
-                className="p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
-                title="Send message"
-              >
-                <Send size={14} />
-              </button>
+            {/* Message input with @mention */}
+            <div className="relative">
+              {showMentionMenu && filteredMentions.length > 0 && (
+                <div className="absolute bottom-full left-0 mb-1 w-56 bg-white border border-slate-200 rounded-xl shadow-lg z-10 overflow-hidden max-h-44 overflow-y-auto">
+                  <div className="px-3 py-1.5 border-b border-slate-100 flex items-center gap-1.5">
+                    <AtSign size={10} className="text-slate-400" />
+                    <span className="text-[10px] font-semibold text-slate-500">Mention a teammate</span>
+                  </div>
+                  {filteredMentions.map(user => (
+                    <button
+                      key={user.id}
+                      onMouseDown={e => { e.preventDefault(); handleSelectMention(user); }}
+                      className="w-full text-left px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-all"
+                    >
+                      <div className="w-5 h-5 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                        <span className="text-[8px] font-black text-indigo-600">
+                          {(user.name || '?')[0].toUpperCase()}
+                        </span>
+                      </div>
+                      <span className="truncate">{user.name}</span>
+                      {user.role && <span className="text-[9px] text-slate-400 ml-auto flex-shrink-0">{user.role}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-2">
+                <input
+                  ref={msgInputRef}
+                  type="text"
+                  value={newMessage}
+                  onChange={handleMessageChange}
+                  onKeyDown={e => {
+                    if (e.key === 'Escape') { setShowMentionMenu(false); return; }
+                    if (showMentionMenu && e.key === 'Enter') { e.preventDefault(); if (filteredMentions[0]) handleSelectMention(filteredMentions[0]); return; }
+                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); }
+                  }}
+                  onBlur={() => setTimeout(() => setShowMentionMenu(false), 150)}
+                  placeholder="Write a message… type @ to mention"
+                  className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                />
+                <button
+                  onClick={handleSendMessage}
+                  disabled={!newMessage.trim()}
+                  className="p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+                  title="Send message"
+                >
+                  <Send size={14} />
+                </button>
+              </div>
             </div>
           </section>
 
@@ -300,7 +412,6 @@ const TaskDetailPanel = ({ task, currentUser, onClose, onUpdate }) => {
               ))}
             </div>
 
-            {/* Add link inputs */}
             <div className="space-y-2">
               <input
                 type="text"

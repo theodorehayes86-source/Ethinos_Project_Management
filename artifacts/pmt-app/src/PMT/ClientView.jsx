@@ -2053,6 +2053,8 @@ const ClientView = ({
           <TaskDetailPanel
             task={detailTask}
             currentUser={currentUser}
+            users={users}
+            setNotifications={setNotifications}
             onClose={() => setDetailTask(null)}
             onUpdate={(updatedTask) => {
               const updatedLogs = (clientLogs[selectedClient.id] || []).map(l =>

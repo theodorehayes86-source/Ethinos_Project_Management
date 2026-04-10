@@ -352,10 +352,16 @@ const App = () => {
     };
     seedDepartmentsRegions();
 
+    // Only mark DB as ready after the first real users payload arrives —
+    // previously setDbReady(true) ran synchronously before any data came back,
+    // which caused the "Access Not Set Up" screen to flash during load.
+    let dbReadyOnce = false;
+
     const unsubs = [
       syncRef('users', (val) => {
         const firebaseList = Array.isArray(val) ? val : Object.values(val);
         setUsers(firebaseList);
+        if (!dbReadyOnce) { dbReadyOnce = true; setDbReady(true); }
       }),
       syncRef('clients', (val) => setClients(Array.isArray(val) ? val : Object.values(val))),
       syncRef('clientLogs', (val) => setClientLogs(val || {})),
@@ -372,8 +378,6 @@ const App = () => {
       syncRef('reportsAllDataRoles', (val) => setReportsAllDataRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
       syncRef('feedbackItems', (val) => setFeedbackItems(val && typeof val === 'object' ? (Array.isArray(val) ? val : Object.values(val)) : [])),
     ];
-
-    setDbReady(true);
 
     return () => unsubs.forEach(u => u());
   }, [firebaseUser]);

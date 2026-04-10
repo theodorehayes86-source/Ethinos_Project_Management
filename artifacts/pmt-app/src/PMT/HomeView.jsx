@@ -20,6 +20,7 @@ const HomeView = ({
   users = [],
   departments = [],
   onNavigateToClients,
+  setNotifications = () => {},
 }) => {
   const isManagement = managementRoles.includes(currentUser?.role);
   const allClientOptions = useMemo(
@@ -767,6 +768,8 @@ const HomeView = ({
         <TaskDetailPanel
           task={detailTask}
           currentUser={currentUser}
+          users={users}
+          setNotifications={setNotifications}
           onClose={() => setDetailTask(null)}
           onUpdate={(updatedTask) => {
             const cid = updatedTask.cid;

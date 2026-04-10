@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { Bell, Clock, UserPlus, Briefcase, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Bell, Clock, UserPlus, Briefcase, CheckCircle, AlertTriangle, MessageCircle } from 'lucide-react';
 import { parse, differenceInHours } from 'date-fns';
 
 const DISMISSED_KEY = 'pmt_dismissed_notifications';
@@ -10,6 +10,7 @@ const TAB_FOR_TYPE = {
   'assignment-request': 'approvals',
   'client-join-request': 'approvals',
   'team': 'clients',
+  'mention': 'clients',
 };
 
 const Notifications = ({
@@ -59,6 +60,9 @@ const Notifications = ({
     if (type === 'team') {
       return { icon: <UserPlus size={12} className="text-emerald-500" />, bg: 'bg-emerald-50' };
     }
+    if (type === 'mention') {
+      return { icon: <MessageCircle size={12} className="text-indigo-500" />, bg: 'bg-indigo-50' };
+    }
     return { icon: <AlertTriangle size={12} className="text-slate-500" />, bg: 'bg-slate-100' };
   };
   
@@ -73,6 +77,9 @@ const Notifications = ({
         if (!isTargeted) return;
       }
       if (item.type === 'client-join-request') {
+        if (String(item.recipientId) !== String(currentUser?.id)) return;
+      }
+      if (item.type === 'mention') {
         if (String(item.recipientId) !== String(currentUser?.id)) return;
       }
       const style = getNotificationStyle(item.type);
