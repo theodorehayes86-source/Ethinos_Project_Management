@@ -896,7 +896,7 @@ const App = () => {
   if (!firebaseUser && !testModeUserId) {
     return (
       <>
-        <LoginView onLogin={handleLogin} onMicrosoftLogin={handleMicrosoftLogin} onCreateAccount={handleCreateAccount} onResetPassword={handleResetPassword} loginError={loginError} msLoginStatus={msLoginStatus} />
+        <LoginView onLogin={handleLogin} onMicrosoftLogin={handleMicrosoftLogin} onCreateAccount={handleCreateAccount} onResetPassword={handleResetPassword} loginError={loginError} msLoginStatus={msLoginStatus} onCancelMsLogin={() => setMsLoginStatus('')} />
         <TestModePanel
           currentUser={null}
           isTestMode={false}

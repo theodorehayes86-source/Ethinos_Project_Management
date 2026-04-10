@@ -21,7 +21,7 @@ const MicrosoftIcon = () => (
   </svg>
 );
 
-const LoginView = ({ onLogin, onMicrosoftLogin, onCreateAccount, onResetPassword, loginError, msLoginStatus }) => {
+const LoginView = ({ onLogin, onMicrosoftLogin, onCreateAccount, onResetPassword, loginError, msLoginStatus, onCancelMsLogin }) => {
   const [mode, setMode] = useState('signin'); // 'signin' | 'register' | 'reset'
 
   // Sign-in state
@@ -174,9 +174,16 @@ const LoginView = ({ onLogin, onMicrosoftLogin, onCreateAccount, onResetPassword
                 </button>
 
                 {msLoginStatus && (
-                  <p className="mb-4 text-xs font-semibold text-indigo-600 text-center animate-pulse">
-                    {msLoginStatus}
-                  </p>
+                  <div className="mb-4 text-center">
+                    <p className="text-xs font-semibold text-indigo-600 animate-pulse">{msLoginStatus}</p>
+                    <button
+                      type="button"
+                      onClick={onCancelMsLogin}
+                      className="mt-1 text-xs text-slate-400 hover:text-slate-600 underline underline-offset-2"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 )}
 
                 <div className="relative mb-5 flex items-center gap-3">
