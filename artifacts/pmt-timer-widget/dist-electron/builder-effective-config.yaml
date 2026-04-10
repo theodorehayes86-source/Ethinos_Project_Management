@@ -1,0 +1,58 @@
+directories:
+  output: dist-electron
+  buildResources: build
+appId: com.ethinos.timer-pro
+productName: Ethinos Timer Pro
+copyright: Copyright © 2024 Ethinos Digital Marketing Pvt Ltd
+files:
+  - filter:
+      - dist/public/**/*
+      - electron/**/*
+      - package.json
+extraMetadata:
+  main: electron/main.cjs
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+  requestedExecutionLevel: requireAdministrator
+nsis:
+  oneClick: true
+  artifactName: Ethinos.Timer.Pro.Setup.${version}.exe
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Ethinos Timer Pro
+  installerLanguages:
+    - en_US
+  allowElevation: true
+mac:
+  target:
+    - target: dmg
+      arch:
+        - universal
+  icon: build/icon.icns
+  category: public.app-category.productivity
+  minimumSystemVersion: '12.0'
+  identity: null
+  gatekeeperAssess: false
+  hardenedRuntime: false
+  extendInfo:
+    NSAppTransportSecurity:
+      NSAllowsArbitraryLoads: true
+dmg:
+  title: Ethinos Timer Pro
+  artifactName: Ethinos.Timer.Pro-${version}-universal.dmg
+  contents:
+    - x: 130
+      'y': 220
+    - x: 410
+      'y': 220
+      type: link
+      path: /Applications
+publish:
+  provider: github
+  owner: theodorehayes86-source
+  repo: Ethinos_Project_Management
+electronVersion: 41.1.1
