@@ -438,13 +438,13 @@ router.post("/ms-code-exchange", async (req, res) => {
     } catch (err: unknown) {
       const firebaseErr = err as { code?: string };
       if (firebaseErr.code === "auth/user-not-found") {
-        const newUser = await auth.createUser({
-          email: verifiedEmail,
-          emailVerified: true,
-          displayName,
+        // Do NOT auto-provision — all accounts must be created by an admin first
+        // so that users always have a password and can also log in via the widget.
+        logger.warn({ email: verifiedEmail }, "Microsoft SSO login rejected — no PMT account found");
+        res.status(403).json({
+          error: "No PMT account found for this Microsoft account. Please ask your administrator to create your account first.",
         });
-        uid = newUser.uid;
-        logger.info({ email: verifiedEmail }, "Auto-provisioned Firebase user for Microsoft SSO login");
+        return;
       } else {
         throw err;
       }
