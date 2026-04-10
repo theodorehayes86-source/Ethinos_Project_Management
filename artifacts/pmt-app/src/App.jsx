@@ -5,7 +5,6 @@ import { db, auth, googleProvider } from './firebase.js';
 
 import HomeView from './PMT/HomeView';
 import ClientView from './PMT/ClientView';
-import UserView from './PMT/Userview';
 import EmployeeView from './PMT/EmployeeView';
 import MasterDataView from './PMT/MasterDataView';
 import UserMetricsView from './PMT/UserMetricsView';
@@ -444,7 +443,6 @@ const App = () => {
     home: 'Home',
     clients: 'Clients',
     approvals: 'Approvals',
-    users: 'Users',
     metrics: 'Metrics',
     reports: 'Reports',
     employees: 'Employees',
@@ -577,12 +575,11 @@ const App = () => {
 
   useEffect(() => {
     if (activeTab === 'master-data' && !canSeeControlCenter) setActiveTab('home');
-    if (activeTab === 'users' && !canSeeUserManagement) setActiveTab('home');
     if (activeTab === 'employees' && !canSeeEmployeeView) setActiveTab('home');
     if (activeTab === 'metrics' && !canSeeMetrics) setActiveTab('home');
     if (activeTab === 'reports' && !canSeeReports) setActiveTab('home');
     if (activeTab === 'approvals' && !canSeeApprovals) setActiveTab('home');
-  }, [activeTab, canSeeControlCenter, canSeeUserManagement, canSeeEmployeeView, canSeeMetrics, canSeeReports, canSeeApprovals]);
+  }, [activeTab, canSeeControlCenter, canSeeEmployeeView, canSeeMetrics, canSeeReports, canSeeApprovals]);
 
   if (authLoading) {
     return (
@@ -652,7 +649,6 @@ const App = () => {
         isMinimized={isMinimized}
         setIsMinimized={setSidebarMinimized}
         canSeeControlCenter={canSeeControlCenter}
-        canSeeUserManagement={canSeeUserManagement}
         canSeeEmployeeView={canSeeEmployeeView}
         canSeeMetrics={canSeeMetrics}
         canSeeReports={canSeeReports}
@@ -737,18 +733,6 @@ const App = () => {
               setNotifications={setNotifications}
               accessibleClients={accessibleClients}
               departments={departments}
-            />
-          )}
-
-          {activeTab === 'users' && !selectedClient && canSeeUserManagement && (
-            <UserView
-              users={users}
-              setUsers={persistUsers}
-              currentUser={currentUser}
-              clients={clients}
-              departments={departments}
-              regions={regions}
-              createFirebaseUser={(email, password) => createUserWithEmailAndPassword(auth, email, password)}
             />
           )}
 
