@@ -651,14 +651,60 @@ const App = () => {
     }
   };
 
+  // Shared: exchange a completed MSAL result for a Firebase custom token and sign in.
+  const finishMsLogin = async (msalResult) => {
+    const msEmail = msalResult?.account?.username || msalResult?.account?.idTokenClaims?.email;
+    if (!msEmail || !isEthinosDomain(msEmail)) {
+      setLoginError('Access is restricted to Ethinos work accounts (@ethinos.com).');
+      return;
+    }
+    const apiBase = import.meta.env.VITE_API_BASE_URL || '/api';
+    const resp = await fetch(`${apiBase}/auth/ms-token-exchange`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ msIdToken: msalResult.idToken, email: msEmail }),
+    });
+    if (resp.ok) {
+      const { customToken } = await resp.json();
+      setMsLoginPending(true);
+      await signInWithCustomToken(auth, customToken);
+    } else {
+      const data = await resp.json().catch(() => ({}));
+      setLoginError(data.error || 'Microsoft sign-in failed. Please contact your administrator.');
+    }
+  };
+
   const handleMicrosoftLogin = async () => {
     try {
       setLoginError('');
       const msal = getMsalInstance();
       await msal.initialize();
-      // Use redirect flow — works on Safari (popup flow is blocked by Safari ITP).
-      // handleRedirectPromise() in the mount effect will process the result on return.
-      await msal.loginRedirect(loginRequest);
+
+      // MSAL blocks loginRedirect() inside iframes (Replit workspace, embedded views).
+      // Detect iframe context and pick the right flow automatically.
+      const inIframe = (() => {
+        try { return window.self !== window.top; } catch { return true; }
+      })();
+
+      if (inIframe) {
+        // Popup mode for iframe / embedded contexts
+        let msalResult;
+        try {
+          msalResult = await msal.loginPopup(loginRequest);
+        } catch (popupErr) {
+          if (
+            popupErr?.errorCode === 'user_cancelled' ||
+            popupErr?.errorCode === 'popup_window_error' ||
+            popupErr?.name === 'BrowserAuthError'
+          ) return;
+          throw popupErr;
+        }
+        await finishMsLogin(msalResult);
+      } else {
+        // Redirect mode for direct browser access — Safari-compatible, no popup needed.
+        // handleRedirectPromise() in the mount effect processes the result on return.
+        await msal.loginRedirect(loginRequest);
+      }
     } catch (err) {
       if (err?.message?.includes('VITE_AZURE_CLIENT_ID is not set')) {
         setLoginError('Microsoft login is not configured. Please use email/password to sign in.');
