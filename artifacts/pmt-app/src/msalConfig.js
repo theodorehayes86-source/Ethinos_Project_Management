@@ -3,13 +3,14 @@ import { PublicClientApplication } from '@azure/msal-browser';
 const tenantId = import.meta.env.VITE_AZURE_TENANT_ID;
 const clientId = import.meta.env.VITE_AZURE_CLIENT_ID;
 
-// Use the app's own root URL as the popup redirect URI.
-// MSAL v5 requires its own code running in the popup page so it can process
-// the auth code and post the result back to the parent window.  Redirecting
-// to a blank page breaks that mechanism.  By pointing back at our app root,
-// the popup loads our React app, MSAL initialises, detects window.opener,
-// handles the redirect, messages the parent, and closes itself.
-export const popupRedirectUri = window.location.origin + (import.meta.env.BASE_URL || '/');
+// Dedicated popup redirect page — a Vite entry point with minimal MSAL code.
+// MSAL v5 requires its own code running in the popup's redirect page to:
+//   1. Exchange the auth code for tokens (reads PKCE verifier from localStorage)
+//   2. Post the result back to window.opener (the parent window)
+//   3. Close itself
+// auth-redirect.html does exactly that (see src/auth-redirect.ts).
+export const popupRedirectUri =
+  window.location.origin + (import.meta.env.BASE_URL || '/') + 'auth-redirect.html';
 
 export const msalConfig = {
   auth: {

@@ -261,15 +261,10 @@ const App = () => {
   useEffect(() => {
     try {
       const msal = getMsalInstance();
-      msal.initialize().then(async () => {
+      msal.initialize().then(() => {
         msalReady.current = true;
-        // In a popup window: handleRedirectPromise() processes the auth code,
-        // posts the result back to the parent via window.opener.postMessage(),
-        // then closes this popup. This is what makes loginPopup() resolve.
-        const result = await msal.handleRedirectPromise();
-        if (result && isPopupWindow) {
-          try { window.close(); } catch { /* ignore */ }
-        }
+        // The popup redirect is handled entirely by auth-redirect.html/ts —
+        // this main app instance never needs to process a popup redirect.
       }).catch(() => {});
     } catch { /* Azure not configured — email/password only */ }
   }, []);
