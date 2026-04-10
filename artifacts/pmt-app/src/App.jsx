@@ -727,15 +727,16 @@ const App = () => {
         console.log('[MS auth-redirect] Signing in with Firebase custom token…');
         setMsLoginPending(true);
         await signInWithCustomToken(auth, customToken);
-        console.log('[MS auth-redirect] Firebase sign-in complete ✓ — redirecting to app');
-        // Replace the URL with the clean app root so the user lands on the
-        // dashboard in this tab. window.close() is often blocked by browsers
-        // when the tab was opened by window.open(), and the Replit preview
-        // iframe uses a partitioned storage context that prevents cross-tab
-        // Firebase auth sync in the workspace (not an issue in production).
+        console.log('[MS auth-redirect] Firebase sign-in complete ✓ — closing auth tab');
+        // In production the original tab updates via Firebase cross-tab auth
+        // sync and window.close() removes this auth tab — leaving just one window.
+        // In dev (Replit preview iframe, partitioned storage), window.close()
+        // may be blocked; fall back to redirecting this tab to the app root.
+        window.close();
         setTimeout(() => {
+          // Only reached if window.close() was blocked.
           window.location.replace(window.location.origin + '/');
-        }, 600);
+        }, 1000);
       } catch (err) {
         console.error('[MS auth-redirect] Error:', err);
         setMsAuthRedirectError(err.message || 'Sign-in failed. Please close this tab and try again.');
@@ -859,28 +860,22 @@ const App = () => {
     if (activeTab === 'approvals' && !canSeeApprovals) setActiveTab('home');
   }, [activeTab, canSeeControlCenter, canSeeEmployeeView, canSeeMetrics, canSeeReports, canSeeApprovals]);
 
-  // This tab was the Azure redirect target — show a simple "completing" screen.
-  // The parent tab gets signed in via Firebase's cross-tab auth persistence.
+  // This tab was the Azure redirect target.
+  // While processing: show the same spinner as the normal loading state (seamless).
+  // On error: show a minimal error message.
   if (isAuthRedirectMode && !firebaseUser) {
+    if (msAuthRedirectError) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 gap-3 p-8 text-center">
+          <div className="text-sm font-semibold text-red-600">Sign-in error</div>
+          <div className="text-sm text-slate-500 max-w-xs">{msAuthRedirectError}</div>
+          <div className="text-xs text-slate-400">You can close this tab and try again.</div>
+        </div>
+      );
+    }
     return (
-      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
-                    minHeight:'100vh', background:'#f8fafc', gap:'16px', fontFamily:'system-ui,sans-serif',
-                    padding:'32px', textAlign:'center' }}>
-        {msAuthRedirectError ? (
-          <>
-            <div style={{ fontSize:'15px', fontWeight:'600', color:'#dc2626' }}>Sign-in error</div>
-            <div style={{ fontSize:'13px', color:'#64748b', maxWidth:'360px' }}>{msAuthRedirectError}</div>
-            <div style={{ fontSize:'12px', color:'#94a3b8' }}>Please close this tab and try again in the original tab.</div>
-          </>
-        ) : (
-          <>
-            <div style={{ fontSize:'15px', fontWeight:'600', color:'#1e293b' }}>Completing sign-in…</div>
-            <div style={{ fontSize:'13px', color:'#64748b' }}>Verifying your Microsoft account. Please wait.</div>
-            <div style={{ fontSize:'11px', color:'#94a3b8', marginTop:'8px' }}>
-              You'll be redirected to the dashboard in a moment…
-            </div>
-          </>
-        )}
+      <div className="flex items-center justify-center min-h-screen bg-slate-50">
+        <div className="text-sm font-semibold text-slate-500">Loading…</div>
       </div>
     );
   }
