@@ -245,11 +245,22 @@ const App = () => {
   const [testModeUserId, setTestModeUserId] = useState(null);
   const msalReady = useRef(false);
 
-  // --- MSAL EAGER INIT (runs once on mount so loginPopup has no awaits in front of it) ---
+  // --- MSAL EAGER INIT ---
+  // Initialises MSAL as early as possible so loginPopup() has no async awaits
+  // in front of it (preserving the browser's user-gesture chain).
+  // Also calls handleRedirectPromise() so that when the popup window loads
+  // *this* app after MS login, MSAL v5 can process the auth code and post the
+  // result back to the parent window, then close the popup automatically.
   useEffect(() => {
     try {
       const msal = getMsalInstance();
-      msal.initialize().then(() => { msalReady.current = true; }).catch(() => {});
+      msal.initialize().then(async () => {
+        msalReady.current = true;
+        // Handles the popup redirect case: if this window was opened as a
+        // popup by loginPopup(), MSAL detects window.opener and resolves the
+        // auth code silently without affecting the parent's auth state.
+        await msal.handleRedirectPromise();
+      }).catch(() => {});
     } catch { /* Azure not configured — email/password only */ }
   }, []);
 
