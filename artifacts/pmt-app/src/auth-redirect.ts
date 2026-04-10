@@ -1,42 +1,25 @@
-// Minimal MSAL initialisation for the popup redirect page.
-// This page is opened by MSAL's loginPopup() after Microsoft auth completes.
-// Calling handleRedirectPromise() here causes MSAL to:
-//   1. Read the auth code from the URL
-//   2. Exchange it for tokens (PKCE verifier is in localStorage, shared with parent)
-//   3. Post the result back to window.opener (the parent window)
-//   4. Close this popup window
+// Popup redirect handler — no MSAL needed here.
+// Azure redirects the popup to this page with the auth code in the URL.
+// We extract it and postMessage it to window.opener (the parent app),
+// then close. postMessage works even inside sandboxed iframes.
 
-import { PublicClientApplication } from '@azure/msal-browser';
+const url = new URL(window.location.href);
+const qs = url.searchParams;
+const hash = new URLSearchParams(url.hash.slice(1));
 
-const clientId = import.meta.env.VITE_AZURE_CLIENT_ID as string;
-const tenantId = import.meta.env.VITE_AZURE_TENANT_ID as string;
+const code = qs.get('code') ?? hash.get('code');
+const state = qs.get('state') ?? hash.get('state');
+const error = qs.get('error') ?? hash.get('error');
+const errorDesc = qs.get('error_description') ?? hash.get('error_description');
 
-if (clientId && tenantId) {
-  const redirectUri =
-    window.location.origin + (import.meta.env.BASE_URL || '/') + 'auth-redirect.html';
+const statusEl = document.getElementById('status');
 
-  const app = new PublicClientApplication({
-    auth: {
-      clientId,
-      authority: `https://login.microsoftonline.com/${tenantId}`,
-      redirectUri,
-    },
-    cache: {
-      cacheLocation: 'localStorage',
-      storeAuthStateInCookie: true,
-    },
-  });
-
-  app
-    .initialize()
-    .then(() => app.handleRedirectPromise())
-    .then((result) => {
-      // result is non-null if we processed an auth response.
-      // MSAL already posted the result to window.opener — just close.
-      if (result) window.close();
-    })
-    .catch(() => {
-      // If something went wrong, close the popup so the parent can show an error.
-      window.close();
-    });
+if (!window.opener) {
+  if (statusEl) statusEl.textContent = 'Popup error: no parent window found. Please close this tab and try again.';
+} else {
+  (window.opener as Window).postMessage(
+    { type: 'ms-auth-callback', code, state, error, errorDesc },
+    window.location.origin,
+  );
+  window.close();
 }

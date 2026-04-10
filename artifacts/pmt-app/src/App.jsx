@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ref, onValue, set, get } from 'firebase/database';
 import { signInWithEmailAndPassword, signInWithCustomToken, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, updateProfile, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
 import { db, auth } from './firebase.js';
-import { getMsalInstance, loginRequest } from './msalConfig.js';
+// MSAL import removed — we use a direct PKCE+postMessage popup flow instead.
 
 import HomeView from './PMT/HomeView';
 import ClientView from './PMT/ClientView';
@@ -208,12 +208,29 @@ const MicrosoftProfileSetup = ({ firebaseUser, departments, regions, onComplete,
   );
 };
 
-// Detect if this window was opened as a popup (e.g. by MSAL's loginPopup()).
-// We render a minimal screen so the user doesn't see the login page flash,
-// and MSAL closes the popup automatically after posting back to the parent.
+// Detect if this window was opened as a popup (e.g. by our MS login flow).
+// We render a minimal "Completing sign-in…" screen so the user doesn't see
+// the full login page flash inside the popup.
 const isPopupWindow = (() => {
   try { return !!window.opener && window.opener !== window; } catch { return false; }
 })();
+
+// ---------------------------------------------------------------------------
+// PKCE helpers for the custom Microsoft popup login flow.
+// We build the auth URL ourselves and communicate via postMessage so the flow
+// works even inside sandboxed iframes (MSAL's popup monitor does not).
+// ---------------------------------------------------------------------------
+
+async function generatePkce() {
+  const array = new Uint8Array(32);
+  crypto.getRandomValues(array);
+  const verifier = btoa(String.fromCharCode(...array))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const hashed = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  const challenge = btoa(String.fromCharCode(...new Uint8Array(hashed)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return { verifier, challenge };
+}
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('home');
@@ -250,24 +267,6 @@ const App = () => {
   const [sidebarMinimized, setSidebarMinimized] = useState(false);
   const [dbReady, setDbReady] = useState(false);
   const [testModeUserId, setTestModeUserId] = useState(null);
-  const msalReady = useRef(false);
-
-  // --- MSAL EAGER INIT ---
-  // Initialises MSAL as early as possible so loginPopup() has no async awaits
-  // in front of it (preserving the browser's user-gesture chain).
-  // Also calls handleRedirectPromise() so that when the popup window loads
-  // *this* app after MS login, MSAL v5 can process the auth code and post the
-  // result back to the parent window, then close the popup automatically.
-  useEffect(() => {
-    try {
-      const msal = getMsalInstance();
-      msal.initialize().then(() => {
-        msalReady.current = true;
-        // The popup redirect is handled entirely by auth-redirect.html/ts —
-        // this main app instance never needs to process a popup redirect.
-      }).catch(() => {});
-    } catch { /* Azure not configured — email/password only */ }
-  }, []);
 
   // --- FIREBASE AUTH LISTENER ---
   useEffect(() => {
@@ -629,14 +628,13 @@ const App = () => {
     }
   };
 
-  // Shared: exchange a completed MSAL result for a Firebase custom token and sign in.
-  const finishMsLogin = async (msalResult) => {
+  // Exchange a Microsoft access token for a Firebase custom token and sign in.
+  const finishMsLogin = async ({ accessToken }) => {
     const apiBase = import.meta.env.VITE_API_BASE_URL || '/api';
     const resp = await fetch(`${apiBase}/auth/ms-token-exchange`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      // Send the access token — server validates it via Microsoft Graph /me
-      body: JSON.stringify({ msAccessToken: msalResult.accessToken }),
+      body: JSON.stringify({ msAccessToken: accessToken }),
     });
     if (resp.ok) {
       const { customToken } = await resp.json();
@@ -644,46 +642,112 @@ const App = () => {
       await signInWithCustomToken(auth, customToken);
     } else {
       const data = await resp.json().catch(() => ({}));
-      setLoginError(data.error || 'Microsoft sign-in failed. Please contact your administrator.');
+      throw new Error(data.error || 'Microsoft sign-in failed. Please contact your administrator.');
     }
   };
 
+  // Stable ref so the message listener (set up once) always calls the latest finishMsLogin.
+  const finishMsLoginRef = useRef(finishMsLogin);
+  finishMsLoginRef.current = finishMsLogin;
+
+  // Listen for the auth code posted back by auth-redirect.html after Microsoft login.
+  // postMessage works across sandbox boundaries (unlike MSAL's popup.location.href polling).
+  useEffect(() => {
+    const handler = async (event) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type !== 'ms-auth-callback') return;
+
+      const { code, state: responseState, error, errorDesc } = event.data;
+
+      if (error) {
+        setLoginError(errorDesc || error);
+        return;
+      }
+
+      const storedState = sessionStorage.getItem('ms_auth_state');
+      const verifier = sessionStorage.getItem('ms_pkce_verifier');
+      const redirectUri = sessionStorage.getItem('ms_redirect_uri');
+
+      if (!storedState || responseState !== storedState) {
+        setLoginError('Authentication failed: state mismatch. Please try again.');
+        return;
+      }
+
+      sessionStorage.removeItem('ms_auth_state');
+      sessionStorage.removeItem('ms_pkce_verifier');
+      sessionStorage.removeItem('ms_redirect_uri');
+
+      const clientId = import.meta.env.VITE_AZURE_CLIENT_ID;
+      const tenantId = import.meta.env.VITE_AZURE_TENANT_ID;
+
+      try {
+        // Exchange auth code for access token (PKCE — no client secret needed for SPA).
+        const tokenRes = await fetch(
+          `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+              grant_type: 'authorization_code',
+              client_id: clientId,
+              code,
+              redirect_uri: redirectUri,
+              code_verifier: verifier,
+            }),
+          },
+        );
+        const tokenData = await tokenRes.json();
+        if (tokenData.error) throw new Error(tokenData.error_description || tokenData.error);
+
+        await finishMsLoginRef.current({ accessToken: tokenData.access_token });
+      } catch (err) {
+        setLoginError(err.message || 'Microsoft sign-in failed. Please try again.');
+      }
+    };
+
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [setLoginError]);
+
+  // Open a popup to Microsoft login using a custom PKCE flow.
+  // We build the auth URL ourselves and communicate via postMessage — this
+  // bypasses MSAL's popup.location.href monitor which fails inside iframes.
   const handleMicrosoftLogin = async () => {
     setLoginError('');
-    let msal;
-    try {
-      msal = getMsalInstance();
-    } catch (err) {
+    const clientId = import.meta.env.VITE_AZURE_CLIENT_ID;
+    const tenantId = import.meta.env.VITE_AZURE_TENANT_ID;
+
+    if (!clientId || !tenantId) {
       setLoginError('Microsoft login is not configured. Please use email/password to sign in.');
       return;
     }
 
-    // If MSAL hasn't finished its async init yet, wait for it — but only do
-    // this when actually needed (avoids breaking the user-gesture chain on the
-    // hot path where msalReady.current is already true).
-    if (!msalReady.current) {
-      try { await msal.initialize(); msalReady.current = true; } catch { /* ignore */ }
-    }
+    const redirectUri = window.location.origin + '/auth-redirect.html';
+    const { verifier, challenge } = await generatePkce();
+    const state = crypto.randomUUID();
 
-    // Call loginPopup() immediately — no awaits between here and window.open()
-    // so the browser treats it as a direct user-gesture and won't block the popup.
-    let msalResult;
-    try {
-      msalResult = await msal.loginPopup(loginRequest);
-    } catch (popupErr) {
-      if (popupErr?.errorCode === 'user_cancelled') return;
-      if (popupErr?.errorCode === 'popup_window_error') {
-        setLoginError('Popup was blocked. Please allow popups for this site and try again.');
-        return;
-      }
-      setLoginError('Microsoft sign-in failed. Please try again.');
-      return;
-    }
+    sessionStorage.setItem('ms_pkce_verifier', verifier);
+    sessionStorage.setItem('ms_auth_state', state);
+    sessionStorage.setItem('ms_redirect_uri', redirectUri);
 
-    try {
-      await finishMsLogin(msalResult);
-    } catch (err) {
-      setLoginError('Microsoft sign-in failed. Please try again.');
+    const authUrl = new URL(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize`);
+    authUrl.searchParams.set('client_id', clientId);
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('redirect_uri', redirectUri);
+    authUrl.searchParams.set('scope', 'openid profile email User.Read');
+    authUrl.searchParams.set('state', state);
+    authUrl.searchParams.set('code_challenge', challenge);
+    authUrl.searchParams.set('code_challenge_method', 'S256');
+    authUrl.searchParams.set('response_mode', 'query');
+
+    const popup = window.open(
+      authUrl.toString(),
+      'ms-auth-popup',
+      'width=520,height=680,menubar=no,toolbar=no,location=no,resizable=yes',
+    );
+
+    if (!popup) {
+      setLoginError('Popup was blocked. Please allow popups for this site and try again.');
     }
   };
 
