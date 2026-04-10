@@ -4,6 +4,7 @@ import { Home, Briefcase, Network, SlidersHorizontal, BarChart3, FileSpreadsheet
 const RELEASES_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/latest';
 const WIN_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/download/v1.0.19/Ethinos.Timer.Pro.Setup.1.0.19.exe';
 const MAC_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/download/v1.0.19/Ethinos.Timer.Pro-1.0.19-universal.dmg';
+const LINUX_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/download/v1.0.19/Ethinos.Timer.Pro-1.0.19-x86_64.AppImage';
 
 const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setIsMinimized, canSeeControlCenter = false, canSeeEmployeeView = true, canSeeMetrics = true, canSeeReports = true, canSeeApprovals = false, pendingApprovalsCount = 0 }) => {
   const [logoError, setLogoError] = useState(false);
@@ -119,7 +120,7 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
                 title="Download for Windows"
               >
                 <Monitor size={10} />
-                Windows
+                Win
               </a>
               <a
                 href={MAC_URL}
@@ -131,9 +132,19 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
                 <Apple size={10} />
                 Mac
               </a>
+              <a
+                href={LINUX_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 transition-all text-[9px] font-bold text-slate-600 hover:text-indigo-700"
+                title="Download for Linux (AppImage)"
+              >
+                <Download size={10} />
+                Linux
+              </a>
               <button
                 onClick={() => setShowMacInfo(v => !v)}
-                className="w-7 flex items-center justify-center rounded-lg bg-amber-50 border border-amber-200 hover:bg-amber-100 transition-all"
+                className="w-6 flex items-center justify-center rounded-lg bg-amber-50 border border-amber-200 hover:bg-amber-100 transition-all"
                 title="Mac installation help"
               >
                 {showMacInfo ? <X size={9} className="text-amber-600" /> : <Info size={9} className="text-amber-500" />}

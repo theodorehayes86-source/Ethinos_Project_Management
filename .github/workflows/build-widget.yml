@@ -75,8 +75,41 @@ jobs:
           path: artifacts/pmt-timer-widget/dist-electron/*.dmg
           retention-days: 30
 
+  build-linux:
+    needs: get-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate PNG icon from SVG
+        run: |
+          sudo apt-get install -y librsvg2-bin
+          rsvg-convert -w 512 -h 512 artifacts/pmt-timer-widget/build/icon.svg -o artifacts/pmt-timer-widget/build/icon.png
+
+      - name: Build Linux AppImage
+        run: pnpm --filter @workspace/pmt-timer-widget package:linux
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage
+          path: artifacts/pmt-timer-widget/dist-electron/*.AppImage
+          retention-days: 30
+
   release:
-    needs: [get-version, build-windows, build-mac]
+    needs: [get-version, build-windows, build-mac, build-linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -93,6 +126,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: mac-dmg
+          path: release-files
+
+      - name: Download Linux AppImage
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-appimage
           path: release-files
 
       - name: List release files
@@ -112,6 +151,12 @@ jobs:
             ### Download
             - **Windows**: `Ethinos.Timer.Pro.Setup.${{ needs.get-version.outputs.version }}.exe`
             - **macOS**: `Ethinos.Timer.Pro-${{ needs.get-version.outputs.version }}-universal.dmg`
+            - **Linux**: `Ethinos.Timer.Pro-${{ needs.get-version.outputs.version }}-x86_64.AppImage`
+
+            ### Linux Installation
+            1. Download the `.AppImage` file
+            2. Make it executable: `chmod +x Ethinos.Timer.Pro-*.AppImage`
+            3. Run it: `./Ethinos.Timer.Pro-*.AppImage`
 
             ### What's new in this release
             - Auto-pause timer when screen locks or system suspends
@@ -121,3 +166,4 @@ jobs:
             - Close button on Windows (frameless window)
             - Caps Lock warning on login
             - Show/hide password toggle on login
+            - Linux AppImage support

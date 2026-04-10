@@ -14,7 +14,8 @@
     "build:electron": "vite build --config vite.electron.config.ts",
     "package": "pnpm build:electron && electron-builder --config electron-builder.json",
     "package:win": "pnpm build:electron && electron-builder --config electron-builder.json --win",
-    "package:mac": "pnpm build:electron && electron-builder --config electron-builder.json --mac"
+    "package:mac": "pnpm build:electron && electron-builder --config electron-builder.json --mac",
+    "package:linux": "pnpm build:electron && electron-builder --config electron-builder.json --linux"
   },
   "dependencies": {
     "firebase": "^12.11.0"

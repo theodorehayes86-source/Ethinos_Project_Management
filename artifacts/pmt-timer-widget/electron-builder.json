@@ -60,6 +60,19 @@
       { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
     ]
   },
+  "linux": {
+    "target": [
+      {
+        "target": "AppImage",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": "build/icon.png",
+    "category": "Utility"
+  },
+  "appImage": {
+    "artifactName": "Ethinos.Timer.Pro-${version}-x86_64.AppImage"
+  },
   "publish": {
     "provider": "github",
     "owner": "theodorehayes86-source",
