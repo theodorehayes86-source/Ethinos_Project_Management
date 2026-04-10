@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, Trash2, Search, ShieldCheck, Edit2, X, ChevronUp, ChevronDown, Lock, Users, Crown, Check, Star, UserCheck, UserPlus, Edit3, Mail, MessageSquare, Bug, Lightbulb, AlertCircle, CheckCircle2, Clock, Filter, Eye, EyeOff, FlaskConical, Archive, ArchiveRestore, ChevronRight, CornerDownLeft, Send } from 'lucide-react';
+import { Plus, Trash2, Search, ShieldCheck, Edit2, X, ChevronUp, ChevronDown, Lock, Users, Crown, Check, Star, UserCheck, UserPlus, Edit3, Mail, MessageSquare, Bug, Lightbulb, AlertCircle, CheckCircle2, Clock, Filter, Eye, EyeOff, FlaskConical, Archive, ArchiveRestore, ChevronRight, CornerDownLeft, Send, Upload } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
+import CsvImportModal from './CsvImportModal';
 
 const REPEAT_OPTIONS = ['Daily', 'Weekly', 'Monthly', 'Once'];
 
@@ -147,6 +148,9 @@ const MasterDataView = ({
   const [editingFbDraft, setEditingFbDraft] = useState({});
   const [replyingFbId, setReplyingFbId] = useState(null);
   const [replyDraft, setReplyDraft] = useState('');
+
+  // --- CSV IMPORT STATE ---
+  const [csvMode, setCsvMode] = useState(null); // null | 'users' | 'clients' | 'combined'
 
   const normalizedRoles = useMemo(() => {
     const defaults = [
@@ -582,6 +586,105 @@ const MasterDataView = ({
     });
   };
 
+  // --- CSV IMPORT HANDLERS ---
+
+  const validateCsvUser = (row) => {
+    const errs = [];
+    if (!row.name?.trim()) errs.push('Name required');
+    if (!row.email?.trim()) errs.push('Email required');
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email.trim())) errs.push('Invalid email');
+    if (!row.password?.trim() || row.password.trim().length < 6) errs.push('Password min 6 chars');
+    if (!row.role?.trim()) errs.push('Role required');
+    if (!row.department?.trim()) errs.push('Department required');
+    if (!row.region?.trim()) errs.push('Region required');
+    if ((users || []).some(u => u.email?.toLowerCase() === row.email?.trim().toLowerCase())) errs.push('Email already exists');
+    return errs;
+  };
+
+  const validateCsvClient = (row, idx, allRows) => {
+    const errs = [];
+    if (!row.entityName?.trim()) errs.push('Entity name required');
+    if (!row.clientName?.trim()) errs.push('Client name required');
+    else if ((clients || []).some(c => c.name.toLowerCase() === row.clientName.trim().toLowerCase())) errs.push('Client name already exists');
+    else if (allRows.slice(0, idx).some(r => r.clientName?.trim().toLowerCase() === row.clientName?.trim().toLowerCase())) errs.push('Duplicate in file');
+    return errs;
+  };
+
+  const validateCsvCombined = (row, idx, allRows) => {
+    const errs = [];
+    if (!row.entityName?.trim()) errs.push('Entity name required');
+    if (!row.clientName?.trim()) errs.push('Client name required');
+    else if (allRows.slice(0, idx).some(r => r.clientName?.trim().toLowerCase() === row.clientName?.trim().toLowerCase())) errs.push('Duplicate in file');
+    return errs;
+  };
+
+  const handleCsvImportUsers = async (rows) => {
+    const results = [];
+    const newUserRecords = [];
+    for (const row of rows) {
+      const clientNames = (row.clients || '').split('|').map(s => s.trim()).filter(Boolean);
+      const assignedProjects = clientNames.filter(name => (clients || []).some(c => c.name === name));
+      const label = `${row.name?.trim()} (${row.email?.trim()})`;
+      try {
+        if (createFirebaseUser) {
+          await createFirebaseUser(row.email.trim().toLowerCase(), row.password.trim());
+        }
+        newUserRecords.push({
+          id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          email: row.email.trim().toLowerCase(),
+          name: row.name.trim(),
+          role: row.role.trim() || 'Executive',
+          department: row.department?.trim() || '',
+          region: row.region?.trim() || '',
+          position: row.position?.trim() || '',
+          assignedProjects,
+        });
+        results.push({ label, success: true });
+      } catch (err) {
+        results.push({ label, success: false, error: err.message || 'Failed to create user' });
+      }
+    }
+    if (newUserRecords.length > 0 && setUsers) {
+      setUsers([...(users || []), ...newUserRecords]);
+    }
+    return results;
+  };
+
+  const handleCsvImportClients = async (rows) => {
+    const newClients = rows.map(row => ({
+      id: `client-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      name: row.clientName.trim(),
+      entityName: row.entityName.trim(),
+    }));
+    if (setClients) setClients([...(clients || []), ...newClients]);
+    return newClients.map(c => ({ label: c.name, success: true }));
+  };
+
+  const handleCsvImportCombined = async (rows) => {
+    const newClients = [];
+    let updatedUsers = [...(users || [])];
+    for (const row of rows) {
+      const clientName = row.clientName.trim();
+      const entityName = row.entityName.trim();
+      const existing = (clients || []).find(c => c.name.toLowerCase() === clientName.toLowerCase());
+      if (!existing) {
+        newClients.push({ id: `client-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name: clientName, entityName });
+      }
+      const emailsToAssign = (row.userEmails || '').split('|').map(e => e.trim().toLowerCase()).filter(Boolean);
+      updatedUsers = updatedUsers.map(u => {
+        if (emailsToAssign.includes((u.email || '').toLowerCase())) {
+          if (!(u.assignedProjects || []).includes(clientName)) {
+            return { ...u, assignedProjects: [...(u.assignedProjects || []), clientName] };
+          }
+        }
+        return u;
+      });
+    }
+    if (newClients.length > 0 && setClients) setClients([...(clients || []), ...newClients]);
+    if (setUsers) setUsers(updatedUsers);
+    return rows.map(row => ({ label: row.clientName.trim(), success: true }));
+  };
+
   const filteredUsers = (users || []).filter(u =>
     !userSearch.trim() ||
     (u.name || '').toLowerCase().includes(userSearch.toLowerCase()) ||
@@ -704,6 +807,7 @@ const MasterDataView = ({
   };
 
   return (
+    <>
     <div className="min-h-full p-4 space-y-4 text-left">
       <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center gap-2 flex-wrap">
         {CC_TABS.filter(tab => {
@@ -740,12 +844,20 @@ const MasterDataView = ({
               />
             </div>
             <span className="text-xs text-slate-500 font-medium">{filteredUsers.length} user{filteredUsers.length !== 1 ? 's' : ''}</span>
-            <button
-              onClick={openAddUser}
-              className="bg-blue-600 text-white px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 hover:bg-blue-700 transition-all shadow-sm ml-auto"
-            >
-              <UserPlus size={13}/> Add User
-            </button>
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                onClick={() => setCsvMode('users')}
+                className="border border-slate-200 text-slate-600 bg-white px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 hover:bg-slate-50 transition-all"
+              >
+                <Upload size={13}/> Import CSV
+              </button>
+              <button
+                onClick={openAddUser}
+                className="bg-blue-600 text-white px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 hover:bg-blue-700 transition-all shadow-sm"
+              >
+                <UserPlus size={13}/> Add User
+              </button>
+            </div>
           </div>
 
           {filteredUsers.length === 0 ? (
@@ -1647,12 +1759,26 @@ const MasterDataView = ({
               />
             </div>
             <span className="text-xs text-slate-500 font-medium">{filteredClients.length} client{filteredClients.length !== 1 ? 's' : ''}</span>
-            <button
-              onClick={openAddClient}
-              className="bg-blue-600 text-white px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 hover:bg-blue-700 transition-all shadow-sm ml-auto"
-            >
-              <Plus size={13}/> Add Client
-            </button>
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                onClick={() => setCsvMode('combined')}
+                className="border border-slate-200 text-slate-600 bg-white px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 hover:bg-slate-50 transition-all"
+              >
+                <Upload size={13}/> Clients + Users
+              </button>
+              <button
+                onClick={() => setCsvMode('clients')}
+                className="border border-slate-200 text-slate-600 bg-white px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 hover:bg-slate-50 transition-all"
+              >
+                <Upload size={13}/> Import Clients
+              </button>
+              <button
+                onClick={openAddClient}
+                className="bg-blue-600 text-white px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 hover:bg-blue-700 transition-all shadow-sm"
+              >
+                <Plus size={13}/> Add Client
+              </button>
+            </div>
           </div>
 
           {filteredClients.length === 0 ? (
@@ -2305,6 +2431,24 @@ const MasterDataView = ({
         </div>
       )}
     </div>
+
+    {csvMode && (
+      <CsvImportModal
+        mode={csvMode}
+        onClose={() => setCsvMode(null)}
+        validate={
+          csvMode === 'users' ? validateCsvUser
+          : csvMode === 'clients' ? validateCsvClient
+          : validateCsvCombined
+        }
+        onImport={
+          csvMode === 'users' ? handleCsvImportUsers
+          : csvMode === 'clients' ? handleCsvImportClients
+          : handleCsvImportCombined
+        }
+      />
+    )}
+    </>
   );
 };
 
