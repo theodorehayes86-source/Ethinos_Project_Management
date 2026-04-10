@@ -69,6 +69,9 @@ const ClientView = ({
   const [newTaskDepartments, setNewTaskDepartments] = useState([]);
   // Billable toggle for new task
   const [newTaskBillable, setNewTaskBillable] = useState(true);
+  // Estimated time for new task (hours + minutes inputs)
+  const [newTaskEstimatedHrs, setNewTaskEstimatedHrs] = useState('');
+  const [newTaskEstimatedMins, setNewTaskEstimatedMins] = useState('');
 
   // QC review state (for management reviewing a sent task)
   const [qcReviewingTaskId, setQcReviewingTaskId] = useState(null);
@@ -151,6 +154,10 @@ const ClientView = ({
       if (!str) return null;
       try { return parse(str, 'do MMM yyyy', new Date()); } catch { return null; }
     };
+    const estMs = log.estimatedMs || 0;
+    const estTotalMins = Math.round(estMs / 60000);
+    const estHrs = Math.floor(estTotalMins / 60);
+    const estMins = estTotalMins % 60;
     setEditingTask(log);
     setEditDraft({
       name: log.name || '',
@@ -166,6 +173,8 @@ const ClientView = ({
       qcAssigneeId: log.qcAssigneeId || '',
       qcAssigneeName: log.qcAssigneeName || '',
       billable: log.billable ?? true,
+      estimatedHrs: estMs > 0 ? String(estHrs) : '',
+      estimatedMins: estMs > 0 ? String(estMins) : '',
     });
     setEditDraftCategoryQuery(log.category || '');
     setEditDraftAssigneeQuery(log.assigneeName || '');
@@ -181,6 +190,9 @@ const ClientView = ({
       return;
     }
     const assignee = (users || []).find(u => String(u.id) === String(editDraft.assigneeId));
+    const editEstHrs = parseInt(editDraft.estimatedHrs || '0', 10) || 0;
+    const editEstMins = parseInt(editDraft.estimatedMins || '0', 10) || 0;
+    const editEstimatedMs = (editEstHrs * 60 + editEstMins) > 0 ? (editEstHrs * 3600000 + editEstMins * 60000) : null;
     const updated = (clientLogs[selectedClient.id] || []).map(l =>
       l.id === editingTask.id ? {
         ...l,
@@ -198,6 +210,7 @@ const ClientView = ({
         qcAssigneeId: editDraft.qcEnabled && editDraft.qcAssigneeId ? editDraft.qcAssigneeId : null,
         qcAssigneeName: editDraft.qcEnabled && editDraft.qcAssigneeName ? editDraft.qcAssigneeName : null,
         billable: editDraft.billable ?? true,
+        estimatedMs: editEstimatedMs,
       } : l
     );
     setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
@@ -225,6 +238,16 @@ const ClientView = ({
     const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
     const seconds = String(totalSeconds % 60).padStart(2, '0');
     return `${hours}:${minutes}:${seconds}`;
+  };
+
+  const formatEstimatedTime = (ms) => {
+    if (!ms || ms <= 0) return null;
+    const totalMins = Math.round(ms / 60000);
+    const h = Math.floor(totalMins / 60);
+    const m = totalMins % 60;
+    if (h > 0 && m > 0) return `${h}h ${m}m`;
+    if (h > 0) return `${h}h`;
+    return `${m}m`;
   };
 
   const getElapsedMs = (log) => {
@@ -394,6 +417,9 @@ const ClientView = ({
       setTaskFormError('Task name, description, category and assignee are all required.');
       return;
     }
+    const newEstHrs = parseInt(newTaskEstimatedHrs || '0', 10) || 0;
+    const newEstMins = parseInt(newTaskEstimatedMins || '0', 10) || 0;
+    const newEstimatedMs = (newEstHrs * 60 + newEstMins) > 0 ? (newEstHrs * 3600000 + newEstMins * 60000) : null;
     const newLog = {
       id: Date.now(),
       name: newTaskName.trim(),
@@ -421,6 +447,7 @@ const ClientView = ({
       qcReviewedAt: null,
       departments: newTaskDepartments.length > 0 ? newTaskDepartments : (currentUser?.department ? [currentUser.department] : null),
       billable: newTaskBillable,
+      estimatedMs: newEstimatedMs,
     };
 
     setNotifications(prev => [
@@ -459,6 +486,8 @@ const ClientView = ({
     setQcAssigneeName('');
     setNewTaskDepartments(currentUser?.department ? [currentUser.department] : []);
     setNewTaskBillable(true);
+    setNewTaskEstimatedHrs('');
+    setNewTaskEstimatedMins('');
     setShowTaskForm(false);
   };
 
@@ -879,6 +908,11 @@ const ClientView = ({
                           <span className="text-[10px] font-semibold text-slate-700">{formatDuration(getElapsedMs(log))}</span>
                           {isExpanded && timerState === 'stopped' && log.timeTaken && (
                             <span className="text-[8px] font-medium text-emerald-600">Time: {log.timeTaken}</span>
+                          )}
+                          {formatEstimatedTime(log.estimatedMs) && (
+                            <span className="text-[8px] font-medium text-amber-600 flex items-center gap-0.5">
+                              <Hourglass size={7} /> {formatEstimatedTime(log.estimatedMs)}
+                            </span>
                           )}
                         </div>
                       </td>
@@ -1468,6 +1502,35 @@ const ClientView = ({
                         <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${newTaskBillable ? 'translate-x-4' : 'translate-x-1'}`} />
                       </button>
                     </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Estimated Time</label>
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 flex-1">
+                          <input
+                            type="number"
+                            min="0"
+                            max="999"
+                            placeholder="0"
+                            className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                            value={newTaskEstimatedHrs}
+                            onChange={e => setNewTaskEstimatedHrs(e.target.value)}
+                          />
+                          <span className="text-xs font-semibold text-slate-500 whitespace-nowrap">hrs</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-1">
+                          <input
+                            type="number"
+                            min="0"
+                            max="59"
+                            placeholder="0"
+                            className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                            value={newTaskEstimatedMins}
+                            onChange={e => setNewTaskEstimatedMins(e.target.value)}
+                          />
+                          <span className="text-xs font-semibold text-slate-500 whitespace-nowrap">mins</span>
+                        </div>
+                      </div>
+                    </div>
                     {/* QC Section */}
                     <div className="space-y-3 border border-slate-200 rounded-xl p-4 bg-slate-50/60">
                       <div className="flex items-center justify-between">
@@ -1741,6 +1804,35 @@ const ClientView = ({
                         >
                           <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${editDraft.billable !== false ? 'translate-x-4' : 'translate-x-1'}`} />
                         </button>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Estimated Time</label>
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1.5 flex-1">
+                            <input
+                              type="number"
+                              min="0"
+                              max="999"
+                              placeholder="0"
+                              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                              value={editDraft.estimatedHrs || ''}
+                              onChange={e => setEditDraft(d => ({ ...d, estimatedHrs: e.target.value }))}
+                            />
+                            <span className="text-xs font-semibold text-slate-500 whitespace-nowrap">hrs</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-1">
+                            <input
+                              type="number"
+                              min="0"
+                              max="59"
+                              placeholder="0"
+                              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                              value={editDraft.estimatedMins || ''}
+                              onChange={e => setEditDraft(d => ({ ...d, estimatedMins: e.target.value }))}
+                            />
+                            <span className="text-xs font-semibold text-slate-500 whitespace-nowrap">mins</span>
+                          </div>
+                        </div>
                       </div>
                       {/* QC Section */}
                       <div className="space-y-3 border border-slate-200 rounded-xl p-4 bg-slate-50/60">

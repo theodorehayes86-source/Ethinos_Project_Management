@@ -14,6 +14,7 @@ interface TaskLog {
   status: string;
   category: string;
   elapsedMs: number;
+  estimatedMs?: number | null;
   timeTaken: string | null;
   creatorName: string;
   assignee?: { id: string; name: string } | string;

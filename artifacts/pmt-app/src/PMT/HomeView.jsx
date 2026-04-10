@@ -42,6 +42,8 @@ const HomeView = ({
   const [taskDepartments, setTaskDepartments] = useState([]);
   const [taskBillable, setTaskBillable] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
+  const [estimatedHrs, setEstimatedHrs] = useState('');
+  const [estimatedMins, setEstimatedMins] = useState('');
 
   const isManagement = managementRoles.includes(currentUser?.role);
 
@@ -86,6 +88,8 @@ const HomeView = ({
     setTaskError('');
     setTaskDepartments(currentUser?.department ? [currentUser.department] : []);
     setTaskBillable(true);
+    setEstimatedHrs('');
+    setEstimatedMins('');
   };
 
   const openAddTaskModal = () => { resetModal(); setShowAddTaskModal(true); };
@@ -98,6 +102,9 @@ const HomeView = ({
       return;
     }
     const formattedDate = format(selectedDate, 'do MMM yyyy');
+    const homeEstHrs = parseInt(estimatedHrs || '0', 10) || 0;
+    const homeEstMins = parseInt(estimatedMins || '0', 10) || 0;
+    const homeEstimatedMs = (homeEstHrs * 60 + homeEstMins) > 0 ? (homeEstHrs * 3600000 + homeEstMins * 60000) : null;
     const newTask = {
       id: Date.now(),
       name: taskName.trim(),
@@ -126,6 +133,7 @@ const HomeView = ({
       qcReviewedAt: null,
       departments: taskDepartments.length > 0 ? taskDepartments : (currentUser?.department ? [currentUser.department] : null),
       billable: taskBillable,
+      estimatedMs: homeEstimatedMs,
     };
     const nextLogs = { ...clientLogs, [selectedClientId]: [newTask, ...(clientLogs[selectedClientId] || [])] };
     setClientLogs(nextLogs);
@@ -524,6 +532,36 @@ const HomeView = ({
                     >
                       <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${taskBillable ? 'translate-x-4' : 'translate-x-1'}`} />
                     </button>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Estimated Time</label>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5 flex-1">
+                        <input
+                          type="number"
+                          min="0"
+                          max="999"
+                          placeholder="0"
+                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                          value={estimatedHrs}
+                          onChange={e => setEstimatedHrs(e.target.value)}
+                        />
+                        <span className="text-xs font-semibold text-slate-500 whitespace-nowrap">hrs</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-1">
+                        <input
+                          type="number"
+                          min="0"
+                          max="59"
+                          placeholder="0"
+                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                          value={estimatedMins}
+                          onChange={e => setEstimatedMins(e.target.value)}
+                        />
+                        <span className="text-xs font-semibold text-slate-500 whitespace-nowrap">mins</span>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="space-y-3 border border-slate-200 rounded-xl p-4 bg-slate-50/60">

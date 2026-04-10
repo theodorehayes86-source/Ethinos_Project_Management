@@ -69,6 +69,9 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
         const assigneeFromMap = assigneeId ? usersById.get(assigneeId) : null;
         const employeeName = assigneeFromMap?.name || log?.assigneeName || log?.creatorName || 'Unassigned';
 
+        const estimatedMs = Number(log?.estimatedMs || 0);
+        const estimatedHours = estimatedMs > 0 ? estimatedMs / 3600000 : 0;
+
         rows.push({
           clientId,
           entityName,
@@ -76,10 +79,13 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
           employeeName,
           category: log?.category || 'Uncategorized',
           taskDescription: log?.comment || '',
+          taskName: log?.name || '',
           status: log?.status || '',
           date: log?.date || '',
           hoursSpent: Number(hoursSpent.toFixed(2)),
           billable: log?.billable !== false,
+          estimatedHours: Number(estimatedHours.toFixed(2)),
+          hasEstimate: estimatedMs > 0,
         });
       });
     });
@@ -97,6 +103,9 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
           entityName: row.entityName,
           clientName: row.clientName,
           totalHours: 0,
+          totalEstimatedHours: 0,
+          estimatedActualHours: 0,
+          estimatedTaskCount: 0,
           taskCount: 0,
           billableHours: 0,
           billableCount: 0,
@@ -116,6 +125,11 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
         current.nonBillableHours += row.hoursSpent;
         current.nonBillableCount += 1;
       }
+      if (row.hasEstimate) {
+        current.totalEstimatedHours += row.estimatedHours;
+        current.estimatedActualHours += row.hoursSpent;
+        current.estimatedTaskCount += 1;
+      }
       current.categories.set(row.category, (current.categories.get(row.category) || 0) + row.hoursSpent);
     });
 
@@ -124,12 +138,15 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
       const categoriesArr = Array.from(item.categories.entries())
         .sort((a, b) => b[1] - a[1])
         .map(([name, hours]) => ({ name, hours: Number(hours.toFixed(2)) }));
+      const variance = item.estimatedTaskCount > 0 ? item.estimatedActualHours - item.totalEstimatedHours : null;
 
       return {
         entityName: item.entityName,
         clientName: item.clientName,
         avgHours: Number(avgHours.toFixed(2)),
         totalHours: Number(item.totalHours.toFixed(2)),
+        totalEstimatedHours: item.estimatedTaskCount > 0 ? Number(item.totalEstimatedHours.toFixed(2)) : null,
+        variance: variance !== null ? Number(variance.toFixed(2)) : null,
         taskCount: item.taskCount,
         billableHours: Number(item.billableHours.toFixed(2)),
         billableCount: item.billableCount,
@@ -148,6 +165,9 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
         summaryMap.set(row.employeeName, {
           employeeName: row.employeeName,
           totalHours: 0,
+          totalEstimatedHours: 0,
+          estimatedActualHours: 0,
+          estimatedTaskCount: 0,
           taskCount: 0,
           billableHours: 0,
           billableCount: 0,
@@ -168,6 +188,11 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
         current.nonBillableHours += row.hoursSpent;
         current.nonBillableCount += 1;
       }
+      if (row.hasEstimate) {
+        current.totalEstimatedHours += row.estimatedHours;
+        current.estimatedActualHours += row.hoursSpent;
+        current.estimatedTaskCount += 1;
+      }
       const clientLabel = row.entityName && row.entityName !== '-' ? `${row.entityName} - ${row.clientName}` : row.clientName;
       current.clients.set(clientLabel, (current.clients.get(clientLabel) || 0) + row.hoursSpent);
       current.categories.set(row.category, (current.categories.get(row.category) || 0) + row.hoursSpent);
@@ -183,10 +208,14 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
         .sort((a, b) => b[1] - a[1])
         .map(([name, hours]) => ({ name, hours: Number(hours.toFixed(2)) }));
 
+      const variance = item.estimatedTaskCount > 0 ? item.estimatedActualHours - item.totalEstimatedHours : null;
+
       return {
         employeeName: item.employeeName,
         avgHours: Number(avgHours.toFixed(2)),
         totalHours: Number(item.totalHours.toFixed(2)),
+        totalEstimatedHours: item.estimatedTaskCount > 0 ? Number(item.totalEstimatedHours.toFixed(2)) : null,
+        variance: variance !== null ? Number(variance.toFixed(2)) : null,
         taskCount: item.taskCount,
         billableHours: Number(item.billableHours.toFixed(2)),
         billableCount: item.billableCount,
@@ -209,10 +238,13 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
         employeeName: row.employeeName,
         category: row.category,
         taskDescription: row.taskDescription || '-',
+        taskName: row.taskName || '-',
         date: row.date || '-',
         status: row.status || '-',
         hoursSpent: row.hoursSpent,
         billable: row.billable,
+        estimatedHours: row.hasEstimate ? row.estimatedHours : null,
+        variance: row.hasEstimate ? Number((row.hoursSpent - row.estimatedHours).toFixed(2)) : null,
       }));
   }, [allRows]);
 
@@ -243,18 +275,20 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
 
   const handleDownload = () => {
     if (activeView === 'client') {
-      const headers = ['Entity Name', 'Client Name', 'Avg Hours Spent', 'Total Hours', 'Task Count', 'Billable Hours', 'Billable Tasks', 'Non-Billable Hours', 'Non-Billable Tasks', 'Category Breakdown'];
-      const rows = clientSummary.map((row) => [row.entityName, row.clientName, row.avgHours, row.totalHours, row.taskCount, row.billableHours, row.billableCount, row.nonBillableHours, row.nonBillableCount, row.categories.map(c => `${c.name} (${c.hours}h)`).join('; ')]);
+      const headers = ['Entity Name', 'Client Name', 'Avg Hours Spent', 'Total Hours', 'Estimated Hours', 'Variance (Actual - Est)', 'Task Count', 'Billable Hours', 'Billable Tasks', 'Non-Billable Hours', 'Non-Billable Tasks', 'Category Breakdown'];
+      const rows = clientSummary.map((row) => [row.entityName, row.clientName, row.avgHours, row.totalHours, row.totalEstimatedHours ?? '', row.variance ?? '', row.taskCount, row.billableHours, row.billableCount, row.nonBillableHours, row.nonBillableCount, row.categories.map(c => `${c.name} (${c.hours}h)`).join('; ')]);
       downloadCsv('client-reports.csv', headers, rows);
       return;
     }
 
     if (activeView === 'employee') {
-      const headers = ['Employee Name', 'Avg Hours', 'Total Hours', 'Task Count', 'Billable Hours', 'Billable Tasks', 'Non-Billable Hours', 'Non-Billable Tasks', 'Clients Worked', 'Time Per Client', 'Time Per Task Category'];
+      const headers = ['Employee Name', 'Avg Hours', 'Total Hours', 'Estimated Hours', 'Variance (Actual - Est)', 'Task Count', 'Billable Hours', 'Billable Tasks', 'Non-Billable Hours', 'Non-Billable Tasks', 'Clients Worked', 'Time Per Client', 'Time Per Task Category'];
       const rows = employeeSummary.map((row) => [
         row.employeeName,
         row.avgHours,
         row.totalHours,
+        row.totalEstimatedHours ?? '',
+        row.variance ?? '',
         row.taskCount,
         row.billableHours,
         row.billableCount,
@@ -268,17 +302,20 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
       return;
     }
 
-    const headers = ['Entity', 'Client', 'Employee', 'Category', 'Task', 'Date', 'Status', 'Billable', 'Hours Spent'];
+    const headers = ['Entity', 'Client', 'Employee', 'Category', 'Task', 'Description', 'Date', 'Status', 'Billable', 'Hours Spent', 'Estimated Hours', 'Variance (Actual - Est)'];
     const rows = combinedSummary.map((row) => [
       row.entityName,
       row.clientName,
       row.employeeName,
       row.category,
+      row.taskName,
       row.taskDescription,
       row.date,
       row.status,
       row.billable ? 'Billable' : 'Non-Billable',
-      row.hoursSpent
+      row.hoursSpent,
+      row.estimatedHours ?? '',
+      row.variance ?? '',
     ]);
     downloadCsv('combined-reports.csv', headers, rows);
   };
@@ -356,6 +393,8 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
                   <th className="px-4 py-3 text-left">Client Name</th>
                   <th className="px-4 py-3 text-right">Avg Hours</th>
                   <th className="px-4 py-3 text-right">Total Hours</th>
+                  <th className="px-4 py-3 text-right">Est. Hours</th>
+                  <th className="px-4 py-3 text-right">Variance</th>
                   <th className="px-4 py-3 text-right">Tasks</th>
                   <th className="px-4 py-3 text-left">Billable / Non-Billable</th>
                   <th className="px-4 py-3 text-left">Category Breakdown</th>
@@ -368,6 +407,16 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
                     <td className="px-4 py-3 text-sm font-semibold text-slate-900">{row.clientName}</td>
                     <td className="px-4 py-3 text-sm text-right font-medium text-slate-700">{row.avgHours}</td>
                     <td className="px-4 py-3 text-sm text-right font-medium text-slate-700">{row.totalHours}</td>
+                    <td className="px-4 py-3 text-sm text-right font-medium text-slate-700">
+                      {row.totalEstimatedHours !== null ? row.totalEstimatedHours : <span className="text-slate-400">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-right font-medium">
+                      {row.variance !== null ? (
+                        <span className={row.variance > 0 ? 'text-red-600' : row.variance < 0 ? 'text-emerald-600' : 'text-slate-700'}>
+                          {row.variance > 0 ? `+${row.variance}` : row.variance}
+                        </span>
+                      ) : <span className="text-slate-400">—</span>}
+                    </td>
                     <td className="px-4 py-3 text-sm text-right font-medium text-slate-700">{row.taskCount}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
@@ -392,7 +441,7 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
                 ))}
                 {!clientSummary.length && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center text-sm font-medium text-slate-500">No client task data available yet.</td>
+                    <td colSpan={9} className="px-4 py-10 text-center text-sm font-medium text-slate-500">No client task data available yet.</td>
                   </tr>
                 )}
               </tbody>
@@ -410,6 +459,8 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
                   <th className="px-4 py-3 text-left">Employee</th>
                   <th className="px-4 py-3 text-right">Avg Hours</th>
                   <th className="px-4 py-3 text-right">Total Hours</th>
+                  <th className="px-4 py-3 text-right">Est. Hours</th>
+                  <th className="px-4 py-3 text-right">Variance</th>
                   <th className="px-4 py-3 text-right">Clients</th>
                   <th className="px-4 py-3 text-left">Billable / Non-Billable</th>
                   <th className="px-4 py-3 text-left">Time Per Client</th>
@@ -422,6 +473,16 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
                     <td className="px-4 py-3 text-sm font-semibold text-slate-900">{row.employeeName}</td>
                     <td className="px-4 py-3 text-sm text-right font-medium text-slate-700">{row.avgHours}</td>
                     <td className="px-4 py-3 text-sm text-right font-medium text-slate-700">{row.totalHours}</td>
+                    <td className="px-4 py-3 text-sm text-right font-medium text-slate-700">
+                      {row.totalEstimatedHours !== null ? row.totalEstimatedHours : <span className="text-slate-400">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-right font-medium">
+                      {row.variance !== null ? (
+                        <span className={row.variance > 0 ? 'text-red-600' : row.variance < 0 ? 'text-emerald-600' : 'text-slate-700'}>
+                          {row.variance > 0 ? `+${row.variance}` : row.variance}
+                        </span>
+                      ) : <span className="text-slate-400">—</span>}
+                    </td>
                     <td className="px-4 py-3 text-sm text-right font-medium text-slate-700">{row.clientsWorked}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
@@ -455,7 +516,7 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
                 ))}
                 {!employeeSummary.length && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center text-sm font-medium text-slate-500">No employee task data available yet.</td>
+                    <td colSpan={9} className="px-4 py-10 text-center text-sm font-medium text-slate-500">No employee task data available yet.</td>
                   </tr>
                 )}
               </tbody>
@@ -478,7 +539,9 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
                   <th className="px-4 py-3 text-left">Date</th>
                   <th className="px-4 py-3 text-left">Status</th>
                   <th className="px-4 py-3 text-left">Billable</th>
-                  <th className="px-4 py-3 text-right">Hours</th>
+                  <th className="px-4 py-3 text-right">Actual</th>
+                  <th className="px-4 py-3 text-right">Est.</th>
+                  <th className="px-4 py-3 text-right">Variance</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -488,7 +551,10 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
                     <td className="px-4 py-3 text-sm font-semibold text-slate-900">{row.clientName}</td>
                     <td className="px-4 py-3 text-sm text-slate-700">{row.employeeName}</td>
                     <td className="px-4 py-3 text-sm text-slate-700">{row.category}</td>
-                    <td className="px-4 py-3 text-sm text-slate-700">{row.taskDescription}</td>
+                    <td className="px-4 py-3 text-sm text-slate-700">
+                      <p className="font-medium text-slate-800 truncate max-w-[120px]" title={row.taskName !== '-' ? row.taskName : undefined}>{row.taskName !== '-' ? row.taskName : row.taskDescription}</p>
+                      {row.taskName !== '-' && <p className="text-xs text-slate-500 truncate max-w-[120px]">{row.taskDescription}</p>}
+                    </td>
                     <td className="px-4 py-3 text-sm text-slate-700">{row.date}</td>
                     <td className="px-4 py-3 text-sm text-slate-700">{row.status}</td>
                     <td className="px-4 py-3">
@@ -497,11 +563,21 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
                       </span>
                     </td>
                     <td className="px-4 py-3 text-sm text-right font-medium text-slate-700">{row.hoursSpent}</td>
+                    <td className="px-4 py-3 text-sm text-right font-medium text-slate-700">
+                      {row.estimatedHours !== null ? row.estimatedHours : <span className="text-slate-400">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-right font-medium">
+                      {row.variance !== null ? (
+                        <span className={row.variance > 0 ? 'text-red-600' : row.variance < 0 ? 'text-emerald-600' : 'text-slate-700'}>
+                          {row.variance > 0 ? `+${row.variance}` : row.variance}
+                        </span>
+                      ) : <span className="text-slate-400">—</span>}
+                    </td>
                   </tr>
                 ))}
                 {!combinedSummary.length && (
                   <tr>
-                    <td colSpan={9} className="px-4 py-10 text-center text-sm font-medium text-slate-500">No combined report data available yet.</td>
+                    <td colSpan={11} className="px-4 py-10 text-center text-sm font-medium text-slate-500">No combined report data available yet.</td>
                   </tr>
                 )}
               </tbody>
