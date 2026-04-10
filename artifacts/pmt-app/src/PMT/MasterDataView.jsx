@@ -545,23 +545,22 @@ const MasterDataView = ({
         setUsers((users || []).map(u => u.id === editingUserId ? { ...newUser, id: u.id, password: undefined } : u));
         closeUserModal();
       } else {
-        if (!newUser.password || newUser.password.length < 6) {
-          setUserSaveError('Password must be at least 6 characters.');
-          setUserSaving(false);
-          return;
-        }
+        let emailWarning = '';
         if (createFirebaseUser) {
-          await createFirebaseUser(newUser.email.trim().toLowerCase(), newUser.password);
+          const result = await createFirebaseUser(newUser.email.trim().toLowerCase(), newUser.name.trim());
+          if (result?.warning) emailWarning = result.warning;
         }
         const { password: _pw, ...userRecord } = newUser;
         setUsers([...(users || []), { ...userRecord, id: `user-${Date.now()}`, email: userRecord.email.trim().toLowerCase() }]);
-        closeUserModal();
+        if (emailWarning) {
+          setUserSaveError(emailWarning);
+        } else {
+          closeUserModal();
+        }
       }
     } catch (err) {
       if (err?.code === 'auth/email-already-in-use') {
         setUserSaveError('An account with this email already exists.');
-      } else if (err?.code === 'auth/weak-password') {
-        setUserSaveError('Password must be at least 6 characters.');
       } else if (err?.code === 'auth/invalid-email') {
         setUserSaveError('Please enter a valid email address.');
       } else {
@@ -593,7 +592,6 @@ const MasterDataView = ({
     if (!row.name?.trim()) errs.push('Name required');
     if (!row.email?.trim()) errs.push('Email required');
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email.trim())) errs.push('Invalid email');
-    if (!row.password?.trim() || row.password.trim().length < 6) errs.push('Password min 6 chars');
     if (!row.role?.trim()) errs.push('Role required');
     if (!row.department?.trim()) errs.push('Department required');
     if (!row.region?.trim()) errs.push('Region required');
@@ -626,8 +624,10 @@ const MasterDataView = ({
       const assignedProjects = clientNames.filter(name => (clients || []).some(c => c.name === name));
       const label = `${row.name?.trim()} (${row.email?.trim()})`;
       try {
+        let emailWarning = '';
         if (createFirebaseUser) {
-          await createFirebaseUser(row.email.trim().toLowerCase(), row.password.trim());
+          const result = await createFirebaseUser(row.email.trim().toLowerCase(), row.name?.trim());
+          if (result?.warning) emailWarning = result.warning;
         }
         newUserRecords.push({
           id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -639,7 +639,7 @@ const MasterDataView = ({
           position: row.position?.trim() || '',
           assignedProjects,
         });
-        results.push({ label, success: true });
+        results.push({ label, success: true, warning: emailWarning || undefined });
       } catch (err) {
         results.push({ label, success: false, error: err.message || 'Failed to create user' });
       }
@@ -2124,22 +2124,11 @@ const MasterDataView = ({
                 />
               </div>
               {!editingUserId && (
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-slate-600 ml-1">Initial Password</label>
-                  <div className="relative">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      placeholder="Min. 6 characters..."
-                      className="w-full p-5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 ring-blue-500/5 font-bold transition-all pr-14"
-                      value={newUser.password}
-                      onChange={e => setNewUser(prev => ({...prev, password: e.target.value}))}
-                      required={!editingUserId}
-                      minLength={6}
-                    />
-                    <button type="button" onClick={() => setShowPassword(v => !v)} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                      {showPassword ? <EyeOff size={18}/> : <Eye size={18}/>}
-                    </button>
-                  </div>
+                <div className="rounded-2xl border border-indigo-100 bg-indigo-50 px-5 py-4 flex items-start gap-3">
+                  <Mail size={18} className="text-indigo-400 mt-0.5 flex-shrink-0" />
+                  <p className="text-sm text-indigo-700">
+                    A secure temporary password will be <strong>auto-generated</strong> and emailed to the user via the Ethinos mail system.
+                  </p>
                 </div>
               )}
               <div className="grid grid-cols-2 gap-8 items-start">

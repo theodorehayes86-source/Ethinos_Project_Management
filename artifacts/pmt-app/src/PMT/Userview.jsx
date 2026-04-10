@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
-import { Search, Plus, X, Star, Trash2, Check, ChevronDown, UserPlus, Mail, Edit3, Crown, UserCheck, Eye, EyeOff } from 'lucide-react';
+import { Search, Plus, X, Star, Trash2, Check, ChevronDown, UserPlus, Mail, Edit3, Crown, UserCheck } from 'lucide-react';
 
 const UserView = ({ users = [], setUsers, clients = [], settingsSearch = "", setSettingsSearch, departments = [], regions = [], createFirebaseUser }) => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
   const [editingUserId, setEditingUserId] = useState(null);
   const [projectSearch, setProjectSearch] = useState("");
-  const [newUser, setNewUser] = useState({ name: "", email: "", password: "", role: "Executive", department: "", region: "", assignedProjects: [] });
-  const [showPassword, setShowPassword] = useState(false);
+  const [newUser, setNewUser] = useState({ name: "", email: "", role: "Executive", department: "", region: "", assignedProjects: [] });
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
@@ -19,26 +18,18 @@ const UserView = ({ users = [], setUsers, clients = [], settingsSearch = "", set
 
     try {
       if (editingUserId) {
-        setUsers(users.map(u => u.id === editingUserId ? { ...newUser, id: u.id, password: undefined } : u));
+        setUsers(users.map(u => u.id === editingUserId ? { ...newUser, id: u.id } : u));
         closeModal();
       } else {
-        if (!newUser.password || newUser.password.length < 6) {
-          setSaveError("Password must be at least 6 characters.");
-          setSaving(false);
-          return;
-        }
         if (createFirebaseUser) {
-          await createFirebaseUser(newUser.email.trim().toLowerCase(), newUser.password);
+          await createFirebaseUser(newUser.email.trim().toLowerCase(), newUser.name.trim());
         }
-        const { password: _pw, ...userRecord } = newUser;
-        setUsers([...users, { ...userRecord, id: Date.now(), email: userRecord.email.trim().toLowerCase() }]);
+        setUsers([...users, { ...newUser, id: Date.now(), email: newUser.email.trim().toLowerCase() }]);
         closeModal();
       }
     } catch (err) {
       if (err?.code === 'auth/email-already-in-use') {
         setSaveError("An account with this email already exists.");
-      } else if (err?.code === 'auth/weak-password') {
-        setSaveError("Password must be at least 6 characters.");
       } else if (err?.code === 'auth/invalid-email') {
         setSaveError("Please enter a valid email address.");
       } else {
@@ -51,17 +42,16 @@ const UserView = ({ users = [], setUsers, clients = [], settingsSearch = "", set
 
   const openEditModal = (user) => {
     setEditingUserId(user.id);
-    setNewUser({ name: user.name, email: user.email, password: "", role: user.role, department: user.department || "", region: user.region || "", assignedProjects: user.assignedProjects || [] });
+    setNewUser({ name: user.name, email: user.email, role: user.role, department: user.department || "", region: user.region || "", assignedProjects: user.assignedProjects || [] });
     setShowAddModal(true);
   };
 
   const closeModal = () => {
     setShowAddModal(false);
     setEditingUserId(null);
-    setNewUser({ name: "", email: "", password: "", role: "Executive", department: "", region: "", assignedProjects: [] });
+    setNewUser({ name: "", email: "", role: "Executive", department: "", region: "", assignedProjects: [] });
     setProjectSearch("");
     setSaveError("");
-    setShowPassword(false);
   };
 
   const toggleProject = (projectName) => {
@@ -215,26 +205,11 @@ const UserView = ({ users = [], setUsers, clients = [], settingsSearch = "", set
               </div>
 
               {!editingUserId && (
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-slate-600 ml-1">Initial Password</label>
-                  <div className="relative">
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      placeholder="Min. 6 characters..."
-                      className="w-full p-5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 ring-blue-500/5 font-bold transition-all pr-14"
-                      value={newUser.password}
-                      onChange={e => setNewUser({...newUser, password: e.target.value})}
-                      required={!editingUserId}
-                      minLength={6}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(v => !v)}
-                      className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                    >
-                      {showPassword ? <EyeOff size={18}/> : <Eye size={18}/>}
-                    </button>
-                  </div>
+                <div className="rounded-2xl border border-indigo-100 bg-indigo-50 px-5 py-4 flex items-start gap-3">
+                  <Mail size={18} className="text-indigo-400 mt-0.5 flex-shrink-0" />
+                  <p className="text-sm text-indigo-700">
+                    A secure temporary password will be <strong>auto-generated</strong> and emailed to the user via the Ethinos mail system.
+                  </p>
                 </div>
               )}
 

@@ -12,12 +12,22 @@ const Field = ({ label, children }) => (
 
 const inputCls = "w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 placeholder:text-slate-500 outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200";
 
-const LoginView = ({ onLogin, onGoogleLogin, onCreateAccount, onResetPassword, loginError }) => {
+const MicrosoftIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="1" y="1" width="9" height="9" fill="#F25022"/>
+    <rect x="11" y="1" width="9" height="9" fill="#7FBA00"/>
+    <rect x="1" y="11" width="9" height="9" fill="#00A4EF"/>
+    <rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
+  </svg>
+);
+
+const LoginView = ({ onLogin, onMicrosoftLogin, onCreateAccount, onResetPassword, loginError }) => {
   const [mode, setMode] = useState('signin'); // 'signin' | 'register' | 'reset'
 
   // Sign-in state
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [msLoading, setMsLoading] = useState(false);
 
   // Register state
   const [regName, setRegName] = useState('');
@@ -46,6 +56,15 @@ const LoginView = ({ onLogin, onGoogleLogin, onCreateAccount, onResetPassword, l
   const handleSignIn = (e) => {
     e.preventDefault();
     onLogin?.(email.trim(), password);
+  };
+
+  const handleMicrosoftSignIn = async () => {
+    setMsLoading(true);
+    try {
+      await onMicrosoftLogin?.();
+    } finally {
+      setMsLoading(false);
+    }
   };
 
   const handleRegister = async (e) => {
@@ -83,8 +102,10 @@ const LoginView = ({ onLogin, onGoogleLogin, onCreateAccount, onResetPassword, l
       setResetSent(true);
     } catch (err) {
       const msg = err?.message || '';
-      if (msg.includes('user-not-found') || msg.includes('invalid-email')) {
+      if (msg.includes('user-not-found') || msg.includes('invalid-email') || msg.includes('No account')) {
         setResetError('No account found with that email address.');
+      } else if (msg.includes('not configured') || msg.includes('Email service')) {
+        setResetError('Email service is not configured. Please contact your administrator.');
       } else {
         setResetError('Could not send reset email. Please try again.');
       }
@@ -122,7 +143,7 @@ const LoginView = ({ onLogin, onGoogleLogin, onCreateAccount, onResetPassword, l
               <p className="text-[11px] font-semibold uppercase tracking-wider text-white/85">Project Management Tool</p>
               <p className="mt-2 text-sm text-white">
                 {mode === 'signin'
-                  ? 'Sign in with your Ethinos work email to access your workspace.'
+                  ? 'Sign in with your Ethinos Microsoft account to access your workspace.'
                   : mode === 'register'
                   ? 'Create your account to get started. Your manager will assign your projects once you are set up.'
                   : 'Enter your email and we\'ll send you a link to reset your password.'}
@@ -139,6 +160,23 @@ const LoginView = ({ onLogin, onGoogleLogin, onCreateAccount, onResetPassword, l
                   <img src="/ethinos-logo.png" alt="Ethinos" className="mb-4 h-7 w-auto object-contain md:hidden" />
                   <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-900">Welcome</h2>
                   <p className="mt-1 text-sm text-slate-600">Sign in to continue to your workspace.</p>
+                </div>
+
+                {/* Microsoft Sign-In Button */}
+                <button
+                  type="button"
+                  onClick={handleMicrosoftSignIn}
+                  disabled={msLoading}
+                  className="mb-5 w-full flex items-center justify-center gap-3 rounded-xl border border-slate-300 bg-white py-2.5 px-4 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 hover:border-slate-400 transition-all disabled:opacity-60"
+                >
+                  <MicrosoftIcon />
+                  {msLoading ? 'Signing in…' : 'Sign in with Microsoft'}
+                </button>
+
+                <div className="relative mb-5 flex items-center gap-3">
+                  <div className="flex-1 h-px bg-slate-200" />
+                  <span className="text-xs font-medium text-slate-400">or use email & password</span>
+                  <div className="flex-1 h-px bg-slate-200" />
                 </div>
 
                 <form className="space-y-4" onSubmit={handleSignIn}>

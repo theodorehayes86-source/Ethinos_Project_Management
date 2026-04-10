@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { ref, onValue, set, get } from 'firebase/database';
-import { signInWithEmailAndPassword, signInWithPopup, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, updateProfile, sendPasswordResetEmail, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
-import { db, auth, googleProvider } from './firebase.js';
+import { signInWithEmailAndPassword, signInWithCustomToken, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, updateProfile, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
+import { db, auth } from './firebase.js';
+import { getMsalInstance, loginRequest } from './msalConfig.js';
 
 import HomeView from './PMT/HomeView';
 import ClientView from './PMT/ClientView';
@@ -125,12 +126,95 @@ const DEFAULT_TASK_TEMPLATES = [
   },
 ];
 
+const MicrosoftProfileSetup = ({ firebaseUser, departments, regions, onComplete, onSignOut }) => {
+  const [department, setDepartment] = useState('');
+  const [region, setRegion] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const displayName = firebaseUser.displayName || firebaseUser.email.split('@')[0];
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!department) { setError('Please select your department.'); return; }
+    if (!region) { setError('Please select your region.'); return; }
+    setSaving(true);
+    setError('');
+    try {
+      await onComplete({ department, region });
+    } catch {
+      setError('Something went wrong. Please try again.');
+      setSaving(false);
+    }
+  };
+
+  const inputCls = "w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200";
+
+  return (
+    <div className="relative min-h-screen w-screen flex items-center justify-center px-4 py-8"
+      style={{ background: 'radial-gradient(58% 72% at 8% 16%, rgba(241, 94, 88, 0.92) 0%, rgba(241, 94, 88, 0) 62%), radial-gradient(52% 64% at 52% 88%, rgba(82, 110, 255, 0.78) 0%, rgba(82, 110, 255, 0) 66%), linear-gradient(140deg, #eb6f7a 0%, #c86ea0 33%, #8c7fd1 58%, #8ca3d4 74%, #d5dca8 100%)' }}>
+      <div className="w-full max-w-md rounded-3xl border border-white/35 bg-white/90 shadow-2xl backdrop-blur-xl p-10">
+        <div className="mb-6 text-center">
+          <div className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-indigo-100 mb-4">
+            <svg className="h-7 w-7 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-black tracking-tight text-slate-900">Complete Your Profile</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Welcome, <strong className="text-slate-700">{displayName}</strong>! Select your department and region to get started.
+          </p>
+        </div>
+
+        <form className="space-y-4" onSubmit={handleSubmit}>
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-wide text-slate-700 mb-1">Department</label>
+            <select value={department} onChange={e => setDepartment(e.target.value)} className={inputCls} required>
+              <option value="">Select department…</option>
+              {departments.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-wide text-slate-700 mb-1">Region</label>
+            <select value={region} onChange={e => setRegion(e.target.value)} className={inputCls} required>
+              <option value="">Select region…</option>
+              {regions.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+
+          <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3">
+            <p className="text-xs text-indigo-700">
+              <span className="font-bold">Employee access.</span> Your manager will assign clients and update your role once your account is reviewed.
+            </p>
+          </div>
+
+          {error && <p className="text-xs font-semibold text-red-600">{error}</p>}
+
+          <button
+            type="submit"
+            disabled={saving}
+            className="w-full rounded-xl border border-indigo-500 bg-gradient-to-r from-rose-500 via-indigo-500 to-blue-500 py-2.5 text-sm font-semibold text-white transition-all hover:brightness-110 disabled:opacity-60"
+          >
+            {saving ? 'Setting up…' : 'Continue to Workspace'}
+          </button>
+        </form>
+
+        <button onClick={onSignOut} className="mt-4 w-full text-center text-xs font-semibold text-slate-400 hover:text-slate-600 transition-colors">
+          Sign out and use a different account
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const App = () => {
   const [activeTab, setActiveTab] = useState('home');
   const [currentUserId, setCurrentUserId] = useState(null);
   const [loginError, setLoginError] = useState('');
   const [firebaseUser, setFirebaseUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [msLoginPending, setMsLoginPending] = useState(false);
 
   const [clients, setClients] = useState([]);
   const [users, setUsers] = useState(DEFAULT_USERS);
@@ -353,6 +437,7 @@ const App = () => {
     const matched = firebaseMatch || defaultMatch;
 
     if (matched) {
+      setMsLoginPending(false);
       // Merge with live Firebase Auth info so name/email are always current
       const mergedRecord = {
         ...matched,
@@ -487,7 +572,16 @@ const App = () => {
     if (!email.toLowerCase().endsWith('@ethinos.com')) {
       throw new Error('Password reset is only available for Ethinos work accounts (@ethinos.com).');
     }
-    await sendPasswordResetEmail(auth, email);
+    const apiBase = import.meta.env.VITE_API_BASE_URL || '/api';
+    const resp = await fetch(`${apiBase}/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.trim().toLowerCase() }),
+    });
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      throw new Error(data.error || 'Failed to send reset email');
+    }
   };
 
   const isEthinosDomain = (email) => email?.toLowerCase().endsWith('@ethinos.com');
@@ -509,21 +603,54 @@ const App = () => {
     }
   };
 
-  const handleGoogleLogin = async () => {
+  const handleMicrosoftLogin = async () => {
     try {
       setLoginError('');
-      const result = await signInWithPopup(auth, googleProvider);
-      if (!isEthinosDomain(result.user?.email)) {
-        await signOut(auth);
+      const msal = getMsalInstance();
+      await msal.initialize();
+
+      let msalResult;
+      try {
+        msalResult = await msal.loginPopup(loginRequest);
+      } catch (err) {
+        if (
+          err?.errorCode === 'user_cancelled' ||
+          err?.errorCode === 'popup_window_error' ||
+          err?.name === 'BrowserAuthError'
+        ) {
+          return;
+        }
+        throw err;
+      }
+
+      const msEmail = msalResult?.account?.username || msalResult?.account?.idTokenClaims?.email;
+
+      if (!msEmail || !isEthinosDomain(msEmail)) {
         setLoginError('Access is restricted to Ethinos work accounts (@ethinos.com).');
+        return;
+      }
+
+      // Exchange the Microsoft ID token for a Firebase custom token via API
+      const apiBase = import.meta.env.VITE_API_BASE_URL || '/api';
+      const resp = await fetch(`${apiBase}/auth/ms-token-exchange`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ msIdToken: msalResult.idToken, email: msEmail }),
+      });
+
+      if (resp.ok) {
+        const { customToken } = await resp.json();
+        setMsLoginPending(true);
+        await signInWithCustomToken(auth, customToken);
+      } else {
+        const data = await resp.json().catch(() => ({}));
+        setLoginError(data.error || 'Microsoft sign-in failed. Please contact your administrator.');
       }
     } catch (err) {
-      if (err.code === 'auth/popup-blocked') {
-        setLoginError('Pop-up was blocked by your browser. Please allow pop-ups for this site and try again.');
-      } else if (err.code === 'auth/cancelled-popup-request' || err.code === 'auth/popup-closed-by-user') {
-        // user dismissed — no error message needed
+      if (err?.message?.includes('VITE_AZURE_CLIENT_ID is not set')) {
+        setLoginError('Microsoft login is not configured. Please use email/password to sign in.');
       } else {
-        setLoginError('Google sign-in failed. Please try again.');
+        setLoginError('Microsoft sign-in failed. Please try again.');
       }
     }
   };
@@ -578,6 +705,7 @@ const App = () => {
     setActiveTab('home');
     setCurrentUserId(null);
     setDbReady(false);
+    setMsLoginPending(false);
     await signOut(auth);
   };
 
@@ -600,7 +728,7 @@ const App = () => {
   if (!firebaseUser && !testModeUserId) {
     return (
       <>
-        <LoginView onLogin={handleLogin} onGoogleLogin={handleGoogleLogin} onCreateAccount={handleCreateAccount} onResetPassword={handleResetPassword} loginError={loginError} />
+        <LoginView onLogin={handleLogin} onMicrosoftLogin={handleMicrosoftLogin} onCreateAccount={handleCreateAccount} onResetPassword={handleResetPassword} loginError={loginError} />
         <TestModePanel
           currentUser={null}
           isTestMode={false}
@@ -619,6 +747,37 @@ const App = () => {
   }
 
   if (!testModeUserId && firebaseUser && !currentUser) {
+    if (msLoginPending && dbReady) {
+      return (
+        <MicrosoftProfileSetup
+          firebaseUser={firebaseUser}
+          departments={departments}
+          regions={regions}
+          onComplete={async ({ department, region }) => {
+            const displayName = firebaseUser.displayName || firebaseUser.email.split('@')[0];
+            const newUser = {
+              id: `user-${Date.now()}`,
+              name: displayName,
+              email: firebaseUser.email.toLowerCase(),
+              role: 'Employee',
+              assignedProjects: [],
+              department,
+              region,
+            };
+            const snap = await get(ref(db, 'users'));
+            const existing = snap.val();
+            const currentList = Array.isArray(existing)
+              ? existing
+              : existing ? Object.values(existing) : DEFAULT_USERS;
+            const updated = [...currentList, newUser];
+            await set(ref(db, 'users'), updated);
+            setMsLoginPending(false);
+          }}
+          onSignOut={handleLogout}
+        />
+      );
+    }
+
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
         <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-lg">
@@ -789,7 +948,25 @@ const App = () => {
               setUsers={persistUsers}
               clientLogs={clientLogs}
               setClientLogs={persistClientLogs}
-              createFirebaseUser={(email, password) => createUserWithEmailAndPassword(auth, email, password)}
+              createFirebaseUser={async (email, name) => {
+                const apiBase = import.meta.env.VITE_API_BASE_URL || '/api';
+                const idToken = firebaseUser ? await firebaseUser.getIdToken() : null;
+                const resp = await fetch(`${apiBase}/auth/create-user`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+                  },
+                  body: JSON.stringify({ email, name }),
+                });
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) {
+                  const err = new Error(data.error || 'Failed to create user');
+                  err.code = data.error;
+                  throw err;
+                }
+                return data;
+              }}
               feedbackItems={feedbackItems}
               setFeedbackItems={persistFeedbackItems}
               onSendPasswordReset={currentUser?.role === 'Super Admin' ? handleResetPassword : null}
