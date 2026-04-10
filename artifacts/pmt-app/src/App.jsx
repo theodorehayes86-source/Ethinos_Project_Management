@@ -727,8 +727,15 @@ const App = () => {
         console.log('[MS auth-redirect] Signing in with Firebase custom token…');
         setMsLoginPending(true);
         await signInWithCustomToken(auth, customToken);
-        console.log('[MS auth-redirect] Firebase sign-in complete ✓ — trying to close tab');
-        setTimeout(() => window.close(), 800);
+        console.log('[MS auth-redirect] Firebase sign-in complete ✓ — redirecting to app');
+        // Replace the URL with the clean app root so the user lands on the
+        // dashboard in this tab. window.close() is often blocked by browsers
+        // when the tab was opened by window.open(), and the Replit preview
+        // iframe uses a partitioned storage context that prevents cross-tab
+        // Firebase auth sync in the workspace (not an issue in production).
+        setTimeout(() => {
+          window.location.replace(window.location.origin + '/');
+        }, 600);
       } catch (err) {
         console.error('[MS auth-redirect] Error:', err);
         setMsAuthRedirectError(err.message || 'Sign-in failed. Please close this tab and try again.');
@@ -870,7 +877,7 @@ const App = () => {
             <div style={{ fontSize:'15px', fontWeight:'600', color:'#1e293b' }}>Completing sign-in…</div>
             <div style={{ fontSize:'13px', color:'#64748b' }}>Verifying your Microsoft account. Please wait.</div>
             <div style={{ fontSize:'11px', color:'#94a3b8', marginTop:'8px' }}>
-              This tab will close automatically. If it doesn't, you can close it and return to the original tab.
+              You'll be redirected to the dashboard in a moment…
             </div>
           </>
         )}
