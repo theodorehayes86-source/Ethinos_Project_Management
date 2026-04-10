@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, Trash2, Search, ShieldCheck, Edit2, X, ChevronUp, ChevronDown, Lock, Users, Crown, Check, Star, UserCheck, UserPlus, Edit3, Mail, MessageSquare, Bug, Lightbulb, AlertCircle, CheckCircle2, Clock, Filter, Eye, EyeOff, FlaskConical, Archive, ArchiveRestore, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, Search, ShieldCheck, Edit2, X, ChevronUp, ChevronDown, Lock, Users, Crown, Check, Star, UserCheck, UserPlus, Edit3, Mail, MessageSquare, Bug, Lightbulb, AlertCircle, CheckCircle2, Clock, Filter, Eye, EyeOff, FlaskConical, Archive, ArchiveRestore, ChevronRight, CornerDownLeft, Send } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 
 const REPEAT_OPTIONS = ['Daily', 'Weekly', 'Monthly', 'Once'];
@@ -145,6 +145,8 @@ const MasterDataView = ({
   const [showArchived, setShowArchived] = useState(false);
   const [editingFbId, setEditingFbId] = useState(null);
   const [editingFbDraft, setEditingFbDraft] = useState({});
+  const [replyingFbId, setReplyingFbId] = useState(null);
+  const [replyDraft, setReplyDraft] = useState('');
 
   const normalizedRoles = useMemo(() => {
     const defaults = [
@@ -1321,6 +1323,28 @@ const MasterDataView = ({
         };
         const cancelEdit = () => setEditingFbId(null);
 
+        const saveReply = (id) => {
+          if (!replyDraft.trim()) return;
+          setFeedbackItems(feedbackItems.map(f => f.id === id ? {
+            ...f,
+            reply: replyDraft.trim(),
+            replyTimestamp: Date.now(),
+            replyAdminName: currentUser?.name || currentUser?.email,
+          } : f));
+          setReplyingFbId(null);
+          setReplyDraft('');
+        };
+        const deleteReply = (id) => {
+          setFeedbackItems(feedbackItems.map(f => f.id === id ? {
+            ...f, reply: null, replyTimestamp: null, replyAdminName: null,
+          } : f));
+        };
+        const startReply = (item) => {
+          setReplyingFbId(item.id);
+          setReplyDraft(item.reply || '');
+          setEditingFbId(null);
+        };
+
         return (
           <div className="space-y-4">
             <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
@@ -1447,6 +1471,9 @@ const MasterDataView = ({
                                     <option>Awaiting Testing</option>
                                     <option>Resolved</option>
                                   </select>
+                                  <button onClick={() => startReply(item)} className={`p-1 transition-all ${replyingFbId === item.id ? 'text-indigo-500' : item.reply ? 'text-indigo-400 hover:text-indigo-600' : 'text-slate-300 hover:text-indigo-500'}`} title={item.reply ? 'Edit reply' : 'Reply to user'}>
+                                    <CornerDownLeft size={13}/>
+                                  </button>
                                   <button onClick={() => startEdit(item)} className="p-1 text-slate-300 hover:text-blue-500 transition-all" title="Edit">
                                     <Edit2 size={13}/>
                                   </button>
@@ -1461,6 +1488,43 @@ const MasterDataView = ({
                                 </div>
                               </div>
                               <p className="text-xs text-slate-600 leading-relaxed">{item.description}</p>
+                              {item.reply && replyingFbId !== item.id && (
+                                <div className="ml-2 pl-3 border-l-2 border-indigo-200 space-y-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <CornerDownLeft size={10} className="text-indigo-400"/>
+                                    <span className="text-[10px] font-semibold text-indigo-600">{item.replyAdminName}</span>
+                                    {item.replyTimestamp && (
+                                      <span className="text-[10px] text-slate-400">· {new Date(item.replyTimestamp).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}</span>
+                                    )}
+                                    <button onClick={() => deleteReply(item.id)} className="ml-auto p-0.5 text-slate-300 hover:text-red-400 transition-all" title="Remove reply">
+                                      <X size={10}/>
+                                    </button>
+                                  </div>
+                                  <p className="text-xs text-indigo-800 leading-relaxed">{item.reply}</p>
+                                </div>
+                              )}
+                              {replyingFbId === item.id && (
+                                <div className="ml-2 pl-3 border-l-2 border-indigo-300 space-y-2">
+                                  <textarea
+                                    value={replyDraft}
+                                    onChange={e => setReplyDraft(e.target.value)}
+                                    placeholder="Write a reply visible to the user..."
+                                    rows={3}
+                                    autoFocus
+                                    className="w-full bg-white border border-indigo-200 rounded-lg px-3 py-2 text-xs outline-none focus:border-indigo-400 transition-all resize-none"
+                                  />
+                                  <div className="flex items-center justify-end gap-2">
+                                    <button type="button" onClick={() => { setReplyingFbId(null); setReplyDraft(''); }}
+                                      className="px-3 py-1 text-[11px] font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all">
+                                      Cancel
+                                    </button>
+                                    <button type="button" onClick={() => saveReply(item.id)} disabled={!replyDraft.trim()}
+                                      className="px-3 py-1 text-[11px] font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-all disabled:opacity-50 flex items-center gap-1.5">
+                                      <Send size={10}/> Send Reply
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
                               <div className="flex items-center gap-3 text-[10px] text-slate-400 font-medium">
                                 <span>{item.userName} · {item.userRole}{item.userDept ? ` · ${item.userDept}` : ''}</span>
                                 <span>{new Date(item.timestamp).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })}</span>
@@ -1546,6 +1610,18 @@ const MasterDataView = ({
                             </span>
                           </div>
                           <p className="text-xs text-slate-500 leading-relaxed">{item.description}</p>
+                          {item.reply && (
+                            <div className="ml-2 pl-3 border-l-2 border-indigo-200 space-y-1 mt-1">
+                              <div className="flex items-center gap-1.5">
+                                <CornerDownLeft size={10} className="text-indigo-400"/>
+                                <span className="text-[10px] font-semibold text-indigo-600">{item.replyAdminName || 'Admin'}</span>
+                                {item.replyTimestamp && (
+                                  <span className="text-[10px] text-slate-400">· {new Date(item.replyTimestamp).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}</span>
+                                )}
+                              </div>
+                              <p className="text-xs text-indigo-800 leading-relaxed">{item.reply}</p>
+                            </div>
+                          )}
                           <p className="text-[10px] text-slate-400 font-medium">{new Date(item.timestamp).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}</p>
                         </div>
                       );
