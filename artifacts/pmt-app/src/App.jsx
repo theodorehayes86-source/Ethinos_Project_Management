@@ -279,7 +279,7 @@ const App = () => {
         const resp = await fetch(`${apiBase}/auth/ms-token-exchange`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ msIdToken: result.idToken, email: msEmail }),
+          body: JSON.stringify({ msAccessToken: result.accessToken }),
         });
 
         if (resp.ok) {
@@ -653,16 +653,12 @@ const App = () => {
 
   // Shared: exchange a completed MSAL result for a Firebase custom token and sign in.
   const finishMsLogin = async (msalResult) => {
-    const msEmail = msalResult?.account?.username || msalResult?.account?.idTokenClaims?.email;
-    if (!msEmail || !isEthinosDomain(msEmail)) {
-      setLoginError('Access is restricted to Ethinos work accounts (@ethinos.com).');
-      return;
-    }
     const apiBase = import.meta.env.VITE_API_BASE_URL || '/api';
     const resp = await fetch(`${apiBase}/auth/ms-token-exchange`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ msIdToken: msalResult.idToken, email: msEmail }),
+      // Send the access token — server validates it via Microsoft Graph /me
+      body: JSON.stringify({ msAccessToken: msalResult.accessToken }),
     });
     if (resp.ok) {
       const { customToken } = await resp.json();

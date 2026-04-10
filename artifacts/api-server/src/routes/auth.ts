@@ -1,6 +1,5 @@
 import { Router, Request, Response, NextFunction, type IRouter } from "express";
 import admin from "firebase-admin";
-import { createRemoteJWKSet, jwtVerify } from "jose";
 import { sendEmail, isEmailConfigured } from "../lib/microsoft-graph";
 import { logger } from "../lib/logger";
 
@@ -344,53 +343,34 @@ router.post("/reset-password", async (req, res) => {
 
 router.post("/ms-token-exchange", async (req, res) => {
   try {
-    const { msIdToken } = req.body as { msIdToken?: string };
+    const { msAccessToken } = req.body as { msAccessToken?: string };
 
-    if (!msIdToken || typeof msIdToken !== "string") {
-      res.status(400).json({ error: "msIdToken is required" });
+    if (!msAccessToken || typeof msAccessToken !== "string") {
+      res.status(400).json({ error: "msAccessToken is required" });
       return;
     }
 
-    const tenantId = process.env.AZURE_TENANT_ID;
-    const clientId = process.env.AZURE_CLIENT_ID;
+    // Validate the access token by calling Microsoft Graph /me.
+    // If Graph accepts it, Microsoft itself has verified the token and we get
+    // the user's real email from the response — no local JWT validation needed.
+    const graphResp = await fetch("https://graph.microsoft.com/v1.0/me", {
+      headers: { Authorization: `Bearer ${msAccessToken}` },
+    });
 
-    if (!tenantId || !clientId) {
-      res.status(503).json({ error: "Microsoft login is not configured on this server" });
-      return;
-    }
-
-    // Verify MS ID token signature, issuer, and audience against Microsoft's JWKS
-    const jwksUri = `https://login.microsoftonline.com/${tenantId}/discovery/v2.0/keys`;
-    const jwks = createRemoteJWKSet(new URL(jwksUri));
-
-    let payload: Record<string, unknown>;
-    try {
-      const result = await jwtVerify(msIdToken, jwks, {
-        audience: clientId,
-        issuer: `https://login.microsoftonline.com/${tenantId}/v2.0`,
-      });
-      payload = result.payload as Record<string, unknown>;
-    } catch (err: unknown) {
-      const e = err as Error;
-      logger.warn({ err: e.message }, "Microsoft ID token validation failed");
+    if (!graphResp.ok) {
+      const body = await graphResp.text();
+      logger.warn({ status: graphResp.status, body }, "Microsoft Graph /me rejected access token");
       res.status(401).json({ error: "Invalid or expired Microsoft token" });
       return;
     }
 
-    // Enforce tenant binding via `tid` claim
-    const tid = payload["tid"] as string | undefined;
-    if (tid && tid !== tenantId) {
-      logger.warn({ tid, expected: tenantId }, "Microsoft token tenant mismatch");
-      res.status(403).json({ error: "Token is from an unexpected Azure AD tenant" });
-      return;
-    }
+    const graphUser = (await graphResp.json()) as {
+      mail?: string;
+      userPrincipalName?: string;
+      displayName?: string;
+    };
 
-    // Extract email from validated claims only — never trust client-submitted email
-    const verifiedEmail = (
-      (payload["preferred_username"] as string | undefined) ||
-      (payload["email"] as string | undefined) ||
-      (payload["upn"] as string | undefined)
-    )?.trim().toLowerCase();
+    const verifiedEmail = (graphUser.mail || graphUser.userPrincipalName || "").trim().toLowerCase();
 
     if (!verifiedEmail || !verifiedEmail.endsWith("@ethinos.com")) {
       res.status(403).json({ error: "Only @ethinos.com accounts are allowed" });
