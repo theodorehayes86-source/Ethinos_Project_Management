@@ -910,6 +910,16 @@ const App = () => {
   }
 
   if (!testModeUserId && firebaseUser && !currentUser) {
+    // Firebase DB hasn't finished loading yet — keep showing the spinner rather
+    // than flashing the "Access Not Set Up" screen prematurely.
+    if (!dbReady) {
+      return (
+        <div className="flex items-center justify-center min-h-screen bg-slate-50">
+          <div className="text-sm font-semibold text-slate-500">Loading…</div>
+        </div>
+      );
+    }
+
     if (msLoginPending && dbReady) {
       return (
         <MicrosoftProfileSetup
