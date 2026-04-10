@@ -1,0 +1,123 @@
+name: Build Ethinos Timer Pro
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'artifacts/pmt-timer-widget/**'
+  workflow_dispatch:
+
+jobs:
+  get-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read version
+        id: version
+        run: echo "version=$(node -p "require('./artifacts/pmt-timer-widget/package.json').version")" >> $GITHUB_OUTPUT
+
+  build-windows:
+    needs: get-version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Windows installer
+        run: pnpm --filter @workspace/pmt-timer-widget package:win
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: artifacts/pmt-timer-widget/dist-electron/*.exe
+          retention-days: 30
+
+  build-mac:
+    needs: get-version
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build macOS DMG
+        run: pnpm --filter @workspace/pmt-timer-widget package:mac
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-dmg
+          path: artifacts/pmt-timer-widget/dist-electron/*.dmg
+          retention-days: 30
+
+  release:
+    needs: [get-version, build-windows, build-mac]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Windows installer
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: release-files
+
+      - name: Download macOS DMG
+        uses: actions/download-artifact@v4
+        with:
+          name: mac-dmg
+          path: release-files
+
+      - name: List release files
+        run: ls -lh release-files/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: widget-v${{ needs.get-version.outputs.version }}
+          name: "Ethinos Timer Pro v${{ needs.get-version.outputs.version }}"
+          draft: false
+          prerelease: false
+          files: release-files/*
+          body: |
+            ## Ethinos Timer Pro v${{ needs.get-version.outputs.version }}
+
+            ### Download
+            - **Windows**: `Ethinos.Timer.Pro.Setup.${{ needs.get-version.outputs.version }}.exe`
+            - **macOS**: `Ethinos.Timer.Pro-${{ needs.get-version.outputs.version }}-universal.dmg`
+
+            ### What's new in this release
+            - Auto-pause timer when screen locks or system suspends
+            - Billable / Non-Billable task toggle
+            - Estimated time per task
+            - Department-scoped category visibility
+            - Close button on Windows (frameless window)
+            - Caps Lock warning on login
+            - Show/hide password toggle on login
