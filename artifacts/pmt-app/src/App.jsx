@@ -707,35 +707,27 @@ const App = () => {
       return;
     }
 
-    const clientId = import.meta.env.VITE_AZURE_CLIENT_ID;
-    const tenantId = import.meta.env.VITE_AZURE_TENANT_ID;
+    // Server-side exchange: our API calls Azure's token endpoint server-to-server,
+    // avoiding the AADSTS9002326 cross-origin restriction on Web-type redirect URIs.
+    const apiBase = import.meta.env.VITE_API_BASE_URL || '/api';
 
     (async () => {
       try {
-        console.log('[MS auth-redirect] Exchanging code at Azure token endpoint…');
-        const tokenRes = await fetch(
-          `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams({
-              grant_type:    'authorization_code',
-              client_id:     clientId,
-              code,
-              redirect_uri:  redirectUri,
-              code_verifier: verifier,
-            }),
-          },
-        );
-        const tokenData = await tokenRes.json();
-        console.log('[MS auth-redirect] Token response:', tokenData.error || 'OK');
-        if (tokenData.error) throw new Error(tokenData.error_description || tokenData.error);
+        console.log('[MS auth-redirect] Sending code to server for exchange…');
+        const exchangeRes = await fetch(`${apiBase}/auth/ms-code-exchange`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code, verifier, redirectUri }),
+        });
+        const exchangeData = await exchangeRes.json();
+        console.log('[MS auth-redirect] Server exchange response:', exchangeRes.status, exchangeData.error || 'OK');
+        if (!exchangeRes.ok) throw new Error(exchangeData.error || 'Sign-in failed — server error');
 
-        console.log('[MS auth-redirect] Calling finishMsLogin…');
-        await finishMsLoginRef.current({ accessToken: tokenData.access_token });
+        const { customToken } = exchangeData;
+        console.log('[MS auth-redirect] Signing in with Firebase custom token…');
+        setMsLoginPending(true);
+        await signInWithCustomToken(auth, customToken);
         console.log('[MS auth-redirect] Firebase sign-in complete ✓ — trying to close tab');
-        // Give the parent tab a moment to receive the Firebase auth-state change,
-        // then try to close this auth tab.
         setTimeout(() => window.close(), 800);
       } catch (err) {
         console.error('[MS auth-redirect] Error:', err);

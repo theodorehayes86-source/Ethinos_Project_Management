@@ -333,28 +333,79 @@ router.post("/reset-password", async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// POST /api/auth/ms-token-exchange
+// POST /api/auth/ms-code-exchange
 //
-// Public — called during Microsoft SSO login before a Firebase session exists.
-// Validates the Microsoft ID token using Microsoft's public JWKS endpoint,
-// enforces tenant binding and @ethinos.com domain, then returns a Firebase
-// custom token for the verified user.
+// Public — called by the browser after Azure redirects back with ?code=.
+// The browser cannot call Azure's token endpoint directly when the redirect
+// URI is registered as a Web-type platform in Azure (AADSTS9002326 error).
+// This endpoint performs the exchange server-to-server using AZURE_CLIENT_SECRET,
+// then validates the resulting access token via Microsoft Graph, and returns a
+// Firebase custom token.
 // ---------------------------------------------------------------------------
 
-router.post("/ms-token-exchange", async (req, res) => {
+router.post("/ms-code-exchange", async (req, res) => {
   try {
-    const { msAccessToken } = req.body as { msAccessToken?: string };
+    const { code, verifier, redirectUri } = req.body as {
+      code?: string;
+      verifier?: string;
+      redirectUri?: string;
+    };
 
-    if (!msAccessToken || typeof msAccessToken !== "string") {
-      res.status(400).json({ error: "msAccessToken is required" });
+    if (!code || typeof code !== "string") {
+      res.status(400).json({ error: "code is required" });
+      return;
+    }
+    if (!verifier || typeof verifier !== "string") {
+      res.status(400).json({ error: "verifier is required" });
+      return;
+    }
+    if (!redirectUri || typeof redirectUri !== "string") {
+      res.status(400).json({ error: "redirectUri is required" });
       return;
     }
 
-    // Validate the access token by calling Microsoft Graph /me.
-    // If Graph accepts it, Microsoft itself has verified the token and we get
-    // the user's real email from the response — no local JWT validation needed.
+    const clientId     = process.env.VITE_AZURE_CLIENT_ID;
+    const tenantId     = process.env.VITE_AZURE_TENANT_ID;
+    const clientSecret = process.env.AZURE_CLIENT_SECRET;
+
+    if (!clientId || !tenantId || !clientSecret) {
+      logger.error("Azure credentials not configured on server");
+      res.status(500).json({ error: "Microsoft login is not configured on this server" });
+      return;
+    }
+
+    // Exchange the authorization code for tokens — server-to-server, no CORS issues.
+    const tokenRes = await fetch(
+      `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type:     "authorization_code",
+          client_id:      clientId,
+          client_secret:  clientSecret,
+          code,
+          redirect_uri:   redirectUri,
+          code_verifier:  verifier,
+        }),
+      },
+    );
+
+    const tokenData = (await tokenRes.json()) as {
+      access_token?: string;
+      error?: string;
+      error_description?: string;
+    };
+
+    if (!tokenRes.ok || !tokenData.access_token) {
+      logger.warn({ azureError: tokenData.error, desc: tokenData.error_description }, "Azure token exchange failed");
+      res.status(401).json({ error: tokenData.error_description || tokenData.error || "Azure token exchange failed" });
+      return;
+    }
+
+    // Validate the access token and get the user's profile from Microsoft Graph.
     const graphResp = await fetch("https://graph.microsoft.com/v1.0/me", {
-      headers: { Authorization: `Bearer ${msAccessToken}` },
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
     });
 
     if (!graphResp.ok) {
@@ -371,6 +422,7 @@ router.post("/ms-token-exchange", async (req, res) => {
     };
 
     const verifiedEmail = (graphUser.mail || graphUser.userPrincipalName || "").trim().toLowerCase();
+    const displayName   = graphUser.displayName?.trim() || undefined;
 
     if (!verifiedEmail || !verifiedEmail.endsWith("@ethinos.com")) {
       res.status(403).json({ error: "Only @ethinos.com accounts are allowed" });
@@ -389,7 +441,79 @@ router.post("/ms-token-exchange", async (req, res) => {
         const newUser = await auth.createUser({
           email: verifiedEmail,
           emailVerified: true,
-          displayName: (payload["name"] as string | undefined) || undefined,
+          displayName,
+        });
+        uid = newUser.uid;
+        logger.info({ email: verifiedEmail }, "Auto-provisioned Firebase user for Microsoft SSO login");
+      } else {
+        throw err;
+      }
+    }
+
+    const customToken = await auth.createCustomToken(uid, { provider: "microsoft" });
+
+    logger.info({ email: verifiedEmail }, "Microsoft code exchange successful");
+    res.json({ customToken });
+  } catch (err) {
+    logger.error({ err }, "POST /auth/ms-code-exchange error");
+    res.status(500).json({ error: "Failed to exchange Microsoft authorisation code" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/auth/ms-token-exchange  (legacy — kept for backward compatibility)
+//
+// Validates a Microsoft access token via Graph /me and returns a Firebase
+// custom token. New login flow uses /ms-code-exchange instead.
+// ---------------------------------------------------------------------------
+
+router.post("/ms-token-exchange", async (req, res) => {
+  try {
+    const { msAccessToken } = req.body as { msAccessToken?: string };
+
+    if (!msAccessToken || typeof msAccessToken !== "string") {
+      res.status(400).json({ error: "msAccessToken is required" });
+      return;
+    }
+
+    const graphResp = await fetch("https://graph.microsoft.com/v1.0/me", {
+      headers: { Authorization: `Bearer ${msAccessToken}` },
+    });
+
+    if (!graphResp.ok) {
+      const body = await graphResp.text();
+      logger.warn({ status: graphResp.status, body }, "Microsoft Graph /me rejected access token");
+      res.status(401).json({ error: "Invalid or expired Microsoft token" });
+      return;
+    }
+
+    const graphUser = (await graphResp.json()) as {
+      mail?: string;
+      userPrincipalName?: string;
+      displayName?: string;
+    };
+
+    const verifiedEmail = (graphUser.mail || graphUser.userPrincipalName || "").trim().toLowerCase();
+    const displayName   = graphUser.displayName?.trim() || undefined;
+
+    if (!verifiedEmail || !verifiedEmail.endsWith("@ethinos.com")) {
+      res.status(403).json({ error: "Only @ethinos.com accounts are allowed" });
+      return;
+    }
+
+    const { auth } = getFirebaseAdmin();
+
+    let uid: string;
+    try {
+      const existingUser = await auth.getUserByEmail(verifiedEmail);
+      uid = existingUser.uid;
+    } catch (err: unknown) {
+      const firebaseErr = err as { code?: string };
+      if (firebaseErr.code === "auth/user-not-found") {
+        const newUser = await auth.createUser({
+          email: verifiedEmail,
+          emailVerified: true,
+          displayName,
         });
         uid = newUser.uid;
         logger.info({ email: verifiedEmail }, "Auto-provisioned Firebase user for Microsoft login");
