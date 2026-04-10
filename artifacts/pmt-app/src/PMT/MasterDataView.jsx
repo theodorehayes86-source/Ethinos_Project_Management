@@ -164,14 +164,34 @@ const MasterDataView = ({
   }, [availableRoles]);
 
   const getCategoryGroup = (category) => {
-    if (!category) return 'Other';
-    const [prefix] = category.split(' - ');
+    const name = typeof category === 'object' ? category.name : category;
+    if (!name) return 'Other';
+    const [prefix] = name.split(' - ');
     return prefix?.trim() || 'Other';
   };
 
   const categoryGroups = useMemo(() => {
     return [...new Set(taskCategories.map(getCategoryGroup))].sort((left, right) => left.localeCompare(right));
   }, [taskCategories]);
+
+  // State for new category department visibility
+  const [newCategoryDepts, setNewCategoryDepts] = useState([]); // [] = Universal
+
+  const addCategoryItem = () => {
+    const trimmed = categoryInput.trim();
+    if (!trimmed) return 'empty';
+    if (taskCategories.some(item => (item.name || item).toLowerCase() === trimmed.toLowerCase())) return 'duplicate';
+    setTaskCategories([...taskCategories, { name: trimmed, departments: newCategoryDepts }]);
+    setCategoryInput('');
+    setNewCategoryDepts([]);
+    return 'ok';
+  };
+
+  const updateCategoryDepts = (catName, depts) => {
+    setTaskCategories(taskCategories.map(cat =>
+      (cat.name || cat) === catName ? { ...(typeof cat === 'object' ? cat : { name: cat }), departments: depts } : cat
+    ));
+  };
 
   const addItem = (value, list, setter, clear, resetFilter) => {
     const trimmed = value.trim();
@@ -183,10 +203,10 @@ const MasterDataView = ({
     return 'ok';
   };
 
-  const removeCategory = (category) => {
+  const removeCategory = (catName) => {
     if (taskCategories.length <= 1) return;
     const allTasks = Object.values(clientLogs).flat();
-    const linked = allTasks.filter(t => t.category === category);
+    const linked = allTasks.filter(t => t.category === catName);
     if (linked.length > 0) {
       const clientNames = [...new Set(
         linked.map(t => {
@@ -198,14 +218,14 @@ const MasterDataView = ({
       )];
       setDeleteBlocker({
         kind: 'category',
-        name: category,
+        name: catName,
         items: clientNames.length > 0
           ? [`${linked.length} task${linked.length !== 1 ? 's' : ''} across: ${clientNames.join(', ')}`]
           : [`${linked.length} task${linked.length !== 1 ? 's' : ''}`],
       });
       return;
     }
-    setTaskCategories(taskCategories.filter(item => item !== category));
+    setTaskCategories(taskCategories.filter(item => (item.name || item) !== catName));
   };
 
   const removeDepartment = (department) => {
@@ -615,7 +635,7 @@ const MasterDataView = ({
 
     const cleanTasks = templateTasks.map(t => ({
       comment: t.comment.trim(),
-      category: t.category || taskCategories[0] || 'Other',
+      category: t.category || (taskCategories[0] && (typeof taskCategories[0] === 'object' ? taskCategories[0].name : taskCategories[0])) || 'Other',
       repeatFrequency: t.repeatFrequency || 'Monthly',
     }));
 
@@ -824,40 +844,66 @@ const MasterDataView = ({
           <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
             <div>
               <p className="text-xs font-semibold text-slate-700">Category Filters</p>
-              <p className="text-[11px] text-slate-500">Filter task categories by type to review what is already added and what is still missing.</p>
+              <p className="text-[11px] text-slate-500">Filter task categories by type. Set each category as Universal (visible to all) or limit to specific departments.</p>
             </div>
             <div className="rounded-md bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 border border-slate-200">
               Showing {filteredCategories.length} of {taskCategories.length}
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium text-slate-700 outline-none"
-            >
-              <option value="All">All Categories</option>
-              {categoryGroups.map(group => <option key={`opt-${group}`} value={group}>{group}</option>)}
-            </select>
-            <div className="relative w-full max-w-md">
-              <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
-              <input
-                value={categoryInput}
-                onChange={(e) => setCategoryInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { const r = addItem(categoryInput, taskCategories, setTaskCategories, setCategoryInput); flashMsg(setCatMsg, r === 'ok' ? '✓ Added' : r === 'duplicate' ? 'Already exists' : 'Enter a name first'); } }}
-                placeholder="Add task category"
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-2 text-sm outline-none"
-              />
+          {/* Add category row */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium text-slate-700 outline-none"
+              >
+                <option value="All">All Categories</option>
+                {categoryGroups.map(group => <option key={`opt-${group}`} value={group}>{group}</option>)}
+              </select>
+              <div className="relative flex-1">
+                <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+                <input
+                  value={categoryInput}
+                  onChange={(e) => setCategoryInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { const r = addCategoryItem(); flashMsg(setCatMsg, r === 'ok' ? '✓ Added' : r === 'duplicate' ? 'Already exists' : 'Enter a name first'); } }}
+                  placeholder="New category name"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-2 text-sm outline-none"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => { const r = addCategoryItem(); flashMsg(setCatMsg, r === 'ok' ? '✓ Added' : r === 'duplicate' ? 'Already exists' : 'Enter a name first'); }}
+                className="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1 whitespace-nowrap"
+              >
+                <Plus size={12} /> Add
+              </button>
+              {catMsg && <span className={`text-xs font-medium whitespace-nowrap ${catMsg.startsWith('✓') ? 'text-green-600' : 'text-red-500'}`}>{catMsg}</span>}
             </div>
-            <button
-              type="button"
-              onClick={() => { const r = addItem(categoryInput, taskCategories, setTaskCategories, setCategoryInput); flashMsg(setCatMsg, r === 'ok' ? '✓ Added' : r === 'duplicate' ? 'Already exists' : 'Enter a name first'); }}
-              className="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1"
-            >
-              <Plus size={12} /> Add
-            </button>
-            {catMsg && <span className={`text-xs font-medium ${catMsg.startsWith('✓') ? 'text-green-600' : 'text-red-500'}`}>{catMsg}</span>}
+            {/* Visibility selector for new category */}
+            <div className="flex items-center gap-2 pl-1">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">New category visibility:</span>
+              <button
+                type="button"
+                onClick={() => setNewCategoryDepts([])}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all ${newCategoryDepts.length === 0 ? 'bg-emerald-100 text-emerald-700 border-emerald-300' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
+              >
+                Universal
+              </button>
+              {departments.map(dept => (
+                <button
+                  key={dept}
+                  type="button"
+                  onClick={() => setNewCategoryDepts(prev =>
+                    prev.includes(dept) ? prev.filter(d => d !== dept) : [...prev, dept]
+                  )}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all ${newCategoryDepts.includes(dept) ? 'bg-blue-100 text-blue-700 border-blue-300' : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'}`}
+                >
+                  {dept}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="border border-slate-200 rounded-lg overflow-hidden">
@@ -865,20 +911,53 @@ const MasterDataView = ({
               <thead>
                 <tr className="bg-slate-100 text-xs font-semibold text-slate-600">
                   <th className="px-3 py-2 text-left">Task Category</th>
+                  <th className="px-3 py-2 text-left">Visibility</th>
                   <th className="px-3 py-2 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredCategories.map(category => (
-                  <tr key={category}>
-                    <td className="px-3 py-2 text-sm font-medium text-slate-700">{category}</td>
-                    <td className="px-3 py-2 text-right">
-                      <button onClick={() => removeCategory(category)} className="p-1.5 text-slate-400 hover:text-red-500 transition-all">
-                        <Trash2 size={14} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {filteredCategories.map(category => {
+                  const catObj = typeof category === 'object' ? category : { name: category, departments: [] };
+                  const catName = catObj.name;
+                  const catDepts = catObj.departments || [];
+                  const isUniversal = catDepts.length === 0;
+                  return (
+                    <tr key={catName} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-3 py-2.5 text-sm font-medium text-slate-700">{catName}</td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => updateCategoryDepts(catName, [])}
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all ${isUniversal ? 'bg-emerald-100 text-emerald-700 border-emerald-300' : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'}`}
+                          >
+                            Universal
+                          </button>
+                          {departments.map(dept => (
+                            <button
+                              key={dept}
+                              type="button"
+                              onClick={() => {
+                                const next = catDepts.includes(dept)
+                                  ? catDepts.filter(d => d !== dept)
+                                  : [...catDepts, dept];
+                                updateCategoryDepts(catName, next);
+                              }}
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all ${catDepts.includes(dept) ? 'bg-blue-100 text-blue-700 border-blue-300' : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'}`}
+                            >
+                              {dept}
+                            </button>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5 text-right">
+                        <button onClick={() => removeCategory(catName)} className="p-1.5 text-slate-400 hover:text-red-500 transition-all">
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -2057,7 +2136,10 @@ const MasterDataView = ({
                           className="border border-slate-200 rounded-lg px-2 py-2 text-xs font-medium text-slate-700 outline-none bg-white"
                         >
                           <option value="">Category</option>
-                          {taskCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                          {taskCategories.map(cat => {
+                            const n = typeof cat === 'object' ? cat.name : cat;
+                            return <option key={n} value={n}>{n}</option>;
+                          })}
                         </select>
                         <select
                           value={task.repeatFrequency}

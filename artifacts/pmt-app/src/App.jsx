@@ -22,12 +22,38 @@ const DEFAULT_USERS = [
   ...TEST_USERS,
 ];
 
+// Categories are stored as objects: { name: string, departments: string[] }
+// departments: [] means Universal (visible to all)
 const DEFAULT_TASK_CATEGORIES = [
-  'Strategy & Planning', 'Campaign Setup', 'Campaign Optimization',
-  'Reporting & Analysis', 'Client Communication', 'Content Creation',
-  'Creatives & Assets', 'Research', 'Budget Management', 'Technical Setup',
-  'Training & Development', 'Other',
+  { name: 'Strategy & Planning', departments: [] },
+  { name: 'Campaign Setup', departments: [] },
+  { name: 'Campaign Optimization', departments: [] },
+  { name: 'Reporting & Analysis', departments: [] },
+  { name: 'Client Communication', departments: [] },
+  { name: 'Content Creation', departments: [] },
+  { name: 'Creatives & Assets', departments: [] },
+  { name: 'Research', departments: [] },
+  { name: 'Budget Management', departments: [] },
+  { name: 'Technical Setup', departments: [] },
+  { name: 'Training & Development', departments: [] },
+  { name: 'Other', departments: [] },
 ];
+
+// Migrate legacy string categories to the new object format.
+// Also normalizes malformed objects (missing name or departments field).
+const migrateCategoryList = (val) => {
+  if (!Array.isArray(val)) return DEFAULT_TASK_CATEGORIES;
+  return val.map(item => {
+    if (typeof item === 'string') return { name: item, departments: [] };
+    if (item && typeof item === 'object') {
+      return {
+        name: typeof item.name === 'string' ? item.name : String(item.name || ''),
+        departments: Array.isArray(item.departments) ? item.departments : [],
+      };
+    }
+    return null;
+  }).filter(Boolean);
+};
 
 const DEFAULT_TASK_TEMPLATES = [
   {
@@ -179,6 +205,23 @@ const App = () => {
     };
     seedTaskTemplates();
 
+    // Migrate category data: if Firebase has legacy string arrays, write back as objects
+    const migrateCategoriesInFirebase = async () => {
+      const snap = await get(ref(db, 'taskCategories'));
+      if (!snap.exists()) {
+        await set(ref(db, 'taskCategories'), sanitizeForFirebase(DEFAULT_TASK_CATEGORIES));
+        return;
+      }
+      const val = snap.val();
+      const list = Array.isArray(val) ? val : null;
+      if (list && list.some(item => typeof item === 'string')) {
+        // Legacy string format detected — migrate and persist
+        const migrated = migrateCategoryList(list);
+        await set(ref(db, 'taskCategories'), sanitizeForFirebase(migrated));
+      }
+    };
+    migrateCategoriesInFirebase();
+
     // Seed default departments & regions if they don't exist in Firebase yet
     const seedDepartmentsRegions = async () => {
       const dSnap = await get(ref(db, 'departments'));
@@ -199,7 +242,7 @@ const App = () => {
       }),
       syncRef('clients', (val) => setClients(Array.isArray(val) ? val : Object.values(val))),
       syncRef('clientLogs', (val) => setClientLogs(val || {})),
-      syncRef('taskCategories', (val) => setTaskCategories(Array.isArray(val) ? val : DEFAULT_TASK_CATEGORIES)),
+      syncRef('taskCategories', (val) => setTaskCategories(migrateCategoryList(val))),
       syncRef('taskTemplates', (val) => setTaskTemplates(Array.isArray(val) ? val : Object.values(val))),
       syncRef('departments', (val) => setDepartments(Array.isArray(val) ? val : Object.values(val))),
       syncRef('regions', (val) => setRegions(Array.isArray(val) ? val : Object.values(val))),
@@ -243,7 +286,7 @@ const App = () => {
   };
   const persistTaskCategories = (val) => {
     setTaskCategories(val);
-    if (firebaseUser) set(ref(db, 'taskCategories'), val);
+    if (firebaseUser) set(ref(db, 'taskCategories'), sanitizeForFirebase(val));
   };
   const persistTaskTemplates = (val) => {
     setTaskTemplates(val);
@@ -363,9 +406,19 @@ const App = () => {
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const canSeeApprovals = managementRoles.includes(currentUser?.role);
 
-  const CROSS_DEPT_ROLES_APP = ['Super Admin', 'Admin', 'Business Head'];
+  const CROSS_DEPT_ROLES_APP = ['Super Admin', 'Admin', 'Director', 'Business Head'];
   const isCrossDeptApp = CROSS_DEPT_ROLES_APP.includes(currentUser?.role) || currentUser?.department === 'All';
   const userDeptApp = currentUser?.department;
+
+  // Filtered category names for task creation/editing (scoped to user's department)
+  // Cross-dept roles see all categories; others see Universal + their department's categories
+  const filteredTaskCategoryNames = taskCategories
+    .filter(cat => {
+      if (isCrossDeptApp) return true;
+      const depts = cat.departments || [];
+      return depts.length === 0 || depts.includes(userDeptApp);
+    })
+    .map(cat => cat.name);
   const myClientNames = (currentUser?.assignedProjects || []);
   const pendingApprovalsCount = canSeeApprovals
     ? Object.entries(clientLogs || {}).reduce((total, [clientId, logs]) => {
@@ -647,7 +700,7 @@ const App = () => {
               setSelectedClient={setSelectedClient}
               setClientLogs={persistClientLogs}
               currentUser={currentUser}
-              taskCategories={taskCategories}
+              taskCategories={filteredTaskCategoryNames}
               users={users}
               departments={departments}
               onNavigateToClients={() => setActiveTab('clients')}
@@ -679,7 +732,7 @@ const App = () => {
               users={users}
               setUsers={persistUsers}
               currentUser={currentUser}
-              taskCategories={taskCategories}
+              taskCategories={filteredTaskCategoryNames}
               taskTemplates={taskTemplates}
               setNotifications={setNotifications}
               accessibleClients={accessibleClients}
