@@ -400,7 +400,15 @@ const App = () => {
       ? clients
       : clients.filter(c => currentUser.assignedProjects?.includes(c.name) || currentUser.assignedProjects?.includes('All'));
 
-  const allTasks = accessibleClients.flatMap(c => (clientLogs[c.id] || []).map(t => ({ ...t, cid: c.id, cName: c.name })));
+  const SYNTHETIC_CLIENTS = [
+    { id: '__personal__', name: 'Personal', synthetic: true, isPersonal: true },
+    { id: '__ethinos__', name: 'Ethinos', synthetic: true, isEthinos: true, nonBillableLocked: true },
+  ];
+
+  const allTasks = [
+    ...accessibleClients.flatMap(c => (clientLogs[c.id] || []).map(t => ({ ...t, cid: c.id, cName: c.name }))),
+    ...SYNTHETIC_CLIENTS.flatMap(c => (clientLogs[c.id] || []).map(t => ({ ...t, cid: c.id, cName: c.name }))),
+  ];
 
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const canSeeApprovals = managementRoles.includes(currentUser?.role);
@@ -691,6 +699,7 @@ const App = () => {
           {activeTab === 'home' && !selectedClient && (
             <HomeView
               accessibleClients={accessibleClients}
+              syntheticClients={SYNTHETIC_CLIENTS}
               allTasks={allTasks}
               clientLogs={clientLogs}
               setSelectedClient={setSelectedClient}

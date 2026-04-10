@@ -9,6 +9,7 @@ const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manage
 
 const HomeView = ({
   accessibleClients,
+  syntheticClients = [],
   allTasks,
   clientLogs,
   setSelectedClient,
@@ -19,8 +20,15 @@ const HomeView = ({
   departments = [],
   onNavigateToClients,
 }) => {
+  const isManagement = managementRoles.includes(currentUser?.role);
+  const allClientOptions = useMemo(
+    () => [...syntheticClients, ...accessibleClients],
+    [syntheticClients, accessibleClients]
+  );
   const [showAddTaskModal, setShowAddTaskModal] = useState(false);
-  const [selectedClientId, setSelectedClientId] = useState(accessibleClients[0]?.id || '');
+  const [selectedClientId, setSelectedClientId] = useState(
+    isManagement ? (accessibleClients[0]?.id || '__personal__') : '__personal__'
+  );
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [taskCategory, setTaskCategory] = useState('');
   const [taskCategoryQuery, setTaskCategoryQuery] = useState('');
@@ -45,15 +53,13 @@ const HomeView = ({
   const [estimatedHrs, setEstimatedHrs] = useState('');
   const [estimatedMins, setEstimatedMins] = useState('');
 
-  const isManagement = managementRoles.includes(currentUser?.role);
-
   const selectedClient = useMemo(
-    () => accessibleClients.find(c => c.id === selectedClientId),
-    [accessibleClients, selectedClientId]
+    () => allClientOptions.find(c => c.id === selectedClientId),
+    [allClientOptions, selectedClientId]
   );
 
   const assignableUsers = useMemo(() => {
-    if (!selectedClient) return users;
+    if (!selectedClient || selectedClient.synthetic) return users;
     return users.filter(u => (u.assignedProjects || []).includes(selectedClient.name));
   }, [users, selectedClient]);
 
@@ -67,7 +73,8 @@ const HomeView = ({
   );
 
   const resetModal = () => {
-    setSelectedClientId(accessibleClients[0]?.id || '');
+    const defaultClientId = isManagement ? (accessibleClients[0]?.id || '__personal__') : '__personal__';
+    setSelectedClientId(defaultClientId);
     setSelectedDate(new Date());
     setTaskCategory('');
     setTaskCategoryQuery('');
@@ -76,9 +83,15 @@ const HomeView = ({
     setTaskName('');
     setTaskComment('');
     setTaskDueDate(null);
-    setAssigneeId('');
-    setAssigneeName('');
-    setAssigneeQuery('');
+    if (!isManagement) {
+      setAssigneeId(currentUser?.id || '');
+      setAssigneeName(currentUser?.name || '');
+      setAssigneeQuery(currentUser?.name || '');
+    } else {
+      setAssigneeId('');
+      setAssigneeName('');
+      setAssigneeQuery('');
+    }
     setShowAssigneeMenu(false);
     setQcEnabled(false);
     setQcAssigneeId('');
@@ -87,7 +100,7 @@ const HomeView = ({
     setQcPickerSearch('');
     setTaskError('');
     setTaskDepartments(currentUser?.department ? [currentUser.department] : []);
-    setTaskBillable(true);
+    setTaskBillable(defaultClientId === '__ethinos__' ? false : true);
     setEstimatedHrs('');
     setEstimatedMins('');
   };
@@ -97,14 +110,17 @@ const HomeView = ({
 
   const handleAddTaskFromHome = (event) => {
     event.preventDefault();
-    if (!selectedClientId || !taskName.trim() || !taskCategory || !assigneeId || !taskComment.trim() || !selectedDate) {
-      setTaskError('Client, task name, category, assignee and description are all required.');
+    const effectiveAssigneeId = !isManagement ? (currentUser?.id || assigneeId) : assigneeId;
+    const effectiveAssigneeName = !isManagement ? (currentUser?.name || assigneeName) : assigneeName;
+    if (!selectedClientId || !taskName.trim() || !taskCategory || !effectiveAssigneeId || !taskComment.trim() || !selectedDate) {
+      setTaskError('Task name, category, and description are all required.');
       return;
     }
     const formattedDate = format(selectedDate, 'do MMM yyyy');
     const homeEstHrs = parseInt(estimatedHrs || '0', 10) || 0;
     const homeEstMins = parseInt(estimatedMins || '0', 10) || 0;
     const homeEstimatedMs = (homeEstHrs * 60 + homeEstMins) > 0 ? (homeEstHrs * 3600000 + homeEstMins * 60000) : null;
+    const effectiveBillable = selectedClientId === '__ethinos__' ? false : taskBillable;
     const newTask = {
       id: Date.now(),
       name: taskName.trim(),
@@ -112,8 +128,8 @@ const HomeView = ({
       comment: taskComment.trim(),
       result: '',
       status: 'Pending',
-      assigneeId: assigneeId || null,
-      assigneeName: assigneeName || null,
+      assigneeId: effectiveAssigneeId || null,
+      assigneeName: effectiveAssigneeName || null,
       creatorId: currentUser?.id || null,
       creatorName: currentUser?.name || 'Unassigned',
       creatorRole: currentUser?.role || 'Employee',
@@ -132,7 +148,7 @@ const HomeView = ({
       qcFeedback: null,
       qcReviewedAt: null,
       departments: taskDepartments.length > 0 ? taskDepartments : (currentUser?.department ? [currentUser.department] : null),
-      billable: taskBillable,
+      billable: effectiveBillable,
       estimatedMs: homeEstimatedMs,
     };
     const nextLogs = { ...clientLogs, [selectedClientId]: [newTask, ...(clientLogs[selectedClientId] || [])] };
@@ -239,15 +255,12 @@ const HomeView = ({
               </button>
             ))}
           </div>
-          {isManagement && (
-            <button
-              onClick={openAddTaskModal}
-              disabled={!accessibleClients.length}
-              className="bg-slate-900 text-white px-3 py-1.5 rounded-lg font-semibold text-xs hover:bg-slate-800 transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-            >
-              <Plus size={13} /> Add Task
-            </button>
-          )}
+          <button
+            onClick={openAddTaskModal}
+            className="bg-slate-900 text-white px-3 py-1.5 rounded-lg font-semibold text-xs hover:bg-slate-800 transition-all flex items-center gap-1.5 shadow-sm"
+          >
+            <Plus size={13} /> Add Task
+          </button>
         </div>
       </div>
 
@@ -366,11 +379,25 @@ const HomeView = ({
                     <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Client <span className="text-red-500">*</span></label>
                     <select
                       value={selectedClientId}
-                      onChange={e => { setSelectedClientId(e.target.value); setAssigneeId(''); setAssigneeName(''); setAssigneeQuery(''); if (taskError) setTaskError(''); }}
+                      onChange={e => {
+                        const newId = e.target.value;
+                        setSelectedClientId(newId);
+                        if (!isManagement) {
+                          setAssigneeId(currentUser?.id || '');
+                          setAssigneeName(currentUser?.name || '');
+                          setAssigneeQuery(currentUser?.name || '');
+                        } else {
+                          setAssigneeId(''); setAssigneeName(''); setAssigneeQuery('');
+                        }
+                        if (newId === '__ethinos__') setTaskBillable(false);
+                        if (taskError) setTaskError('');
+                      }}
                       className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
                     >
-                      {accessibleClients.map(client => (
-                        <option key={client.id} value={client.id}>{client.name}</option>
+                      {allClientOptions.map(client => (
+                        <option key={client.id} value={client.id}>
+                          {client.isPersonal ? 'Personal (My Tasks)' : client.isEthinos ? 'Ethinos (Internal)' : client.name}
+                        </option>
                       ))}
                     </select>
                   </div>
@@ -445,34 +472,42 @@ const HomeView = ({
 
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Assign To <span className="text-red-500">*</span></label>
-                    <div className="relative">
-                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                      <input
-                        type="text"
-                        placeholder="Search assignee"
-                        className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
-                        value={assigneeQuery}
-                        onFocus={() => setShowAssigneeMenu(true)}
-                        onChange={e => { setAssigneeQuery(e.target.value); setAssigneeId(''); setShowAssigneeMenu(true); if (taskError) setTaskError(''); }}
-                      />
-                      {showAssigneeMenu && (
-                        <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-44 overflow-y-auto">
-                          {filteredAssignees.length ? filteredAssignees.map(u => (
-                            <button key={u.id} type="button"
-                              onClick={() => { setAssigneeId(u.id); setAssigneeName(u.name); setAssigneeQuery(u.name); setShowAssigneeMenu(false); if (taskError) setTaskError(''); }}
-                              className="w-full text-left px-3 py-2 bg-white hover:bg-slate-50 transition-all"
-                            >
-                              <p className="text-sm font-semibold text-slate-700">{u.name}</p>
-                              <p className="text-xs text-slate-500">{u.email || u.role || ''}</p>
-                            </button>
-                          )) : (
-                            <p className="px-3 py-2 text-sm text-slate-500">
-                              {assignableUsers.length ? 'No matching assignee found' : 'No team members assigned to this client'}
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                    {!isManagement ? (
+                      <div className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 flex items-center gap-2 select-none">
+                        <Users size={14} className="text-slate-400 flex-shrink-0"/>
+                        <span className="flex-1">{currentUser?.name || 'You'}</span>
+                        <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">Self only</span>
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder="Search assignee"
+                          className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                          value={assigneeQuery}
+                          onFocus={() => setShowAssigneeMenu(true)}
+                          onChange={e => { setAssigneeQuery(e.target.value); setAssigneeId(''); setShowAssigneeMenu(true); if (taskError) setTaskError(''); }}
+                        />
+                        {showAssigneeMenu && (
+                          <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-44 overflow-y-auto">
+                            {filteredAssignees.length ? filteredAssignees.map(u => (
+                              <button key={u.id} type="button"
+                                onClick={() => { setAssigneeId(u.id); setAssigneeName(u.name); setAssigneeQuery(u.name); setShowAssigneeMenu(false); if (taskError) setTaskError(''); }}
+                                className="w-full text-left px-3 py-2 bg-white hover:bg-slate-50 transition-all"
+                              >
+                                <p className="text-sm font-semibold text-slate-700">{u.name}</p>
+                                <p className="text-xs text-slate-500">{u.email || u.role || ''}</p>
+                              </button>
+                            )) : (
+                              <p className="px-3 py-2 text-sm text-slate-500">
+                                {assignableUsers.length ? 'No matching assignee found' : 'No team members assigned to this client'}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-1.5">
@@ -517,18 +552,24 @@ const HomeView = ({
                   </div>
 
                   {/* Billable Toggle */}
-                  <div className="flex items-center justify-between border border-slate-200 rounded-xl px-4 py-3 bg-slate-50/60">
+                  <div className={`flex items-center justify-between border rounded-xl px-4 py-3 ${selectedClientId === '__ethinos__' ? 'border-slate-100 bg-slate-50/40 opacity-70' : 'border-slate-200 bg-slate-50/60'}`}>
                     <div>
-                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">Billable</span>
-                      <p className="text-[10px] text-slate-400 mt-0.5">{taskBillable ? 'This task is client-chargeable' : 'This task is internal / non-billable'}</p>
+                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-600 flex items-center gap-1.5">
+                        Billable
+                        {selectedClientId === '__ethinos__' && <span className="text-[9px] font-bold text-slate-400 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded-md tracking-wide">Locked — non-billable</span>}
+                      </span>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        {selectedClientId === '__ethinos__' ? 'Ethinos internal tasks are always non-billable' : taskBillable ? 'This task is client-chargeable' : 'This task is internal / non-billable'}
+                      </p>
                     </div>
                     <button
                       type="button"
                       role="switch"
                       aria-checked={taskBillable}
                       aria-label="Toggle billable"
-                      onClick={() => setTaskBillable(b => !b)}
-                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${taskBillable ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                      disabled={selectedClientId === '__ethinos__'}
+                      onClick={() => selectedClientId !== '__ethinos__' && setTaskBillable(b => !b)}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${taskBillable ? 'bg-emerald-500' : 'bg-slate-300'} ${selectedClientId === '__ethinos__' ? 'cursor-not-allowed' : ''}`}
                     >
                       <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${taskBillable ? 'translate-x-4' : 'translate-x-1'}`} />
                     </button>
