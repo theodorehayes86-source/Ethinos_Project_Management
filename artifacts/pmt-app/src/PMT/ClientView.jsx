@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Search, ChevronLeft, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus, Hourglass } from 'lucide-react';
+import { Search, ChevronLeft, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus, Hourglass, Archive, ArchiveRestore } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import DatePicker from "react-datepicker";
 import { format, subDays, parse } from 'date-fns';
@@ -60,6 +60,7 @@ const ClientView = ({
   const [activePicker, setActivePicker] = useState(null); // 'addLeadership'|'addTeam'|'qcReviewer'
   const [pickerSearch, setPickerSearch] = useState("");
   const [clientViewFilter, setClientViewFilter] = useState('mine'); // 'mine' | 'available'
+  const [showArchived, setShowArchived] = useState(false);
 
   // QC form state (for new task creation)
   const [qcEnabled, setQcEnabled] = useState(true);
@@ -392,7 +393,7 @@ const ClientView = ({
   };
 
   const getTaskCounts = (clientId) => {
-    const logs = (clientLogs[clientId] || []).filter(t => isTaskVisible(t, currentUser));
+    const logs = (clientLogs[clientId] || []).filter(t => isTaskVisible(t, currentUser) && !t.archived);
     const twoDaysAgo = subDays(new Date(), 2);
 
     return {
@@ -662,9 +663,12 @@ const ClientView = ({
   if (selectedClient) {
     const stats = getTaskCounts(selectedClient.id);
     const visibleTaskLogs = (clientLogs[selectedClient.id] || []).filter(log => isTaskVisible(log, currentUser));
-    const filteredTaskLogs = visibleTaskLogs.filter(log =>
-      taskStatusFilter === 'All' ? true : log.status === taskStatusFilter
-    );
+    const archivedCount = visibleTaskLogs.filter(log => log.archived).length;
+    const filteredTaskLogs = visibleTaskLogs.filter(log => {
+      if (!showArchived && log.archived) return false;
+      if (showArchived) return !!log.archived;
+      return taskStatusFilter === 'All' ? true : log.status === taskStatusFilter;
+    });
     const selectedClientRecord = clients.find(client => client.id === selectedClient.id) || selectedClient;
     const dailyReportUrl = selectedClientRecord?.dailyReportUrl || '';
     const customReports = selectedClientRecord?.customReports || [];
@@ -698,16 +702,30 @@ const ClientView = ({
             >
               Reports
             </button>
-            <select
-              value={taskStatusFilter}
-              onChange={(e) => setTaskStatusFilter(e.target.value)}
-              className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+            <button
+              onClick={() => setShowArchived(v => !v)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg font-semibold text-xs border transition-all ${
+                showArchived
+                  ? 'bg-amber-50 border-amber-300 text-amber-700'
+                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+              title={showArchived ? 'Hide archived tasks' : 'Show archived tasks'}
             >
-              <option value="All">All Tasks</option>
-              <option value="Pending">Pending</option>
-              <option value="WIP">WIP</option>
-              <option value="Done">Completed</option>
-            </select>
+              {showArchived ? <ArchiveRestore size={13}/> : <Archive size={13}/>}
+              {showArchived ? 'Hide Archived' : `Archived${archivedCount > 0 ? ` (${archivedCount})` : ''}`}
+            </button>
+            {!showArchived && (
+              <select
+                value={taskStatusFilter}
+                onChange={(e) => setTaskStatusFilter(e.target.value)}
+                className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+              >
+                <option value="All">All Tasks</option>
+                <option value="Pending">Pending</option>
+                <option value="WIP">WIP</option>
+                <option value="Done">Completed</option>
+              </select>
+            )}
             {isManagement && (
               <button
                 onClick={openTemplateModal}
@@ -875,29 +893,49 @@ const ClientView = ({
                         )}
                       </td>
 
-                      {/* Edit / Delete */}
+                      {/* Edit / Delete / Archive */}
                       <td className="px-2 py-2 text-center" onClick={(e) => e.stopPropagation()}>
                         {canFullyEditTask(log) && (
                           <div className="flex items-center justify-center gap-1">
-                            <button
-                              onClick={() => openEditModal(log)}
-                              className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-all"
-                              title="Edit task"
-                            >
-                              <Edit2 size={12}/>
-                            </button>
+                            {!log.archived && (
+                              <button
+                                onClick={() => openEditModal(log)}
+                                className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-all"
+                                title="Edit task"
+                              >
+                                <Edit2 size={12}/>
+                              </button>
+                            )}
                             <button
                               onClick={() => {
-                                if (window.confirm('Are you sure you want to delete this task?')) {
-                                  const upd = clientLogs[selectedClient.id].filter(l => l.id !== log.id);
-                                  setClientLogs({ ...clientLogs, [selectedClient.id]: upd });
-                                }
+                                const upd = (clientLogs[selectedClient.id] || []).map(l =>
+                                  l.id === log.id ? { ...l, archived: !l.archived } : l
+                                );
+                                setClientLogs({ ...clientLogs, [selectedClient.id]: upd });
                               }}
-                              className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-md transition-all"
-                              title="Delete task"
+                              className={`p-1.5 rounded-md transition-all ${
+                                log.archived
+                                  ? 'text-amber-500 hover:text-amber-700 hover:bg-amber-50'
+                                  : 'text-slate-300 hover:text-amber-500 hover:bg-amber-50'
+                              }`}
+                              title={log.archived ? 'Unarchive task' : 'Archive task'}
                             >
-                              <Trash2 size={12}/>
+                              {log.archived ? <ArchiveRestore size={12}/> : <Archive size={12}/>}
                             </button>
+                            {!log.archived && (
+                              <button
+                                onClick={() => {
+                                  if (window.confirm('Are you sure you want to delete this task?')) {
+                                    const upd = clientLogs[selectedClient.id].filter(l => l.id !== log.id);
+                                    setClientLogs({ ...clientLogs, [selectedClient.id]: upd });
+                                  }
+                                }}
+                                className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-md transition-all"
+                                title="Delete task"
+                              >
+                                <Trash2 size={12}/>
+                              </button>
+                            )}
                           </div>
                         )}
                       </td>

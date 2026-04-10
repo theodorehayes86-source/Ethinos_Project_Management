@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { format, parse, isBefore } from 'date-fns';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
-import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, CheckCircle, Tag, Calendar } from 'lucide-react';
+import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, CheckCircle, Tag, Calendar, Archive, ArchiveRestore } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 
 const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
@@ -52,6 +52,7 @@ const HomeView = ({
   const [statusFilter, setStatusFilter] = useState('all');
   const [estimatedHrs, setEstimatedHrs] = useState('');
   const [estimatedMins, setEstimatedMins] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
 
   const selectedClient = useMemo(
     () => allClientOptions.find(c => c.id === selectedClientId),
@@ -158,7 +159,11 @@ const HomeView = ({
 
   // --- Personal task data ---
   const myTasks = useMemo(() => {
-    return allTasks.filter(t => String(t.assigneeId) === String(currentUser?.id));
+    return allTasks.filter(t => String(t.assigneeId) === String(currentUser?.id) && !t.archived);
+  }, [allTasks, currentUser]);
+
+  const myArchivedTasks = useMemo(() => {
+    return allTasks.filter(t => String(t.assigneeId) === String(currentUser?.id) && t.archived);
   }, [allTasks, currentUser]);
 
   const myOpenTasks = myTasks.filter(t => t.status !== 'Done');
@@ -167,10 +172,20 @@ const HomeView = ({
   const myDone = myTasks.filter(t => t.status === 'Done');
 
   const filteredMyTasks = useMemo(() => {
+    if (showArchived) return myArchivedTasks;
     if (statusFilter === 'all') return myTasks.filter(t => t.status !== 'Done');
     if (statusFilter === 'done') return myDone;
     return myTasks.filter(t => t.status === statusFilter);
-  }, [myTasks, myDone, statusFilter]);
+  }, [myTasks, myDone, myArchivedTasks, statusFilter, showArchived]);
+
+  const handleArchiveTask = (task) => {
+    const cid = task.cid;
+    if (!cid) return;
+    const updated = (clientLogs[cid] || []).map(t =>
+      t.id === task.id ? { ...t, archived: !t.archived } : t
+    );
+    setClientLogs({ ...clientLogs, [cid]: updated });
+  };
 
   // Group tasks by client
   const tasksByClient = useMemo(() => {
@@ -235,26 +250,40 @@ const HomeView = ({
         </div>
         <div className="flex items-center gap-2">
           {/* Status filter pills */}
-          <div className="flex gap-1.5 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
-            {[
-              { key: 'all', label: 'Open' },
-              { key: 'WIP', label: 'WIP' },
-              { key: 'Pending', label: 'Pending' },
-              { key: 'done', label: 'Done' },
-            ].map(f => (
-              <button
-                key={f.key}
-                onClick={() => setStatusFilter(f.key)}
-                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
-                  statusFilter === f.key
-                    ? 'bg-slate-900 text-white shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
+          {!showArchived && (
+            <div className="flex gap-1.5 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
+              {[
+                { key: 'all', label: 'Open' },
+                { key: 'WIP', label: 'WIP' },
+                { key: 'Pending', label: 'Pending' },
+                { key: 'done', label: 'Done' },
+              ].map(f => (
+                <button
+                  key={f.key}
+                  onClick={() => setStatusFilter(f.key)}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                    statusFilter === f.key
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          )}
+          <button
+            onClick={() => setShowArchived(v => !v)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs border transition-all ${
+              showArchived
+                ? 'bg-amber-50 border-amber-300 text-amber-700'
+                : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+            }`}
+            title={showArchived ? 'Back to active tasks' : 'Show archived tasks'}
+          >
+            {showArchived ? <ArchiveRestore size={12}/> : <Archive size={12}/>}
+            {showArchived ? 'Hide Archived' : `Archived${myArchivedTasks.length > 0 ? ` (${myArchivedTasks.length})` : ''}`}
+          </button>
           <button
             onClick={openAddTaskModal}
             className="bg-slate-900 text-white px-3 py-1.5 rounded-lg font-semibold text-xs hover:bg-slate-800 transition-all flex items-center gap-1.5 shadow-sm"
@@ -271,10 +300,10 @@ const HomeView = ({
             <CheckCircle size={24} className="text-slate-300" />
           </div>
           <p className="text-sm font-semibold text-slate-500">
-            {statusFilter === 'done' ? 'No completed tasks yet' : 'No tasks here'}
+            {showArchived ? 'No archived tasks' : statusFilter === 'done' ? 'No completed tasks yet' : 'No tasks here'}
           </p>
           <p className="text-xs text-slate-400 mt-1">
-            {statusFilter === 'all' ? 'Tasks assigned to you will appear here.' : `Switch filter to see other tasks.`}
+            {showArchived ? 'Tasks you archive will appear here.' : statusFilter === 'all' ? 'Tasks assigned to you will appear here.' : 'Switch filter to see other tasks.'}
           </p>
         </div>
       ) : (
@@ -340,15 +369,34 @@ const HomeView = ({
                           </span>
                         )}
                         {/* Status badge */}
-                        <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${statusColor(task.status)}`}>
-                          {task.status}
-                        </span>
+                        {!task.archived && (
+                          <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${statusColor(task.status)}`}>
+                            {task.status}
+                          </span>
+                        )}
+                        {task.archived && (
+                          <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                            Archived
+                          </span>
+                        )}
                         {/* Timer running indicator */}
                         {task.timerState === 'running' && (
                           <span className="flex items-center gap-1 text-[10px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
                             <Clock size={9} /> Live
                           </span>
                         )}
+                        {/* Archive / Unarchive button */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleArchiveTask(task); }}
+                          className={`p-1 rounded-md transition-all ${
+                            task.archived
+                              ? 'text-amber-500 hover:text-amber-700 hover:bg-amber-50'
+                              : 'text-slate-300 hover:text-amber-500 hover:bg-amber-50'
+                          }`}
+                          title={task.archived ? 'Unarchive task' : 'Archive task'}
+                        >
+                          {task.archived ? <ArchiveRestore size={11}/> : <Archive size={11}/>}
+                        </button>
                       </div>
                     </div>
                   ))}
