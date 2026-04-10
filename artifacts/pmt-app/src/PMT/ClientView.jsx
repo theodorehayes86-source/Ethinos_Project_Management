@@ -4,6 +4,7 @@ import UserPickerModal from './UserPickerModal';
 import DatePicker from "react-datepicker";
 import { format, subDays, parse } from 'date-fns';
 import "react-datepicker/dist/react-datepicker.css";
+import TaskDetailPanel from './TaskDetailPanel';
 
 const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Business Head'];
 
@@ -56,11 +57,13 @@ const ClientView = ({
   const [customReportName, setCustomReportName] = useState("");
   const [customReportUrl, setCustomReportUrl] = useState("");
   const [editingCustomReportId, setEditingCustomReportId] = useState(null);
-  const [expandedTaskId, setExpandedTaskId] = useState(null);
   const [activePicker, setActivePicker] = useState(null); // 'addLeadership'|'addTeam'|'qcReviewer'
   const [pickerSearch, setPickerSearch] = useState("");
   const [clientViewFilter, setClientViewFilter] = useState('mine'); // 'mine' | 'available'
   const [showArchived, setShowArchived] = useState(false);
+
+  // Task detail panel state
+  const [detailTask, setDetailTask] = useState(null);
 
   // QC form state (for new task creation)
   const [qcEnabled, setQcEnabled] = useState(true);
@@ -228,10 +231,6 @@ const ClientView = ({
     const intervalId = setInterval(() => setTimerTick(Date.now()), 1000);
     return () => clearInterval(intervalId);
   }, [clientLogs]);
-
-  useEffect(() => {
-    setExpandedTaskId(null);
-  }, [selectedClient?.id, taskStatusFilter]);
 
   const formatDuration = (milliseconds = 0) => {
     const totalSeconds = Math.floor(milliseconds / 1000);
@@ -824,21 +823,20 @@ const ClientView = ({
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredTaskLogs.map(log => {
-                  const isExpanded = expandedTaskId === log.id;
                   const timerState = log.timerState || (log.elapsedMs > 0 ? 'paused' : 'idle');
 
                   return (
                     <tr
                       key={log.id}
-                      onClick={() => setExpandedTaskId(isExpanded ? null : log.id)}
-                      className={`hover:bg-slate-50 transition-all group align-top cursor-pointer ${isExpanded ? 'bg-slate-50/70' : ''}`}
+                      onClick={() => setDetailTask(log)}
+                      className="hover:bg-slate-50 transition-all group align-top cursor-pointer"
                     >
                       {/* Date */}
                       <td className="px-1.5 py-2 text-xs font-medium text-slate-600 whitespace-nowrap">{String(log.date || '').replace(/\s+\d{4}$/, '')}</td>
 
                       {/* Task name */}
                       <td className="px-1.5 py-2">
-                        <p className={`text-xs font-semibold text-slate-800 leading-4 break-words ${isExpanded ? '' : 'line-clamp-2'}`}>{log.name || '—'}</p>
+                        <p className="text-xs font-semibold text-slate-800 leading-4 break-words line-clamp-2">{log.name || '—'}</p>
                         {Array.isArray(log.departments) && log.departments.length > 0 && (
                           <div className="flex flex-wrap gap-0.5 mt-0.5">
                             {log.departments.map(dept => (
@@ -870,16 +868,13 @@ const ClientView = ({
                       <td className="px-1.5 py-2 text-xs text-slate-600">
                         <div className="leading-4">
                           <p className="font-semibold text-slate-700 truncate">{log.assigneeName || 'Unassigned'}</p>
-                          {isExpanded && log.assigneeEmail && (
-                            <p className="text-[10px] text-slate-500 truncate">{log.assigneeEmail}</p>
-                          )}
                         </div>
                       </td>
 
                       {/* Description */}
                       <td className="px-2 py-2">
-                        <p className={`text-xs text-slate-600 leading-4 break-words ${isExpanded ? '' : 'line-clamp-2'}`}>{log.comment}</p>
-                        {isExpanded && log.qcEnabled && log.qcAssigneeName && (
+                        <p className="text-xs text-slate-600 leading-4 break-words line-clamp-2">{log.comment}</p>
+                        {log.qcEnabled && log.qcAssigneeName && (
                           <p className="text-[10px] text-indigo-500 font-medium mt-0.5">QC: {log.qcAssigneeName}</p>
                         )}
                         {log.qcEnabled && log.qcStatus === 'rejected' && log.qcFeedback && (
@@ -944,7 +939,7 @@ const ClientView = ({
                       <td className="px-1.5 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex flex-col items-end gap-0.5">
                           <span className="text-[10px] font-semibold text-slate-700">{formatDuration(getElapsedMs(log))}</span>
-                          {isExpanded && timerState === 'stopped' && log.timeTaken && (
+                          {timerState === 'stopped' && log.timeTaken && (
                             <span className="text-[8px] font-medium text-emerald-600">Time: {log.timeTaken}</span>
                           )}
                           {formatEstimatedTime(log.estimatedMs) && (
@@ -2052,6 +2047,22 @@ const ClientView = ({
             </div>
           );
         })()}
+
+        {/* Task Detail Panel */}
+        {detailTask && (
+          <TaskDetailPanel
+            task={detailTask}
+            currentUser={currentUser}
+            onClose={() => setDetailTask(null)}
+            onUpdate={(updatedTask) => {
+              const updatedLogs = (clientLogs[selectedClient.id] || []).map(l =>
+                l.id === updatedTask.id ? { ...l, steps: updatedTask.steps, messages: updatedTask.messages, links: updatedTask.links } : l
+              );
+              setClientLogs({ ...clientLogs, [selectedClient.id]: updatedLogs });
+              setDetailTask(updatedTask);
+            }}
+          />
+        )}
 
         {/* ─── TEMPLATE PICKER MODAL ─── */}
         {showTemplateModal && (() => {

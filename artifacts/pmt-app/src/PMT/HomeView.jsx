@@ -4,6 +4,7 @@ import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, CheckCircle, Tag, Calendar, Archive, ArchiveRestore } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
+import TaskDetailPanel from './TaskDetailPanel';
 
 const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
 
@@ -53,6 +54,7 @@ const HomeView = ({
   const [estimatedHrs, setEstimatedHrs] = useState('');
   const [estimatedMins, setEstimatedMins] = useState('');
   const [showArchived, setShowArchived] = useState(false);
+  const [detailTask, setDetailTask] = useState(null);
 
   const selectedClient = useMemo(
     () => allClientOptions.find(c => c.id === selectedClientId),
@@ -338,7 +340,8 @@ const HomeView = ({
                   {tasks.map(task => (
                     <div
                       key={task.id}
-                      className="bg-white rounded-xl border border-slate-100 shadow-sm px-4 py-3 flex items-center gap-3 hover:border-slate-200 hover:shadow-md transition-all"
+                      onClick={() => setDetailTask(task)}
+                      className="bg-white rounded-xl border border-slate-100 shadow-sm px-4 py-3 flex items-center gap-3 hover:border-slate-200 hover:shadow-md transition-all cursor-pointer"
                     >
                       {/* Status dot */}
                       <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
@@ -757,6 +760,23 @@ const HomeView = ({
           onClose={() => setShowQcPicker(false)}
           pickerSearch={qcPickerSearch}
           setPickerSearch={setQcPickerSearch}
+        />
+      )}
+
+      {detailTask && (
+        <TaskDetailPanel
+          task={detailTask}
+          currentUser={currentUser}
+          onClose={() => setDetailTask(null)}
+          onUpdate={(updatedTask) => {
+            const cid = updatedTask.cid;
+            if (!cid) return;
+            const updatedLogs = (clientLogs[cid] || []).map(l =>
+              l.id === updatedTask.id ? { ...l, steps: updatedTask.steps, messages: updatedTask.messages, links: updatedTask.links } : l
+            );
+            setClientLogs({ ...clientLogs, [cid]: updatedLogs });
+            setDetailTask(updatedTask);
+          }}
         />
       )}
     </div>
