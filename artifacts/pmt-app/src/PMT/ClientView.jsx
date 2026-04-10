@@ -67,6 +67,8 @@ const ClientView = ({
   const [qcAssigneeName, setQcAssigneeName] = useState('');
   // Department selection for new task
   const [newTaskDepartments, setNewTaskDepartments] = useState([]);
+  // Billable toggle for new task
+  const [newTaskBillable, setNewTaskBillable] = useState(true);
 
   // QC review state (for management reviewing a sent task)
   const [qcReviewingTaskId, setQcReviewingTaskId] = useState(null);
@@ -163,6 +165,7 @@ const ClientView = ({
       qcEnabled: log.qcEnabled ?? true,
       qcAssigneeId: log.qcAssigneeId || '',
       qcAssigneeName: log.qcAssigneeName || '',
+      billable: log.billable ?? true,
     });
     setEditDraftCategoryQuery(log.category || '');
     setEditDraftAssigneeQuery(log.assigneeName || '');
@@ -194,6 +197,7 @@ const ClientView = ({
         qcEnabled: editDraft.qcEnabled,
         qcAssigneeId: editDraft.qcEnabled && editDraft.qcAssigneeId ? editDraft.qcAssigneeId : null,
         qcAssigneeName: editDraft.qcEnabled && editDraft.qcAssigneeName ? editDraft.qcAssigneeName : null,
+        billable: editDraft.billable ?? true,
       } : l
     );
     setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
@@ -416,6 +420,7 @@ const ClientView = ({
       qcFeedback: null,
       qcReviewedAt: null,
       departments: newTaskDepartments.length > 0 ? newTaskDepartments : (currentUser?.department ? [currentUser.department] : null),
+      billable: newTaskBillable,
     };
 
     setNotifications(prev => [
@@ -453,6 +458,7 @@ const ClientView = ({
     setQcAssigneeId('');
     setQcAssigneeName('');
     setNewTaskDepartments(currentUser?.department ? [currentUser.department] : []);
+    setNewTaskBillable(true);
     setShowTaskForm(false);
   };
 
@@ -548,6 +554,7 @@ const ClientView = ({
         qcEnabled: hasQc,
         qcAssigneeId: hasQc ? qcAssignee.id : null,
         qcAssigneeName: hasQc ? qcAssignee.name : null,
+        billable: true,
       };
     });
 
@@ -698,6 +705,7 @@ const ClientView = ({
                 setQcAssigneeId('');
                 setQcAssigneeName('');
                 setNewTaskDepartments(currentUser?.department ? [currentUser.department] : []);
+                setNewTaskBillable(true);
                 setShowTaskForm(true);
               }}
               className="bg-blue-600 text-white px-3.5 py-2 rounded-lg font-semibold text-xs hover:bg-blue-700 transition-all flex items-center gap-1.5 shadow-md"
@@ -1443,6 +1451,23 @@ const ClientView = ({
                         </button>
                       )}
                     </div>
+                    {/* Billable Toggle */}
+                    <div className="flex items-center justify-between border border-slate-200 rounded-xl px-4 py-3 bg-slate-50/60">
+                      <div>
+                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">Billable</span>
+                        <p className="text-[10px] text-slate-400 mt-0.5">{newTaskBillable ? 'This task is client-chargeable' : 'This task is internal / non-billable'}</p>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={newTaskBillable}
+                        aria-label="Toggle billable"
+                        onClick={() => setNewTaskBillable(b => !b)}
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${newTaskBillable ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                      >
+                        <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${newTaskBillable ? 'translate-x-4' : 'translate-x-1'}`} />
+                      </button>
+                    </div>
                     {/* QC Section */}
                     <div className="space-y-3 border border-slate-200 rounded-xl p-4 bg-slate-50/60">
                       <div className="flex items-center justify-between">
@@ -1699,6 +1724,23 @@ const ClientView = ({
                             </div>
                           )}
                         </div>
+                      </div>
+                      {/* Billable Toggle (Edit) */}
+                      <div className="flex items-center justify-between border border-slate-200 rounded-xl px-4 py-3 bg-slate-50/60">
+                        <div>
+                          <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">Billable</span>
+                          <p className="text-[10px] text-slate-400 mt-0.5">{editDraft.billable !== false ? 'This task is client-chargeable' : 'This task is internal / non-billable'}</p>
+                        </div>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={editDraft.billable !== false}
+                          aria-label="Toggle billable"
+                          onClick={() => setEditDraft(d => ({ ...d, billable: !(d.billable ?? true) }))}
+                          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${editDraft.billable !== false ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                        >
+                          <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${editDraft.billable !== false ? 'translate-x-4' : 'translate-x-1'}`} />
+                        </button>
                       </div>
                       {/* QC Section */}
                       <div className="space-y-3 border border-slate-200 rounded-xl p-4 bg-slate-50/60">

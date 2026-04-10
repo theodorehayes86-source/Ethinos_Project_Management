@@ -78,7 +78,8 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
           taskDescription: log?.comment || '',
           status: log?.status || '',
           date: log?.date || '',
-          hoursSpent: Number(hoursSpent.toFixed(2))
+          hoursSpent: Number(hoursSpent.toFixed(2)),
+          billable: log?.billable !== false,
         });
       });
     });
@@ -97,6 +98,10 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
           clientName: row.clientName,
           totalHours: 0,
           taskCount: 0,
+          billableHours: 0,
+          billableCount: 0,
+          nonBillableHours: 0,
+          nonBillableCount: 0,
           categories: new Map()
         });
       }
@@ -104,6 +109,13 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
       const current = summaryMap.get(groupKey);
       current.totalHours += row.hoursSpent;
       current.taskCount += 1;
+      if (row.billable) {
+        current.billableHours += row.hoursSpent;
+        current.billableCount += 1;
+      } else {
+        current.nonBillableHours += row.hoursSpent;
+        current.nonBillableCount += 1;
+      }
       current.categories.set(row.category, (current.categories.get(row.category) || 0) + row.hoursSpent);
     });
 
@@ -119,6 +131,10 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
         avgHours: Number(avgHours.toFixed(2)),
         totalHours: Number(item.totalHours.toFixed(2)),
         taskCount: item.taskCount,
+        billableHours: Number(item.billableHours.toFixed(2)),
+        billableCount: item.billableCount,
+        nonBillableHours: Number(item.nonBillableHours.toFixed(2)),
+        nonBillableCount: item.nonBillableCount,
         categories: categoriesArr
       };
     }).sort((a, b) => b.totalHours - a.totalHours);
@@ -133,6 +149,10 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
           employeeName: row.employeeName,
           totalHours: 0,
           taskCount: 0,
+          billableHours: 0,
+          billableCount: 0,
+          nonBillableHours: 0,
+          nonBillableCount: 0,
           clients: new Map(),
           categories: new Map()
         });
@@ -141,6 +161,13 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
       const current = summaryMap.get(row.employeeName);
       current.totalHours += row.hoursSpent;
       current.taskCount += 1;
+      if (row.billable) {
+        current.billableHours += row.hoursSpent;
+        current.billableCount += 1;
+      } else {
+        current.nonBillableHours += row.hoursSpent;
+        current.nonBillableCount += 1;
+      }
       const clientLabel = row.entityName && row.entityName !== '-' ? `${row.entityName} - ${row.clientName}` : row.clientName;
       current.clients.set(clientLabel, (current.clients.get(clientLabel) || 0) + row.hoursSpent);
       current.categories.set(row.category, (current.categories.get(row.category) || 0) + row.hoursSpent);
@@ -161,6 +188,10 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
         avgHours: Number(avgHours.toFixed(2)),
         totalHours: Number(item.totalHours.toFixed(2)),
         taskCount: item.taskCount,
+        billableHours: Number(item.billableHours.toFixed(2)),
+        billableCount: item.billableCount,
+        nonBillableHours: Number(item.nonBillableHours.toFixed(2)),
+        nonBillableCount: item.nonBillableCount,
         clientsWorked: item.clients.size,
         clientBreakdown,
         taskBreakdown
@@ -180,7 +211,8 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
         taskDescription: row.taskDescription || '-',
         date: row.date || '-',
         status: row.status || '-',
-        hoursSpent: row.hoursSpent
+        hoursSpent: row.hoursSpent,
+        billable: row.billable,
       }));
   }, [allRows]);
 
@@ -211,20 +243,24 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
 
   const handleDownload = () => {
     if (activeView === 'client') {
-      const headers = ['Entity Name', 'Client Name', 'Avg Hours Spent', 'Total Hours', 'Task Count', 'Category Breakdown'];
-      const rows = clientSummary.map((row) => [row.entityName, row.clientName, row.avgHours, row.totalHours, row.taskCount, row.categories.map(c => `${c.name} (${c.hours}h)`).join('; ')]);
+      const headers = ['Entity Name', 'Client Name', 'Avg Hours Spent', 'Total Hours', 'Task Count', 'Billable Hours', 'Billable Tasks', 'Non-Billable Hours', 'Non-Billable Tasks', 'Category Breakdown'];
+      const rows = clientSummary.map((row) => [row.entityName, row.clientName, row.avgHours, row.totalHours, row.taskCount, row.billableHours, row.billableCount, row.nonBillableHours, row.nonBillableCount, row.categories.map(c => `${c.name} (${c.hours}h)`).join('; ')]);
       downloadCsv('client-reports.csv', headers, rows);
       return;
     }
 
     if (activeView === 'employee') {
-      const headers = ['Employee Name', 'Avg Hours', 'Total Hours', 'Clients Worked', 'Task Count', 'Time Per Client', 'Time Per Task Category'];
+      const headers = ['Employee Name', 'Avg Hours', 'Total Hours', 'Task Count', 'Billable Hours', 'Billable Tasks', 'Non-Billable Hours', 'Non-Billable Tasks', 'Clients Worked', 'Time Per Client', 'Time Per Task Category'];
       const rows = employeeSummary.map((row) => [
         row.employeeName,
         row.avgHours,
         row.totalHours,
-        row.clientsWorked,
         row.taskCount,
+        row.billableHours,
+        row.billableCount,
+        row.nonBillableHours,
+        row.nonBillableCount,
+        row.clientsWorked,
         row.clientBreakdown.map(c => `${c.name} (${c.hours}h)`).join('; '),
         row.taskBreakdown.map(c => `${c.name} (${c.hours}h)`).join('; ')
       ]);
@@ -232,7 +268,7 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
       return;
     }
 
-    const headers = ['Entity', 'Client', 'Employee', 'Category', 'Task', 'Date', 'Status', 'Hours Spent'];
+    const headers = ['Entity', 'Client', 'Employee', 'Category', 'Task', 'Date', 'Status', 'Billable', 'Hours Spent'];
     const rows = combinedSummary.map((row) => [
       row.entityName,
       row.clientName,
@@ -241,6 +277,7 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
       row.taskDescription,
       row.date,
       row.status,
+      row.billable ? 'Billable' : 'Non-Billable',
       row.hoursSpent
     ]);
     downloadCsv('combined-reports.csv', headers, rows);
@@ -320,6 +357,7 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
                   <th className="px-4 py-3 text-right">Avg Hours</th>
                   <th className="px-4 py-3 text-right">Total Hours</th>
                   <th className="px-4 py-3 text-right">Tasks</th>
+                  <th className="px-4 py-3 text-left">Billable / Non-Billable</th>
                   <th className="px-4 py-3 text-left">Category Breakdown</th>
                 </tr>
               </thead>
@@ -333,6 +371,16 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
                     <td className="px-4 py-3 text-sm text-right font-medium text-slate-700">{row.taskCount}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-xs font-medium text-emerald-700 whitespace-nowrap">
+                          Billable: {row.billableHours}h / {row.billableCount}
+                        </span>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-xs font-medium text-slate-600 whitespace-nowrap">
+                          Non-Bill: {row.nonBillableHours}h / {row.nonBillableCount}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
                         {row.categories.length ? row.categories.map(({ name, hours }) => (
                           <span key={name} className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-xs font-medium text-slate-700 whitespace-nowrap">
                             {name} <span className="text-blue-600 font-semibold">{hours}h</span>
@@ -344,7 +392,7 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
                 ))}
                 {!clientSummary.length && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-sm font-medium text-slate-500">No client task data available yet.</td>
+                    <td colSpan={7} className="px-4 py-10 text-center text-sm font-medium text-slate-500">No client task data available yet.</td>
                   </tr>
                 )}
               </tbody>
@@ -363,6 +411,7 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
                   <th className="px-4 py-3 text-right">Avg Hours</th>
                   <th className="px-4 py-3 text-right">Total Hours</th>
                   <th className="px-4 py-3 text-right">Clients</th>
+                  <th className="px-4 py-3 text-left">Billable / Non-Billable</th>
                   <th className="px-4 py-3 text-left">Time Per Client</th>
                   <th className="px-4 py-3 text-left">Time Per Task Category</th>
                 </tr>
@@ -374,6 +423,16 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
                     <td className="px-4 py-3 text-sm text-right font-medium text-slate-700">{row.avgHours}</td>
                     <td className="px-4 py-3 text-sm text-right font-medium text-slate-700">{row.totalHours}</td>
                     <td className="px-4 py-3 text-sm text-right font-medium text-slate-700">{row.clientsWorked}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-xs font-medium text-emerald-700 whitespace-nowrap">
+                          Billable: {row.billableHours}h / {row.billableCount}
+                        </span>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-xs font-medium text-slate-600 whitespace-nowrap">
+                          Non-Bill: {row.nonBillableHours}h / {row.nonBillableCount}
+                        </span>
+                      </div>
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
                         {row.clientBreakdown.length ? row.clientBreakdown.map(({ name, hours }) => (
@@ -396,7 +455,7 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
                 ))}
                 {!employeeSummary.length && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-sm font-medium text-slate-500">No employee task data available yet.</td>
+                    <td colSpan={7} className="px-4 py-10 text-center text-sm font-medium text-slate-500">No employee task data available yet.</td>
                   </tr>
                 )}
               </tbody>
@@ -418,6 +477,7 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
                   <th className="px-4 py-3 text-left">Task</th>
                   <th className="px-4 py-3 text-left">Date</th>
                   <th className="px-4 py-3 text-left">Status</th>
+                  <th className="px-4 py-3 text-left">Billable</th>
                   <th className="px-4 py-3 text-right">Hours</th>
                 </tr>
               </thead>
@@ -431,12 +491,17 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
                     <td className="px-4 py-3 text-sm text-slate-700">{row.taskDescription}</td>
                     <td className="px-4 py-3 text-sm text-slate-700">{row.date}</td>
                     <td className="px-4 py-3 text-sm text-slate-700">{row.status}</td>
+                    <td className="px-4 py-3">
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${row.billable ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>
+                        {row.billable ? 'Billable' : 'Non-Bill'}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-sm text-right font-medium text-slate-700">{row.hoursSpent}</td>
                   </tr>
                 ))}
                 {!combinedSummary.length && (
                   <tr>
-                    <td colSpan={8} className="px-4 py-10 text-center text-sm font-medium text-slate-500">No combined report data available yet.</td>
+                    <td colSpan={9} className="px-4 py-10 text-center text-sm font-medium text-slate-500">No combined report data available yet.</td>
                   </tr>
                 )}
               </tbody>

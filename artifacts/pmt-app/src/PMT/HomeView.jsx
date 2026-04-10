@@ -40,6 +40,7 @@ const HomeView = ({
   const [qcPickerSearch, setQcPickerSearch] = useState('');
   const [taskError, setTaskError] = useState('');
   const [taskDepartments, setTaskDepartments] = useState([]);
+  const [taskBillable, setTaskBillable] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
 
   const isManagement = managementRoles.includes(currentUser?.role);
@@ -84,6 +85,7 @@ const HomeView = ({
     setQcPickerSearch('');
     setTaskError('');
     setTaskDepartments(currentUser?.department ? [currentUser.department] : []);
+    setTaskBillable(true);
   };
 
   const openAddTaskModal = () => { resetModal(); setShowAddTaskModal(true); };
@@ -123,6 +125,7 @@ const HomeView = ({
       qcFeedback: null,
       qcReviewedAt: null,
       departments: taskDepartments.length > 0 ? taskDepartments : (currentUser?.department ? [currentUser.department] : null),
+      billable: taskBillable,
     };
     const nextLogs = { ...clientLogs, [selectedClientId]: [newTask, ...(clientLogs[selectedClientId] || [])] };
     setClientLogs(nextLogs);
@@ -503,6 +506,24 @@ const HomeView = ({
                         Clear Due Date
                       </button>
                     )}
+                  </div>
+
+                  {/* Billable Toggle */}
+                  <div className="flex items-center justify-between border border-slate-200 rounded-xl px-4 py-3 bg-slate-50/60">
+                    <div>
+                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">Billable</span>
+                      <p className="text-[10px] text-slate-400 mt-0.5">{taskBillable ? 'This task is client-chargeable' : 'This task is internal / non-billable'}</p>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={taskBillable}
+                      aria-label="Toggle billable"
+                      onClick={() => setTaskBillable(b => !b)}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${taskBillable ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                    >
+                      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${taskBillable ? 'translate-x-4' : 'translate-x-1'}`} />
+                    </button>
                   </div>
 
                   <div className="space-y-3 border border-slate-200 rounded-xl p-4 bg-slate-50/60">

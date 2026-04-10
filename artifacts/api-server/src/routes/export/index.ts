@@ -19,6 +19,7 @@ interface TaskLog {
   assignee?: { id: string; name: string } | string;
   timerState?: string;
   timerStartedAt?: number;
+  billable?: boolean;
   qcEnabled?: boolean;
   qcStatus?: string | null;
   qcRating?: number | null;
