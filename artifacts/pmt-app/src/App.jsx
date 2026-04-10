@@ -239,6 +239,7 @@ const App = () => {
   const [firebaseUser, setFirebaseUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [msLoginPending, setMsLoginPending] = useState(false);
+  const [msLoginStatus, setMsLoginStatus] = useState(''); // debug step display
 
   const [clients, setClients] = useState([]);
   const [users, setUsers] = useState(DEFAULT_USERS);
@@ -646,76 +647,130 @@ const App = () => {
     }
   };
 
-  // Stable ref so the message listener (set up once) always calls the latest finishMsLogin.
+  // Stable ref so event listeners set up once always call the latest finishMsLogin.
   const finishMsLoginRef = useRef(finishMsLogin);
   finishMsLoginRef.current = finishMsLogin;
 
-  // Listen for the auth code posted back by auth-redirect.html after Microsoft login.
-  // postMessage works across sandbox boundaries (unlike MSAL's popup.location.href polling).
+  // Process the auth result received from auth-redirect.html (via postMessage OR storage event).
+  const processMsAuthResult = React.useCallback(async (data) => {
+    const { code, state: responseState, error, errorDesc } = data;
+    console.log('[MS login] processMsAuthResult called', { code: code?.slice(0,12), responseState: responseState?.slice(0,12), error });
+
+    if (error) {
+      console.error('[MS login] Auth error from Azure:', error, errorDesc);
+      setMsLoginStatus('');
+      setLoginError(errorDesc || error);
+      return;
+    }
+
+    const storedState   = localStorage.getItem('ms_auth_state');
+    const verifier      = localStorage.getItem('ms_pkce_verifier');
+    const redirectUri   = localStorage.getItem('ms_redirect_uri');
+    console.log('[MS login] Stored state match:', responseState === storedState, 'verifier present:', !!verifier);
+
+    if (!storedState || responseState !== storedState) {
+      console.error('[MS login] State mismatch!', { responseState, storedState });
+      setMsLoginStatus('');
+      setLoginError('Authentication failed: state mismatch. Please try again.');
+      return;
+    }
+
+    localStorage.removeItem('ms_auth_state');
+    localStorage.removeItem('ms_pkce_verifier');
+    localStorage.removeItem('ms_redirect_uri');
+    localStorage.removeItem('ms_auth_result');
+
+    const clientId = import.meta.env.VITE_AZURE_CLIENT_ID;
+    const tenantId = import.meta.env.VITE_AZURE_TENANT_ID;
+
+    try {
+      setMsLoginStatus('Exchanging code for token…');
+      console.log('[MS login] Calling Azure token endpoint…');
+      const tokenRes = await fetch(
+        `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type:    'authorization_code',
+            client_id:     clientId,
+            code,
+            redirect_uri:  redirectUri,
+            code_verifier: verifier,
+          }),
+        },
+      );
+      const tokenData = await tokenRes.json();
+      console.log('[MS login] Token endpoint response:', tokenData.error ? `ERROR: ${tokenData.error}` : 'OK, got access_token');
+      if (tokenData.error) throw new Error(tokenData.error_description || tokenData.error);
+
+      setMsLoginStatus('Signing in to Ethinos…');
+      await finishMsLoginRef.current({ accessToken: tokenData.access_token });
+      setMsLoginStatus('');
+      console.log('[MS login] Sign-in complete ✓');
+    } catch (err) {
+      console.error('[MS login] Error during token exchange / Firebase sign-in:', err);
+      setMsLoginStatus('');
+      setLoginError(err.message || 'Microsoft sign-in failed. Please try again.');
+    }
+  }, [setLoginError]);
+
+  const processMsAuthResultRef = useRef(processMsAuthResult);
+  processMsAuthResultRef.current = processMsAuthResult;
+
+  // --- Dual-channel listener: postMessage (popup) + storage event (new tab) ---
   useEffect(() => {
-    const handler = async (event) => {
+    // Channel 1: postMessage — fires when auth-redirect.html has window.opener
+    const onMessage = (event) => {
       if (event.origin !== window.location.origin) return;
       if (event.data?.type !== 'ms-auth-callback') return;
+      console.log('[MS login] postMessage received from popup ✓', event.data?.code?.slice(0,12));
+      processMsAuthResultRef.current(event.data);
+    };
 
-      const { code, state: responseState, error, errorDesc } = event.data;
-
-      if (error) {
-        setLoginError(errorDesc || error);
-        return;
-      }
-
-      const storedState = sessionStorage.getItem('ms_auth_state');
-      const verifier = sessionStorage.getItem('ms_pkce_verifier');
-      const redirectUri = sessionStorage.getItem('ms_redirect_uri');
-
-      if (!storedState || responseState !== storedState) {
-        setLoginError('Authentication failed: state mismatch. Please try again.');
-        return;
-      }
-
-      sessionStorage.removeItem('ms_auth_state');
-      sessionStorage.removeItem('ms_pkce_verifier');
-      sessionStorage.removeItem('ms_redirect_uri');
-
-      const clientId = import.meta.env.VITE_AZURE_CLIENT_ID;
-      const tenantId = import.meta.env.VITE_AZURE_TENANT_ID;
-
+    // Channel 2: storage event — fires when auth-redirect.html writes to localStorage
+    // (this is the fallback for when the popup opens as a new tab with no opener)
+    const onStorage = (event) => {
+      if (event.key !== 'ms_auth_result') return;
+      if (!event.newValue) return;
+      console.log('[MS login] localStorage storage event received ✓');
       try {
-        // Exchange auth code for access token (PKCE — no client secret needed for SPA).
-        const tokenRes = await fetch(
-          `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams({
-              grant_type: 'authorization_code',
-              client_id: clientId,
-              code,
-              redirect_uri: redirectUri,
-              code_verifier: verifier,
-            }),
-          },
-        );
-        const tokenData = await tokenRes.json();
-        if (tokenData.error) throw new Error(tokenData.error_description || tokenData.error);
-
-        await finishMsLoginRef.current({ accessToken: tokenData.access_token });
-      } catch (err) {
-        setLoginError(err.message || 'Microsoft sign-in failed. Please try again.');
+        const data = JSON.parse(event.newValue);
+        processMsAuthResultRef.current(data);
+      } catch (e) {
+        console.error('[MS login] Failed to parse ms_auth_result from storage', e);
       }
     };
 
-    window.addEventListener('message', handler);
-    return () => window.removeEventListener('message', handler);
-  }, [setLoginError]);
+    window.addEventListener('message', onMessage);
+    window.addEventListener('storage', onStorage);
 
-  // Open a popup to Microsoft login using a custom PKCE flow.
-  // We build the auth URL ourselves and communicate via postMessage — this
-  // bypasses MSAL's popup.location.href monitor which fails inside iframes.
+    // Also check localStorage immediately in case we missed the event
+    // (e.g. the auth tab completed before this listener was registered)
+    const existing = localStorage.getItem('ms_auth_result');
+    if (existing) {
+      console.log('[MS login] Found existing ms_auth_result in localStorage on mount');
+      try {
+        processMsAuthResultRef.current(JSON.parse(existing));
+      } catch {}
+    }
+
+    return () => {
+      window.removeEventListener('message', onMessage);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
+
+  // Open a Microsoft login popup (or new tab) using a custom PKCE flow.
+  // We build the auth URL ourselves; auth-redirect.html sends back the code
+  // via postMessage (popup) or localStorage storage event (new tab).
   const handleMicrosoftLogin = async () => {
     setLoginError('');
+    setMsLoginStatus('');
     const clientId = import.meta.env.VITE_AZURE_CLIENT_ID;
     const tenantId = import.meta.env.VITE_AZURE_TENANT_ID;
+
+    console.log('[MS login] handleMicrosoftLogin called, clientId present:', !!clientId, 'tenantId present:', !!tenantId);
 
     if (!clientId || !tenantId) {
       setLoginError('Microsoft login is not configured. Please use email/password to sign in.');
@@ -726,19 +781,24 @@ const App = () => {
     const { verifier, challenge } = await generatePkce();
     const state = crypto.randomUUID();
 
-    sessionStorage.setItem('ms_pkce_verifier', verifier);
-    sessionStorage.setItem('ms_auth_state', state);
-    sessionStorage.setItem('ms_redirect_uri', redirectUri);
+    // Use localStorage so the storage-event fallback can also read these values.
+    localStorage.setItem('ms_pkce_verifier', verifier);
+    localStorage.setItem('ms_auth_state', state);
+    localStorage.setItem('ms_redirect_uri', redirectUri);
+    // Clear any stale result from a previous attempt.
+    localStorage.removeItem('ms_auth_result');
 
     const authUrl = new URL(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize`);
-    authUrl.searchParams.set('client_id', clientId);
-    authUrl.searchParams.set('response_type', 'code');
-    authUrl.searchParams.set('redirect_uri', redirectUri);
-    authUrl.searchParams.set('scope', 'openid profile email User.Read');
-    authUrl.searchParams.set('state', state);
-    authUrl.searchParams.set('code_challenge', challenge);
-    authUrl.searchParams.set('code_challenge_method', 'S256');
-    authUrl.searchParams.set('response_mode', 'query');
+    authUrl.searchParams.set('client_id',              clientId);
+    authUrl.searchParams.set('response_type',          'code');
+    authUrl.searchParams.set('redirect_uri',           redirectUri);
+    authUrl.searchParams.set('scope',                  'openid profile email User.Read');
+    authUrl.searchParams.set('state',                  state);
+    authUrl.searchParams.set('code_challenge',         challenge);
+    authUrl.searchParams.set('code_challenge_method',  'S256');
+    authUrl.searchParams.set('response_mode',          'query');
+
+    console.log('[MS login] Opening auth URL, redirectUri:', redirectUri);
 
     const popup = window.open(
       authUrl.toString(),
@@ -747,8 +807,13 @@ const App = () => {
     );
 
     if (!popup) {
+      console.warn('[MS login] Popup blocked — window.open() returned null');
       setLoginError('Popup was blocked. Please allow popups for this site and try again.');
+      return;
     }
+
+    console.log('[MS login] Popup/tab opened, waiting for auth result…');
+    setMsLoginStatus('Waiting for Microsoft sign-in…');
   };
 
   const handleCreateAccount = async ({ name, email, password, department, region }) => {
@@ -835,7 +900,7 @@ const App = () => {
   if (!firebaseUser && !testModeUserId) {
     return (
       <>
-        <LoginView onLogin={handleLogin} onMicrosoftLogin={handleMicrosoftLogin} onCreateAccount={handleCreateAccount} onResetPassword={handleResetPassword} loginError={loginError} />
+        <LoginView onLogin={handleLogin} onMicrosoftLogin={handleMicrosoftLogin} onCreateAccount={handleCreateAccount} onResetPassword={handleResetPassword} loginError={loginError} msLoginStatus={msLoginStatus} />
         <TestModePanel
           currentUser={null}
           isTestMode={false}

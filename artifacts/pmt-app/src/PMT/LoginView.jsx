@@ -21,7 +21,7 @@ const MicrosoftIcon = () => (
   </svg>
 );
 
-const LoginView = ({ onLogin, onMicrosoftLogin, onCreateAccount, onResetPassword, loginError }) => {
+const LoginView = ({ onLogin, onMicrosoftLogin, onCreateAccount, onResetPassword, loginError, msLoginStatus }) => {
   const [mode, setMode] = useState('signin'); // 'signin' | 'register' | 'reset'
 
   // Sign-in state
@@ -166,12 +166,18 @@ const LoginView = ({ onLogin, onMicrosoftLogin, onCreateAccount, onResetPassword
                 <button
                   type="button"
                   onClick={handleMicrosoftSignIn}
-                  disabled={msLoading}
-                  className="mb-5 w-full flex items-center justify-center gap-3 rounded-xl border border-slate-300 bg-white py-2.5 px-4 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 hover:border-slate-400 transition-all disabled:opacity-60"
+                  disabled={msLoading || !!msLoginStatus}
+                  className="mb-2 w-full flex items-center justify-center gap-3 rounded-xl border border-slate-300 bg-white py-2.5 px-4 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 hover:border-slate-400 transition-all disabled:opacity-60"
                 >
                   <MicrosoftIcon />
-                  {msLoading ? 'Signing in…' : 'Sign in with Microsoft'}
+                  {msLoading ? 'Opening sign-in…' : 'Sign in with Microsoft'}
                 </button>
+
+                {msLoginStatus && (
+                  <p className="mb-4 text-xs font-semibold text-indigo-600 text-center animate-pulse">
+                    {msLoginStatus}
+                  </p>
+                )}
 
                 <div className="relative mb-5 flex items-center gap-3">
                   <div className="flex-1 h-px bg-slate-200" />

@@ -3,16 +3,30 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Signing in…</title>
+    <title>Signing in to Ethinos PMT…</title>
     <style>
-      body { margin: 0; display: flex; flex-direction: column; align-items: center;
-             justify-content: center; min-height: 100vh; font-family: system-ui, sans-serif;
-             background: #f8fafc; gap: 12px; }
-      #status { font-size: 13px; color: #64748b; max-width: 480px; text-align: center; padding: 0 16px; }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: system-ui, sans-serif; background: #f8fafc;
+             display: flex; flex-direction: column; align-items: center;
+             justify-content: center; min-height: 100vh; gap: 16px; padding: 24px; }
+      h2  { font-size: 15px; font-weight: 600; color: #1e293b; }
+      p   { font-size: 13px; color: #64748b; }
+      #log { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 8px;
+             padding: 12px 14px; width: 100%; max-width: 480px;
+             max-height: 260px; overflow-y: auto; }
+      #close-msg { display: none; background: #fef3c7; border: 1px solid #f59e0b;
+                   border-radius: 8px; padding: 10px 14px; font-size: 13px;
+                   color: #92400e; max-width: 480px; text-align: center; }
     </style>
   </head>
   <body>
-    <div id="status">Completing sign-in…</div>
+    <h2>Completing sign-in…</h2>
+    <p>Please wait — you can close this window if it stays open after 5 seconds.</p>
+    <div id="log"></div>
+    <div id="close-msg">
+      This window did not close automatically. Please close this tab and return to the app —
+      your sign-in may have completed already.
+    </div>
     <script type="module" src="/src/auth-redirect.ts"></script>
   </body>
 </html>
