@@ -438,13 +438,47 @@ router.post("/ms-code-exchange", async (req, res) => {
     } catch (err: unknown) {
       const firebaseErr = err as { code?: string };
       if (firebaseErr.code === "auth/user-not-found") {
-        // Do NOT auto-provision — all accounts must be created by an admin first
-        // so that users always have a password and can also log in via the widget.
-        logger.warn({ email: verifiedEmail }, "Microsoft SSO login rejected — no PMT account found");
-        res.status(403).json({
-          error: "No PMT account found for this Microsoft account. Please ask your administrator to create your account first.",
+        // Auto-provision a new Firebase account for first-time MS SSO users.
+        // Also generate and email a temporary password so they can log into
+        // the Electron widget (which only supports email/password login).
+        const tempPassword = generatePassword();
+        const newUser = await auth.createUser({
+          email: verifiedEmail,
+          emailVerified: true,
+          displayName,
+          password: tempPassword,
         });
-        return;
+        uid = newUser.uid;
+        logger.info({ email: verifiedEmail }, "Auto-provisioned Firebase user for Microsoft SSO login");
+
+        // Send the temp password via email so the user can also use the widget.
+        if (isEmailConfigured()) {
+          try {
+            const firstName = displayName?.split(" ")[0] || "there";
+            await sendEmail({
+              to: verifiedEmail,
+              subject: "Welcome to Ethinos PMT – Your Widget Login Details",
+              bodyHtml: `
+                <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; background: #f8fafc; padding: 32px 24px; border-radius: 12px;">
+                  <div style="background: white; border-radius: 10px; padding: 32px; border: 1px solid #e2e8f0;">
+                    <h2 style="color: #1e293b; margin: 0 0 8px;">Hi ${firstName},</h2>
+                    <p style="color: #475569; margin: 0 0 16px;">You've signed into Ethinos PMT with your Microsoft account. Welcome aboard!</p>
+                    <p style="color: #475569; margin: 0 0 16px;">To also use the <strong>Ethinos Timer Pro</strong> desktop widget, you'll need these credentials:</p>
+                    <div style="background: #f1f5f9; border-radius: 8px; padding: 16px 20px; margin-bottom: 24px;">
+                      <p style="margin: 0 0 6px; color: #1e293b;"><strong>Email:</strong> ${verifiedEmail}</p>
+                      <p style="margin: 0; color: #1e293b;"><strong>Temporary Password:</strong> <code style="background: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-size: 15px;">${tempPassword}</code></p>
+                    </div>
+                    <p style="color: #475569; margin: 0 0 16px;">Please change this password after your first widget login. You can continue using Microsoft sign-in for the web app.</p>
+                    <p style="color: #94a3b8; font-size: 12px; margin: 0;">If you didn't sign into Ethinos PMT, please contact your administrator.</p>
+                  </div>
+                </div>
+              `,
+            });
+            logger.info({ email: verifiedEmail }, "Widget credentials email sent to new MS SSO user");
+          } catch (emailErr) {
+            logger.error({ err: emailErr, email: verifiedEmail }, "Failed to send widget credentials email — user still created");
+          }
+        }
       } else {
         throw err;
       }
