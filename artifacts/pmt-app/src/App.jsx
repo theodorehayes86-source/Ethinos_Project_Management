@@ -783,6 +783,7 @@ const App = () => {
     authUrl.searchParams.set('code_challenge',        challenge);
     authUrl.searchParams.set('code_challenge_method', 'S256');
     authUrl.searchParams.set('response_mode',         'query');
+    authUrl.searchParams.set('prompt',                'select_account');
 
     console.log('[MS login] Opening auth URL, redirectUri:', redirectUri);
 
