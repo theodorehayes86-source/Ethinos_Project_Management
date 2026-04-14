@@ -2172,14 +2172,14 @@ const ClientView = ({
                         <div className="flex-1 overflow-y-auto p-4 space-y-2">
                           <p className="text-xs font-bold text-slate-700 mb-2">Tasks in this template</p>
                           {(selectedTpl.tasks || []).map((task, idx) => (
-                            <div key={idx} className="flex items-start gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-100">
+                            <div key={idx} className="flex items-start gap-2 p-2.5 bg-white rounded-lg border border-slate-200">
                               <span className="w-4 h-4 rounded-full bg-slate-200 text-slate-500 text-[9px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{idx + 1}</span>
                               <div className="flex-1 min-w-0">
                                 {task.name && <p className="text-xs font-semibold text-slate-800 leading-snug">{task.name}</p>}
-                                <p className="text-xs font-medium text-slate-500 leading-snug mt-0.5">{task.comment}</p>
+                                <p className="text-xs text-slate-700 leading-snug mt-0.5">{task.comment}</p>
                                 <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                                   {task.category && (
-                                    <span className="text-[9px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded-full">{task.category}</span>
+                                    <span className="text-[9px] font-medium text-slate-500 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded-full">{task.category}</span>
                                   )}
                                   <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${repeatBadge(task.repeatFrequency)}`}>
                                     {task.repeatFrequency}
