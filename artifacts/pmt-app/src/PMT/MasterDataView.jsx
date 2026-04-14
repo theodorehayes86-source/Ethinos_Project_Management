@@ -951,22 +951,6 @@ const MasterDataView = ({
                           >
                             <Edit3 size={14}/>
                           </button>
-                          {onSendPasswordReset && user.email && (
-                            <button
-                              onClick={async () => {
-                                try {
-                                  await onSendPasswordReset(user.email);
-                                  alert(`Password reset email sent to ${user.email}`);
-                                } catch {
-                                  alert('Failed to send reset email. Please try again.');
-                                }
-                              }}
-                              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
-                              title="Send password reset email"
-                            >
-                              <Mail size={14}/>
-                            </button>
-                          )}
                           <button
                             onClick={() => setShowDeleteUserConfirm(user.id)}
                             className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
@@ -2250,6 +2234,31 @@ const MasterDataView = ({
               {userSaveError && (
                 <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-600 text-sm font-medium">
                   {userSaveError}
+                </div>
+              )}
+              {editingUserId && onSendPasswordReset && newUser.email && (
+                <div className="flex items-center justify-between rounded-2xl border border-indigo-100 bg-indigo-50 px-5 py-4">
+                  <div className="flex items-center gap-3">
+                    <Mail size={18} className="text-indigo-400 flex-shrink-0"/>
+                    <div>
+                      <p className="text-sm font-semibold text-indigo-800">Send Password Reset Email</p>
+                      <p className="text-xs text-indigo-500 mt-0.5">Sends a reset link to <span className="font-medium">{newUser.email}</span></p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await onSendPasswordReset(newUser.email);
+                        alert(`Password reset email sent to ${newUser.email}`);
+                      } catch {
+                        alert('Failed to send reset email. Please try again.');
+                      }
+                    }}
+                    className="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 transition-all flex-shrink-0"
+                  >
+                    Send Reset Link
+                  </button>
                 </div>
               )}
               <button type="submit" disabled={userSaving} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold text-sm tracking-wide shadow-md hover:bg-blue-700 transition-all disabled:opacity-60">
