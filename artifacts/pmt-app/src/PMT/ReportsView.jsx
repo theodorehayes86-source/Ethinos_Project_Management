@@ -1,10 +1,22 @@
 import React, { useMemo, useState } from 'react';
-import { Download } from 'lucide-react';
+import { Download, X } from 'lucide-react';
+
+const parseTaskDateToISO = (raw) => {
+  if (!raw || typeof raw !== 'string') return null;
+  const clean = raw.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) return clean;
+  const ordinal = clean.replace(/(\d+)(st|nd|rd|th)/, '$1');
+  const d = new Date(ordinal);
+  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  return null;
+};
 
 const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = null, departments = [], canSeeAllData = false }) => {
   const [activeView, setActiveView] = useState('client');
   const [selectedDepts, setSelectedDepts] = useState([]);
   const [deptPickerOpen, setDeptPickerOpen] = useState(false);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   const toggleDept = (dept) => {
     setSelectedDepts(prev => prev.includes(dept) ? prev.filter(d => d !== dept) : [...prev, dept]);
@@ -60,6 +72,10 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
       const clientName = clientRecord?.name || 'Unknown Client';
 
       (logs || []).forEach((log) => {
+        const isoDate = parseTaskDateToISO(log?.date);
+        if (dateFrom && isoDate && isoDate < dateFrom) return;
+        if (dateTo && isoDate && isoDate > dateTo) return;
+
         const elapsedMs = Number(log?.elapsedMs || 0);
         const fromMsHours = elapsedMs > 0 ? elapsedMs / 3600000 : 0;
         const fromTimeTakenHours = parseTimeTakenToHours(log?.timeTaken);
@@ -91,7 +107,7 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
     });
 
     return rows;
-  }, [filteredClientLogs, clientsById, usersById]);
+  }, [filteredClientLogs, clientsById, usersById, dateFrom, dateTo]);
 
   const clientSummary = useMemo(() => {
     const summaryMap = new Map();
@@ -273,11 +289,19 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
     URL.revokeObjectURL(url);
   };
 
+  const dateRangeSuffix = () => {
+    if (dateFrom && dateTo) return `_${dateFrom}_to_${dateTo}`;
+    if (dateFrom) return `_from_${dateFrom}`;
+    if (dateTo) return `_to_${dateTo}`;
+    return '';
+  };
+
   const handleDownload = () => {
+    const suffix = dateRangeSuffix();
     if (activeView === 'client') {
       const headers = ['Entity Name', 'Client Name', 'Avg Hours Spent', 'Total Hours', 'Estimated Hours', 'Variance (Actual - Est)', 'Task Count', 'Billable Hours', 'Billable Tasks', 'Non-Billable Hours', 'Non-Billable Tasks', 'Category Breakdown'];
       const rows = clientSummary.map((row) => [row.entityName, row.clientName, row.avgHours, row.totalHours, row.totalEstimatedHours ?? '', row.variance ?? '', row.taskCount, row.billableHours, row.billableCount, row.nonBillableHours, row.nonBillableCount, row.categories.map(c => `${c.name} (${c.hours}h)`).join('; ')]);
-      downloadCsv('client-reports.csv', headers, rows);
+      downloadCsv(`client-reports${suffix}.csv`, headers, rows);
       return;
     }
 
@@ -298,7 +322,7 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
         row.clientBreakdown.map(c => `${c.name} (${c.hours}h)`).join('; '),
         row.taskBreakdown.map(c => `${c.name} (${c.hours}h)`).join('; ')
       ]);
-      downloadCsv('employee-reports.csv', headers, rows);
+      downloadCsv(`employee-reports${suffix}.csv`, headers, rows);
       return;
     }
 
@@ -317,7 +341,7 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
       row.estimatedHours ?? '',
       row.variance ?? '',
     ]);
-    downloadCsv('combined-reports.csv', headers, rows);
+    downloadCsv(`combined-reports${suffix}.csv`, headers, rows);
   };
 
   return (
@@ -329,6 +353,36 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Date range pickers */}
+          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
+            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">From</span>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={e => setDateFrom(e.target.value)}
+              className="bg-transparent text-xs font-medium text-slate-700 outline-none cursor-pointer"
+            />
+          </div>
+          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
+            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">To</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={e => setDateTo(e.target.value)}
+              className="bg-transparent text-xs font-medium text-slate-700 outline-none cursor-pointer"
+            />
+          </div>
+          {(dateFrom || dateTo) && (
+            <button
+              type="button"
+              onClick={() => { setDateFrom(''); setDateTo(''); }}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all"
+              title="Clear date filter"
+            >
+              <X size={11} /> Clear dates
+            </button>
+          )}
+
           {effectiveAllData && departments.length > 0 && (
             <div className="relative">
               <button
