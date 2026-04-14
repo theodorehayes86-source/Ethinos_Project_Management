@@ -7,6 +7,8 @@ const FULL_WIDTH = 360;
 const FULL_HEIGHT = 560;
 const MINI_WIDTH = 290;
 const MINI_HEIGHT = 64;
+const MIN_WIDTH = 300;
+const MIN_HEIGHT = 400;
 
 const FIREBASE_ORIGINS = [
   "https://*.googleapis.com",
@@ -81,9 +83,10 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: FULL_WIDTH,
     height: FULL_HEIGHT,
-    minWidth: MINI_WIDTH,
-    minHeight: MINI_HEIGHT,
-    resizable: false,
+    minWidth: MIN_WIDTH,
+    minHeight: MIN_HEIGHT,
+    maxWidth: 600,
+    resizable: true,
     alwaysOnTop: true,
     frame: false,
     titleBarStyle: "hidden",
@@ -142,6 +145,8 @@ ipcMain.on("minimize-to-clock", () => {
   if (!mainWindow) return;
   const [x, y] = mainWindow.getPosition();
   mainWindow.setResizable(true);
+  mainWindow.setMinimumSize(MINI_WIDTH, MINI_HEIGHT);
+  mainWindow.setMaximumSize(MINI_WIDTH, MINI_HEIGHT);
   mainWindow.setSize(MINI_WIDTH, MINI_HEIGHT, true);
   mainWindow.setResizable(false);
   mainWindow.setPosition(x, y);
@@ -152,8 +157,9 @@ ipcMain.on("restore-window", () => {
   if (!mainWindow) return;
   const [x, y] = mainWindow.getPosition();
   mainWindow.setResizable(true);
+  mainWindow.setMinimumSize(MIN_WIDTH, MIN_HEIGHT);
+  mainWindow.setMaximumSize(600, 2000);
   mainWindow.setSize(FULL_WIDTH, FULL_HEIGHT, true);
-  mainWindow.setResizable(false);
   mainWindow.setPosition(x, y);
   mainWindow.webContents.send("mini-mode-changed", false);
 });

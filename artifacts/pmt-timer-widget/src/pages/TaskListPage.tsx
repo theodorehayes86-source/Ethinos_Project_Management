@@ -1,7 +1,7 @@
-import React from "react";
+import React, { useState } from "react";
 import { useTasks } from "../context/TasksContext";
 import { GroupedTasks, TaskLog, getTaskName } from "../types";
-import { ChevronRight, Clock, CheckCircle, Circle, Loader2, AlertCircle, ShieldCheck, ShieldX } from "lucide-react";
+import { ChevronRight, ChevronDown, Clock, CheckCircle, Circle, Loader2, AlertCircle, ShieldCheck, ShieldX } from "lucide-react";
 
 interface TaskListPageProps {
   onSelectTask: (task: TaskLog, clientName: string) => void;
@@ -119,6 +119,63 @@ function TaskRow({ task, onSelect }: { task: TaskLog; onSelect: () => void }) {
   );
 }
 
+function ClientGroup({
+  group,
+  onSelectTask,
+}: {
+  group: GroupedTasks;
+  onSelectTask: (task: TaskLog, clientName: string) => void;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const runningCount = group.tasks.filter((t) => t.timerState === "running").length;
+
+  return (
+    <div>
+      <button
+        onClick={() => setCollapsed((c) => !c)}
+        className="w-full flex items-center gap-2 px-1 mb-2 group"
+      >
+        <span className="text-xs font-bold uppercase tracking-widest text-indigo-400 flex-1 text-left truncate">
+          {group.clientName}
+        </span>
+        {runningCount > 0 && !collapsed && (
+          <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-400 bg-emerald-500/15 border border-emerald-500/25 rounded-full px-2 py-0.5">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            {runningCount} running
+          </span>
+        )}
+        <span className="text-slate-500 group-hover:text-slate-300 transition-colors flex-shrink-0">
+          {collapsed
+            ? <ChevronRight size={14} />
+            : <ChevronDown size={14} />
+          }
+        </span>
+      </button>
+
+      {!collapsed && (
+        <div className="space-y-1.5">
+          {group.tasks.map((task) => (
+            <TaskRow
+              key={task.id || `${group.clientId}-${task.taskIndex}`}
+              task={task}
+              onSelect={() => onSelectTask(task, group.clientName)}
+            />
+          ))}
+        </div>
+      )}
+
+      {collapsed && (
+        <p className="text-[11px] text-slate-600 px-1 mb-1">
+          {group.tasks.length} task{group.tasks.length !== 1 ? "s" : ""} hidden
+          {runningCount > 0 && (
+            <span className="text-emerald-500 ml-1">· {runningCount} running</span>
+          )}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function TaskListPage({ onSelectTask }: TaskListPageProps) {
   const { groupedTasks, loading } = useTasks();
 
@@ -150,20 +207,11 @@ export default function TaskListPage({ onSelectTask }: TaskListPageProps) {
   return (
     <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-5">
       {groupedTasks.map((group: GroupedTasks) => (
-        <div key={String(group.clientId)}>
-          <p className="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-2 px-1">
-            {group.clientName}
-          </p>
-          <div className="space-y-1.5">
-            {group.tasks.map((task) => (
-              <TaskRow
-                key={task.id || `${group.clientId}-${task.taskIndex}`}
-                task={task}
-                onSelect={() => onSelectTask(task, group.clientName)}
-              />
-            ))}
-          </div>
-        </div>
+        <ClientGroup
+          key={String(group.clientId)}
+          group={group}
+          onSelectTask={onSelectTask}
+        />
       ))}
     </div>
   );
