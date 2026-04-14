@@ -77,7 +77,15 @@ const MasterDataView = ({
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
 
-  const [activeTab, setActiveTab] = useState('categories');
+  const [activeTab, setActiveTab] = useState(() => {
+    const accessible = CC_TABS.filter(tab => {
+      if (currentUser?.role === 'Super Admin') return true;
+      if (tab.id === 'conditions') return false;
+      if (tab.id === 'feedback') return true;
+      return (controlCenterTabAccess[tab.id] || []).includes(currentUser?.role);
+    });
+    return accessible[0]?.id || 'feedback';
+  });
   const [categoryInput, setCategoryInput] = useState('');
   const [departmentInput, setDepartmentInput] = useState('');
   const [regionInput, setRegionInput] = useState('');
