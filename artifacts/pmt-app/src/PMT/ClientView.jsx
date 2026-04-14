@@ -8,6 +8,46 @@ import TaskDetailPanel from './TaskDetailPanel';
 
 const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Business Head'];
 
+const REMINDER_OPTIONS = [
+  { value: '-7', label: '7 days before' },
+  { value: '-3', label: '3 days before' },
+  { value: '-2', label: '2 days before' },
+  { value: '-1', label: '1 day before' },
+  { value: '0',  label: 'On due date' },
+  { value: '+1', label: '1 day after', overdue: true },
+  { value: '+2', label: '2 days after', overdue: true },
+  { value: '+3', label: '3 days after', overdue: true },
+];
+
+function ReminderPills({ selected, onChange }) {
+  const toggle = (val) => {
+    onChange(selected.includes(val) ? selected.filter(v => v !== val) : [...selected, val]);
+  };
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {REMINDER_OPTIONS.map(opt => {
+        const active = selected.includes(opt.value);
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => toggle(opt.value)}
+            className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all ${
+              active
+                ? opt.overdue
+                  ? 'bg-red-100 border-red-400 text-red-700'
+                  : 'bg-blue-100 border-blue-400 text-blue-700'
+                : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+            }`}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 const isTaskVisible = (task, currentUser) => {
   if (CROSS_DEPT_ROLES.includes(currentUser?.role)) return true;
   if (!Array.isArray(task.departments)) return true;
@@ -78,6 +118,8 @@ const ClientView = ({
   const [newTaskDepartments, setNewTaskDepartments] = useState([]);
   // Billable toggle for new task
   const [newTaskBillable, setNewTaskBillable] = useState(true);
+  // Reminder offsets for new task
+  const [newTaskReminders, setNewTaskReminders] = useState([]);
   // Estimated time for new task (hours + minutes inputs)
   const [newTaskEstimatedHrs, setNewTaskEstimatedHrs] = useState('');
   const [newTaskEstimatedMins, setNewTaskEstimatedMins] = useState('');
@@ -184,6 +226,7 @@ const ClientView = ({
       billable: log.billable ?? true,
       estimatedHrs: estMs > 0 ? String(estHrs) : '',
       estimatedMins: estMs > 0 ? String(estMins) : '',
+      reminderOffsets: log.reminderOffsets || [],
     });
     setEditDraftCategoryQuery(log.category || '');
     setEditDraftAssigneeQuery(log.assigneeName || '');
@@ -220,6 +263,7 @@ const ClientView = ({
         qcAssigneeName: editDraft.qcEnabled && editDraft.qcAssigneeName ? editDraft.qcAssigneeName : null,
         billable: editDraft.billable ?? true,
         estimatedMs: editEstimatedMs,
+        reminderOffsets: editDraft.reminderOffsets?.length > 0 ? editDraft.reminderOffsets : null,
       } : l
     );
     setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
@@ -453,6 +497,7 @@ const ClientView = ({
       departments: newTaskDepartments.length > 0 ? newTaskDepartments : (currentUser?.department ? [currentUser.department] : null),
       billable: newTaskBillable,
       estimatedMs: newEstimatedMs,
+      reminderOffsets: newTaskReminders.length > 0 ? newTaskReminders : null,
     };
 
     setNotifications(prev => [
@@ -491,6 +536,7 @@ const ClientView = ({
     setQcAssigneeName('');
     setNewTaskDepartments(currentUser?.department ? [currentUser.department] : []);
     setNewTaskBillable(true);
+    setNewTaskReminders([]);
     setNewTaskEstimatedHrs('');
     setNewTaskEstimatedMins('');
     setShowTaskForm(false);
@@ -775,6 +821,7 @@ const ClientView = ({
                 setQcAssigneeName('');
                 setNewTaskDepartments(currentUser?.department ? [currentUser.department] : []);
                 setNewTaskBillable(true);
+                setNewTaskReminders([]);
                 setShowTaskForm(true);
               }}
               className="bg-blue-600 text-white px-3.5 py-2 rounded-lg font-semibold text-xs hover:bg-blue-700 transition-all flex items-center gap-1.5 shadow-md"
@@ -1593,6 +1640,15 @@ const ClientView = ({
                         </button>
                       )}
                     </div>
+                    {taskDueDate && (
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Email Reminders
+                          <span className="ml-1.5 text-slate-400 normal-case font-normal">— "after" reminders go to QC manager too</span>
+                        </label>
+                        <ReminderPills selected={newTaskReminders} onChange={setNewTaskReminders} />
+                      </div>
+                    )}
                     {/* Billable Toggle */}
                     <div className="flex items-center justify-between border border-slate-200 rounded-xl px-4 py-3 bg-slate-50/60">
                       <div>
@@ -1790,11 +1846,23 @@ const ClientView = ({
                           className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
                         />
                         {editDraft.dueDate && (
-                          <button type="button" onClick={() => setEditDraft(d => ({ ...d, dueDate: null }))} className="text-xs font-semibold text-red-600 hover:text-red-700">
+                          <button type="button" onClick={() => setEditDraft(d => ({ ...d, dueDate: null, reminderOffsets: [] }))} className="text-xs font-semibold text-red-600 hover:text-red-700">
                             Clear Due Date
                           </button>
                         )}
                       </div>
+                      {editDraft.dueDate && (
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Email Reminders
+                            <span className="ml-1.5 text-slate-400 normal-case font-normal">— "after" reminders go to QC manager too</span>
+                          </label>
+                          <ReminderPills
+                            selected={editDraft.reminderOffsets || []}
+                            onChange={offsets => setEditDraft(d => ({ ...d, reminderOffsets: offsets }))}
+                          />
+                        </div>
+                      )}
                       <div className="space-y-1.5">
                         <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</label>
                         <select

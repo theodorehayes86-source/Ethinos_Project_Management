@@ -1,5 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { startReminderScheduler } from "./lib/reminder-scheduler";
 
 const rawPort = process.env["PORT"];
 
@@ -15,24 +16,23 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-const REQUIRED_AZURE_SECRETS = [
-  "AZURE_TENANT_ID",
-  "AZURE_CLIENT_ID",
-  "AZURE_CLIENT_SECRET",
-  "MS_SENDER_EMAIL",
-] as const;
+const hasTenantId = !!(process.env.AZURE_TENANT_ID || process.env.VITE_AZURE_TENANT_ID);
+const hasClientId = !!(process.env.AZURE_CLIENT_ID || process.env.VITE_AZURE_CLIENT_ID);
+const hasClientSecret = !!process.env.AZURE_CLIENT_SECRET;
+const hasSenderEmail = !!process.env.MS_SENDER_EMAIL;
 
-const missingAzureSecrets = REQUIRED_AZURE_SECRETS.filter(
-  (key) => !process.env[key],
-);
-
-if (missingAzureSecrets.length > 0) {
+if (!hasTenantId || !hasClientId || !hasClientSecret || !hasSenderEmail) {
+  const missing: string[] = [];
+  if (!hasTenantId) missing.push("AZURE_TENANT_ID (or VITE_AZURE_TENANT_ID)");
+  if (!hasClientId) missing.push("AZURE_CLIENT_ID (or VITE_AZURE_CLIENT_ID)");
+  if (!hasClientSecret) missing.push("AZURE_CLIENT_SECRET");
+  if (!hasSenderEmail) missing.push("MS_SENDER_EMAIL");
   const msg =
     "FATAL: Microsoft 365 integration is not configured. " +
     "The following required environment secrets are missing: " +
-    missingAzureSecrets.join(", ") +
+    missing.join(", ") +
     ". Set them in the Replit Secrets panel and restart the server.";
-  logger.error({ missing: missingAzureSecrets }, msg);
+  logger.error({ missing }, msg);
   process.exit(1);
 }
 
@@ -45,4 +45,5 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+  startReminderScheduler();
 });

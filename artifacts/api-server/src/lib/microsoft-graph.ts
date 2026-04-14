@@ -8,8 +8,8 @@ interface GraphTokenResponse {
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
 function getAzureConfig() {
-  const tenantId = process.env.AZURE_TENANT_ID;
-  const clientId = process.env.AZURE_CLIENT_ID;
+  const tenantId = process.env.AZURE_TENANT_ID || process.env.VITE_AZURE_TENANT_ID;
+  const clientId = process.env.AZURE_CLIENT_ID || process.env.VITE_AZURE_CLIENT_ID;
   const clientSecret = process.env.AZURE_CLIENT_SECRET;
   const senderEmail = process.env.MS_SENDER_EMAIL;
 
@@ -106,8 +106,8 @@ export async function sendEmail(params: {
 
 export function isEmailConfigured(): boolean {
   return !!(
-    process.env.AZURE_TENANT_ID &&
-    process.env.AZURE_CLIENT_ID &&
+    (process.env.AZURE_TENANT_ID || process.env.VITE_AZURE_TENANT_ID) &&
+    (process.env.AZURE_CLIENT_ID || process.env.VITE_AZURE_CLIENT_ID) &&
     process.env.AZURE_CLIENT_SECRET &&
     process.env.MS_SENDER_EMAIL
   );

@@ -46,3 +46,8 @@ export async function readFirebasePath<T = unknown>(path: string): Promise<T> {
   const snap = await database.ref(path).once("value");
   return snap.val() as T;
 }
+
+export async function writeFirebasePath(path: string, value: unknown): Promise<void> {
+  const database = getFirebaseAdmin();
+  await database.ref(path).set(value);
+}
