@@ -1282,6 +1282,7 @@ const App = () => {
               setNotifications={setNotifications}
               accessibleClients={accessibleClients}
               departments={departments}
+              syntheticClients={SYNTHETIC_CLIENTS}
             />
           )}
 

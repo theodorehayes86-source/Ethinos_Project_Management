@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { format, parse, isBefore } from 'date-fns';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
-import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, CheckCircle, Tag, Calendar, Archive, ArchiveRestore, LayoutTemplate, ChevronDown, Play, Square } from 'lucide-react';
+import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, CheckCircle, Tag, Calendar, Archive, ArchiveRestore, LayoutTemplate, ChevronDown, Play, Square, Pause } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import TaskDetailPanel from './TaskDetailPanel';
 
@@ -267,34 +267,57 @@ const HomeView = ({
     setClientLogs({ ...clientLogs, [cid]: updated });
   };
 
-  const STATUS_CYCLE = ['Pending', 'WIP', 'Done'];
-  const handleCycleStatus = (e, task) => {
-    e.stopPropagation();
-    const current = task.status || 'Pending';
-    const idx = STATUS_CYCLE.indexOf(current);
-    const next = STATUS_CYCLE[(idx + 1) % STATUS_CYCLE.length];
-    handleUpdateTask(task, { status: next });
-    setDetailTask(prev => prev?.id === task.id ? { ...prev, status: next } : prev);
+  // Timer tick for live display
+  const [timerTick, setTimerTick] = useState(Date.now());
+  useEffect(() => {
+    const interval = setInterval(() => setTimerTick(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const formatDuration = (ms) => {
+    if (!ms) return '0:00:00';
+    const total = Math.floor(ms / 1000);
+    const h = String(Math.floor(total / 3600)).padStart(2, '0');
+    const m = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
+    const s = String(total % 60).padStart(2, '0');
+    return `${h}:${m}:${s}`;
   };
 
-  const handleToggleTimer = (e, task) => {
-    e.stopPropagation();
-    if (task.timerState === 'running') {
-      const additional = task.timerStartedAt ? Date.now() - task.timerStartedAt : 0;
-      handleUpdateTask(task, {
-        timerState: 'paused',
-        timerStartedAt: null,
-        elapsedMs: (task.elapsedMs || 0) + additional,
-      });
-      setDetailTask(prev => prev?.id === task.id
-        ? { ...prev, timerState: 'paused', timerStartedAt: null, elapsedMs: (prev.elapsedMs || 0) + additional }
-        : prev);
-    } else {
-      handleUpdateTask(task, { timerState: 'running', timerStartedAt: Date.now() });
-      setDetailTask(prev => prev?.id === task.id
-        ? { ...prev, timerState: 'running', timerStartedAt: Date.now() }
-        : prev);
+  const getElapsedMs = (task) => {
+    const base = task.elapsedMs || 0;
+    if (task.timerState === 'running' && task.timerStartedAt) {
+      return base + Math.max(0, timerTick - task.timerStartedAt);
     }
+    return base;
+  };
+
+  const startTaskTimer = useCallback((task) => {
+    handleUpdateTask(task, { status: 'WIP', timerState: 'running', timerStartedAt: Date.now() });
+  }, [clientLogs]);
+
+  const pauseTaskTimer = useCallback((task) => {
+    if (task.timerState !== 'running' || !task.timerStartedAt) return;
+    const elapsedMs = (task.elapsedMs || 0) + (Date.now() - task.timerStartedAt);
+    handleUpdateTask(task, { timerState: 'paused', timerStartedAt: null, elapsedMs, timeTaken: formatDuration(elapsedMs) });
+  }, [clientLogs]);
+
+  const stopTaskTimer = useCallback((task) => {
+    const elapsedMs = task.timerState === 'running' && task.timerStartedAt
+      ? (task.elapsedMs || 0) + (Date.now() - task.timerStartedAt)
+      : (task.elapsedMs || 0);
+    handleUpdateTask(task, { timerState: 'stopped', timerStartedAt: null, elapsedMs, timeTaken: formatDuration(elapsedMs) });
+  }, [clientLogs]);
+
+  const handleChangeStatus = (task, newStatus) => {
+    let timerUpdate = {};
+    if (newStatus === 'Done' && (task.timerState === 'running' || task.timerState === 'paused')) {
+      const elapsedMs = task.timerState === 'running' && task.timerStartedAt
+        ? (task.elapsedMs || 0) + (Date.now() - task.timerStartedAt)
+        : (task.elapsedMs || 0);
+      timerUpdate = { timerState: 'stopped', timerStartedAt: null, elapsedMs, timeTaken: formatDuration(elapsedMs) };
+    }
+    handleUpdateTask(task, { status: newStatus, ...timerUpdate });
+    setDetailTask(prev => prev?.id === task.id ? { ...prev, status: newStatus, ...timerUpdate } : prev);
   };
 
   // Group tasks by client
@@ -451,93 +474,134 @@ const HomeView = ({
                   )}
                 </div>
 
-                {/* Task rows */}
+                {/* Task rows — same functionality as client view */}
                 <div className="space-y-2 pl-9">
-                  {tasks.map(task => (
-                    <div
-                      key={task.id}
-                      onClick={() => setDetailTask(task)}
-                      className="bg-white rounded-xl border border-slate-100 shadow-sm px-4 py-3 flex items-center gap-3 hover:border-slate-200 hover:shadow-md transition-all cursor-pointer"
-                    >
-                      {/* Clickable status dot — cycles Pending → WIP → Done */}
-                      <button
-                        onClick={(e) => handleCycleStatus(e, task)}
-                        title={`Status: ${task.status} — click to advance`}
-                        className={`w-3 h-3 rounded-full flex-shrink-0 transition-transform hover:scale-125 focus:outline-none ${
-                          task.status === 'Done' ? 'bg-emerald-400' :
-                          task.status === 'WIP' ? 'bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.5)]' : 'bg-orange-400'
+                  {tasks.map(task => {
+                    const elapsed = getElapsedMs(task);
+                    const isRunning = task.timerState === 'running';
+                    const isPaused = task.timerState === 'paused';
+                    const isStopped = task.timerState === 'stopped';
+                    const showTimer = !task.archived && task.status !== 'Done';
+                    return (
+                      <div
+                        key={task.id}
+                        className={`bg-white rounded-xl border shadow-sm px-4 py-3 transition-all ${
+                          isRunning ? 'border-blue-300 shadow-blue-100' : 'border-slate-100 hover:border-slate-200 hover:shadow-md'
                         }`}
-                      />
+                      >
+                        <div className="flex items-center gap-3">
+                          {/* Status dot */}
+                          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                            task.status === 'Done' ? 'bg-emerald-400' :
+                            task.status === 'WIP' ? 'bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.5)]' : 'bg-orange-400'
+                          }`} />
 
-                      {/* Task info */}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-slate-800 truncate">{task.name || task.comment}</p>
-                        {task.name && task.comment && (
-                          <p className="text-xs text-slate-500 truncate mt-0.5">{task.comment}</p>
-                        )}
+                          {/* Task name — clickable opens detail panel */}
+                          <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setDetailTask(task)}>
+                            <p className="text-sm font-semibold text-slate-800 truncate">{task.name || task.comment}</p>
+                            {task.name && task.comment && (
+                              <p className="text-xs text-slate-500 truncate mt-0.5">{task.comment}</p>
+                            )}
+                            <div className="flex items-center gap-2 mt-1 flex-wrap">
+                              {task.category && (
+                                <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600">
+                                  <Tag size={9} /> {task.category}
+                                </span>
+                              )}
+                              {task.dueDate && (
+                                <span className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                                  isTaskOverdue(task) ? 'bg-red-50 text-red-600' : 'bg-slate-50 text-slate-500'
+                                }`}>
+                                  <Calendar size={9} /> {task.dueDate}
+                                </span>
+                              )}
+                              {elapsed > 0 && (
+                                <span className={`flex items-center gap-1 text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full ${
+                                  isRunning ? 'bg-blue-50 text-blue-700' : 'bg-slate-50 text-slate-500'
+                                }`}>
+                                  <Clock size={9} /> {formatDuration(elapsed)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Controls */}
+                          <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                            {/* Status dropdown */}
+                            {!task.archived ? (
+                              <select
+                                className={`text-[10px] border-none rounded-md px-1.5 py-1 font-semibold outline-none cursor-pointer ${
+                                  task.status === 'Done' ? 'bg-emerald-100 text-emerald-700' :
+                                  task.status === 'WIP' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'
+                                }`}
+                                value={task.status || 'Pending'}
+                                onChange={(e) => handleChangeStatus(task, e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <option value="Pending">Pending</option>
+                                <option value="WIP">WIP</option>
+                                <option value="Done">Done</option>
+                              </select>
+                            ) : (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Archived</span>
+                            )}
+
+                            {/* Timer controls */}
+                            {showTimer && (
+                              <div className="flex items-center gap-1">
+                                {(task.timerState === 'idle' || task.timerState === 'stopped' || !task.timerState) && (
+                                  <button onClick={(e) => { e.stopPropagation(); startTaskTimer(task); }} className="p-1 rounded border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-all" title="Start timer">
+                                    <Play size={11} />
+                                  </button>
+                                )}
+                                {isRunning && (
+                                  <>
+                                    <button onClick={(e) => { e.stopPropagation(); pauseTaskTimer(task); }} className="p-1 rounded border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 transition-all" title="Pause timer">
+                                      <Pause size={11} />
+                                    </button>
+                                    <button onClick={(e) => { e.stopPropagation(); stopTaskTimer(task); }} className="p-1 rounded border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-all" title="Stop timer">
+                                      <Square size={11} />
+                                    </button>
+                                  </>
+                                )}
+                                {isPaused && (
+                                  <>
+                                    <button onClick={(e) => { e.stopPropagation(); startTaskTimer(task); }} className="p-1 rounded border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-all" title="Resume timer">
+                                      <Play size={11} />
+                                    </button>
+                                    <button onClick={(e) => { e.stopPropagation(); stopTaskTimer(task); }} className="p-1 rounded border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-all" title="Stop timer">
+                                      <Square size={11} />
+                                    </button>
+                                  </>
+                                )}
+                                {/* Archive */}
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleArchiveTask(task); }}
+                                  className="p-1 rounded-md text-slate-300 hover:text-amber-500 hover:bg-amber-50 transition-all"
+                                  title="Archive task"
+                                >
+                                  <Archive size={11}/>
+                                </button>
+                              </div>
+                            )}
+                            {!showTimer && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleArchiveTask(task); }}
+                                className={`p-1 rounded-md transition-all ${
+                                  task.archived
+                                    ? 'text-amber-500 hover:text-amber-700 hover:bg-amber-50'
+                                    : 'text-slate-300 hover:text-amber-500 hover:bg-amber-50'
+                                }`}
+                                title={task.archived ? 'Unarchive task' : 'Archive task'}
+                              >
+                                {task.archived ? <ArchiveRestore size={11}/> : <Archive size={11}/>}
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       </div>
-
-                      {/* Meta: category, due date, status, timer */}
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        {task.category && (
-                          <span className="hidden sm:flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600">
-                            <Tag size={9} /> {task.category}
-                          </span>
-                        )}
-                        {task.dueDate && (
-                          <span className={`hidden md:flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                            isTaskOverdue(task) ? 'bg-red-50 text-red-600' : 'bg-slate-50 text-slate-500'
-                          }`}>
-                            <Calendar size={9} /> {task.dueDate}
-                          </span>
-                        )}
-
-                        {/* Clickable status badge */}
-                        {!task.archived && (
-                          <button
-                            onClick={(e) => handleCycleStatus(e, task)}
-                            title="Click to advance status"
-                            className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full transition-opacity hover:opacity-70 ${statusColor(task.status)}`}
-                          >
-                            {task.status}
-                          </button>
-                        )}
-                        {task.archived && (
-                          <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
-                            Archived
-                          </span>
-                        )}
-
-                        {/* Timer button */}
-                        {!task.archived && (
-                          <button
-                            onClick={(e) => handleToggleTimer(e, task)}
-                            title={task.timerState === 'running' ? 'Stop timer' : 'Start timer'}
-                            className={`p-1 rounded-md transition-all ${
-                              task.timerState === 'running'
-                                ? 'text-blue-600 bg-blue-50 hover:bg-blue-100'
-                                : 'text-slate-300 hover:text-blue-500 hover:bg-blue-50'
-                            }`}
-                          >
-                            {task.timerState === 'running' ? <Square size={11} /> : <Play size={11} />}
-                          </button>
-                        )}
-
-                        {/* Archive / Unarchive button */}
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleArchiveTask(task); }}
-                          className={`p-1 rounded-md transition-all ${
-                            task.archived
-                              ? 'text-amber-500 hover:text-amber-700 hover:bg-amber-50'
-                              : 'text-slate-300 hover:text-amber-500 hover:bg-amber-50'
-                          }`}
-                          title={task.archived ? 'Unarchive task' : 'Archive task'}
-                        >
-                          {task.archived ? <ArchiveRestore size={11}/> : <Archive size={11}/>}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             );

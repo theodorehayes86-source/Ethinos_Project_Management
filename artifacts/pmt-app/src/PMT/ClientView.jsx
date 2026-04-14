@@ -18,7 +18,7 @@ const ClientView = ({
   selectedClient, setSelectedClient, clients = [], setClients, 
   clientLogs = {}, setClientLogs, clientSearch = "", setClientSearch,
   users = [], setUsers, currentUser, taskCategories = [], taskTemplates = [], setNotifications = () => {},
-  departments = [], accessibleClients = [],
+  departments = [], accessibleClients = [], syntheticClients = [],
 }) => {
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
@@ -661,7 +661,10 @@ const ClientView = ({
   // --- 1. DEEP VIEW (SINGLE CLIENT) ---
   if (selectedClient) {
     const stats = getTaskCounts(selectedClient.id);
-    const visibleTaskLogs = (clientLogs[selectedClient.id] || []).filter(log => isTaskVisible(log, currentUser));
+    const visibleTaskLogs = (clientLogs[selectedClient.id] || []).filter(log => {
+      if (selectedClient.isEthinos && String(log.assigneeId) !== String(currentUser?.id)) return false;
+      return isTaskVisible(log, currentUser);
+    });
     const archivedCount = visibleTaskLogs.filter(log => log.archived).length;
     const filteredTaskLogs = visibleTaskLogs.filter(log => {
       if (!showArchived && log.archived) return false;
@@ -2582,6 +2585,48 @@ const ClientView = ({
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {/* Always show Ethinos internal client in My Clients */}
+        {clientViewFilter === 'mine' && (() => {
+          const ethinos = syntheticClients.find(c => c.isEthinos);
+          if (!ethinos) return null;
+          if (clientSearch && !'ethinos'.includes(clientSearch.toLowerCase())) return null;
+          const myEthinosTasks = (clientLogs['__ethinos__'] || []).filter(t => String(t.assigneeId) === String(currentUser?.id));
+          const eOpen = myEthinosTasks.filter(t => t.status === 'Pending' && !t.archived).length;
+          const eWip = myEthinosTasks.filter(t => t.status === 'WIP' && !t.archived).length;
+          const eDone = myEthinosTasks.filter(t => t.status === 'Done' && !t.archived).length;
+          return (
+            <div
+              key="__ethinos__"
+              onClick={() => setSelectedClient(ethinos)}
+              className="group bg-gradient-to-br from-indigo-50 to-white border-2 border-indigo-200 hover:border-indigo-400 hover:shadow-lg rounded-2xl p-4 shadow-sm transition-all cursor-pointer"
+            >
+              <div className="mb-3 flex items-start justify-between gap-2">
+                <div>
+                  <h3 className="text-base font-bold uppercase tracking-tight text-indigo-900 group-hover:text-indigo-700 transition-all">Ethinos Internal</h3>
+                  <p className="text-[10px] text-indigo-500 font-medium mt-0.5">Your internal tasks only</p>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200 flex-shrink-0">Internal</span>
+              </div>
+              <div className="grid grid-cols-3 gap-1.5">
+                <div className="bg-orange-50 px-2 py-2 rounded-xl border border-orange-200 text-center">
+                  <Clock size={14} className="text-orange-500 mx-auto mb-0.5" />
+                  <p className="text-xs font-bold text-orange-600">{eOpen}</p>
+                  <p className="text-[9px] text-orange-500 font-medium">Pending</p>
+                </div>
+                <div className="bg-blue-50 px-2 py-2 rounded-xl border border-blue-200 text-center">
+                  <Activity size={14} className="text-blue-500 mx-auto mb-0.5" />
+                  <p className="text-xs font-bold text-blue-600">{eWip}</p>
+                  <p className="text-[9px] text-blue-500 font-medium">WIP</p>
+                </div>
+                <div className="bg-emerald-50 px-2 py-2 rounded-xl border border-emerald-200 text-center">
+                  <CheckCircle size={14} className="text-emerald-500 mx-auto mb-0.5" />
+                  <p className="text-xs font-bold text-emerald-600">{eDone}</p>
+                  <p className="text-[9px] text-emerald-500 font-medium">Done</p>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
         {filteredClients.map(c => {
           const counts = getTaskCounts(c.id);
           const staff = getProjectStaff(c.name);
