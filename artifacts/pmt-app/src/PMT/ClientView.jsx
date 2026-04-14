@@ -18,7 +18,7 @@ const ClientView = ({
   selectedClient, setSelectedClient, clients = [], setClients, 
   clientLogs = {}, setClientLogs, clientSearch = "", setClientSearch,
   users = [], setUsers, currentUser, taskCategories = [], taskTemplates = [], setNotifications = () => {},
-  departments = [], accessibleClients = [], syntheticClients = [],
+  departments = [], regions = [], accessibleClients = [], syntheticClients = [],
 }) => {
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
@@ -61,6 +61,11 @@ const ClientView = ({
   const [pickerSearch, setPickerSearch] = useState("");
   const [clientViewFilter, setClientViewFilter] = useState('mine'); // 'mine' | 'available'
   const [showArchived, setShowArchived] = useState(false);
+
+  // Ethinos internal client filters (Super Admin only)
+  const [ethinosDeptFilter, setEthinosDeptFilter] = useState('All');
+  const [ethinosRegionFilter, setEthinosRegionFilter] = useState('All');
+  const [ethinosUserFilter, setEthinosUserFilter] = useState('All');
 
   // Task detail panel state
   const [detailTask, setDetailTask] = useState(null);
@@ -661,8 +666,23 @@ const ClientView = ({
   // --- 1. DEEP VIEW (SINGLE CLIENT) ---
   if (selectedClient) {
     const stats = getTaskCounts(selectedClient.id);
+    const isSuperAdmin = currentUser?.role === 'Super Admin';
     const visibleTaskLogs = (clientLogs[selectedClient.id] || []).filter(log => {
-      if (selectedClient.isEthinos && String(log.assigneeId) !== String(currentUser?.id)) return false;
+      if (selectedClient.isEthinos) {
+        if (!isSuperAdmin && String(log.assigneeId) !== String(currentUser?.id)) return false;
+        // Super Admin Ethinos filters
+        if (isSuperAdmin) {
+          if (ethinosUserFilter !== 'All' && String(log.assigneeId) !== ethinosUserFilter) return false;
+          if (ethinosDeptFilter !== 'All') {
+            const assignee = users.find(u => String(u.id) === String(log.assigneeId));
+            if (!assignee || assignee.department !== ethinosDeptFilter) return false;
+          }
+          if (ethinosRegionFilter !== 'All') {
+            const assignee = users.find(u => String(u.id) === String(log.assigneeId));
+            if (!assignee || assignee.region !== ethinosRegionFilter) return false;
+          }
+        }
+      }
       return isTaskVisible(log, currentUser);
     });
     const archivedCount = visibleTaskLogs.filter(log => log.archived).length;
@@ -763,6 +783,58 @@ const ClientView = ({
             </button>
           </div>
         </div>
+
+        {/* --- ETHINOS SUPER ADMIN FILTERS --- */}
+        {selectedClient.isEthinos && isSuperAdmin && (
+          <div className="flex flex-wrap items-center gap-2 bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-2.5">
+            <span className="text-[11px] font-bold uppercase tracking-wide text-indigo-600 mr-1">Filter by:</span>
+            {/* Department */}
+            <select
+              value={ethinosDeptFilter}
+              onChange={e => setEthinosDeptFilter(e.target.value)}
+              className="bg-white border border-indigo-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:ring-2 ring-indigo-500/20"
+            >
+              <option value="All">All Departments</option>
+              {departments.map(d => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+            {/* Region */}
+            <select
+              value={ethinosRegionFilter}
+              onChange={e => setEthinosRegionFilter(e.target.value)}
+              className="bg-white border border-indigo-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:ring-2 ring-indigo-500/20"
+            >
+              <option value="All">All Regions</option>
+              {regions.map(r => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+            </select>
+            {/* User */}
+            <select
+              value={ethinosUserFilter}
+              onChange={e => setEthinosUserFilter(e.target.value)}
+              className="bg-white border border-indigo-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:ring-2 ring-indigo-500/20"
+            >
+              <option value="All">All Users</option>
+              {users.filter(u => u.email?.endsWith('@ethinos.com')).sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(u => (
+                <option key={u.id} value={String(u.id)}>{u.name}</option>
+              ))}
+            </select>
+            {/* Reset */}
+            {(ethinosDeptFilter !== 'All' || ethinosRegionFilter !== 'All' || ethinosUserFilter !== 'All') && (
+              <button
+                onClick={() => { setEthinosDeptFilter('All'); setEthinosRegionFilter('All'); setEthinosUserFilter('All'); }}
+                className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 underline ml-1"
+              >
+                Clear
+              </button>
+            )}
+            <span className="ml-auto text-[11px] font-semibold text-indigo-500">
+              {visibleTaskLogs.length} task{visibleTaskLogs.length !== 1 ? 's' : ''} shown
+            </span>
+          </div>
+        )}
 
         {/* --- OVERALL NUMBERS ROW --- */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
