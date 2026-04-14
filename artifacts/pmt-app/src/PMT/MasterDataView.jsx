@@ -775,7 +775,7 @@ const MasterDataView = ({
     }));
 
     if (editingTemplate) {
-      if (editingTemplate.isPrebuilt) { setTemplateFormError('Pre-built templates cannot be edited.'); return; }
+      if (editingTemplate.isPrebuilt && currentUser?.role !== 'Super Admin') { setTemplateFormError('Pre-built templates cannot be edited.'); return; }
       const updated = taskTemplates.map(tpl =>
         tpl.id === editingTemplate.id
           ? { ...tpl, name: trimmedName, description: templateDesc.trim(), tasks: cleanTasks, isHomeTemplate: templateIsHome, targetRoles: templateIsHome ? templateTargetRoles : [] }
@@ -800,7 +800,7 @@ const MasterDataView = ({
 
   const handleDeleteTemplate = (id) => {
     const tpl = taskTemplates.find(t => t.id === id);
-    if (tpl?.isPrebuilt) return;
+    if (tpl?.isPrebuilt && currentUser?.role !== 'Super Admin') return;
     if (window.confirm('Delete this template? This cannot be undone.')) {
       setTaskTemplates(taskTemplates.filter(t => t.id !== id));
     }
@@ -1345,7 +1345,7 @@ const MasterDataView = ({
                       <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">{tpl.description}</p>
                     )}
                   </div>
-                  {!tpl.isPrebuilt && (
+                  {(!tpl.isPrebuilt || currentUser?.role === 'Super Admin') && (
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <button
                         onClick={() => openEditTemplateForm(tpl)}
