@@ -1726,41 +1726,91 @@ const MasterDataView = ({
             {myItems.length > 0 && (
               <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
                 <h3 className="text-sm font-bold text-slate-800">My Submissions</h3>
-                  <div className="space-y-2">
-                    {myItems.map(item => {
-                      const typeInfo = TYPES.find(t => t.id === item.type) || TYPES[2];
-                      const sm = STATUS_META[item.status] || STATUS_META['New'];
-                      return (
-                        <div key={item.id} className="border border-slate-100 rounded-xl p-3 space-y-1.5 bg-slate-50/60">
-                          <div className="flex items-center justify-between gap-2 flex-wrap">
-                            <div className="flex items-center gap-2">
-                              <span className={`flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-semibold ${typeInfo.color}`}>
-                                {typeInfo.icon} {item.type}
-                              </span>
-                              <span className="text-xs font-bold text-slate-800">{item.title}</span>
+                <div className="space-y-2">
+                  {myItems.map(item => {
+                    const typeInfo = TYPES.find(t => t.id === item.type) || TYPES[2];
+                    const sm = STATUS_META[item.status] || STATUS_META['New'];
+                    return (
+                      <div key={item.id} className="border border-slate-100 rounded-xl p-3 space-y-1.5 bg-slate-50/60">
+                        {editingFbId === item.id ? (
+                          <div className="space-y-2">
+                            <div className="flex gap-1.5 flex-wrap">
+                              {TYPES.map(t => (
+                                <button key={t.id} type="button" onClick={() => setEditingFbDraft(d => ({...d, type: t.id}))}
+                                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[10px] font-semibold transition-all ${editingFbDraft.type === t.id ? t.color : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'}`}>
+                                  {t.icon} {t.id}
+                                </button>
+                              ))}
                             </div>
-                            <span className={`flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-semibold ${sm.cls}`}>
-                              {sm.icon} {item.status}
-                            </span>
+                            <input
+                              value={editingFbDraft.title}
+                              onChange={e => setEditingFbDraft(d => ({...d, title: e.target.value}))}
+                              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-blue-400 transition-all font-semibold"
+                              placeholder="Title"
+                            />
+                            <textarea
+                              value={editingFbDraft.description}
+                              onChange={e => setEditingFbDraft(d => ({...d, description: e.target.value}))}
+                              rows={3}
+                              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-blue-400 transition-all resize-none"
+                              placeholder="Description"
+                            />
+                            <div className="flex items-center justify-end gap-2">
+                              <button type="button" onClick={cancelEdit} className="px-3 py-1 text-[11px] font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all">
+                                Cancel
+                              </button>
+                              <button type="button" onClick={() => saveEdit(item.id)} disabled={!editingFbDraft.title?.trim() || !editingFbDraft.description?.trim()}
+                                className="px-3 py-1 text-[11px] font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all disabled:opacity-50">
+                                Save
+                              </button>
+                            </div>
                           </div>
-                          <p className="text-xs text-slate-500 leading-relaxed">{item.description}</p>
-                          {item.reply && (
-                            <div className="ml-2 pl-3 border-l-2 border-indigo-200 space-y-1 mt-1">
-                              <div className="flex items-center gap-1.5">
-                                <CornerDownLeft size={10} className="text-indigo-400"/>
-                                <span className="text-[10px] font-semibold text-indigo-600">{item.replyAdminName || 'Admin'}</span>
-                                {item.replyTimestamp && (
-                                  <span className="text-[10px] text-slate-400">· {new Date(item.replyTimestamp).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}</span>
-                                )}
+                        ) : (
+                          <>
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <div className="flex items-center gap-2">
+                                <span className={`flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-semibold ${typeInfo.color}`}>
+                                  {typeInfo.icon} {item.type}
+                                </span>
+                                <span className="text-xs font-bold text-slate-800">{item.title}</span>
                               </div>
-                              <p className="text-xs text-indigo-800 leading-relaxed">{item.reply}</p>
+                              <div className="flex items-center gap-1.5">
+                                <span className={`flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-semibold ${sm.cls}`}>
+                                  {sm.icon} {item.status}
+                                </span>
+                                <button onClick={() => startEdit(item)} className="p-1 text-slate-300 hover:text-blue-500 transition-all" title="Edit">
+                                  <Edit2 size={13}/>
+                                </button>
+                                {item.status === 'Resolved' && !item.archived && (
+                                  <button onClick={() => archiveItem(item.id)} className="p-1 text-slate-300 hover:text-slate-600 transition-all" title="Archive">
+                                    <Archive size={13}/>
+                                  </button>
+                                )}
+                                <button onClick={() => deleteItem(item.id)} className="p-1 text-slate-300 hover:text-red-500 transition-all" title="Delete">
+                                  <Trash2 size={13}/>
+                                </button>
+                              </div>
                             </div>
-                          )}
-                          <p className="text-[10px] text-slate-400 font-medium">{new Date(item.timestamp).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}</p>
-                        </div>
-                      );
-                    })}
-                  </div>
+                            <p className="text-xs text-slate-500 leading-relaxed">{item.description}</p>
+                            {item.reply && (
+                              <div className="ml-2 pl-3 border-l-2 border-indigo-200 space-y-1 mt-1">
+                                <div className="flex items-center gap-1.5">
+                                  <CornerDownLeft size={10} className="text-indigo-400"/>
+                                  <span className="text-[10px] font-semibold text-indigo-600">{item.replyAdminName || 'Admin'}</span>
+                                  {item.replyTimestamp && (
+                                    <span className="text-[10px] text-slate-400">· {new Date(item.replyTimestamp).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}</span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-indigo-800 leading-relaxed">{item.reply}</p>
+                              </div>
+                            )}
+                            <p className="text-[10px] text-slate-400 font-medium">{new Date(item.timestamp).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}</p>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
