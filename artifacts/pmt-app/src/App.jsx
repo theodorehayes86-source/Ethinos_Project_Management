@@ -1087,17 +1087,21 @@ const App = () => {
 
     // Seed DEFAULT_TASK_TEMPLATES into Firebase; merge-add any missing prebuilt IDs
     const seedTaskTemplates = async () => {
-      const snap = await get(ref(db, 'taskTemplates'));
-      const existing = snap.val();
-      if (!existing) {
-        await set(ref(db, 'taskTemplates'), DEFAULT_TASK_TEMPLATES);
-        return;
-      }
-      const existingList = Array.isArray(existing) ? existing : Object.values(existing);
-      const existingIds = new Set(existingList.map(t => t.id));
-      const missing = DEFAULT_TASK_TEMPLATES.filter(t => !existingIds.has(t.id));
-      if (missing.length > 0) {
-        await set(ref(db, 'taskTemplates'), [...existingList, ...missing]);
+      try {
+        const snap = await get(ref(db, 'taskTemplates'));
+        const existing = snap.val();
+        if (!existing) {
+          await set(ref(db, 'taskTemplates'), DEFAULT_TASK_TEMPLATES);
+          return;
+        }
+        const existingList = Array.isArray(existing) ? existing : Object.values(existing);
+        const existingIds = new Set(existingList.map(t => t.id));
+        const missing = DEFAULT_TASK_TEMPLATES.filter(t => !existingIds.has(t.id));
+        if (missing.length > 0) {
+          await set(ref(db, 'taskTemplates'), [...existingList, ...missing]);
+        }
+      } catch (err) {
+        console.error('[PMT] Failed to seed task templates into Firebase:', err);
       }
     };
     seedTaskTemplates();
@@ -1191,7 +1195,12 @@ const App = () => {
   };
   const persistTaskTemplates = (val) => {
     setTaskTemplates(val);
-    if (firebaseUser) set(ref(db, 'taskTemplates'), sanitizeForFirebase(val));
+    if (firebaseUser) {
+      set(ref(db, 'taskTemplates'), sanitizeForFirebase(val))
+        .catch(err => console.error('[PMT] Failed to save templates to Firebase:', err));
+    } else {
+      console.warn('[PMT] persistTaskTemplates called without firebaseUser — Firebase write skipped');
+    }
   };
   const persistDepartments = (val, prevVal) => {
     setDepartments(val);
