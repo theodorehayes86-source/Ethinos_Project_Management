@@ -318,6 +318,120 @@ const DEFAULT_TASK_TEMPLATES = [
       },
     ],
   },
+
+  // --- Snr Manager Home Templates ---
+  {
+    id: 'snr-manager-weekly-1',
+    name: 'Snr Manager Weekly Bundle',
+    description: 'Weekly QC, client calls, and budget approvals for Senior Managers across T1/T2 accounts.',
+    isPrebuilt: true,
+    isHomeTemplate: true,
+    targetRoles: ['Snr Manager'],
+    createdBy: null,
+    tasks: [
+      {
+        name: 'QC — T1/T2 weekly report before client send',
+        comment: 'QC Manager-submitted weekly report for commercial framing before client delivery.',
+        category: 'Reporting & Calls',
+        repeatFrequency: 'Weekly',
+        steps: [
+          'Review Manager-QC\'d report for commercial framing and accuracy',
+          'Check: does the narrative explain performance in client-friendly language?',
+          'Ensure strategic recommendations are present — not just data',
+          'Approve or return to Manager with specific comments',
+          'T1: also pass to Director for final sign-off before sending',
+        ],
+      },
+      {
+        name: 'Lead T1/T2 client call',
+        comment: 'Lead weekly client call for T1/T2 accounts — Manager to dial in, notes taken.',
+        category: 'Reporting & Calls',
+        repeatFrequency: 'Weekly',
+        steps: [
+          'Review agenda and latest metrics before call',
+          'Lead 30-min call — Manager to dial in, Sr Exec takes notes',
+          'T1: Director to join key calls (strategy, monthly, escalation)',
+          'Send call summary with actions within 2 hours',
+          'Flag any client risk to Director after call',
+        ],
+      },
+      {
+        name: 'QC — budget adjustment approvals (T1/T2)',
+        comment: 'Review and approve Manager\'s budget reallocation proposals for T1/T2.',
+        category: 'Budget & Disposition',
+        repeatFrequency: 'Weekly',
+        steps: [
+          'Review Manager\'s budget reallocation proposal for T1/T2',
+          'Cross-check against disposition quality data and CPL trends',
+          'Approve, modify, or escalate to Director if >15% total shift',
+          'Ensure changes are commercially justified and logged',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'snr-manager-monthly-1',
+    name: 'Snr Manager Monthly Bundle',
+    description: 'Monthly review deck, bid strategy sign-off, test roadmap approval, and client health review for Senior Managers.',
+    isPrebuilt: true,
+    isHomeTemplate: true,
+    targetRoles: ['Snr Manager'],
+    createdBy: null,
+    tasks: [
+      {
+        name: 'Build and present monthly review deck (T1/T2)',
+        comment: 'Build, QC, and present the monthly review deck for T1/T2 clients.',
+        category: 'Reporting & Calls',
+        repeatFrequency: 'Monthly',
+        steps: [
+          'QC Sr Exec draft — check all data, narrative, and structure',
+          'Add strategic layer: learnings, test results, next month plan',
+          'Build executive summary slide: 5 bullets, leadership-ready',
+          'T1: Director to present / co-present — SM to support',
+          'T2: SM to present — Manager to support on data queries',
+          'Debrief with team post-call',
+        ],
+      },
+      {
+        name: 'Sign off bid strategy changes (T1/T2)',
+        comment: 'Review and approve Manager\'s TCPA calibration and bid strategy proposals.',
+        category: 'Quality & Bid Strategy',
+        repeatFrequency: 'Monthly',
+        steps: [
+          'Review Manager\'s TCPA calibration proposals',
+          'Validate conversion volume: 30+ in 30 days minimum',
+          'Approve target — document rationale in account notes',
+          'Monitor post-change performance for 14 days',
+          'Escalate to Director if Smart Bidding causes material volume drop',
+        ],
+      },
+      {
+        name: 'Test & learn roadmap approval',
+        comment: 'Review and approve test proposals from Manager / Sr Exec before running.',
+        category: 'Internal & Strategy',
+        repeatFrequency: 'Monthly',
+        steps: [
+          'Review test proposals submitted by Manager / Sr Exec',
+          'Challenge: is hypothesis clear? Is only one variable isolated?',
+          'Approve, modify, or defer tests',
+          'Update test roadmap and share with Director monthly',
+        ],
+      },
+      {
+        name: 'Capacity & client health review',
+        comment: 'Review team hours vs budget and flag over-serviced or at-risk accounts.',
+        category: 'Internal & Strategy',
+        repeatFrequency: 'Monthly',
+        steps: [
+          'Review hours logged per client vs hours budgeted for the month',
+          'Flag over-serviced accounts relative to revenue',
+          'Flag accounts showing early churn signals — share plan with Director',
+          'Update client health tracker: RAG status per client',
+          'Raise resourcing needs before they become delivery issues',
+        ],
+      },
+    ],
+  },
 ];
 
 const MicrosoftProfileSetup = ({ firebaseUser, departments, regions, onComplete, onSignOut }) => {
