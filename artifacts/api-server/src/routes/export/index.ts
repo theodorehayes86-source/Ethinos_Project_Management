@@ -71,6 +71,34 @@ function hoursFromMs(ms: number): number {
   return Math.round((ms / MS_PER_HOUR) * 100) / 100;
 }
 
+/** Tasks default to billable; only explicitly false means non-billable. */
+function isBillable(task: { billable?: boolean }): boolean {
+  return task.billable !== false;
+}
+
+interface BillableSummary {
+  billableHours: number;
+  billableCount: number;
+  nonBillableHours: number;
+  nonBillableCount: number;
+}
+
+function buildBillableSummary(taskList: FilteredTask[]): BillableSummary {
+  let billableHours = 0, billableCount = 0;
+  let nonBillableHours = 0, nonBillableCount = 0;
+  for (const t of taskList) {
+    const h = hoursFromMs(t.elapsedMs || 0);
+    if (isBillable(t)) {
+      billableHours = Math.round((billableHours + h) * 100) / 100;
+      billableCount += 1;
+    } else {
+      nonBillableHours = Math.round((nonBillableHours + h) * 100) / 100;
+      nonBillableCount += 1;
+    }
+  }
+  return { billableHours, billableCount, nonBillableHours, nonBillableCount };
+}
+
 interface FilteredTask extends TaskLog {
   clientId: string;
   clientName: string;
@@ -81,6 +109,7 @@ async function fetchFilteredTasks(
   toDate: Date | null,
   clientId: string | null,
   category: string | null,
+  billableFilter: boolean | null,
 ): Promise<FilteredTask[]> {
   const [clientLogsRaw, clientsRaw] = await Promise.all([
     readFirebasePath<Record<string, TaskLog[] | Record<string, TaskLog>>>("clientLogs"),
@@ -111,6 +140,9 @@ async function fetchFilteredTasks(
       if (!log || !log.id) continue;
       if (category && log.category !== category) continue;
 
+      // Billable filter: null = all, true = billable only, false = non-billable only
+      if (billableFilter !== null && isBillable(log) !== billableFilter) continue;
+
       const taskDate = parseTaskDate(log.date);
       if (fromDate && taskDate && taskDate < fromDate) continue;
       if (toDate && taskDate) {
@@ -124,6 +156,12 @@ async function fetchFilteredTasks(
   }
 
   return tasks;
+}
+
+function parseBillableFilter(param: unknown): boolean | null {
+  if (param === "true") return true;
+  if (param === "false") return false;
+  return null;
 }
 
 /* ─── Middleware: API key check ─── */
@@ -155,6 +193,7 @@ router.use((req, res, next) => {
  *   to         ISO date (e.g. 2026-04-30)  optional
  *   clientId   filter to a specific client  optional
  *   category   filter to a specific tag     optional
+ *   billable   "true" = billable only | "false" = non-billable only  optional
  *   detail     "true" to include raw task list
  */
 router.get("/hours", async (req, res): Promise<void> => {
@@ -162,22 +201,41 @@ router.get("/hours", async (req, res): Promise<void> => {
   const toDate = parseOptionalDate(req.query.to);
   const clientIdFilter = typeof req.query.clientId === "string" ? req.query.clientId : null;
   const categoryFilter = typeof req.query.category === "string" ? req.query.category : null;
+  const billableFilter = parseBillableFilter(req.query.billable);
   const includeDetail = req.query.detail === "true";
 
-  req.log.info({ fromDate, toDate, clientIdFilter, categoryFilter }, "Fetching export hours");
+  req.log.info({ fromDate, toDate, clientIdFilter, categoryFilter, billableFilter }, "Fetching export hours");
 
-  const tasks = await fetchFilteredTasks(fromDate, toDate, clientIdFilter, categoryFilter);
+  const tasks = await fetchFilteredTasks(fromDate, toDate, clientIdFilter, categoryFilter, billableFilter);
 
-  const byCategory = new Map<string, { hours: number; taskCount: number; tasks: FilteredTask[] }>();
+  type CategoryEntry = {
+    hours: number;
+    taskCount: number;
+    billableHours: number;
+    billableCount: number;
+    nonBillableHours: number;
+    nonBillableCount: number;
+    tasks: FilteredTask[];
+  };
+
+  const byCategory = new Map<string, CategoryEntry>();
 
   for (const task of tasks) {
     const cat = task.category || "Uncategorised";
     if (!byCategory.has(cat)) {
-      byCategory.set(cat, { hours: 0, taskCount: 0, tasks: [] });
+      byCategory.set(cat, { hours: 0, taskCount: 0, billableHours: 0, billableCount: 0, nonBillableHours: 0, nonBillableCount: 0, tasks: [] });
     }
     const entry = byCategory.get(cat)!;
-    entry.hours = Math.round((entry.hours + hoursFromMs(task.elapsedMs || 0)) * 100) / 100;
+    const h = hoursFromMs(task.elapsedMs || 0);
+    entry.hours = Math.round((entry.hours + h) * 100) / 100;
     entry.taskCount += 1;
+    if (isBillable(task)) {
+      entry.billableHours = Math.round((entry.billableHours + h) * 100) / 100;
+      entry.billableCount += 1;
+    } else {
+      entry.nonBillableHours = Math.round((entry.nonBillableHours + h) * 100) / 100;
+      entry.nonBillableCount += 1;
+    }
     entry.tasks.push(task);
   }
 
@@ -202,10 +260,15 @@ router.get("/hours", async (req, res): Promise<void> => {
       category,
       hours: data.hours,
       taskCount: data.taskCount,
+      billableHours: data.billableHours,
+      billableCount: data.billableCount,
+      nonBillableHours: data.nonBillableHours,
+      nonBillableCount: data.nonBillableCount,
       ...buildQcSummary(data.tasks),
       ...(includeDetail ? {
         tasks: data.tasks.map(t => ({
           ...t,
+          billable: isBillable(t),
           qcStatus: t.qcStatus ?? null,
           qcRating: t.qcRating ?? null,
           qcFeedback: t.qcFeedback ?? null,
@@ -216,6 +279,7 @@ router.get("/hours", async (req, res): Promise<void> => {
 
   const totalHours = categoryRows.reduce((s, r) => s + r.hours, 0);
   const totalTasks = categoryRows.reduce((s, r) => s + r.taskCount, 0);
+  const totalBillable = buildBillableSummary(tasks);
 
   res.json({
     generatedAt: new Date().toISOString(),
@@ -226,11 +290,13 @@ router.get("/hours", async (req, res): Promise<void> => {
     filters: {
       clientId: clientIdFilter,
       category: categoryFilter,
+      billable: billableFilter,
     },
     summary: {
       totalHours: Math.round(totalHours * 100) / 100,
       totalTasks,
       categories: categoryRows.length,
+      ...totalBillable,
     },
     byCategory: categoryRows,
   });
@@ -241,25 +307,46 @@ router.get("/hours", async (req, res): Promise<void> => {
 /**
  * Returns task hours grouped first by client, then by category.
  *
- * Same query params as /export/hours.
+ * Query params:
+ *   from       ISO date (e.g. 2026-04-01)  optional
+ *   to         ISO date (e.g. 2026-04-30)  optional
+ *   clientId   filter to a specific client  optional
+ *   category   filter to a specific tag     optional
+ *   billable   "true" = billable only | "false" = non-billable only  optional
+ *   detail     "true" to include raw task list per category
  */
 router.get("/hours/by-client", async (req, res): Promise<void> => {
   const fromDate = parseOptionalDate(req.query.from);
   const toDate = parseOptionalDate(req.query.to);
   const clientIdFilter = typeof req.query.clientId === "string" ? req.query.clientId : null;
   const categoryFilter = typeof req.query.category === "string" ? req.query.category : null;
+  const billableFilter = parseBillableFilter(req.query.billable);
   const includeDetail = req.query.detail === "true";
 
-  req.log.info({ fromDate, toDate }, "Fetching export hours by-client");
+  req.log.info({ fromDate, toDate, billableFilter }, "Fetching export hours by-client");
 
-  const tasks = await fetchFilteredTasks(fromDate, toDate, clientIdFilter, categoryFilter);
+  const tasks = await fetchFilteredTasks(fromDate, toDate, clientIdFilter, categoryFilter, billableFilter);
+
+  type CatEntry = {
+    hours: number;
+    taskCount: number;
+    billableHours: number;
+    billableCount: number;
+    nonBillableHours: number;
+    nonBillableCount: number;
+    tasks?: FilteredTask[];
+  };
 
   type ClientEntry = {
     clientId: string;
     clientName: string;
     totalHours: number;
     totalTasks: number;
-    byCategory: Record<string, { hours: number; taskCount: number; tasks?: FilteredTask[] }>;
+    billableHours: number;
+    billableCount: number;
+    nonBillableHours: number;
+    nonBillableCount: number;
+    byCategory: Record<string, CatEntry>;
   };
 
   const byClient = new Map<string, ClientEntry>();
@@ -271,20 +358,41 @@ router.get("/hours/by-client", async (req, res): Promise<void> => {
         clientName: task.clientName,
         totalHours: 0,
         totalTasks: 0,
+        billableHours: 0,
+        billableCount: 0,
+        nonBillableHours: 0,
+        nonBillableCount: 0,
         byCategory: {},
       });
     }
     const entry = byClient.get(task.clientId)!;
     const cat = task.category || "Uncategorised";
     if (!entry.byCategory[cat]) {
-      entry.byCategory[cat] = { hours: 0, taskCount: 0, ...(includeDetail ? { tasks: [] } : {}) };
+      entry.byCategory[cat] = {
+        hours: 0, taskCount: 0,
+        billableHours: 0, billableCount: 0,
+        nonBillableHours: 0, nonBillableCount: 0,
+        ...(includeDetail ? { tasks: [] } : {}),
+      };
     }
     const h = hoursFromMs(task.elapsedMs || 0);
-    entry.byCategory[cat].hours = Math.round((entry.byCategory[cat].hours + h) * 100) / 100;
-    entry.byCategory[cat].taskCount += 1;
-    if (includeDetail) entry.byCategory[cat].tasks!.push(task);
+    const catEntry = entry.byCategory[cat];
+    catEntry.hours = Math.round((catEntry.hours + h) * 100) / 100;
+    catEntry.taskCount += 1;
     entry.totalHours = Math.round((entry.totalHours + h) * 100) / 100;
     entry.totalTasks += 1;
+    if (isBillable(task)) {
+      catEntry.billableHours = Math.round((catEntry.billableHours + h) * 100) / 100;
+      catEntry.billableCount += 1;
+      entry.billableHours = Math.round((entry.billableHours + h) * 100) / 100;
+      entry.billableCount += 1;
+    } else {
+      catEntry.nonBillableHours = Math.round((catEntry.nonBillableHours + h) * 100) / 100;
+      catEntry.nonBillableCount += 1;
+      entry.nonBillableHours = Math.round((entry.nonBillableHours + h) * 100) / 100;
+      entry.nonBillableCount += 1;
+    }
+    if (includeDetail) catEntry.tasks!.push(task);
   }
 
   const clientRows = [...byClient.values()]
@@ -298,6 +406,7 @@ router.get("/hours/by-client", async (req, res): Promise<void> => {
 
   const totalHours = clientRows.reduce((s, r) => s + r.totalHours, 0);
   const totalTasks = clientRows.reduce((s, r) => s + r.totalTasks, 0);
+  const totalBillable = buildBillableSummary(tasks);
 
   res.json({
     generatedAt: new Date().toISOString(),
@@ -308,11 +417,13 @@ router.get("/hours/by-client", async (req, res): Promise<void> => {
     filters: {
       clientId: clientIdFilter,
       category: categoryFilter,
+      billable: billableFilter,
     },
     summary: {
       totalHours: Math.round(totalHours * 100) / 100,
       totalTasks,
       clients: clientRows.length,
+      ...totalBillable,
     },
     byClient: clientRows,
   });
@@ -329,6 +440,7 @@ router.get("/hours/by-client", async (req, res): Promise<void> => {
  *   to         ISO date (e.g. 2026-04-30)  optional
  *   clientId   filter to a specific client  optional
  *   category   filter to a specific tag     optional
+ *   billable   "true" = billable only | "false" = non-billable only  optional
  *   groupBy    "category" (default) | "client" | "both"
  *   detail     "true" to include raw task list per group
  */
@@ -337,18 +449,32 @@ router.get("/hours/by-date", async (req, res): Promise<void> => {
   const toDate = parseOptionalDate(req.query.to);
   const clientIdFilter = typeof req.query.clientId === "string" ? req.query.clientId : null;
   const categoryFilter = typeof req.query.category === "string" ? req.query.category : null;
+  const billableFilter = parseBillableFilter(req.query.billable);
   const includeDetail = req.query.detail === "true";
   const groupBy = typeof req.query.groupBy === "string" ? req.query.groupBy : "category";
 
-  req.log.info({ fromDate, toDate, groupBy }, "Fetching export hours by-date");
+  req.log.info({ fromDate, toDate, groupBy, billableFilter }, "Fetching export hours by-date");
 
-  const tasks = await fetchFilteredTasks(fromDate, toDate, clientIdFilter, categoryFilter);
+  const tasks = await fetchFilteredTasks(fromDate, toDate, clientIdFilter, categoryFilter, billableFilter);
 
-  type SubGroup = { hours: number; taskCount: number; tasks?: FilteredTask[] };
+  type SubGroup = {
+    hours: number;
+    taskCount: number;
+    billableHours: number;
+    billableCount: number;
+    nonBillableHours: number;
+    nonBillableCount: number;
+    tasks?: FilteredTask[];
+  };
+
   type DateEntry = {
     date: string;
     totalHours: number;
     totalTasks: number;
+    billableHours: number;
+    billableCount: number;
+    nonBillableHours: number;
+    nonBillableCount: number;
     byCategory?: Record<string, SubGroup>;
     byClient?: Record<string, { clientName: string } & SubGroup>;
   };
@@ -364,33 +490,73 @@ router.get("/hours/by-date", async (req, res): Promise<void> => {
         date: dateKey,
         totalHours: 0,
         totalTasks: 0,
+        billableHours: 0,
+        billableCount: 0,
+        nonBillableHours: 0,
+        nonBillableCount: 0,
         ...(groupBy === "category" || groupBy === "both" ? { byCategory: {} } : {}),
         ...(groupBy === "client" || groupBy === "both" ? { byClient: {} } : {}),
       });
     }
     const entry = byDate.get(dateKey)!;
     const h = hoursFromMs(task.elapsedMs || 0);
+    const billable = isBillable(task);
+
     entry.totalHours = Math.round((entry.totalHours + h) * 100) / 100;
     entry.totalTasks += 1;
+    if (billable) {
+      entry.billableHours = Math.round((entry.billableHours + h) * 100) / 100;
+      entry.billableCount += 1;
+    } else {
+      entry.nonBillableHours = Math.round((entry.nonBillableHours + h) * 100) / 100;
+      entry.nonBillableCount += 1;
+    }
 
     if (entry.byCategory !== undefined) {
       const cat = task.category || "Uncategorised";
       if (!entry.byCategory[cat]) {
-        entry.byCategory[cat] = { hours: 0, taskCount: 0, ...(includeDetail ? { tasks: [] } : {}) };
+        entry.byCategory[cat] = {
+          hours: 0, taskCount: 0,
+          billableHours: 0, billableCount: 0,
+          nonBillableHours: 0, nonBillableCount: 0,
+          ...(includeDetail ? { tasks: [] } : {}),
+        };
       }
-      entry.byCategory[cat].hours = Math.round((entry.byCategory[cat].hours + h) * 100) / 100;
-      entry.byCategory[cat].taskCount += 1;
-      if (includeDetail) entry.byCategory[cat].tasks!.push(task);
+      const sg = entry.byCategory[cat];
+      sg.hours = Math.round((sg.hours + h) * 100) / 100;
+      sg.taskCount += 1;
+      if (billable) {
+        sg.billableHours = Math.round((sg.billableHours + h) * 100) / 100;
+        sg.billableCount += 1;
+      } else {
+        sg.nonBillableHours = Math.round((sg.nonBillableHours + h) * 100) / 100;
+        sg.nonBillableCount += 1;
+      }
+      if (includeDetail) sg.tasks!.push(task);
     }
 
     if (entry.byClient !== undefined) {
       const cid = task.clientId;
       if (!entry.byClient[cid]) {
-        entry.byClient[cid] = { clientName: task.clientName, hours: 0, taskCount: 0, ...(includeDetail ? { tasks: [] } : {}) };
+        entry.byClient[cid] = {
+          clientName: task.clientName,
+          hours: 0, taskCount: 0,
+          billableHours: 0, billableCount: 0,
+          nonBillableHours: 0, nonBillableCount: 0,
+          ...(includeDetail ? { tasks: [] } : {}),
+        };
       }
-      entry.byClient[cid].hours = Math.round((entry.byClient[cid].hours + h) * 100) / 100;
-      entry.byClient[cid].taskCount += 1;
-      if (includeDetail) entry.byClient[cid].tasks!.push(task);
+      const sg = entry.byClient[cid];
+      sg.hours = Math.round((sg.hours + h) * 100) / 100;
+      sg.taskCount += 1;
+      if (billable) {
+        sg.billableHours = Math.round((sg.billableHours + h) * 100) / 100;
+        sg.billableCount += 1;
+      } else {
+        sg.nonBillableHours = Math.round((sg.nonBillableHours + h) * 100) / 100;
+        sg.nonBillableCount += 1;
+      }
+      if (includeDetail) sg.tasks!.push(task);
     }
   }
 
@@ -416,6 +582,7 @@ router.get("/hours/by-date", async (req, res): Promise<void> => {
 
   const totalHours = dateRows.reduce((s, r) => s + r.totalHours, 0);
   const totalTasks = dateRows.reduce((s, r) => s + r.totalTasks, 0);
+  const totalBillable = buildBillableSummary(tasks);
 
   res.json({
     generatedAt: new Date().toISOString(),
@@ -426,12 +593,14 @@ router.get("/hours/by-date", async (req, res): Promise<void> => {
     filters: {
       clientId: clientIdFilter,
       category: categoryFilter,
+      billable: billableFilter,
       groupBy,
     },
     summary: {
       totalHours: Math.round(totalHours * 100) / 100,
       totalTasks,
       days: dateRows.length,
+      ...totalBillable,
     },
     byDate: dateRows,
   });
