@@ -124,6 +124,200 @@ const DEFAULT_TASK_TEMPLATES = [
       { comment: 'Review previous month engagement and refine strategy', category: 'Reporting & Analysis', repeatFrequency: 'Monthly' },
     ],
   },
+  // --- Director Home Templates ---
+  {
+    id: 'director-daily-1',
+    name: 'Portfolio KPI Review',
+    description: 'Daily portfolio pacing and flag check across all T1 clients.',
+    isPrebuilt: true,
+    isHomeTemplate: true,
+    targetRoles: ['Director'],
+    createdBy: null,
+    tasks: [
+      {
+        name: 'Portfolio KPI Review',
+        comment: 'Daily portfolio pacing and flag check across all T1 clients.',
+        category: 'Portfolio KPI Review',
+        repeatFrequency: 'Daily',
+        steps: [
+          'Scan SM-submitted daily pacing summary',
+          'Check any T1 client has pacing efficiency below 80% or above 130%',
+          'Check any T1 client\'s CPL is above target by 20%',
+          'Note any platform outages, policy flags, or billing issues escalated by team',
+          'No action on individual accounts — escalate all findings to SM',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'director-weekly-1',
+    name: 'Director Weekly Bundle',
+    description: 'Weekly KPI reviews, QC, client strategy, budget sign-offs, and team check-in for Directors.',
+    isPrebuilt: true,
+    isHomeTemplate: true,
+    targetRoles: ['Director'],
+    createdBy: null,
+    tasks: [
+      {
+        name: 'Portfolio KPI Review',
+        comment: 'Weekly KPI review — CPL / CPT target vs achieved across fleet.',
+        category: 'Portfolio KPI Review',
+        repeatFrequency: 'Weekly',
+        steps: [
+          'Review T1 clients actual CPL vs agreed target (Baja Nri, Chennai)',
+          'Review Baja Auto actual CPT vs agreed target',
+          'Review T2 client (Tata Group) CPL actual vs target',
+          'Review T3 portfolio — flag clients consistently missing CPL target 2 weeks in a row',
+          'Review total lead / conversion volume vs weekly target per client',
+          'Review spend pacing across portfolio',
+          'Read lead quality signals from disposition / CRM',
+          'Note macro factors affecting performance',
+        ],
+      },
+      {
+        name: 'Team Output & QC',
+        comment: 'QC weekly performance reports — strategic layer before client delivery.',
+        category: 'Reporting & Analysis',
+        repeatFrequency: 'Weekly',
+        steps: [
+          'Review SM-submitted weekly reports for T1 and T2 clients',
+          'Check if report explains performance in context of business objective',
+          'Check if risks and next actions are commercially sound and prioritised',
+          'Add strategic comments where SM flagged data without interpretation',
+          'Approve reports or return to SM with specific written comments',
+          'Spot-check one T3 report per week',
+        ],
+      },
+      {
+        name: 'Client Strategy',
+        comment: 'Provide strategic direction to client servicing for client-facing interactions.',
+        category: 'Strategy & Planning',
+        repeatFrequency: 'Weekly',
+        steps: [
+          'Brief client servicing team on strategic narrative for T1/T2 weekly interactions',
+          'Flag any client where strategy needs to shift based on this week\'s performance',
+          'Input on T1 clients where Director is cc\'d or expected to comment on comms',
+          'Confirm strategic position before any pitch, upsell, or scope change conversation',
+        ],
+      },
+      {
+        name: 'Budget & Commercial',
+        comment: 'Sign off all material budget shifts across portfolio.',
+        category: 'Budget Management',
+        repeatFrequency: 'Weekly',
+        steps: [
+          'Review budget shift proposals >15% flagged by SM for Director sign-off',
+          'Validate rationale: CPL trend, lead quality, disposition data — is it justified?',
+          'Approve or reject — communicate decision with clear rationale to SM same day',
+          'Log all Director-level budget decisions in shared account notes',
+        ],
+      },
+      {
+        name: 'Team Management',
+        comment: 'Weekly team check-in — SM and team leads.',
+        category: 'Other',
+        repeatFrequency: 'Weekly',
+        steps: [
+          'Weekly 1:1 or team standing with Senior Managers',
+          'Review blockers: any client, capacity, or delivery issue that needs Director decision?',
+          'Check team morale and workload — flag any team member at risk',
+          'Confirm priorities for the coming week — align SM on what needs most attention',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'director-monthly-1',
+    name: 'Director Monthly Bundle',
+    description: 'Monthly portfolio review, strategic direction, QC, commercial review, team development, and forward planning for Directors.',
+    isPrebuilt: true,
+    isHomeTemplate: true,
+    targetRoles: ['Director'],
+    createdBy: null,
+    tasks: [
+      {
+        name: 'Portfolio KPI Review',
+        comment: 'Monthly portfolio KPI review — CPL / CPT target vs achieved.',
+        category: 'Portfolio KPI Review',
+        repeatFrequency: 'Monthly',
+        steps: [
+          'Review CPL / CPT actual vs agreed target for every client T1, T2, T3',
+          'Identify clients missing target for 2+ consecutive months',
+          'Review lead / conversion volume trend per client (growing, stable, or declining)',
+          'Review lead quality trend: is % junk leads improving or deteriorating?',
+          'Review spend efficiency: is the R2.5L blended revenue target being met per person?',
+          'Identify clients at risk of churn based on performance trend + client feedback',
+          'Identify clients showing strong performance — flag upsell or scope expansion',
+        ],
+      },
+      {
+        name: 'Client Strategy',
+        comment: 'Set monthly strategic direction — input to ops team for month.',
+        category: 'Strategy & Planning',
+        repeatFrequency: 'Monthly',
+        steps: [
+          'Review monthly data pack submitted by ops team (Sr Exec / Manager level)',
+          'Identify 2–3 strategic themes from the month\'s data per T1 client',
+          'Flag strategic recommendations per client: what should change next month?',
+          'Input on test and learn agenda: which hypotheses are worth headlining next month?',
+          'Input on client servicing on strategic talking points for monthly review meetings',
+          'Flag any T1 client where Director should attend the monthly review call',
+        ],
+      },
+      {
+        name: 'Team Output & QC',
+        comment: 'QC monthly data inputs from ops before handoff to client servicing.',
+        category: 'Reporting & Analysis',
+        repeatFrequency: 'Monthly',
+        steps: [
+          'Review monthly data pack from ops — is data complete, accurate, and structured?',
+          'Check strategic warnings section: is the interpretation commercially sound?',
+          'Check next month action plan: is it prioritised by business impact?',
+          'Approve data pack for handoff to client servicing — or return with comments',
+          'Spot-check one T3 monthly data submission per month',
+        ],
+      },
+      {
+        name: 'Budget & Commercial',
+        comment: 'Monthly commercial review — revenue, capacity, and portfolio.',
+        category: 'Budget Management',
+        repeatFrequency: 'Monthly',
+        steps: [
+          'Review total portfolio revenue vs target — are we on track for the month?',
+          'Review hours per person vs R2.5L blended revenue target',
+          'Review COD model efficiency: junior hours vs senior hours per tier',
+          'Identify accounts over-serviced relative to their revenue contribution',
+          'Identify accounts under-serviced — risk to retention',
+          'Agree resourcing plan for the coming month with SM',
+        ],
+      },
+      {
+        name: 'Team Management',
+        comment: 'Monthly team performance and development review.',
+        category: 'Other',
+        repeatFrequency: 'Monthly',
+        steps: [
+          'Review output quality per team member — based on SM feedback',
+          'Check if any team member\'s performance volume is declining',
+          'Review test and learn results: are the team generating meaningful hypotheses?',
+          'Set priorities and goals for the team for next month',
+          'Celebrate wins — share top performance moments across the team',
+        ],
+      },
+      {
+        name: 'Internal & Planning',
+        comment: 'Forward planning — next month strategy and commercial pipeline.',
+        category: 'Strategy & Planning',
+        repeatFrequency: 'Monthly',
+        steps: [
+          'Review any upcoming client briefs, campaigns, or seasonal moments',
+          'Flag resource needs before they become delivery problems',
+          'Identify new business or upsell opportunities from this month\'s performance',
+          'Review platform updates, product changes, or market developments relevant to client strategy',
+        ],
+      },
+    ],
+  },
 ];
 
 const MicrosoftProfileSetup = ({ firebaseUser, departments, regions, onComplete, onSignOut }) => {
@@ -313,11 +507,19 @@ const App = () => {
     };
     seedUsers();
 
-    // Seed DEFAULT_TASK_TEMPLATES into Firebase if the taskTemplates node is empty
+    // Seed DEFAULT_TASK_TEMPLATES into Firebase; merge-add any missing prebuilt IDs
     const seedTaskTemplates = async () => {
       const snap = await get(ref(db, 'taskTemplates'));
-      if (!snap.exists()) {
+      const existing = snap.val();
+      if (!existing) {
         await set(ref(db, 'taskTemplates'), DEFAULT_TASK_TEMPLATES);
+        return;
+      }
+      const existingList = Array.isArray(existing) ? existing : Object.values(existing);
+      const existingIds = new Set(existingList.map(t => t.id));
+      const missing = DEFAULT_TASK_TEMPLATES.filter(t => !existingIds.has(t.id));
+      if (missing.length > 0) {
+        await set(ref(db, 'taskTemplates'), [...existingList, ...missing]);
       }
     };
     seedTaskTemplates();
@@ -1046,6 +1248,7 @@ const App = () => {
               users={users}
               departments={departments}
               onNavigateToClients={() => setActiveTab('clients')}
+              taskTemplates={taskTemplates}
             />
           )}
 

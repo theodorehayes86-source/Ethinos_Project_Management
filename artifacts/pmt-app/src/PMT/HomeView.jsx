@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { format, parse, isBefore } from 'date-fns';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
-import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, CheckCircle, Tag, Calendar, Archive, ArchiveRestore } from 'lucide-react';
+import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, CheckCircle, Tag, Calendar, Archive, ArchiveRestore, LayoutTemplate, ChevronDown } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import TaskDetailPanel from './TaskDetailPanel';
 
@@ -21,6 +21,7 @@ const HomeView = ({
   departments = [],
   onNavigateToClients,
   setNotifications = () => {},
+  taskTemplates = [],
 }) => {
   const isManagement = managementRoles.includes(currentUser?.role);
   const allClientOptions = useMemo(
@@ -56,6 +57,73 @@ const HomeView = ({
   const [estimatedMins, setEstimatedMins] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [detailTask, setDetailTask] = useState(null);
+
+  // --- Home Template state ---
+  const [showHomeTemplateModal, setShowHomeTemplateModal] = useState(false);
+  const [homeTemplateFilter, setHomeTemplateFilter] = useState('All');
+  const [selectedHomeTemplateId, setSelectedHomeTemplateId] = useState(null);
+  const [expandedTemplateTasks, setExpandedTemplateTasks] = useState({});
+
+  const roleHomeTemplates = useMemo(() => {
+    return taskTemplates.filter(t => {
+      if (!t.isHomeTemplate) return false;
+      if (!t.targetRoles || t.targetRoles.length === 0) return true;
+      return t.targetRoles.includes(currentUser?.role);
+    });
+  }, [taskTemplates, currentUser]);
+
+  const filteredHomeTemplates = useMemo(() => {
+    if (homeTemplateFilter === 'All') return roleHomeTemplates;
+    return roleHomeTemplates.filter(t =>
+      (t.tasks || []).some(task => task.repeatFrequency === homeTemplateFilter)
+    );
+  }, [roleHomeTemplates, homeTemplateFilter]);
+
+  const handleApplyHomeTemplate = () => {
+    const tpl = roleHomeTemplates.find(t => t.id === selectedHomeTemplateId);
+    if (!tpl) return;
+    const today = format(new Date(), 'do MMM yyyy');
+    const newTasks = (tpl.tasks || []).map((taskItem, i) => ({
+      id: Date.now() + Math.random() + i,
+      name: taskItem.name || taskItem.comment,
+      comment: taskItem.comment || '',
+      status: 'Pending',
+      date: today,
+      dueDate: null,
+      assigneeId: currentUser?.id || null,
+      assigneeName: currentUser?.name || null,
+      creatorId: currentUser?.id || null,
+      creatorName: currentUser?.name || 'Unassigned',
+      creatorRole: currentUser?.role || 'Employee',
+      category: taskItem.category || 'Other',
+      repeatFrequency: taskItem.repeatFrequency || 'Once',
+      steps: (taskItem.steps || []).map((label, si) => ({
+        id: `step-${Date.now()}-${i}-${si}`,
+        label,
+        checked: false,
+      })),
+      billable: false,
+      departments: currentUser?.department ? [currentUser.department] : [],
+      timerState: 'idle',
+      timerStartedAt: null,
+      elapsedMs: 0,
+      timeTaken: null,
+      result: '',
+      qcEnabled: false,
+      qcAssigneeId: null,
+      qcAssigneeName: null,
+      qcStatus: null,
+      qcRating: null,
+      qcFeedback: null,
+      qcReviewedAt: null,
+    }));
+    const existing = clientLogs['__ethinos__'] || [];
+    setClientLogs({ ...clientLogs, '__ethinos__': [...newTasks, ...existing] });
+    setShowHomeTemplateModal(false);
+    setSelectedHomeTemplateId(null);
+    setHomeTemplateFilter('All');
+    setExpandedTemplateTasks({});
+  };
 
   const selectedClient = useMemo(
     () => allClientOptions.find(c => c.id === selectedClientId),
@@ -287,6 +355,14 @@ const HomeView = ({
             {showArchived ? <ArchiveRestore size={12}/> : <Archive size={12}/>}
             {showArchived ? 'Hide Archived' : `Archived${myArchivedTasks.length > 0 ? ` (${myArchivedTasks.length})` : ''}`}
           </button>
+          {roleHomeTemplates.length > 0 && (
+            <button
+              onClick={() => { setShowHomeTemplateModal(true); setSelectedHomeTemplateId(null); setHomeTemplateFilter('All'); setExpandedTemplateTasks({}); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-all"
+            >
+              <LayoutTemplate size={12} /> Use Template
+            </button>
+          )}
           <button
             onClick={openAddTaskModal}
             className="bg-slate-900 text-white px-3 py-1.5 rounded-lg font-semibold text-xs hover:bg-slate-800 transition-all flex items-center gap-1.5 shadow-sm"
@@ -408,6 +484,169 @@ const HomeView = ({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* HOME TEMPLATE PICKER MODAL */}
+      {showHomeTemplateModal && (
+        <div className="fixed inset-0 z-[750] flex items-start justify-center bg-slate-900/30 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 my-8 flex flex-col" style={{ maxHeight: '90vh' }}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
+                  <LayoutTemplate size={15} className="text-indigo-600" />
+                </div>
+                <h3 className="text-base font-bold text-slate-800">Apply Role Template</h3>
+              </div>
+              <button
+                onClick={() => { setShowHomeTemplateModal(false); setSelectedHomeTemplateId(null); }}
+                className="p-1.5 hover:bg-slate-100 rounded-lg transition-all"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Frequency filter tabs */}
+            <div className="px-6 pt-4 pb-2 flex-shrink-0">
+              <div className="flex gap-1.5 bg-slate-100 rounded-xl p-1">
+                {['All', 'Daily', 'Weekly', 'Monthly'].map(f => (
+                  <button
+                    key={f}
+                    onClick={() => { setHomeTemplateFilter(f); setSelectedHomeTemplateId(null); }}
+                    className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                      homeTemplateFilter === f
+                        ? 'bg-white text-slate-900 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Template list */}
+            <div className="flex-1 overflow-y-auto px-6 py-3 space-y-3">
+              {filteredHomeTemplates.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <LayoutTemplate size={32} className="text-slate-200 mb-3" />
+                  <p className="text-sm font-semibold text-slate-500">No templates for this frequency</p>
+                  <p className="text-xs text-slate-400 mt-1">Try switching to "All" to see all available templates.</p>
+                </div>
+              ) : (
+                filteredHomeTemplates.map(tpl => {
+                  const isSelected = selectedHomeTemplateId === tpl.id;
+                  const tasksToShow = homeTemplateFilter === 'All'
+                    ? tpl.tasks || []
+                    : (tpl.tasks || []).filter(t => t.repeatFrequency === homeTemplateFilter);
+                  return (
+                    <div
+                      key={tpl.id}
+                      onClick={() => setSelectedHomeTemplateId(isSelected ? null : tpl.id)}
+                      className={`border rounded-xl p-4 cursor-pointer transition-all ${
+                        isSelected
+                          ? 'border-indigo-400 bg-indigo-50 shadow-sm'
+                          : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div>
+                          <p className="text-sm font-bold text-slate-800">{tpl.name}</p>
+                          {tpl.description && (
+                            <p className="text-xs text-slate-500 mt-0.5">{tpl.description}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                            {tasksToShow.length} task{tasksToShow.length !== 1 ? 's' : ''}
+                          </span>
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                            isSelected ? 'border-indigo-500 bg-indigo-500' : 'border-slate-300'
+                          }`}>
+                            {isSelected && <CheckCircle size={12} className="text-white" />}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        {tasksToShow.map((task, idx) => {
+                          const taskKey = `${tpl.id}-${idx}`;
+                          const isExpanded = expandedTemplateTasks[taskKey];
+                          return (
+                            <div key={idx} className="bg-white border border-slate-100 rounded-lg p-2.5">
+                              <div
+                                className="flex items-start gap-2 cursor-pointer"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setExpandedTemplateTasks(prev => ({ ...prev, [taskKey]: !prev[taskKey] }));
+                                }}
+                              >
+                                <span className="w-4 h-4 rounded-full bg-indigo-100 text-indigo-600 text-[9px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{idx + 1}</span>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-1.5 justify-between">
+                                    <p className="text-[11px] font-semibold text-slate-800 leading-snug">{task.name || task.comment}</p>
+                                    <div className="flex items-center gap-1 flex-shrink-0">
+                                      <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
+                                        task.repeatFrequency === 'Daily' ? 'bg-emerald-100 text-emerald-700' :
+                                        task.repeatFrequency === 'Weekly' ? 'bg-blue-100 text-blue-700' :
+                                        task.repeatFrequency === 'Monthly' ? 'bg-purple-100 text-purple-700' :
+                                        'bg-slate-100 text-slate-600'
+                                      }`}>{task.repeatFrequency}</span>
+                                      {(task.steps || []).length > 0 && (
+                                        <ChevronDown size={11} className={`text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                                      )}
+                                    </div>
+                                  </div>
+                                  {task.name && task.comment && task.name !== task.comment && (
+                                    <p className="text-[10px] text-slate-500 mt-0.5 leading-snug">{task.comment}</p>
+                                  )}
+                                </div>
+                              </div>
+                              {isExpanded && (task.steps || []).length > 0 && (
+                                <div className="mt-2 pl-6 space-y-1">
+                                  {task.steps.map((step, si) => (
+                                    <div key={si} className="flex items-start gap-1.5">
+                                      <span className="w-1 h-1 rounded-full bg-slate-400 flex-shrink-0 mt-1.5" />
+                                      <p className="text-[10px] text-slate-600 leading-snug">{step}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100 flex-shrink-0">
+              <p className="text-xs text-slate-500">
+                {selectedHomeTemplateId
+                  ? `${(roleHomeTemplates.find(t => t.id === selectedHomeTemplateId)?.tasks || []).length} task(s) will be added to Ethinos (Internal), self-assigned, dated today.`
+                  : 'Select a template above to apply it.'
+                }
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => { setShowHomeTemplateModal(false); setSelectedHomeTemplateId(null); }}
+                  className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleApplyHomeTemplate}
+                  disabled={!selectedHomeTemplateId}
+                  className="px-5 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Apply
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

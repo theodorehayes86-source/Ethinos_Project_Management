@@ -5,7 +5,7 @@ import CsvImportModal from './CsvImportModal';
 
 const REPEAT_OPTIONS = ['Daily', 'Weekly', 'Monthly', 'Once'];
 
-const emptyTask = () => ({ name: '', comment: '', category: '', repeatFrequency: 'Monthly' });
+const emptyTask = () => ({ name: '', comment: '', category: '', repeatFrequency: 'Monthly', steps: [] });
 
 const OffDeptAllToggle = ({ value, onChange, locked }) => {
   const opts = ['off', 'dept', 'all'];
@@ -144,6 +144,8 @@ const MasterDataView = ({
   const [templateDesc, setTemplateDesc] = useState('');
   const [templateTasks, setTemplateTasks] = useState([emptyTask()]);
   const [templateFormError, setTemplateFormError] = useState('');
+  const [templateIsHome, setTemplateIsHome] = useState(false);
+  const [templateTargetRoles, setTemplateTargetRoles] = useState([]);
 
   // --- FEEDBACK STATE ---
   const [fbType, setFbType] = useState('Bug');
@@ -716,6 +718,8 @@ const MasterDataView = ({
     setTemplateDesc('');
     setTemplateTasks([emptyTask()]);
     setTemplateFormError('');
+    setTemplateIsHome(false);
+    setTemplateTargetRoles([]);
     setShowTemplateForm(true);
   };
 
@@ -723,8 +727,10 @@ const MasterDataView = ({
     setEditingTemplate(tpl);
     setTemplateName(tpl.name);
     setTemplateDesc(tpl.description || '');
-    setTemplateTasks(tpl.tasks.map(t => ({ name: t.name || '', ...t })));
+    setTemplateTasks(tpl.tasks.map(t => ({ name: t.name || '', steps: [], ...t })));
     setTemplateFormError('');
+    setTemplateIsHome(tpl.isHomeTemplate || false);
+    setTemplateTargetRoles(tpl.targetRoles || []);
     setShowTemplateForm(true);
   };
 
@@ -735,6 +741,8 @@ const MasterDataView = ({
     setTemplateDesc('');
     setTemplateTasks([emptyTask()]);
     setTemplateFormError('');
+    setTemplateIsHome(false);
+    setTemplateTargetRoles([]);
   };
 
   const handleSaveTemplate = () => {
@@ -750,18 +758,27 @@ const MasterDataView = ({
     }
     if (templateTasks.length === 0) { setTemplateFormError('Add at least one task.'); return; }
 
+    if (templateIsHome && templateTargetRoles.length > 0) {
+      const invalidRoles = templateTargetRoles.filter(r => !normalizedRoles.includes(r));
+      if (invalidRoles.length > 0) {
+        setTemplateFormError(`Invalid roles: ${invalidRoles.join(', ')}. Remove them before saving.`);
+        return;
+      }
+    }
+
     const cleanTasks = templateTasks.map(t => ({
       name: t.name.trim(),
       comment: t.comment.trim(),
       category: t.category || (taskCategories[0] && (typeof taskCategories[0] === 'object' ? taskCategories[0].name : taskCategories[0])) || 'Other',
       repeatFrequency: t.repeatFrequency || 'Monthly',
+      steps: (t.steps || []).filter(s => s.trim() !== ''),
     }));
 
     if (editingTemplate) {
       if (editingTemplate.isPrebuilt) { setTemplateFormError('Pre-built templates cannot be edited.'); return; }
       const updated = taskTemplates.map(tpl =>
         tpl.id === editingTemplate.id
-          ? { ...tpl, name: trimmedName, description: templateDesc.trim(), tasks: cleanTasks }
+          ? { ...tpl, name: trimmedName, description: templateDesc.trim(), tasks: cleanTasks, isHomeTemplate: templateIsHome, targetRoles: templateIsHome ? templateTargetRoles : [] }
           : tpl
       );
       setTaskTemplates(updated);
@@ -771,6 +788,8 @@ const MasterDataView = ({
         name: trimmedName,
         description: templateDesc.trim(),
         isPrebuilt: false,
+        isHomeTemplate: templateIsHome,
+        targetRoles: templateIsHome ? templateTargetRoles : [],
         createdBy: currentUser?.id || null,
         tasks: cleanTasks,
       };
@@ -1330,6 +1349,11 @@ const MasterDataView = ({
                       {tpl.isPrebuilt && (
                         <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200 flex-shrink-0">
                           <Lock size={9}/> Prebuilt
+                        </span>
+                      )}
+                      {tpl.isHomeTemplate && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200 flex-shrink-0">
+                          Home Template{tpl.targetRoles && tpl.targetRoles.length > 0 ? ` · ${tpl.targetRoles.join(', ')}` : ''}
                         </span>
                       )}
                     </div>
@@ -2293,6 +2317,48 @@ const MasterDataView = ({
                 />
               </div>
 
+              {/* Home Template toggle */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-3 bg-indigo-50 border border-indigo-100 rounded-xl">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-800">Home / Role Template</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">Appears in the "Use Template" picker on the Home screen for the selected roles.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTemplateIsHome(v => !v)}
+                    className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${templateIsHome ? 'bg-indigo-600' : 'bg-slate-300'}`}
+                  >
+                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${templateIsHome ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+                {templateIsHome && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-700">Target Roles <span className="text-slate-400 font-normal">(leave empty = all roles)</span></label>
+                    <div className="flex flex-wrap gap-2 p-3 border border-slate-200 rounded-lg bg-white">
+                      {normalizedRoles.map(role => {
+                        const isChecked = templateTargetRoles.includes(role);
+                        return (
+                          <label key={role} className="flex items-center gap-1.5 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                setTemplateTargetRoles(prev =>
+                                  isChecked ? prev.filter(r => r !== role) : [...prev, role]
+                                );
+                              }}
+                              className="w-3.5 h-3.5 rounded accent-indigo-600"
+                            />
+                            <span className="text-xs font-medium text-slate-700">{role}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Task rows */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -2361,6 +2427,49 @@ const MasterDataView = ({
                             {REPEAT_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                           </select>
                         </div>
+                        {/* Checklist steps */}
+                        {templateIsHome && (
+                          <div className="space-y-1.5 pt-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Checklist Steps</span>
+                              <button
+                                type="button"
+                                onClick={() => updateTaskRow(idx, 'steps', [...(task.steps || []), ''])}
+                                className="text-[10px] font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-0.5"
+                              >
+                                <Plus size={10}/> Add Step
+                              </button>
+                            </div>
+                            {(task.steps || []).map((step, si) => (
+                              <div key={si} className="flex items-center gap-1.5">
+                                <span className="w-3.5 h-3.5 rounded-full border border-slate-300 bg-white flex-shrink-0 text-[8px] font-bold text-slate-400 flex items-center justify-center">{si + 1}</span>
+                                <input
+                                  value={step}
+                                  onChange={e => {
+                                    const updated = [...(task.steps || [])];
+                                    updated[si] = e.target.value;
+                                    updateTaskRow(idx, 'steps', updated);
+                                  }}
+                                  placeholder={`Step ${si + 1}…`}
+                                  className="flex-1 border border-slate-200 rounded px-2 py-1 text-xs outline-none focus:ring-1 ring-blue-500/20 bg-white"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updated = (task.steps || []).filter((_, i) => i !== si);
+                                    updateTaskRow(idx, 'steps', updated);
+                                  }}
+                                  className="p-0.5 text-slate-300 hover:text-red-400 transition-all"
+                                >
+                                  <X size={11}/>
+                                </button>
+                              </div>
+                            ))}
+                            {(task.steps || []).length === 0 && (
+                              <p className="text-[10px] text-slate-400 italic">No steps yet. Click "Add Step" to add checklist items.</p>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <button
                         onClick={() => removeTaskRow(idx)}
