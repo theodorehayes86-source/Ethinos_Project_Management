@@ -1265,7 +1265,10 @@ const App = () => {
 
     if (matched) {
       setMsLoginPending(false);
-      // Merge with live Firebase Auth info so name/email are always current
+      // Build a merged record for first-time login (when user isn't in the DB yet).
+      // For existing records the PMT database is the source of truth for the name —
+      // we only keep the email in sync from Firebase Auth to avoid Auth display-name
+      // changes overwriting names edited in the Control Center.
       const mergedRecord = {
         ...matched,
         name: firebaseUser.displayName || matched.name,
@@ -1276,13 +1279,14 @@ const App = () => {
       setUsers(prev => {
         const exists = prev.find(u => u.id === matched.id);
         if (exists) {
-          // Only update if name or email are actually stale (avoid infinite loop)
-          if (exists.name === mergedRecord.name && exists.email === mergedRecord.email) return prev;
+          // Only sync email — never override an admin-edited name with the Auth displayName
+          if (exists.email === mergedRecord.email) return prev;
           return prev.map(u => u.id === matched.id
-            ? { ...u, name: mergedRecord.name, email: mergedRecord.email }
+            ? { ...u, email: mergedRecord.email }
             : u
           );
         }
+        // New record (first login) — use Firebase Auth displayName as starting name
         return [...prev, mergedRecord];
       });
       setCurrentUserId(matched.id);
