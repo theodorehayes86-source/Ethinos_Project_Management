@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { format, parse, isBefore } from 'date-fns';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
-import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, CheckCircle, Tag, Calendar, Archive, ArchiveRestore, LayoutTemplate, ChevronDown } from 'lucide-react';
+import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, CheckCircle, Tag, Calendar, Archive, ArchiveRestore, LayoutTemplate, ChevronDown, Play, Square } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import TaskDetailPanel from './TaskDetailPanel';
 
@@ -258,6 +258,45 @@ const HomeView = ({
     setClientLogs({ ...clientLogs, [cid]: updated });
   };
 
+  const handleUpdateTask = (task, changes) => {
+    const cid = task.cid;
+    if (!cid) return;
+    const updated = (clientLogs[cid] || []).map(t =>
+      t.id === task.id ? { ...t, ...changes } : t
+    );
+    setClientLogs({ ...clientLogs, [cid]: updated });
+  };
+
+  const STATUS_CYCLE = ['Pending', 'WIP', 'Done'];
+  const handleCycleStatus = (e, task) => {
+    e.stopPropagation();
+    const current = task.status || 'Pending';
+    const idx = STATUS_CYCLE.indexOf(current);
+    const next = STATUS_CYCLE[(idx + 1) % STATUS_CYCLE.length];
+    handleUpdateTask(task, { status: next });
+    setDetailTask(prev => prev?.id === task.id ? { ...prev, status: next } : prev);
+  };
+
+  const handleToggleTimer = (e, task) => {
+    e.stopPropagation();
+    if (task.timerState === 'running') {
+      const additional = task.timerStartedAt ? Date.now() - task.timerStartedAt : 0;
+      handleUpdateTask(task, {
+        timerState: 'paused',
+        timerStartedAt: null,
+        elapsedMs: (task.elapsedMs || 0) + additional,
+      });
+      setDetailTask(prev => prev?.id === task.id
+        ? { ...prev, timerState: 'paused', timerStartedAt: null, elapsedMs: (prev.elapsedMs || 0) + additional }
+        : prev);
+    } else {
+      handleUpdateTask(task, { timerState: 'running', timerStartedAt: Date.now() });
+      setDetailTask(prev => prev?.id === task.id
+        ? { ...prev, timerState: 'running', timerStartedAt: Date.now() }
+        : prev);
+    }
+  };
+
   // Group tasks by client
   const tasksByClient = useMemo(() => {
     const groups = {};
@@ -420,11 +459,15 @@ const HomeView = ({
                       onClick={() => setDetailTask(task)}
                       className="bg-white rounded-xl border border-slate-100 shadow-sm px-4 py-3 flex items-center gap-3 hover:border-slate-200 hover:shadow-md transition-all cursor-pointer"
                     >
-                      {/* Status dot */}
-                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                        task.status === 'Done' ? 'bg-emerald-400' :
-                        task.status === 'WIP' ? 'bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.5)]' : 'bg-orange-400'
-                      }`} />
+                      {/* Clickable status dot — cycles Pending → WIP → Done */}
+                      <button
+                        onClick={(e) => handleCycleStatus(e, task)}
+                        title={`Status: ${task.status} — click to advance`}
+                        className={`w-3 h-3 rounded-full flex-shrink-0 transition-transform hover:scale-125 focus:outline-none ${
+                          task.status === 'Done' ? 'bg-emerald-400' :
+                          task.status === 'WIP' ? 'bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.5)]' : 'bg-orange-400'
+                        }`}
+                      />
 
                       {/* Task info */}
                       <div className="flex-1 min-w-0">
@@ -434,7 +477,7 @@ const HomeView = ({
                         )}
                       </div>
 
-                      {/* Meta: category, due date */}
+                      {/* Meta: category, due date, status, timer */}
                       <div className="flex items-center gap-2 flex-shrink-0">
                         {task.category && (
                           <span className="hidden sm:flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600">
@@ -448,23 +491,38 @@ const HomeView = ({
                             <Calendar size={9} /> {task.dueDate}
                           </span>
                         )}
-                        {/* Status badge */}
+
+                        {/* Clickable status badge */}
                         {!task.archived && (
-                          <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${statusColor(task.status)}`}>
+                          <button
+                            onClick={(e) => handleCycleStatus(e, task)}
+                            title="Click to advance status"
+                            className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full transition-opacity hover:opacity-70 ${statusColor(task.status)}`}
+                          >
                             {task.status}
-                          </span>
+                          </button>
                         )}
                         {task.archived && (
                           <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
                             Archived
                           </span>
                         )}
-                        {/* Timer running indicator */}
-                        {task.timerState === 'running' && (
-                          <span className="flex items-center gap-1 text-[10px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
-                            <Clock size={9} /> Live
-                          </span>
+
+                        {/* Timer button */}
+                        {!task.archived && (
+                          <button
+                            onClick={(e) => handleToggleTimer(e, task)}
+                            title={task.timerState === 'running' ? 'Stop timer' : 'Start timer'}
+                            className={`p-1 rounded-md transition-all ${
+                              task.timerState === 'running'
+                                ? 'text-blue-600 bg-blue-50 hover:bg-blue-100'
+                                : 'text-slate-300 hover:text-blue-500 hover:bg-blue-50'
+                            }`}
+                          >
+                            {task.timerState === 'running' ? <Square size={11} /> : <Play size={11} />}
+                          </button>
                         )}
+
                         {/* Archive / Unarchive button */}
                         <button
                           onClick={(e) => { e.stopPropagation(); handleArchiveTask(task); }}
@@ -1011,12 +1069,7 @@ const HomeView = ({
           setNotifications={setNotifications}
           onClose={() => setDetailTask(null)}
           onUpdate={(updatedTask) => {
-            const cid = updatedTask.cid;
-            if (!cid) return;
-            const updatedLogs = (clientLogs[cid] || []).map(l =>
-              l.id === updatedTask.id ? { ...l, steps: updatedTask.steps, messages: updatedTask.messages, links: updatedTask.links } : l
-            );
-            setClientLogs({ ...clientLogs, [cid]: updatedLogs });
+            handleUpdateTask(updatedTask, updatedTask);
             setDetailTask(updatedTask);
           }}
         />

@@ -2058,7 +2058,7 @@ const ClientView = ({
             onClose={() => setDetailTask(null)}
             onUpdate={(updatedTask) => {
               const updatedLogs = (clientLogs[selectedClient.id] || []).map(l =>
-                l.id === updatedTask.id ? { ...l, steps: updatedTask.steps, messages: updatedTask.messages, links: updatedTask.links } : l
+                l.id === updatedTask.id ? { ...l, ...updatedTask } : l
               );
               setClientLogs({ ...clientLogs, [selectedClient.id]: updatedLogs });
               setDetailTask(updatedTask);
