@@ -5,7 +5,7 @@ import CsvImportModal from './CsvImportModal';
 
 const REPEAT_OPTIONS = ['Daily', 'Weekly', 'Monthly', 'Once'];
 
-const emptyTask = () => ({ comment: '', category: '', repeatFrequency: 'Monthly' });
+const emptyTask = () => ({ name: '', comment: '', category: '', repeatFrequency: 'Monthly' });
 
 const OffDeptAllToggle = ({ value, onChange, locked }) => {
   const opts = ['off', 'dept', 'all'];
@@ -715,7 +715,7 @@ const MasterDataView = ({
     setEditingTemplate(tpl);
     setTemplateName(tpl.name);
     setTemplateDesc(tpl.description || '');
-    setTemplateTasks(tpl.tasks.map(t => ({ ...t })));
+    setTemplateTasks(tpl.tasks.map(t => ({ name: t.name || '', ...t })));
     setTemplateFormError('');
     setShowTemplateForm(true);
   };
@@ -732,6 +732,10 @@ const MasterDataView = ({
   const handleSaveTemplate = () => {
     const trimmedName = templateName.trim();
     if (!trimmedName) { setTemplateFormError('Template name is required.'); return; }
+    if (templateTasks.some(t => !t.name?.trim())) {
+      setTemplateFormError('All task rows must have a task name.');
+      return;
+    }
     if (templateTasks.some(t => !t.comment.trim())) {
       setTemplateFormError('All task rows must have a description.');
       return;
@@ -739,6 +743,7 @@ const MasterDataView = ({
     if (templateTasks.length === 0) { setTemplateFormError('Add at least one task.'); return; }
 
     const cleanTasks = templateTasks.map(t => ({
+      name: t.name.trim(),
       comment: t.comment.trim(),
       category: t.category || (taskCategories[0] && (typeof taskCategories[0] === 'object' ? taskCategories[0].name : taskCategories[0])) || 'Other',
       repeatFrequency: t.repeatFrequency || 'Monthly',
@@ -1350,7 +1355,8 @@ const MasterDataView = ({
                     <div key={idx} className="flex items-start gap-2 p-2 bg-slate-50 rounded-lg border border-slate-100">
                       <span className="w-4 h-4 rounded-full bg-slate-200 text-slate-500 text-[9px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{idx + 1}</span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-[11px] font-medium text-slate-700 leading-snug">{task.comment}</p>
+                        {task.name && <p className="text-[11px] font-semibold text-slate-800 leading-snug">{task.name}</p>}
+                        <p className="text-[11px] font-medium text-slate-500 leading-snug mt-0.5">{task.comment}</p>
                         <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                           {task.category && (
                             <span className="text-[9px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded-full">{task.category}</span>
@@ -2314,31 +2320,39 @@ const MasterDataView = ({
                           <ChevronDown size={13}/>
                         </button>
                       </div>
-                      <div className="flex-1 grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-2">
+                      <div className="flex-1 flex flex-col gap-2">
                         <input
-                          value={task.comment}
-                          onChange={e => updateTaskRow(idx, 'comment', e.target.value)}
-                          placeholder="Task description..."
-                          className="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 ring-blue-500/20 bg-white"
+                          value={task.name || ''}
+                          onChange={e => updateTaskRow(idx, 'name', e.target.value)}
+                          placeholder="Task name (required)..."
+                          className="border border-slate-200 rounded-lg px-3 py-2 text-sm font-semibold outline-none focus:ring-2 ring-blue-500/20 bg-white"
                         />
-                        <select
-                          value={task.category}
-                          onChange={e => updateTaskRow(idx, 'category', e.target.value)}
-                          className="border border-slate-200 rounded-lg px-2 py-2 text-xs font-medium text-slate-700 outline-none bg-white"
-                        >
-                          <option value="">Category</option>
-                          {taskCategories.map(cat => {
-                            const n = typeof cat === 'object' ? cat.name : cat;
-                            return <option key={n} value={n}>{n}</option>;
-                          })}
-                        </select>
-                        <select
-                          value={task.repeatFrequency}
-                          onChange={e => updateTaskRow(idx, 'repeatFrequency', e.target.value)}
-                          className="border border-slate-200 rounded-lg px-2 py-2 text-xs font-medium text-slate-700 outline-none bg-white"
-                        >
-                          {REPEAT_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                        </select>
+                        <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-2">
+                          <input
+                            value={task.comment}
+                            onChange={e => updateTaskRow(idx, 'comment', e.target.value)}
+                            placeholder="Task description..."
+                            className="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 ring-blue-500/20 bg-white"
+                          />
+                          <select
+                            value={task.category}
+                            onChange={e => updateTaskRow(idx, 'category', e.target.value)}
+                            className="border border-slate-200 rounded-lg px-2 py-2 text-xs font-medium text-slate-700 outline-none bg-white"
+                          >
+                            <option value="">Category</option>
+                            {taskCategories.map(cat => {
+                              const n = typeof cat === 'object' ? cat.name : cat;
+                              return <option key={n} value={n}>{n}</option>;
+                            })}
+                          </select>
+                          <select
+                            value={task.repeatFrequency}
+                            onChange={e => updateTaskRow(idx, 'repeatFrequency', e.target.value)}
+                            className="border border-slate-200 rounded-lg px-2 py-2 text-xs font-medium text-slate-700 outline-none bg-white"
+                          >
+                            {REPEAT_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                          </select>
+                        </div>
                       </div>
                       <button
                         onClick={() => removeTaskRow(idx)}
