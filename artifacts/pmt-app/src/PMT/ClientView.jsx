@@ -8,6 +8,22 @@ import TaskDetailPanel from './TaskDetailPanel';
 
 const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Business Head'];
 
+const ROLE_RANK = {
+  'Super Admin':    100,
+  'Director':        90,
+  'Admin':           85,
+  'Business Head':   80,
+  'Snr Manager':     70,
+  'Manager':         60,
+  'Project Manager': 55,
+  'CSM':             55,
+  'Snr Executive':   40,
+  'Executive':       30,
+  'Employee':        25,
+  'Intern':          20,
+};
+const roleRank = (role) => ROLE_RANK[role] ?? 10;
+
 const REMINDER_OPTIONS = [
   { value: '-7', label: '7 days before' },
   { value: '-3', label: '3 days before' },
@@ -60,7 +76,7 @@ const ClientView = ({
   users = [], setUsers, currentUser, taskCategories = [], taskTemplates = [], setNotifications = () => {},
   departments = [], regions = [], accessibleClients = [], syntheticClients = [],
 }) => {
-  const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
+  const managementRoles = ['Super Admin', 'Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
   
   const [showTaskForm, setShowTaskForm] = useState(false);
@@ -151,9 +167,14 @@ const ClientView = ({
   // Permission helpers for task-level access
   const canFullyEditTask = (log) => {
     if (!currentUser) return false;
+    // Management roles can always edit any task
     if (managementRoles.includes(currentUser.role)) return true;
-    if (executionRoles.includes(currentUser.role) && managementRoles.includes(log.creatorRole)) return false;
-    return String(log.creatorId) === String(currentUser.id);
+    // Execution roles: cannot edit a task if the creator outranks them
+    const myLevel = roleRank(currentUser.role);
+    const creatorLevel = roleRank(log?.creatorRole);
+    if (creatorLevel > myLevel) return false;
+    // Same level or unranked creator: only the creator themselves can edit
+    return String(log?.creatorId) === String(currentUser.id);
   };
   const canChangeTaskStatus = (log) => {
     if (canFullyEditTask(log)) return true;
@@ -2197,6 +2218,7 @@ const ClientView = ({
             task={detailTask}
             currentUser={currentUser}
             users={users}
+            canEdit={canFullyEditTask(detailTask)}
             setNotifications={setNotifications}
             onClose={() => setDetailTask(null)}
             onUpdate={(updatedTask) => {

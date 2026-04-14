@@ -32,7 +32,7 @@ const renderMessageText = (text) => {
   });
 };
 
-const TaskDetailPanel = ({ task, currentUser, users = [], setNotifications = () => {}, onClose, onUpdate }) => {
+const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNotifications = () => {}, onClose, onUpdate }) => {
   const [steps, setSteps] = useState(() => task.steps || []);
   const [messages, setMessages] = useState(() => task.messages || []);
   const [links, setLinks] = useState(() => task.links || []);
@@ -258,13 +258,15 @@ const TaskDetailPanel = ({ task, currentUser, users = [], setNotifications = () 
                   <span className={`flex-1 text-xs ${step.checked ? 'line-through text-slate-400' : 'text-slate-700'}`}>
                     {step.label}
                   </span>
-                  <button
-                    onClick={() => handleDeleteStep(step.id)}
-                    className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all"
-                    title="Delete step"
-                  >
-                    <Trash2 size={11} />
-                  </button>
+                  {canEdit && (
+                    <button
+                      onClick={() => handleDeleteStep(step.id)}
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all"
+                      title="Delete step"
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  )}
                 </div>
               ))}
               {steps.length === 0 && (
@@ -272,24 +274,26 @@ const TaskDetailPanel = ({ task, currentUser, users = [], setNotifications = () 
               )}
             </div>
 
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={newStepLabel}
-                onChange={e => setNewStepLabel(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddStep(); } }}
-                placeholder="Add a step..."
-                className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
-              />
-              <button
-                onClick={handleAddStep}
-                disabled={!newStepLabel.trim()}
-                className="p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
-                title="Add step"
-              >
-                <Plus size={14} />
-              </button>
-            </div>
+            {canEdit && (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newStepLabel}
+                  onChange={e => setNewStepLabel(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddStep(); } }}
+                  placeholder="Add a step..."
+                  className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                />
+                <button
+                  onClick={handleAddStep}
+                  disabled={!newStepLabel.trim()}
+                  className="p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+                  title="Add step"
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
+            )}
           </section>
 
           {/* Messages */}
@@ -401,44 +405,48 @@ const TaskDetailPanel = ({ task, currentUser, users = [], setNotifications = () 
                     {link.label}
                     <ExternalLink size={9} className="flex-shrink-0 opacity-60" />
                   </a>
-                  <button
-                    onClick={() => handleDeleteLink(link.id)}
-                    className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all flex-shrink-0"
-                    title="Remove link"
-                  >
-                    <Trash2 size={11} />
-                  </button>
+                  {canEdit && (
+                    <button
+                      onClick={() => handleDeleteLink(link.id)}
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all flex-shrink-0"
+                      title="Remove link"
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
 
-            <div className="space-y-2">
-              <input
-                type="text"
-                value={newLinkLabel}
-                onChange={e => setNewLinkLabel(e.target.value)}
-                placeholder="Label (optional)"
-                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
-              />
-              <div className="flex gap-2">
+            {canEdit && (
+              <div className="space-y-2">
                 <input
-                  type="url"
-                  value={newLinkUrl}
-                  onChange={e => setNewLinkUrl(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddLink(); } }}
-                  placeholder="Paste URL..."
-                  className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                  type="text"
+                  value={newLinkLabel}
+                  onChange={e => setNewLinkLabel(e.target.value)}
+                  placeholder="Label (optional)"
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
                 />
-                <button
-                  onClick={handleAddLink}
-                  disabled={!newLinkUrl.trim()}
-                  className="p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
-                  title="Save link"
-                >
-                  <Plus size={14} />
-                </button>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={newLinkUrl}
+                    onChange={e => setNewLinkUrl(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddLink(); } }}
+                    placeholder="Paste URL..."
+                    className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                  />
+                  <button
+                    onClick={handleAddLink}
+                    disabled={!newLinkUrl.trim()}
+                    className="p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+                    title="Save link"
+                  >
+                    <Plus size={14} />
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </section>
         </div>
       </div>

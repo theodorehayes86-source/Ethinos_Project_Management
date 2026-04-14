@@ -6,7 +6,32 @@ import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Searc
 import UserPickerModal from './UserPickerModal';
 import TaskDetailPanel from './TaskDetailPanel';
 
-const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
+const managementRoles = ['Super Admin', 'Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
+
+const ROLE_RANK = {
+  'Super Admin':    100,
+  'Director':        90,
+  'Admin':           85,
+  'Business Head':   80,
+  'Snr Manager':     70,
+  'Manager':         60,
+  'Project Manager': 55,
+  'CSM':             55,
+  'Snr Executive':   40,
+  'Executive':       30,
+  'Employee':        25,
+  'Intern':          20,
+};
+const roleRank = (role) => ROLE_RANK[role] ?? 10;
+
+const canFullyEditTaskFor = (task, currentUser) => {
+  if (!currentUser || !task) return false;
+  if (managementRoles.includes(currentUser.role)) return true;
+  const myLevel = roleRank(currentUser.role);
+  const creatorLevel = roleRank(task.creatorRole);
+  if (creatorLevel > myLevel) return false;
+  return String(task.creatorId) === String(currentUser.id);
+};
 
 const HomeView = ({
   accessibleClients,
@@ -1130,6 +1155,7 @@ const HomeView = ({
           task={detailTask}
           currentUser={currentUser}
           users={users}
+          canEdit={canFullyEditTaskFor(detailTask, currentUser)}
           setNotifications={setNotifications}
           onClose={() => setDetailTask(null)}
           onUpdate={(updatedTask) => {
