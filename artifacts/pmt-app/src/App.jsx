@@ -319,6 +319,117 @@ const DEFAULT_TASK_TEMPLATES = [
     ],
   },
 
+  // --- Manager Home Templates ---
+  {
+    id: 'manager-weekly-1',
+    name: 'Manager Weekly Bundle',
+    description: 'Weekly QC, budget approvals, SQR review, and T3 client calls for Managers.',
+    isPrebuilt: true,
+    isHomeTemplate: true,
+    targetRoles: ['Manager'],
+    createdBy: null,
+    tasks: [
+      {
+        name: 'QC — weekly performance report before client',
+        comment: 'QC Sr Exec weekly report draft for accuracy and narrative before client send.',
+        category: 'Reporting & Calls',
+        repeatFrequency: 'Weekly',
+        steps: [
+          'Review Sr Exec draft for data accuracy and correct metrics',
+          'Check narrative: does it clearly explain what moved and why?',
+          'Ensure risks and next actions are commercially sound',
+          'Return with comments or approve — must be done before client send',
+          'Add strategic context where Sr Exec has flagged numbers only',
+        ],
+      },
+      {
+        name: 'Approve and execute budget adjustments',
+        comment: 'Review Sr Exec budget reallocation recommendation and approve or action.',
+        category: 'Budget & Disposition',
+        repeatFrequency: 'Weekly',
+        steps: [
+          'Review Sr Exec budget reallocation recommendation',
+          'Validate against disposition data and lead quality findings',
+          'Approve, modify, or reject — communicate rationale to Sr Exec',
+          'Action approved shifts or direct Sr Exec to implement',
+          'Log decision in recommendation tab',
+        ],
+      },
+      {
+        name: 'QC — SQR negative additions before applying',
+        comment: 'Review and approve negative keyword recommendations from Sr Exec before applying.',
+        category: 'Search Term Analysis',
+        repeatFrequency: 'Weekly',
+        steps: [
+          'Review all negative keyword recommendations from Sr Exec',
+          'Check: do any negatives risk blocking converting queries?',
+          'Approve list and direct Sr Exec to implement',
+          'Add any additional negatives identified in review',
+        ],
+      },
+      {
+        name: 'Lead T3 client call',
+        comment: 'Lead weekly T3 client call — Sr Exec to dial in and take notes.',
+        category: 'Reporting & Calls',
+        repeatFrequency: 'Weekly',
+        steps: [
+          'Review call agenda prepared by Sr Exec',
+          'Lead 30-min weekly call — Sr Exec to dial in and take notes',
+          'Send call summary with actions within 2 hours',
+          'Flag any client risk signals to SM after call',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'manager-monthly-1',
+    name: 'Manager Monthly Bundle',
+    description: 'Monthly review deck, bid strategy approval, and account health audit sign-off for Managers.',
+    isPrebuilt: true,
+    isHomeTemplate: true,
+    targetRoles: ['Manager'],
+    createdBy: null,
+    tasks: [
+      {
+        name: 'Build and present monthly review deck (T3)',
+        comment: 'QC, build, and present the monthly review deck for T3 clients.',
+        category: 'Reporting & Calls',
+        repeatFrequency: 'Monthly',
+        steps: [
+          'QC Sr Exec data inputs and narrative draft',
+          'Add strategic layer: what do the learnings mean for next month?',
+          'Build executive summary slide: 5 bullets, leadership-ready',
+          'Present to T3 client — Sr Exec to support on data queries',
+          'Debrief with Sr Exec post-call: what to improve next month',
+        ],
+      },
+      {
+        name: 'Approve bid strategy changes',
+        comment: 'Review and approve TCPA calibration proposals from Sr Exec before any changes.',
+        category: 'Quality & Bid Strategy',
+        repeatFrequency: 'Monthly',
+        steps: [
+          'Review TCPA calibration proposals from Sr Exec',
+          'Validate: 30+ conversions in 30 days before switching',
+          'Approve target CPL / CPT — sign off before any changes made',
+          'Monitor for 14 days post-change — flag instability to SM',
+        ],
+      },
+      {
+        name: 'Account health audit — review and sign-off',
+        comment: 'Review Sr Exec account audit, add recommendations, and sign off before client / SM.',
+        category: 'Internal & Strategy',
+        repeatFrequency: 'Monthly',
+        steps: [
+          'Review Sr Exec account audit submission',
+          'Add structural recommendations where needed',
+          'Flag any accounts showing churn risk signals to SM',
+          'Sign off audit before it goes to client / SM',
+        ],
+      },
+    ],
+  },
+
   // --- Snr Manager Home Templates ---
   {
     id: 'snr-manager-weekly-1',
