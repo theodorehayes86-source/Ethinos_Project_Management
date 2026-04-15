@@ -1718,7 +1718,7 @@ const App = () => {
       );
     }
 
-    if (msLoginPending && dbReady) {
+    if (dbReady) {
       return (
         <MicrosoftProfileSetup
           firebaseUser={firebaseUser}
@@ -1748,28 +1748,6 @@ const App = () => {
         />
       );
     }
-
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
-        <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-lg">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100">
-            <svg className="h-7 w-7 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-            </svg>
-          </div>
-          <h2 className="text-lg font-bold text-slate-900">Access Not Set Up</h2>
-          <p className="mt-2 text-sm text-slate-500">
-            <strong className="text-slate-700">{firebaseUser.email}</strong> is not registered in the PMT system yet. Please ask your administrator to add your account.
-          </p>
-          <button
-            onClick={handleLogout}
-            className="mt-6 w-full rounded-xl bg-slate-100 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-200 transition-colors"
-          >
-            Sign out
-          </button>
-        </div>
-      </div>
-    );
   }
 
   return (
