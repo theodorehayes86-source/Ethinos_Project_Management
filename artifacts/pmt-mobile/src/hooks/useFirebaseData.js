@@ -71,24 +71,26 @@ export function getUserTaskStats(userId, clientLogs, clients) {
 
   const todayTasks   = tasks.filter(t => { const d = parseDueDate(t.dueDate); return d && d >= today && d <= todayEnd; });
   const overdueTasks = tasks.filter(t => { const d = parseDueDate(t.dueDate); return d && d < today && t.status !== 'Done'; });
+  const pendingTasks = tasks.filter(t => t.status === 'Pending' && !overdueTasks.includes(t));
   const pendingQC    = tasks.filter(t => t.qcStatus === 'sent');
   const ratedTasks   = tasks.filter(t => t.qcRating);
   const avgRating    = ratedTasks.length > 0 ? ratedTasks.reduce((s, t) => s + (t.qcRating || 0), 0) / ratedTasks.length : null;
 
-  return { total: tasks.length, today: todayTasks.length, overdue: overdueTasks.length, pendingQC: pendingQC.length, avgRating, allTasks: tasks, todayTasks, overdueTasks };
+  return { total: tasks.length, today: todayTasks.length, overdue: overdueTasks.length, pending: pendingTasks.length, pendingQC: pendingQC.length, avgRating, allTasks: tasks, todayTasks, overdueTasks, pendingTasks };
 }
 
 export function getSubtreeStats(userId, users, clientLogs, clients) {
   const ids = getSubtreeIds(userId, users);
   ids.delete(String(userId));
-  let today = 0, overdue = 0, total = 0;
+  let today = 0, overdue = 0, pending = 0, total = 0;
   ids.forEach(uid => {
     const s = getUserTaskStats(uid, clientLogs, clients);
     today   += s.today;
     overdue += s.overdue;
+    pending += s.pending;
     total   += s.total;
   });
-  return { today, overdue, total };
+  return { today, overdue, pending, total };
 }
 
 export function useAppData(isAuthed) {

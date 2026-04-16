@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, ChevronRight, ChevronLeft, Check, User, Briefcase, FileText, Calendar, Tag, Loader2, Search } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { X, ChevronRight, ChevronLeft, Check, User, Briefcase, FileText, Calendar, Tag, Loader2, Search, Plus, Trash2 } from 'lucide-react';
 import { createTaskInFirebase, getSubtreeIds } from '../hooks/useFirebaseData.js';
 
 const PINNED_CLIENT_NAMES = ['Personal', 'Ethinos Internal'];
@@ -176,6 +176,9 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
   const [dueDate, setDueDate] = useState('');
   const [category, setCategory] = useState('');
   const [frequency, setFrequency] = useState('Once');
+  const [steps, setSteps] = useState([]);
+  const [stepInput, setStepInput] = useState('');
+  const stepInputRef = useRef(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -203,6 +206,16 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
     if (prevStep) setStep(prevStep);
   };
 
+  const addStep = () => {
+    const label = stepInput.trim();
+    if (!label) return;
+    setSteps(prev => [...prev, { id: `step-${Date.now()}`, label, done: false }]);
+    setStepInput('');
+    stepInputRef.current?.focus();
+  };
+
+  const removeStep = (id) => setSteps(prev => prev.filter(s => s.id !== id));
+
   const handleCreate = async () => {
     setError('');
     setSaving(true);
@@ -214,6 +227,7 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
         dueDate: formatDate(dueDate),
         category,
         repeatFrequency: frequency,
+        steps: steps.length > 0 ? steps : [],
       }, clientLogs);
       onCreated?.();
       onClose();
@@ -293,9 +307,43 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
                   value={description}
                   onChange={e => setDescription(e.target.value)}
                   placeholder="Add any notes or context…"
-                  rows={4}
+                  rows={3}
                   className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-slate-50 resize-none"
                 />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-slate-700 mb-2">Checklist <span className="text-slate-400 font-normal">(optional)</span></p>
+                {steps.length > 0 && (
+                  <div className="space-y-1.5 mb-2">
+                    {steps.map(s => (
+                      <div key={s.id} className="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-xl border border-slate-200">
+                        <div className="w-4 h-4 rounded border-2 border-slate-300 flex-shrink-0" />
+                        <span className="flex-1 text-sm text-slate-700 truncate">{s.label}</span>
+                        <button onClick={() => removeStep(s.id)} className="text-slate-300 hover:text-red-400 transition-colors flex-shrink-0">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <input
+                    ref={stepInputRef}
+                    type="text"
+                    value={stepInput}
+                    onChange={e => setStepInput(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && addStep()}
+                    placeholder="Add a checklist item…"
+                    className="flex-1 px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-slate-50"
+                  />
+                  <button
+                    onClick={addStep}
+                    disabled={!stepInput.trim()}
+                    className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center disabled:opacity-30 transition-opacity flex-shrink-0"
+                  >
+                    <Plus size={16} className="text-white" />
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -359,6 +407,7 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
                 { label: 'Due date',    value: dueDate ? formatDate(dueDate) : '—' },
                 { label: 'Category',    value: category },
                 { label: 'Repeat',      value: frequency },
+                steps.length > 0 && { label: 'Checklist', value: `${steps.length} item${steps.length !== 1 ? 's' : ''}` },
               ].filter(Boolean).map(({ label, value }) => (
                 <div key={label} className="flex gap-3 py-3 border-b border-slate-100 last:border-0">
                   <span className="text-xs font-bold text-slate-400 w-28 flex-shrink-0 pt-0.5">{label}</span>

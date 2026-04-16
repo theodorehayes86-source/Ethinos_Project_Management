@@ -49,10 +49,12 @@ function PersonTaskSheet({ user, tasks, onClose, onTaskClick }) {
     return d < now && t.status !== 'Done';
   });
 
+  const pending = tasks.filter(t => t.status === 'Pending' && !overdue.includes(t) && !today.includes(t));
   const sections = [
     { label: 'Overdue', items: overdue, accent: 'text-red-500', icon: <AlertTriangle size={12} className="text-red-400" /> },
     { label: 'Due Today', items: today, accent: 'text-indigo-600', icon: <Clock size={12} className="text-indigo-400" /> },
-    { label: 'All Tasks', items: tasks.filter(t => !today.includes(t) && !overdue.includes(t)).slice(0, 10), accent: 'text-slate-500', icon: <Calendar size={12} className="text-slate-400" /> },
+    { label: 'Pending', items: pending.slice(0, 10), accent: 'text-amber-600', icon: <Clock size={12} className="text-amber-400" /> },
+    { label: 'All Tasks', items: tasks.filter(t => !today.includes(t) && !overdue.includes(t) && !pending.includes(t)).slice(0, 10), accent: 'text-slate-500', icon: <Calendar size={12} className="text-slate-400" /> },
   ].filter(s => s.items.length > 0);
 
   return (
@@ -142,6 +144,7 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
               onClick={e => { e.stopPropagation(); setShowTaskSheet(true); }}
               className="flex gap-2 hover:opacity-80"
             >
+              <RollupBadge label="Pending" value={personal.pending} />
               <RollupBadge label="Today"  value={personal.today}  />
               <RollupBadge label="Overdue" value={personal.overdue} red />
             </button>
@@ -149,6 +152,7 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
               <div className="flex flex-col items-end gap-0.5">
                 <span className="text-[9px] text-slate-400 uppercase tracking-wide">Team</span>
                 <div className="flex gap-2">
+                  <RollupBadge label="Pending" value={team.pending} />
                   <RollupBadge label="Today"   value={team.today}   />
                   <RollupBadge label="Overdue" value={team.overdue} red />
                 </div>
@@ -359,6 +363,7 @@ export default function ManagerDashboard({
                     <p className="text-xs text-indigo-500">{viewUser.role}</p>
                   </div>
                   <div className="ml-auto flex gap-3">
+                    <RollupBadge label="Pending" value={drillPersonalStats.pending} />
                     <RollupBadge label="Today" value={drillPersonalStats.today} />
                     <RollupBadge label="Overdue" value={drillPersonalStats.overdue} red />
                   </div>
