@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { Plus, Trash2, Search, ShieldCheck, Edit2, X, ChevronUp, ChevronDown, Lock, Users, Crown, Check, Star, UserCheck, UserPlus, Edit3, Mail, MessageSquare, Bug, Lightbulb, AlertCircle, CheckCircle2, Clock, Filter, Eye, EyeOff, FlaskConical, Archive, ArchiveRestore, ChevronRight, CornerDownLeft, Send, Upload } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import CsvImportModal from './CsvImportModal';
+import { sendNotification } from '../utils/notify';
 
 const REPEAT_OPTIONS = ['Daily', 'Weekly', 'Monthly', 'Once'];
 
@@ -1601,6 +1602,7 @@ const MasterDataView = ({
 
         const saveReply = (id) => {
           if (!replyDraft.trim()) return;
+          const targetItem = feedbackItems.find(f => f.id === id);
           setFeedbackItems(feedbackItems.map(f => f.id === id ? {
             ...f,
             reply: replyDraft.trim(),
@@ -1609,6 +1611,19 @@ const MasterDataView = ({
           } : f));
           setReplyingFbId(null);
           setReplyDraft('');
+          if (targetItem) {
+            const submitter = (users || []).find(u => String(u.id) === String(targetItem.userId));
+            const recipientEmail = submitter?.email || targetItem.userEmail;
+            if (recipientEmail) {
+              sendNotification('feedback-response', {
+                recipientEmail,
+                recipientName: targetItem.userName || submitter?.name,
+                feedbackText: targetItem.text,
+                replyText: replyDraft.trim(),
+                adminName: currentUser?.name,
+              });
+            }
+          }
         };
         const deleteReply = (id) => {
           setFeedbackItems(feedbackItems.map(f => f.id === id ? {

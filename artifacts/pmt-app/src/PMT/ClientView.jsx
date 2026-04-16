@@ -5,6 +5,7 @@ import DatePicker from "react-datepicker";
 import { format, subDays, parse } from 'date-fns';
 import "react-datepicker/dist/react-datepicker.css";
 import TaskDetailPanel from './TaskDetailPanel';
+import { sendNotification } from '../utils/notify';
 
 const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Business Head'];
 
@@ -219,6 +220,16 @@ const ClientView = ({
       },
       ...prev
     ]);
+
+    const leaderEmails = leaders.map(l => l.email).filter(Boolean);
+    if (leaderEmails.length > 0) {
+      sendNotification('approval-required', {
+        recipientEmails: leaderEmails,
+        requesterName: currentUser.name,
+        taskName: log.comment || log.name,
+        clientName: selectedClient.name,
+      });
+    }
   };
 
   const openEditModal = (log) => {
@@ -541,6 +552,19 @@ const ClientView = ({
       ...clientLogs,
       [selectedClient.id]: [newLog, ...(clientLogs[selectedClient.id] || [])]
     });
+
+    if (selectedAssignee.email) {
+      sendNotification('task-assigned', {
+        assigneeEmail: selectedAssignee.email,
+        assigneeName: selectedAssignee.name,
+        taskName: newTaskName.trim(),
+        taskDescription: trimmedComment,
+        clientName: selectedClient.name,
+        dueDate: taskDueDate ? format(taskDueDate, 'do MMM yyyy') : null,
+        creatorName: currentUser?.name,
+      });
+    }
+
     setNewTaskName("");
     setNewTaskComment("");
     setNewTaskCategory("");
