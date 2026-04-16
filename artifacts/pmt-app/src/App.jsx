@@ -11,6 +11,7 @@ import MasterDataView from './PMT/MasterDataView';
 import UserMetricsView from './PMT/UserMetricsView';
 import ReportsView from './PMT/ReportsView';
 import ApprovalsView from './PMT/ApprovalsView';
+import TeamView from './PMT/TeamView';
 import Sidebar from './PMT/Sidebar';
 import Notifications from './PMT/Notifications';
 import ProfileDropdown from './PMT/ProfileDropdown';
@@ -1037,6 +1038,8 @@ const App = () => {
   const [clientLogs, setClientLogs] = useState({});
   const [taskTemplates, setTaskTemplates] = useState(DEFAULT_TASK_TEMPLATES);
   const [feedbackItems, setFeedbackItems] = useState([]);
+  const DEFAULT_HIERARCHY_ORDER = ['Director', 'Snr Manager', 'Manager', 'Asst Manager', 'Snr Executive', 'Executive', 'Employee', 'Intern'];
+  const [hierarchyOrder, setHierarchyOrder] = useState(DEFAULT_HIERARCHY_ORDER);
   const [notifications, setNotifications] = useState([
     { id: 1, text: "Permissions system active", time: "Just now", read: false },
   ]);
@@ -1161,6 +1164,7 @@ const App = () => {
       syncRef('metricsAllDataRoles', (val) => setMetricsAllDataRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
       syncRef('reportsAllDataRoles', (val) => setReportsAllDataRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
       syncRef('feedbackItems', (val) => setFeedbackItems(val && typeof val === 'object' ? (Array.isArray(val) ? val : Object.values(val)) : [])),
+      syncRef('hierarchyOrder', (val) => { if (Array.isArray(val) && val.length > 0) setHierarchyOrder(val); }),
     ];
 
     return () => unsubs.forEach(u => u());
@@ -1246,6 +1250,10 @@ const App = () => {
     setFeedbackItems(val);
     if (firebaseUser) set(ref(db, 'feedbackItems'), sanitizeForFirebase(val));
   };
+  const persistHierarchyOrder = (val) => {
+    setHierarchyOrder(val);
+    if (firebaseUser) set(ref(db, 'hierarchyOrder'), val);
+  };
 
   // --- MATCH FIREBASE AUTH USER → PMT USER RECORD ---
   // Runs whenever auth state changes, the users list loads from Firebase, or dbReady changes.
@@ -1328,6 +1336,7 @@ const App = () => {
 
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const canSeeApprovals = managementRoles.includes(currentUser?.role);
+  const canSeeTeam = managementRoles.includes(currentUser?.role);
 
   const CROSS_DEPT_ROLES_APP = ['Super Admin', 'Admin', 'Director', 'Business Head'];
   const isCrossDeptApp = CROSS_DEPT_ROLES_APP.includes(currentUser?.role) || currentUser?.department === 'All';
@@ -1367,6 +1376,7 @@ const App = () => {
     home: 'Home',
     clients: 'Clients',
     approvals: 'Approvals',
+    team: 'Team',
     metrics: 'Metrics',
     reports: 'Reports',
     employees: 'Employees',
@@ -1787,6 +1797,7 @@ const App = () => {
         canSeeMetrics={canSeeMetrics}
         canSeeReports={canSeeReports}
         canSeeApprovals={canSeeApprovals}
+        canSeeTeam={canSeeTeam}
         pendingApprovalsCount={pendingApprovalsCount}
       />
 
@@ -1848,6 +1859,19 @@ const App = () => {
               persistClientLogs={persistClientLogs}
               setClients={persistClients}
               setUsers={persistUsers}
+            />
+          )}
+
+          {activeTab === 'team' && !selectedClient && canSeeTeam && (
+            <TeamView
+              currentUser={currentUser}
+              users={users}
+              clients={clients}
+              syntheticClients={SYNTHETIC_CLIENTS}
+              clientLogs={clientLogs}
+              setClientLogs={persistClientLogs}
+              taskCategories={filteredTaskCategoryNames}
+              hierarchyOrder={hierarchyOrder}
             />
           )}
 
@@ -1940,6 +1964,8 @@ const App = () => {
               feedbackItems={feedbackItems}
               setFeedbackItems={persistFeedbackItems}
               onSendPasswordReset={currentUser?.role === 'Super Admin' ? handleResetPassword : null}
+              hierarchyOrder={hierarchyOrder}
+              setHierarchyOrder={persistHierarchyOrder}
             />
           )}
         </main>

@@ -34,9 +34,13 @@ const CC_TABS = [
   { id: 'departments', label: 'Departments' },
   { id: 'regions', label: 'Regions' },
   { id: 'conditions', label: 'Access Control' },
+  { id: 'hierarchy', label: 'Hierarchy' },
   { id: 'templates', label: 'Templates' },
   { id: 'feedback', label: 'Feedback' },
 ];
+
+const DEFAULT_STANDARD_TRACK = ['Director', 'Snr Manager', 'Manager', 'Asst Manager', 'Snr Executive', 'Executive', 'Employee', 'Intern'];
+const CS_TRACK_FIXED = [{ role: 'Business Head', level: 1 }, { role: 'CSM / Project Manager', level: 2 }];
 
 const MasterDataView = ({
   taskCategories = [],
@@ -73,6 +77,8 @@ const MasterDataView = ({
   setFeedbackItems,
   createFirebaseUser,
   onSendPasswordReset = null,
+  hierarchyOrder = [],
+  setHierarchyOrder,
 }) => {
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
@@ -159,6 +165,31 @@ const MasterDataView = ({
   const [editingFbDraft, setEditingFbDraft] = useState({});
   const [replyingFbId, setReplyingFbId] = useState(null);
   const [replyDraft, setReplyDraft] = useState('');
+
+  // --- HIERARCHY STATE ---
+  const effectiveHierarchyOrder = (hierarchyOrder && hierarchyOrder.length > 0) ? hierarchyOrder : DEFAULT_STANDARD_TRACK;
+  const [hierarchyDraft, setHierarchyDraft] = useState(() => [...effectiveHierarchyOrder]);
+  const [hierarchySaved, setHierarchySaved] = useState(false);
+
+  const moveHierarchyRole = (idx, dir) => {
+    setHierarchyDraft(prev => {
+      const next = [...prev];
+      const target = idx + dir;
+      if (target < 0 || target >= next.length) return prev;
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return next;
+    });
+  };
+
+  const saveHierarchyOrder = () => {
+    if (setHierarchyOrder) setHierarchyOrder(hierarchyDraft);
+    setHierarchySaved(true);
+    setTimeout(() => setHierarchySaved(false), 2500);
+  };
+
+  const resetHierarchyOrder = () => {
+    setHierarchyDraft([...effectiveHierarchyOrder]);
+  };
 
   // --- CSV IMPORT STATE ---
   const [csvMode, setCsvMode] = useState(null); // null | 'users' | 'clients' | 'combined'
@@ -889,6 +920,7 @@ const MasterDataView = ({
         {CC_TABS.filter(tab => {
           if (currentUser?.role === 'Super Admin') return true;
           if (tab.id === 'conditions') return false;
+          if (tab.id === 'hierarchy') return false;
           if (tab.id === 'feedback') return true;
           return (controlCenterTabAccess[tab.id] || []).includes(currentUser?.role);
         }).map(tab => (
@@ -1342,6 +1374,62 @@ const MasterDataView = ({
                   })}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── HIERARCHY TAB ─── */}
+      {activeTab === 'hierarchy' && (
+        <div className="space-y-4">
+          <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-800">Standard Track — Role Order</h3>
+                <p className="text-xs text-slate-500 mt-0.5">This determines the hierarchy depth in Team View. Drag using ↑ / ↓ to reorder levels.</p>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={resetHierarchyOrder} className="px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-all">Reset</button>
+                <button onClick={saveHierarchyOrder} className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${hierarchySaved ? 'bg-emerald-500 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
+                  {hierarchySaved ? '✓ Saved' : 'Save Order'}
+                </button>
+              </div>
+            </div>
+            <div className="border border-slate-200 rounded-lg overflow-hidden">
+              {hierarchyDraft.map((role, idx) => (
+                <div key={role} className={`flex items-center justify-between px-4 py-2.5 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} border-b border-slate-100 last:border-b-0`}>
+                  <div className="flex items-center gap-3">
+                    <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-[10px] font-bold flex-shrink-0">{idx + 1}</span>
+                    <span className="text-xs font-semibold text-slate-700">{role}</span>
+                  </div>
+                  <div className="flex gap-1">
+                    <button onClick={() => moveHierarchyRole(idx, -1)} disabled={idx === 0}
+                      className="w-7 h-7 flex items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-slate-600">
+                      <ChevronUp size={13}/>
+                    </button>
+                    <button onClick={() => moveHierarchyRole(idx, 1)} disabled={idx === hierarchyDraft.length - 1}
+                      className="w-7 h-7 flex items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-slate-600">
+                      <ChevronDown size={13}/>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3 opacity-80">
+            <div>
+              <h3 className="text-sm font-bold text-slate-800">Client Servicing Track — Fixed</h3>
+              <p className="text-xs text-slate-500 mt-0.5">This 2-level structure is always fixed and cannot be reordered.</p>
+            </div>
+            <div className="border border-slate-200 rounded-lg overflow-hidden">
+              {CS_TRACK_FIXED.map((item, idx) => (
+                <div key={item.role} className={`flex items-center gap-3 px-4 py-2.5 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} border-b border-slate-100 last:border-b-0`}>
+                  <span className="w-5 h-5 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-[10px] font-bold flex-shrink-0">{item.level}</span>
+                  <span className="text-xs font-semibold text-slate-600">{item.role}</span>
+                  <span className="ml-auto text-[10px] text-slate-400 border border-slate-200 rounded px-1.5 py-0.5">Fixed</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>

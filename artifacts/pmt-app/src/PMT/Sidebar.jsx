@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { Home, Briefcase, Network, SlidersHorizontal, BarChart3, FileSpreadsheet, ChevronLeft, ChevronRight, ClipboardCheck, Download, Monitor, Apple, Info, X } from 'lucide-react';
+import { Home, Briefcase, Network, SlidersHorizontal, BarChart3, FileSpreadsheet, ChevronLeft, ChevronRight, ClipboardCheck, Download, Monitor, Apple, Info, X, Users } from 'lucide-react';
 
 const RELEASES_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/latest';
 const WIN_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/download/v1.0.19/Ethinos.Timer.Pro.Setup.1.0.19.exe';
 const MAC_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/download/v1.0.19/Ethinos.Timer.Pro-1.0.19-universal.dmg';
 const LINUX_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/download/v1.0.19/Ethinos.Timer.Pro-1.0.19-x86_64.AppImage';
 
-const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setIsMinimized, canSeeControlCenter = false, canSeeEmployeeView = true, canSeeMetrics = true, canSeeReports = true, canSeeApprovals = false, pendingApprovalsCount = 0 }) => {
+const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setIsMinimized, canSeeControlCenter = false, canSeeEmployeeView = true, canSeeMetrics = true, canSeeReports = true, canSeeApprovals = false, canSeeTeam = false, pendingApprovalsCount = 0 }) => {
   const [logoError, setLogoError] = useState(false);
   const [showMacInfo, setShowMacInfo] = useState(false);
 
@@ -14,12 +14,14 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
     { id: 'home', label: 'Home', icon: <Home size={18}/> },
     { id: 'clients', label: 'Clients', icon: <Briefcase size={18}/> },
     { id: 'approvals', label: 'Approvals', icon: <ClipboardCheck size={18}/>, badge: pendingApprovalsCount > 0 ? pendingApprovalsCount : null },
+    { id: 'team', label: 'Team', icon: <Users size={18}/> },
     { id: 'metrics', label: 'Metrics', icon: <BarChart3 size={18}/> },
     { id: 'reports', label: 'Reports', icon: <FileSpreadsheet size={18}/> },
     { id: 'employees', label: 'Employee View', icon: <Network size={18} /> },
     { id: 'master-data', label: 'Control Center', icon: <SlidersHorizontal size={18}/> }
   ].filter(item => {
     if (item.id === 'approvals') return canSeeApprovals;
+    if (item.id === 'team') return canSeeTeam;
     if (item.id === 'master-data') return canSeeControlCenter;
     if (item.id === 'employees') return canSeeEmployeeView;
     if (item.id === 'metrics') return canSeeMetrics;
