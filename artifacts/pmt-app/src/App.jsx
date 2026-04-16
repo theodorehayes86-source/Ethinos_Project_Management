@@ -1164,7 +1164,7 @@ const App = () => {
       syncRef('metricsAllDataRoles', (val) => setMetricsAllDataRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
       syncRef('reportsAllDataRoles', (val) => setReportsAllDataRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
       syncRef('feedbackItems', (val) => setFeedbackItems(val && typeof val === 'object' ? (Array.isArray(val) ? val : Object.values(val)) : [])),
-      syncRef('hierarchyOrder', (val) => { if (Array.isArray(val) && val.length > 0) setHierarchyOrder(val); }),
+      syncRef('settings/hierarchyOrder', (val) => { if (Array.isArray(val) && val.length > 0) setHierarchyOrder(val); }),
     ];
 
     return () => unsubs.forEach(u => u());
@@ -1252,7 +1252,7 @@ const App = () => {
   };
   const persistHierarchyOrder = (val) => {
     setHierarchyOrder(val);
-    if (firebaseUser) set(ref(db, 'hierarchyOrder'), val);
+    if (firebaseUser) set(ref(db, 'settings/hierarchyOrder'), val);
   };
 
   // --- MATCH FIREBASE AUTH USER → PMT USER RECORD ---
