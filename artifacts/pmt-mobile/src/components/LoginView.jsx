@@ -31,8 +31,8 @@ export default function LoginView({ onLogin, onMicrosoftLogin, loginError, msLog
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-indigo-50 to-slate-100 p-6">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-indigo-600 flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <span className="text-white font-black text-2xl">P</span>
+          <div className="w-16 h-16 rounded-2xl bg-white flex items-center justify-center mx-auto mb-4 shadow-lg border border-slate-100 overflow-hidden">
+            <img src={`${import.meta.env.BASE_URL}ethinos-icon.png`} alt="Ethinos" className="w-full h-full object-contain p-1" />
           </div>
           <h1 className="text-2xl font-black text-slate-900">PMT Mobile</h1>
           <p className="text-slate-500 text-sm mt-1">Ethinos Consulting Tracker</p>
