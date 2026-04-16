@@ -1685,7 +1685,8 @@ const App = () => {
     if (activeTab === 'metrics' && !canSeeMetrics) setActiveTab('home');
     if (activeTab === 'reports' && !canSeeReports) setActiveTab('home');
     if (activeTab === 'approvals' && !canSeeApprovals) setActiveTab('home');
-  }, [activeTab, canSeeControlCenter, canSeeEmployeeView, canSeeMetrics, canSeeReports, canSeeApprovals]);
+    if (activeTab === 'team' && !canSeeTeam) setActiveTab('home');
+  }, [activeTab, canSeeControlCenter, canSeeEmployeeView, canSeeMetrics, canSeeReports, canSeeApprovals, canSeeTeam]);
 
   // This tab was the Azure redirect target.
   // While processing: show the same spinner as the normal loading state (seamless).

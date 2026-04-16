@@ -318,7 +318,7 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
         <div className="fixed inset-0 z-[800] flex items-center justify-end">
           <div className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm" onClick={() => setSelectedTask(null)}/>
           <div className="relative z-10 h-full w-full max-w-xl">
-            <TaskDetailPanel task={selectedTask} currentUser={currentUser} users={users} canEdit={true} onClose={() => setSelectedTask(null)} onUpdate={(updated) => handleUpdateTask(selectedTask, updated)}/>
+            <TaskDetailPanel task={selectedTask} currentUser={currentUser} users={users} canEdit={false} onClose={() => setSelectedTask(null)} onUpdate={(updated) => handleUpdateTask(selectedTask, updated)}/>
           </div>
         </div>
       )}
