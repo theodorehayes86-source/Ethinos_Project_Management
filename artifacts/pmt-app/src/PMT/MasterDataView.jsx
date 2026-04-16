@@ -130,7 +130,8 @@ const MasterDataView = ({
   const [editingUserId, setEditingUserId] = useState(null);
   const [showDeleteUserConfirm, setShowDeleteUserConfirm] = useState(null);
   const [userProjectSearch, setUserProjectSearch] = useState('');
-  const emptyNewUser = () => ({ name: '', email: '', password: '', role: 'Executive', department: '', region: '', position: '', assignedProjects: [] });
+  const [managerSearch, setManagerSearch] = useState('');
+  const emptyNewUser = () => ({ name: '', email: '', password: '', role: 'Executive', department: '', region: '', position: '', managerId: '', assignedProjects: [] });
   const [newUser, setNewUser] = useState(emptyNewUser());
   const [showPassword, setShowPassword] = useState(false);
   const [userSaving, setUserSaving] = useState(false);
@@ -531,8 +532,9 @@ const MasterDataView = ({
 
   const openEditUser = (user) => {
     setEditingUserId(user.id);
-    setNewUser({ name: user.name, email: user.email, role: user.role, department: user.department || '', region: user.region || '', position: user.position || '', assignedProjects: user.assignedProjects || [] });
+    setNewUser({ name: user.name, email: user.email, role: user.role, department: user.department || '', region: user.region || '', position: user.position || '', managerId: user.managerId || '', assignedProjects: user.assignedProjects || [] });
     setUserProjectSearch('');
+    setManagerSearch('');
     setShowUserModal(true);
   };
 
@@ -541,6 +543,7 @@ const MasterDataView = ({
     setEditingUserId(null);
     setNewUser(emptyNewUser());
     setUserProjectSearch('');
+    setManagerSearch('');
     setUserSaveError('');
     setShowPassword(false);
   };
@@ -552,7 +555,15 @@ const MasterDataView = ({
     setUserSaving(true);
     try {
       if (editingUserId) {
-        setUsers((users || []).map(u => u.id === editingUserId ? { ...newUser, id: u.id, password: undefined } : u));
+        const { password: _pw, managerId: rawMid, ...restUser } = newUser;
+        const originalUser = (users || []).find(u => u.id === editingUserId);
+        const updatedUser = { ...restUser, id: editingUserId };
+        if (canEditManagerId) {
+          if (rawMid) updatedUser.managerId = rawMid;
+        } else if (originalUser?.managerId) {
+          updatedUser.managerId = originalUser.managerId;
+        }
+        setUsers((users || []).map(u => u.id === editingUserId ? updatedUser : u));
         closeUserModal();
       } else {
         let emailWarning = '';
@@ -560,8 +571,10 @@ const MasterDataView = ({
           const result = await createFirebaseUser(newUser.email.trim().toLowerCase(), newUser.name.trim());
           if (result?.warning) emailWarning = result.warning;
         }
-        const { password: _pw, ...userRecord } = newUser;
-        setUsers([...(users || []), { ...userRecord, id: `user-${Date.now()}`, email: userRecord.email.trim().toLowerCase() }]);
+        const { password: _pw, managerId: newMid, ...userRecord } = newUser;
+        const newUserObj = { ...userRecord, id: `user-${Date.now()}`, email: userRecord.email.trim().toLowerCase() };
+        if (newMid && canEditManagerId) newUserObj.managerId = newMid;
+        setUsers([...(users || []), newUserObj]);
         if (emailWarning) {
           setUserSaveError(emailWarning);
         } else {
@@ -706,6 +719,37 @@ const MasterDataView = ({
   const filteredUserProjects = (clients || []).filter(c =>
     !userProjectSearch.trim() || c.name.toLowerCase().includes(userProjectSearch.toLowerCase())
   );
+
+  const ELIGIBLE_MANAGER_ROLES = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
+  const ROLE_RANK = {
+    'Super Admin': 0, 'Director': 1, 'Business Head': 2, 'Snr Manager': 3,
+    'Manager': 4, 'Project Manager': 4, 'CSM': 4, 'Asst Manager': 5,
+    'Snr Executive': 6, 'Executive': 7, 'Intern': 8,
+  };
+  const editingUserRank = ROLE_RANK[newUser.role] ?? 99;
+  const eligibleManagers = (users || []).filter(u => {
+    if (u.id === editingUserId) return false;
+    if (!ELIGIBLE_MANAGER_ROLES.includes(u.role)) return false;
+    const mgrRank = ROLE_RANK[u.role] ?? 99;
+    return mgrRank <= editingUserRank;
+  });
+  const filteredEligibleManagers = eligibleManagers.filter(u => {
+    if (!managerSearch.trim()) return true;
+    const q = managerSearch.toLowerCase();
+    return (u.name || '').toLowerCase().includes(q) || (u.role || '').toLowerCase().includes(q);
+  });
+  const editingUserRecord = editingUserId ? (users || []).find(u => u.id === editingUserId) : null;
+  const canEditManagerId = (() => {
+    const role = currentUser?.role;
+    if (!role) return false;
+    if (['Super Admin', 'Director'].includes(role)) return true;
+    if (['Manager', 'Snr Manager'].includes(role)) {
+      const editedDept = editingUserRecord?.department || newUser.department;
+      return !!editedDept && editedDept === currentUser?.department;
+    }
+    return false;
+  })();
+  const selectedManager = (users || []).find(u => u.id === newUser.managerId);
 
   const filteredClients = (clients || []).filter(c =>
     !clientSearch.trim() || c.name.toLowerCase().includes(clientSearch.toLowerCase())
@@ -918,6 +962,15 @@ const MasterDataView = ({
                           <div>
                             <p className="text-sm font-semibold text-slate-900 leading-none">{user.name}</p>
                             <p className="text-xs text-slate-500 mt-0.5">{user.email}</p>
+                            {user.managerId && (() => {
+                              const mgr = (users || []).find(u2 => u2.id === user.managerId);
+                              return mgr ? (
+                                <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
+                                  <CornerDownLeft size={9} className="text-slate-300"/>
+                                  {mgr.name}
+                                </p>
+                              ) : null;
+                            })()}
                           </div>
                         </div>
                       </td>
@@ -2246,6 +2299,63 @@ const MasterDataView = ({
                     </select>
                     <ChevronDown size={18} className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
                   </div>
+
+                  {canEditManagerId && (
+                    <>
+                      <label className="text-sm font-semibold text-slate-600 ml-1 mt-4 block">
+                        Reports To <span className="font-normal text-slate-400">(optional)</span>
+                      </label>
+                      <div className="relative">
+                        <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
+                        <input
+                          type="text"
+                          placeholder={selectedManager ? selectedManager.name : 'Search managers…'}
+                          className="w-full p-4 pl-10 bg-slate-50 border border-slate-200 rounded-2xl outline-none text-slate-900 font-medium text-sm"
+                          value={managerSearch}
+                          onChange={e => setManagerSearch(e.target.value)}
+                        />
+                      </div>
+                      {selectedManager && !managerSearch && (
+                        <div className="flex items-center justify-between px-4 py-2 bg-blue-50 border border-blue-200 rounded-xl">
+                          <span className="text-sm font-semibold text-blue-800">{selectedManager.name}</span>
+                          <span className="text-xs text-blue-500 font-medium">{selectedManager.role}</span>
+                          <button
+                            type="button"
+                            onClick={() => setNewUser(prev => ({...prev, managerId: ''}))}
+                            className="ml-2 text-blue-400 hover:text-red-500 transition-all"
+                            title="Remove manager"
+                          >
+                            <X size={14}/>
+                          </button>
+                        </div>
+                      )}
+                      {managerSearch && (
+                        <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white max-h-40 overflow-y-auto">
+                          {filteredEligibleManagers.length === 0 ? (
+                            <p className="text-xs text-slate-400 text-center py-3">No matching managers</p>
+                          ) : (
+                            filteredEligibleManagers.map(u => (
+                              <button
+                                key={u.id}
+                                type="button"
+                                onClick={() => {
+                                  setNewUser(prev => ({...prev, managerId: u.id}));
+                                  setManagerSearch('');
+                                }}
+                                className={`w-full flex items-center justify-between px-4 py-2.5 hover:bg-blue-50 transition-all text-left ${newUser.managerId === u.id ? 'bg-blue-50' : ''}`}
+                              >
+                                <span className="text-sm font-semibold text-slate-800">{u.name}</span>
+                                <span className="text-xs text-slate-500 font-medium">{u.role}</span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
+                      {!selectedManager && !managerSearch && (
+                        <p className="text-xs text-slate-400 ml-1">None assigned — type above to search</p>
+                      )}
+                    </>
+                  )}
                 </div>
 
                 <div className="space-y-3 flex flex-col">
