@@ -1031,6 +1031,7 @@ const App = () => {
   const [controlCenterTabAccess, setControlCenterTabAccess] = useState(DEFAULT_CC_TAB_ACCESS);
   const [userManagementAccessRoles, setUserManagementAccessRoles] = useState(['Super Admin', 'Director']);
   const [employeeViewAccessRoles, setEmployeeViewAccessRoles] = useState(['Super Admin', 'Director']);
+  const [teamViewAccessRoles, setTeamViewAccessRoles] = useState(['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Asst Manager', 'Project Manager', 'CSM']);
   const [metricsAccessRoles, setMetricsAccessRoles] = useState(['Super Admin', 'Director']);
   const [reportsAccessRoles, setReportsAccessRoles] = useState(['Super Admin', 'Director']);
   const [metricsAllDataRoles, setMetricsAllDataRoles] = useState(['Super Admin', 'Director']);
@@ -1159,6 +1160,7 @@ const App = () => {
       syncRef('controlCenterTabAccess', (val) => { if (val && typeof val === 'object' && !Array.isArray(val)) setControlCenterTabAccess(prev => ({ ...prev, ...val })); }),
       syncRef('userManagementAccessRoles', (val) => setUserManagementAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
       syncRef('employeeViewAccessRoles', (val) => setEmployeeViewAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
+      syncRef('teamViewAccessRoles', (val) => setTeamViewAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Asst Manager', 'Project Manager', 'CSM'])),
       syncRef('metricsAccessRoles', (val) => setMetricsAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
       syncRef('reportsAccessRoles', (val) => setReportsAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
       syncRef('metricsAllDataRoles', (val) => setMetricsAllDataRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
@@ -1229,6 +1231,10 @@ const App = () => {
   const persistEmployeeViewRoles = (val) => {
     setEmployeeViewAccessRoles(val);
     if (firebaseUser) set(ref(db, 'employeeViewAccessRoles'), val);
+  };
+  const persistTeamViewRoles = (val) => {
+    setTeamViewAccessRoles(val);
+    if (firebaseUser) set(ref(db, 'teamViewAccessRoles'), val);
   };
   const persistMetricsRoles = (val) => {
     setMetricsAccessRoles(val);
@@ -1336,8 +1342,7 @@ const App = () => {
 
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const canSeeApprovals = managementRoles.includes(currentUser?.role);
-  const teamViewRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Asst Manager', 'Project Manager', 'CSM'];
-  const canSeeTeam = teamViewRoles.includes(currentUser?.role);
+  const canSeeTeam = teamViewAccessRoles.includes(currentUser?.role);
 
   const CROSS_DEPT_ROLES_APP = ['Super Admin', 'Admin', 'Director', 'Business Head'];
   const isCrossDeptApp = CROSS_DEPT_ROLES_APP.includes(currentUser?.role) || currentUser?.department === 'All';
@@ -1930,6 +1935,8 @@ const App = () => {
               setUserManagementAccessRoles={persistUserManagementRoles}
               employeeViewAccessRoles={employeeViewAccessRoles}
               setEmployeeViewAccessRoles={persistEmployeeViewRoles}
+              teamViewAccessRoles={teamViewAccessRoles}
+              setTeamViewAccessRoles={persistTeamViewRoles}
               metricsAccessRoles={metricsAccessRoles}
               setMetricsAccessRoles={persistMetricsRoles}
               reportsAccessRoles={reportsAccessRoles}
