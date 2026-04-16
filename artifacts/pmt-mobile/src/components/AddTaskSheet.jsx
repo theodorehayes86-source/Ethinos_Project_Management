@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { X, ChevronRight, ChevronLeft, Check, User, Briefcase, FileText, Calendar, Tag, Loader2, Search } from 'lucide-react';
 import { createTaskInFirebase, getSubtreeIds } from '../hooks/useFirebaseData.js';
 
+const PINNED_CLIENT_NAMES = ['Personal', 'Ethinos Internal'];
+
 const DEFAULT_CATEGORIES = [
   'Strategy & Planning','Campaign Setup','Campaign Optimization','Reporting & Analysis',
   'Client Communication','Content Creation','Creatives & Assets','Research',
@@ -101,6 +103,67 @@ function SearchList({ items, onSelect, selected, labelKey = 'name', subKey, empt
   );
 }
 
+function PinnedClientList({ items, selected, onSelect }) {
+  const [q, setQ] = useState('');
+  const filtered = items.filter(it => (it.name || '').toLowerCase().includes(q.toLowerCase()));
+  const pinned = PINNED_CLIENT_NAMES
+    .map(name => filtered.find(it => it.name === name))
+    .filter(Boolean);
+  const rest = filtered
+    .filter(it => !PINNED_CLIENT_NAMES.includes(it.name))
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+  const renderItem = (it) => {
+    const isSelected = selected && String(selected.id || selected.name) === String(it.id || it.name);
+    return (
+      <button
+        key={it.id || it.name}
+        onClick={() => onSelect(it)}
+        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all min-h-[48px] ${
+          isSelected ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 bg-white hover:border-indigo-200'
+        }`}
+      >
+        <div className="flex-1 min-w-0">
+          <p className={`text-sm font-bold truncate ${isSelected ? 'text-indigo-700' : 'text-slate-800'}`}>
+            {it.name}
+          </p>
+        </div>
+        {isSelected && <Check size={16} className="text-indigo-600 flex-shrink-0" />}
+      </button>
+    );
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="relative">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <input
+          type="text"
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          placeholder="Search…"
+          className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-slate-50"
+        />
+      </div>
+      <div className="space-y-1.5 max-h-64 overflow-y-auto">
+        {filtered.length === 0 && <p className="text-sm text-slate-400 text-center py-4">No clients found</p>}
+        {pinned.length > 0 && (
+          <>
+            <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider px-1 pt-1">Suggested</p>
+            {pinned.map(renderItem)}
+          </>
+        )}
+        {rest.length > 0 && (
+          <>
+            {pinned.length > 0 && <div className="border-t border-slate-100 my-1" />}
+            {rest.map(renderItem)}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AddTaskSheet({ currentUser, users, clients, clientLogs, categories, onClose, onCreated, personalMode = false }) {
   const STEPS = personalMode ? PERSONAL_STEPS : MANAGER_STEPS;
   const firstStep = STEPS[0].id;
@@ -193,13 +256,21 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
           {step === 'client' && (
             <div>
               <p className="text-sm font-bold text-slate-700 mb-3">Which client is this for?</p>
-              <SearchList
-                items={clients}
-                selected={client}
-                onSelect={setClient}
-                labelKey="name"
-                emptyMsg="No clients found"
-              />
+              {personalMode ? (
+                <PinnedClientList
+                  items={clients}
+                  selected={client}
+                  onSelect={setClient}
+                />
+              ) : (
+                <SearchList
+                  items={clients}
+                  selected={client}
+                  onSelect={setClient}
+                  labelKey="name"
+                  emptyMsg="No clients found"
+                />
+              )}
             </div>
           )}
 
