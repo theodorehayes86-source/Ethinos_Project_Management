@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/mobile/"
+title = "PMT Mobile"
+version = "1.0.0"
+id = "artifacts/pmt-mobile"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/mobile/" ]
+localPort = 22763
+
+[services.development]
+run = "pnpm --filter @workspace/pmt-mobile run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/pmt-mobile", "run", "build" ]
+publicDir = "artifacts/pmt-mobile/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22763"
+BASE_PATH = "/mobile/"

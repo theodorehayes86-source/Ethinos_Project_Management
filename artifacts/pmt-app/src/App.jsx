@@ -1487,17 +1487,18 @@ const App = () => {
 
     // Decode verifier and redirectUri from the state param — they were embedded
     // by handleMicrosoftLogin so no localStorage (cross-partition) access is needed.
-    let verifier, redirectUri;
+    let verifier, redirectUri, returnTo;
     try {
       const padded = state.replace(/-/g, '+').replace(/_/g, '/');
       const decoded = JSON.parse(atob(padded + '='.repeat((4 - padded.length % 4) % 4)));
       verifier    = decoded.v;
       redirectUri = decoded.r;
+      returnTo    = decoded.rt || null;
     } catch {
       verifier = null;
     }
 
-    console.log('[MS auth-redirect] verifier decoded from state:', !!verifier, 'redirectUri:', redirectUri);
+    console.log('[MS auth-redirect] verifier decoded from state:', !!verifier, 'redirectUri:', redirectUri, 'returnTo:', returnTo);
 
     if (!verifier || !redirectUri) {
       setMsAuthRedirectError('Invalid authentication state — please close this tab and try again.');
@@ -1524,7 +1525,24 @@ const App = () => {
         console.log('[MS auth-redirect] Signing in with Firebase custom token…');
         setMsLoginPending(true);
         await signInWithCustomToken(auth, customToken);
-        console.log('[MS auth-redirect] Firebase sign-in complete ✓ — closing auth tab');
+        console.log('[MS auth-redirect] Firebase sign-in complete ✓');
+
+        // Relay the token to any companion app (e.g. pmt-mobile) that opened this
+        // popup and is listening via postMessage / storage event.
+        try {
+          if (window.opener) {
+            window.opener.postMessage({ type: 'pmt-ms-token', customToken }, window.location.origin);
+          }
+        } catch {}
+        try {
+          localStorage.setItem('pmt_ms_token', JSON.stringify({ customToken, ts: Date.now() }));
+        } catch {}
+
+        // returnTo is set when the request came from a full-page redirect flow.
+        if (returnTo) {
+          window.location.replace(returnTo);
+          return;
+        }
         // In production the original tab updates via Firebase cross-tab auth
         // sync and window.close() removes this auth tab — leaving just one window.
         // In dev (Replit preview iframe, partitioned storage), window.close()

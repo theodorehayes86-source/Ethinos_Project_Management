@@ -13,6 +13,7 @@ pnpm monorepo using TypeScript. Each package manages its own dependencies.
 | `artifacts/api-server` | api | `/api` | Express + TypeScript backend (auth, email, export) |
 | `artifacts/pmt-timer-widget` | web | `/pmt-timer-widget` | Electron timer widget dev preview |
 | `artifacts/mockup-sandbox` | design | `/__mockup` | Component preview sandbox |
+| `artifacts/pmt-mobile` | web | `/mobile/` | Mobile-first companion app (manager dashboard + employee task interface) |
 
 ## Stack
 
