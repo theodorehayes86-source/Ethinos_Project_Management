@@ -10,8 +10,15 @@ const DEFAULT_CATEGORIES = [
 
 const FREQ_OPTIONS = ['Once','Daily','Weekly','Monthly'];
 
-const STEPS = [
+const MANAGER_STEPS = [
   { id: 'who',      label: 'Assignee',   icon: User },
+  { id: 'client',   label: 'Client',     icon: Briefcase },
+  { id: 'task',     label: 'Task',       icon: FileText },
+  { id: 'details',  label: 'Details',    icon: Calendar },
+  { id: 'confirm',  label: 'Confirm',    icon: Check },
+];
+
+const PERSONAL_STEPS = [
   { id: 'client',   label: 'Client',     icon: Briefcase },
   { id: 'task',     label: 'Task',       icon: FileText },
   { id: 'details',  label: 'Details',    icon: Calendar },
@@ -27,12 +34,12 @@ function formatDate(iso) {
   return `${day}${suffix} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-function Breadcrumb({ step }) {
+function Breadcrumb({ step, steps }) {
   return (
     <div className="flex items-center justify-center gap-1 py-3">
-      {STEPS.map((s, i) => {
+      {steps.map((s, i) => {
         const current = s.id === step;
-        const done = STEPS.findIndex(x => x.id === step) > i;
+        const done = steps.findIndex(x => x.id === step) > i;
         return (
           <React.Fragment key={s.id}>
             <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black transition-all ${
@@ -40,7 +47,7 @@ function Breadcrumb({ step }) {
             }`}>
               {done ? <Check size={11} /> : i + 1}
             </div>
-            {i < STEPS.length - 1 && (
+            {i < steps.length - 1 && (
               <div className={`w-5 h-0.5 rounded-full ${done ? 'bg-indigo-600' : 'bg-slate-200'}`} />
             )}
           </React.Fragment>
@@ -94,9 +101,12 @@ function SearchList({ items, onSelect, selected, labelKey = 'name', subKey, empt
   );
 }
 
-export default function AddTaskSheet({ currentUser, users, clients, clientLogs, categories, onClose, onCreated }) {
-  const [step, setStep] = useState('who');
-  const [assignee, setAssignee] = useState(null);
+export default function AddTaskSheet({ currentUser, users, clients, clientLogs, categories, onClose, onCreated, personalMode = false }) {
+  const STEPS = personalMode ? PERSONAL_STEPS : MANAGER_STEPS;
+  const firstStep = STEPS[0].id;
+
+  const [step, setStep] = useState(firstStep);
+  const [assignee, setAssignee] = useState(personalMode ? currentUser : null);
   const [client, setClient] = useState(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -106,9 +116,9 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const teamIds = getSubtreeIds(currentUser.id, users);
-  teamIds.delete(String(currentUser.id));
-  const teamMembers = users.filter(u => teamIds.has(String(u.id)));
+  const teamIds = !personalMode ? getSubtreeIds(currentUser.id, users) : new Set();
+  if (!personalMode) teamIds.delete(String(currentUser.id));
+  const teamMembers = !personalMode ? users.filter(u => teamIds.has(String(u.id))) : [];
 
   const cats = categories.length > 0 ? categories : DEFAULT_CATEGORIES;
 
@@ -122,16 +132,12 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
   };
 
   const goNext = () => {
-    if (step === 'who')    return setStep('client');
-    if (step === 'client') return setStep('task');
-    if (step === 'task')   return setStep('details');
-    if (step === 'details')return setStep('confirm');
+    const nextStep = STEPS[stepIdx + 1]?.id;
+    if (nextStep) setStep(nextStep);
   };
   const goBack = () => {
-    if (step === 'client') return setStep('who');
-    if (step === 'task')   return setStep('client');
-    if (step === 'details')return setStep('task');
-    if (step === 'confirm')return setStep('details');
+    const prevStep = STEPS[stepIdx - 1]?.id;
+    if (prevStep) setStep(prevStep);
   };
 
   const handleCreate = async () => {
@@ -160,12 +166,14 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-white rounded-t-3xl max-h-[92vh] flex flex-col">
         <div className="px-5 pt-4 pb-0 flex items-center justify-between">
-          <h2 className="text-base font-bold text-slate-900">Add Task</h2>
+          <h2 className="text-base font-bold text-slate-900">
+            {personalMode ? 'Add Personal Task' : 'Add Task'}
+          </h2>
           <button onClick={onClose} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
             <X size={16} className="text-slate-600" />
           </button>
         </div>
-        <Breadcrumb step={step} />
+        <Breadcrumb step={step} steps={STEPS} />
 
         <div className="flex-1 overflow-y-auto px-5 pb-4">
           {step === 'who' && (
@@ -272,14 +280,15 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
             <div className="space-y-4">
               <p className="text-sm font-bold text-slate-700">Review & create</p>
               {[
-                { label: 'Assigned to', value: `${assignee?.name} (${assignee?.role})` },
+                !personalMode && { label: 'Assigned to', value: `${assignee?.name} (${assignee?.role})` },
+                personalMode && { label: 'Assigned to', value: `${currentUser?.name} (you)` },
                 { label: 'Client',      value: client?.name },
                 { label: 'Task',        value: name },
                 { label: 'Description', value: description || '—' },
                 { label: 'Due date',    value: dueDate ? formatDate(dueDate) : '—' },
                 { label: 'Category',    value: category },
                 { label: 'Repeat',      value: frequency },
-              ].map(({ label, value }) => (
+              ].filter(Boolean).map(({ label, value }) => (
                 <div key={label} className="flex gap-3 py-3 border-b border-slate-100 last:border-0">
                   <span className="text-xs font-bold text-slate-400 w-28 flex-shrink-0 pt-0.5">{label}</span>
                   <span className="text-sm text-slate-800 font-medium flex-1">{value}</span>
@@ -291,7 +300,7 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
         </div>
 
         <div className="px-5 py-4 border-t border-slate-100 flex gap-3">
-          {step !== 'who' && (
+          {stepIdx > 0 && (
             <button
               onClick={goBack}
               className="flex items-center gap-1.5 px-4 py-3 rounded-xl border border-slate-200 text-slate-600 text-sm font-bold min-h-[48px]"

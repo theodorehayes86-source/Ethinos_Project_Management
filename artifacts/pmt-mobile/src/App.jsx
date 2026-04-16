@@ -340,6 +340,9 @@ function MainApp() {
             myTasks={myTasks}
             clientLogs={clientLogs}
             currentUser={currentUser}
+            clients={clients}
+            categories={categories}
+            users={users}
           />
         )}
       </div>

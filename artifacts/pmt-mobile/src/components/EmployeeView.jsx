@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Tag, Calendar, ChevronRight, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
+import { Tag, Calendar, ChevronRight, AlertTriangle, CheckCircle, Clock, Plus } from 'lucide-react';
 import TaskDetailSheet from './TaskDetailSheet.jsx';
+import AddTaskSheet from './AddTaskSheet.jsx';
 
 const STATUS_COLORS = {
   Pending: 'bg-amber-100 text-amber-700 border-amber-200',
@@ -70,21 +71,22 @@ function Section({ title, tasks, onTaskClick, icon }) {
   );
 }
 
-export default function EmployeeView({ myTasks, clientLogs, currentUser }) {
+export default function EmployeeView({ myTasks, clientLogs, currentUser, clients, categories, users }) {
   const [selectedTask, setSelectedTask] = useState(null);
+  const [showAddTask, setShowAddTask] = useState(false);
   const { today = [], upcoming = [], overdue = [] } = myTasks;
   const allEmpty = today.length === 0 && upcoming.length === 0 && overdue.length === 0;
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="p-4 space-y-6">
+    <div className="flex-1 overflow-y-auto relative">
+      <div className="p-4 pb-24 space-y-6">
         {allEmpty && (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
               <CheckCircle size={28} className="text-slate-300" />
             </div>
             <p className="text-slate-500 font-semibold">No tasks assigned</p>
-            <p className="text-xs text-slate-400 mt-1">You're all caught up!</p>
+            <p className="text-xs text-slate-400 mt-1">Tap + to add a task for yourself</p>
           </div>
         )}
         {overdue.length > 0 && (
@@ -97,12 +99,33 @@ export default function EmployeeView({ myTasks, clientLogs, currentUser }) {
           icon={<Calendar size={13} className="text-slate-400" />} />
       </div>
 
+      <button
+        onClick={() => setShowAddTask(true)}
+        className="fixed bottom-20 right-4 w-14 h-14 rounded-full bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 flex items-center justify-center active:scale-95 transition-transform z-10"
+        aria-label="Add personal task"
+      >
+        <Plus size={24} />
+      </button>
+
       {selectedTask && (
         <TaskDetailSheet
           task={selectedTask}
           onClose={() => setSelectedTask(null)}
           clientLogs={clientLogs}
           currentUser={currentUser}
+        />
+      )}
+
+      {showAddTask && (
+        <AddTaskSheet
+          currentUser={currentUser}
+          users={users || []}
+          clients={clients || []}
+          clientLogs={clientLogs}
+          categories={categories || []}
+          personalMode={true}
+          onClose={() => setShowAddTask(false)}
+          onCreated={() => setShowAddTask(false)}
         />
       )}
     </div>
