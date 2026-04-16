@@ -137,6 +137,8 @@ const ClientView = ({
   const [newTaskBillable, setNewTaskBillable] = useState(true);
   // Reminder offsets for new task
   const [newTaskReminders, setNewTaskReminders] = useState([]);
+  // Repeat end date for new task
+  const [newTaskRepeatEnd, setNewTaskRepeatEnd] = useState(null);
   // Estimated time for new task (hours + minutes inputs)
   const [newTaskEstimatedHrs, setNewTaskEstimatedHrs] = useState('');
   const [newTaskEstimatedMins, setNewTaskEstimatedMins] = useState('');
@@ -251,6 +253,7 @@ const ClientView = ({
       date: tryParse(log.date) || new Date(),
       dueDate: tryParse(log.dueDate) || null,
       repeatFrequency: log.repeatFrequency || 'Once',
+      repeatEnd: tryParse(log.repeatEnd) || null,
       status: log.status || 'Pending',
       qcEnabled: log.qcEnabled ?? true,
       qcAssigneeId: log.qcAssigneeId || '',
@@ -289,6 +292,7 @@ const ClientView = ({
         date: format(editDraft.date || new Date(), 'do MMM yyyy'),
         dueDate: editDraft.dueDate ? format(editDraft.dueDate, 'do MMM yyyy') : null,
         repeatFrequency: editDraft.repeatFrequency,
+        repeatEnd: editDraft.repeatFrequency !== 'Once' && editDraft.repeatEnd ? format(editDraft.repeatEnd, 'do MMM yyyy') : null,
         status: editDraft.status,
         qcEnabled: editDraft.qcEnabled,
         qcAssigneeId: editDraft.qcEnabled && editDraft.qcAssigneeId ? editDraft.qcAssigneeId : null,
@@ -515,6 +519,8 @@ const ClientView = ({
       assigneeEmail: selectedAssignee.email || '',
       category: newTaskCategory,
       repeatFrequency: newTaskRepeat,
+      repeatEnd: newTaskRepeat !== 'Once' && newTaskRepeatEnd ? format(newTaskRepeatEnd, 'do MMM yyyy') : null,
+      lastSpawnedDate: null,
       timerState: 'idle',
       timerStartedAt: null,
       elapsedMs: 0,
@@ -575,6 +581,7 @@ const ClientView = ({
     setShowAssigneeMenu(false);
     setTaskFormError("");
     setNewTaskRepeat('Once');
+    setNewTaskRepeatEnd(null);
     setTaskDueDate(null);
     setQcEnabled(true);
     setQcAssigneeId('');
@@ -1665,6 +1672,26 @@ const ClientView = ({
                         <p className="text-[11px] text-blue-600 font-medium">Task will repeat every week on the same day</p>
                       )}
                     </div>
+                    {newTaskRepeat !== 'Once' && (
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Repeat Until <span className="text-slate-400 font-normal normal-case">(optional)</span>
+                        </label>
+                        <DatePicker
+                          selected={newTaskRepeatEnd}
+                          onChange={(date) => setNewTaskRepeatEnd(date)}
+                          placeholderText="No end date"
+                          dateFormat="do MMM yyyy"
+                          minDate={taskDueDate || selectedDate || new Date()}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                        />
+                        {newTaskRepeatEnd && (
+                          <button type="button" onClick={() => setNewTaskRepeatEnd(null)} className="text-xs font-semibold text-red-600 hover:text-red-700 transition-all">
+                            Clear End Date
+                          </button>
+                        )}
+                      </div>
+                    )}
                     <div className="space-y-1.5">
                       <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Due Date</label>
                       <DatePicker
@@ -1935,6 +1962,26 @@ const ClientView = ({
                             </label>
                           ))}
                         </div>
+                        {editDraft.repeatFrequency !== 'Once' && (
+                          <div className="mt-2 space-y-1.5">
+                            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Repeat Until <span className="text-slate-400 font-normal normal-case">(optional)</span>
+                            </label>
+                            <DatePicker
+                              selected={editDraft.repeatEnd || null}
+                              onChange={(date) => setEditDraft(d => ({ ...d, repeatEnd: date }))}
+                              placeholderText="No end date"
+                              dateFormat="do MMM yyyy"
+                              minDate={editDraft.dueDate || new Date()}
+                              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                            />
+                            {editDraft.repeatEnd && (
+                              <button type="button" onClick={() => setEditDraft(d => ({ ...d, repeatEnd: null }))} className="text-xs font-semibold text-red-600 hover:text-red-700 transition-all">
+                                Clear End Date
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                     {/* Right column: all text fields */}
