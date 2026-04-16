@@ -9,14 +9,8 @@ const statusColors = {
   Pending: 'bg-orange-100 text-orange-700',
 };
 
-const parseMentions = (text) => {
-  const regex = /@(\w[\w\s]*?)(?=\s@|\s*$|[^a-zA-Z\s])/g;
-  const matches = [];
-  let m;
-  while ((m = regex.exec(text)) !== null) {
-    matches.push(m[1].trim());
-  }
-  return matches;
+const parseMentions = (text, userList = []) => {
+  return userList.filter(u => u.name && text.includes(`@${u.name}`));
 };
 
 const renderMessageText = (text) => {
@@ -136,10 +130,8 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNot
     saveUpdate({ ...task, steps, messages: updated, links });
 
     // Fire notifications for @mentioned users
-    const mentionedNames = parseMentions(text);
-    mentionedNames.forEach(name => {
-      const mentioned = users.find(u => u.name?.toLowerCase() === name.toLowerCase());
-      if (!mentioned || String(mentioned.id) === String(currentUser?.id)) return;
+    const mentionedUsers = parseMentions(text, users).filter(u => String(u.id) !== String(currentUser?.id));
+    mentionedUsers.forEach(mentioned => {
       setNotifications(prev => [{
         id: `mention-${msgId}-${mentioned.id}`,
         type: 'mention',
@@ -151,12 +143,14 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNot
         clientId: task.cid,
       }, ...prev]);
 
-      if (mentioned.email) {
+      const recipientEmail = mentioned.email || mentioned.emailAddress;
+      if (recipientEmail) {
         sendNotification('mention', {
-          recipientEmail: mentioned.email,
+          recipientEmail,
           recipientName: mentioned.name,
           mentionerName: currentUser?.name,
           taskName: task.name || task.comment,
+          clientName: task.clientName || task.cid || '',
           messageText: text,
         });
       }
