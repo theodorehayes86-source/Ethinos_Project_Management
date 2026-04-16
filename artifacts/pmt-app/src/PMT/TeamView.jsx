@@ -1,27 +1,13 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { Users, ChevronRight, ChevronLeft, Plus, X, Search, Star, ArrowUp, ArrowDown } from 'lucide-react';
+import { Users, ChevronRight, ChevronLeft, Plus, X, Search, Star, ArrowUp, ArrowDown, Filter } from 'lucide-react';
 import { format, isBefore, isAfter, startOfWeek, endOfWeek, startOfMonth, endOfMonth, parse } from 'date-fns';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import TaskDetailPanel from './TaskDetailPanel';
 
-const ROLE_RANK = {
-  'Super Admin': 0,
-  'Director': 1,
-  'Business Head': 2,
-  'Snr Manager': 3,
-  'Manager': 4,
-  'Project Manager': 4,
-  'CSM': 4,
-  'Asst Manager': 5,
-  'Snr Executive': 6,
-  'Executive': 7,
-  'Employee': 8,
-  'Intern': 9,
-};
-
 const DEFAULT_STANDARD_TRACK = ['Director', 'Snr Manager', 'Manager', 'Asst Manager', 'Snr Executive', 'Executive', 'Employee', 'Intern'];
 const CS_REPORT_ROLES = new Set(['CSM', 'Project Manager', 'PM/CSM']);
+const REPEAT_OPTIONS = ['Daily', 'Weekly', 'Fortnightly', 'Monthly', 'Quarterly', 'Yearly', 'One-time'];
 
 const STATUS_COLORS = {
   Done: 'bg-emerald-100 text-emerald-700',
@@ -62,28 +48,10 @@ const avatarColor = (name) => {
   return colors[Math.abs(hash) % colors.length];
 };
 
-const getSubtreeIds = (userId, users, visited = new Set()) => {
-  if (visited.has(String(userId))) return [];
-  visited.add(String(userId));
-  const direct = users.filter(u => String(u.managerId) === String(userId));
-  return [String(userId), ...direct.flatMap(u => getSubtreeIds(u.id, users, visited))];
-};
-
 const getLevelsToShow = (parentRole, effectiveHierarchyOrder) => {
   const idx = effectiveHierarchyOrder.indexOf(parentRole);
   if (idx < 0) return effectiveHierarchyOrder;
   return effectiveHierarchyOrder.slice(idx + 1);
-};
-
-const buildLevelGroups = (rootId, parentRole, users, effectiveHierarchyOrder, canDrill) => {
-  const subtreeIds = new Set(getSubtreeIds(rootId, users));
-  subtreeIds.delete(String(rootId));
-  const levelsToShow = getLevelsToShow(parentRole, effectiveHierarchyOrder);
-  return levelsToShow.map(role => ({
-    role,
-    members: users.filter(u => subtreeIds.has(String(u.id)) && u.role === role).sort((a, b) => (a.name || '').localeCompare(b.name || '')),
-    canDrill,
-  }));
 };
 
 const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCategories, currentUser, clientLogs, setClientLogs, onClose }) => {
@@ -94,6 +62,7 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
   const [taskCategory, setTaskCategory] = useState('');
   const [taskDueDate, setTaskDueDate] = useState(null);
   const [taskBillable, setTaskBillable] = useState(true);
+  const [taskRepeat, setTaskRepeat] = useState('Monthly');
   const [estimatedHrs, setEstimatedHrs] = useState('');
   const [estimatedMins, setEstimatedMins] = useState('');
   const [error, setError] = useState('');
@@ -104,8 +73,8 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!selectedClientId || !taskName.trim() || !taskCategory || !taskComment.trim() || !taskDueDate) {
-      setError('All fields are required.'); return;
+    if (!selectedClientId || !taskName.trim() || !taskCategory || !taskComment.trim()) {
+      setError('Client, name, category and description are required.'); return;
     }
     const estHrs = parseInt(estimatedHrs || '0', 10) || 0;
     const estMins = parseInt(estimatedMins || '0', 10) || 0;
@@ -123,8 +92,8 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
       creatorName: currentUser?.name || 'Unassigned',
       creatorRole: currentUser?.role || '',
       category: taskCategory,
-      repeatFrequency: 'Monthly',
-      dueDate: format(taskDueDate, 'do MMM yyyy'),
+      repeatFrequency: taskRepeat,
+      dueDate: taskDueDate ? format(taskDueDate, 'do MMM yyyy') : null,
       timerState: 'idle', timerStartedAt: null, elapsedMs: 0, timeTaken: null,
       qcEnabled: false, qcAssigneeId: null, qcAssigneeName: null, qcStatus: null, qcRating: null, qcFeedback: null, qcReviewedAt: null,
       departments: prefilledAssignee?.department ? [prefilledAssignee.department] : null,
@@ -156,15 +125,23 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
             </div>
           </div>
           <div><label className="text-xs font-semibold text-slate-600 mb-1 block">Task Name *</label><input value={taskName} onChange={e => setTaskName(e.target.value)} placeholder="Task name…" className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20"/></div>
-          <div>
-            <label className="text-xs font-semibold text-slate-600 mb-1 block">Category *</label>
-            <select value={taskCategory} onChange={e => setTaskCategory(e.target.value)} className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20">
-              <option value="">Select category…</option>
-              {(taskCategories || []).map(cat => <option key={cat} value={cat}>{cat}</option>)}
-            </select>
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="text-xs font-semibold text-slate-600 mb-1 block">Category *</label>
+              <select value={taskCategory} onChange={e => setTaskCategory(e.target.value)} className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20">
+                <option value="">Select…</option>
+                {(taskCategories || []).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+              </select>
+            </div>
+            <div className="flex-1">
+              <label className="text-xs font-semibold text-slate-600 mb-1 block">Repeat</label>
+              <select value={taskRepeat} onChange={e => setTaskRepeat(e.target.value)} className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20">
+                {REPEAT_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
           </div>
           <div><label className="text-xs font-semibold text-slate-600 mb-1 block">Description *</label><textarea value={taskComment} onChange={e => setTaskComment(e.target.value)} rows={3} placeholder="Describe the task…" className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20 resize-none"/></div>
-          <div><label className="text-xs font-semibold text-slate-600 mb-1 block">Due Date *</label><DatePicker selected={taskDueDate} onChange={setTaskDueDate} dateFormat="d MMM yyyy" placeholderText="Pick due date…" className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20"/></div>
+          <div><label className="text-xs font-semibold text-slate-600 mb-1 block">Due Date</label><DatePicker selected={taskDueDate} onChange={setTaskDueDate} dateFormat="d MMM yyyy" placeholderText="Optional…" className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20"/></div>
           <div className="flex gap-3">
             <div className="flex-1"><label className="text-xs font-semibold text-slate-600 mb-1 block">Est. Hours</label><input type="number" min="0" value={estimatedHrs} onChange={e => setEstimatedHrs(e.target.value)} placeholder="0" className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20"/></div>
             <div className="flex-1"><label className="text-xs font-semibold text-slate-600 mb-1 block">Est. Mins</label><input type="number" min="0" max="59" value={estimatedMins} onChange={e => setEstimatedMins(e.target.value)} placeholder="0" className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20"/></div>
@@ -288,11 +265,8 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
         {clientHourSplit.length > 0 && (
           <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
             <div className="px-4 py-2.5 border-b border-slate-100"><h4 className="text-xs font-bold text-slate-700">Client Hour Split</h4></div>
-            <table className="w-full text-xs">
-              <thead className="bg-slate-50 border-b border-slate-100"><tr><th className="px-4 py-2 text-left text-slate-500 font-semibold">Client</th><th className="px-4 py-2 text-right text-slate-500 font-semibold">Hours</th><th className="px-4 py-2 text-right text-slate-500 font-semibold">Tasks</th></tr></thead>
-              <tbody className="divide-y divide-slate-50">
-                {clientHourSplit.map(row => (<tr key={row.name} className="hover:bg-slate-50 transition-colors"><td className="px-4 py-2 text-slate-700 font-medium">{row.name}</td><td className="px-4 py-2 text-right text-slate-600">{fmtMs(row.ms)}</td><td className="px-4 py-2 text-right text-slate-500">{row.count}</td></tr>))}
-              </tbody>
+            <table className="w-full text-xs"><thead className="bg-slate-50 border-b border-slate-100"><tr><th className="px-4 py-2 text-left text-slate-500 font-semibold">Client</th><th className="px-4 py-2 text-right text-slate-500 font-semibold">Hours</th><th className="px-4 py-2 text-right text-slate-500 font-semibold">Tasks</th></tr></thead>
+              <tbody className="divide-y divide-slate-50">{clientHourSplit.map(row => (<tr key={row.name} className="hover:bg-slate-50 transition-colors"><td className="px-4 py-2 text-slate-700 font-medium">{row.name}</td><td className="px-4 py-2 text-right text-slate-600">{fmtMs(row.ms)}</td><td className="px-4 py-2 text-right text-slate-500">{row.count}</td></tr>))}</tbody>
             </table>
           </div>
         )}
@@ -304,39 +278,40 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
             <select value={clientFilter} onChange={e => setClientFilter(e.target.value)} className="text-[10px] border border-slate-200 rounded-md px-2 py-1 bg-slate-50 outline-none max-w-[120px]"><option value="all">All Clients</option>{uniqueClients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
             <select value={dateRange} onChange={e => setDateRange(e.target.value)} className="text-[10px] border border-slate-200 rounded-md px-2 py-1 bg-slate-50 outline-none"><option value="all">All Time</option><option value="week">This Week</option><option value="month">This Month</option></select>
           </div>
-          {tasks.length === 0 ? (
-            <p className="text-center text-xs text-slate-400 py-8">No tasks match the filters.</p>
-          ) : (
-            <div className="divide-y divide-slate-50">
-              {tasks.map(task => {
-                const elapsed = getElapsed(task, now);
-                const over = task.estimatedMs && elapsed > task.estimatedMs;
-                const dueD = parseDueDate(task.dueDate);
-                const isOverdue = dueD && isBefore(dueD, new Date()) && task.status !== 'Done';
-                return (
-                  <button key={task.id} onClick={() => setSelectedTask(task)} className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-slate-800 truncate">{task.name}</p>
-                        <p className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
-                          <span>{task.cName}</span>
-                          {task.dueDate && <span className={isOverdue ? 'text-red-500 font-semibold' : ''}>Due {task.dueDate}</span>}
-                        </p>
+          {tasks.length === 0
+            ? <p className="text-center text-xs text-slate-400 py-8">No tasks match the filters.</p>
+            : (
+              <div className="divide-y divide-slate-50">
+                {tasks.map(task => {
+                  const elapsed = getElapsed(task, now);
+                  const over = task.estimatedMs && elapsed > task.estimatedMs;
+                  const dueD = parseDueDate(task.dueDate);
+                  const isOverdue = dueD && isBefore(dueD, new Date()) && task.status !== 'Done';
+                  return (
+                    <button key={task.id} onClick={() => setSelectedTask(task)} className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-slate-800 truncate">{task.name}</p>
+                          <p className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
+                            <span>{task.cName}</span>
+                            {task.dueDate && <span className={isOverdue ? 'text-red-500 font-semibold' : ''}>Due {task.dueDate}</span>}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${STATUS_COLORS[task.status] || 'bg-slate-100 text-slate-600'}`}>{task.status}</span>
+                          {task.qcRating && <span className="text-[10px] text-amber-600 font-semibold flex items-center gap-0.5"><Star size={10}/>{task.qcRating}</span>}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1.5 flex-shrink-0">
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${STATUS_COLORS[task.status] || 'bg-slate-100 text-slate-600'}`}>{task.status}</span>
-                        {task.qcRating && <span className="text-[10px] text-amber-600 font-semibold flex items-center gap-0.5"><Star size={10}/>{task.qcRating}</span>}
+                      <div className="flex items-center gap-3 mt-1 text-[10px] text-slate-400">
+                        <span>{fmtMs(elapsed)} logged</span>
+                        {task.estimatedMs && <span className={over ? 'text-red-500' : 'text-emerald-500'}>{over ? <ArrowUp size={9} className="inline"/> : <ArrowDown size={9} className="inline"/>}{' est. '}{fmtMs(task.estimatedMs)}</span>}
                       </div>
-                    </div>
-                    <div className="flex items-center gap-3 mt-1 text-[10px] text-slate-400">
-                      <span>{fmtMs(elapsed)} logged</span>
-                      {task.estimatedMs && <span className={over ? 'text-red-500' : 'text-emerald-500'}>{over ? <ArrowUp size={9} className="inline"/> : <ArrowDown size={9} className="inline"/>}{' est. '}{fmtMs(task.estimatedMs)}</span>}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
+                    </button>
+                  );
+                })}
+              </div>
+            )
+          }
         </div>
       </div>
       {selectedTask && (
@@ -385,12 +360,18 @@ const TeamView = ({
 }) => {
   const [drillStack, setDrillStack] = useState([]);
   const [selectedMember, setSelectedMember] = useState(null);
+  const [deptFilter, setDeptFilter] = useState('all');
 
   const isSuperAdmin = currentUser?.role === 'Super Admin';
   const isBH = currentUser?.role === 'Business Head';
   const isCSMPM = CS_REPORT_ROLES.has(currentUser?.role);
 
   const effectiveHierarchyOrder = useMemo(() => (hierarchyOrder?.length > 0 ? hierarchyOrder : DEFAULT_STANDARD_TRACK), [hierarchyOrder]);
+
+  const allDepartments = useMemo(() => {
+    const depts = [...new Set(users.map(u => u.department).filter(Boolean))].sort();
+    return depts;
+  }, [users]);
 
   const allTasksForUser = useCallback((userId) => {
     const result = [];
@@ -404,44 +385,67 @@ const TeamView = ({
   const currentParent = drillStack.length > 0 ? drillStack[drillStack.length - 1] : null;
 
   const leftPanelGroups = useMemo(() => {
+    const filterByDept = (members) => {
+      if (deptFilter === 'all') return members;
+      return members.filter(u => u.department === deptFilter);
+    };
+    const sortByName = (arr) => [...arr].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
     if (isBH) {
-      const csReports = users.filter(u => String(u.managerId) === String(currentUser.id) && CS_REPORT_ROLES.has(u.role)).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      const csReports = sortByName(filterByDept(users.filter(u => String(u.managerId) === String(currentUser.id) && CS_REPORT_ROLES.has(u.role))));
       return [{ role: 'CSM / Project Manager', members: csReports, isDrillable: false }];
     }
 
     if (isCSMPM) {
-      const direct = users.filter(u => String(u.managerId) === String(currentUser.id)).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-      if (direct.length === 0) return [];
+      const direct = sortByName(filterByDept(users.filter(u => String(u.managerId) === String(currentUser.id))));
       return [{ role: 'Direct Reports', members: direct, isDrillable: false }];
     }
 
     if (isSuperAdmin && currentParent?.role === 'Business Head') {
-      const csReports = users.filter(u => String(u.managerId) === String(currentParent.id) && CS_REPORT_ROLES.has(u.role)).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      const csReports = sortByName(filterByDept(users.filter(u => String(u.managerId) === String(currentParent.id) && CS_REPORT_ROLES.has(u.role))));
       return [{ role: 'CSM / Project Manager', members: csReports, isDrillable: false }];
     }
 
+    const rootId = currentParent ? currentParent.id : currentUser?.id;
+    const parentRole = currentParent ? currentParent.role : currentUser?.role;
+
     if (isSuperAdmin && !currentParent) {
-      const bhGroup = { role: 'Business Head', members: users.filter(u => u.role === 'Business Head').sort((a, b) => (a.name || '').localeCompare(b.name || '')), isDrillable: true };
+      const bhGroup = {
+        role: 'Business Head',
+        members: sortByName(filterByDept(users.filter(u => u.role === 'Business Head'))),
+        isDrillable: true,
+      };
       const standardGroups = effectiveHierarchyOrder.map(role => ({
         role,
-        members: users.filter(u => u.role === role).sort((a, b) => (a.name || '').localeCompare(b.name || '')),
+        members: sortByName(filterByDept(users.filter(u => u.role === role))),
         isDrillable: true,
       }));
       return [bhGroup, ...standardGroups];
     }
 
-    const rootId = currentParent ? currentParent.id : currentUser?.id;
-    const parentRole = currentParent ? currentParent.role : currentUser?.role;
-    return buildLevelGroups(rootId, parentRole, users, effectiveHierarchyOrder, true);
-  }, [currentParent, isSuperAdmin, isBH, isCSMPM, users, currentUser, effectiveHierarchyOrder]);
+    const directReports = users.filter(u => String(u.managerId) === String(rootId));
+    const levelsToShow = getLevelsToShow(parentRole, effectiveHierarchyOrder);
+    const groups = levelsToShow.map(role => ({
+      role,
+      members: sortByName(filterByDept(directReports.filter(u => u.role === role))),
+      isDrillable: true,
+    }));
+    const coveredRoles = new Set(levelsToShow);
+    const extraRoles = [...new Set(directReports.filter(u => !coveredRoles.has(u.role)).map(u => u.role))];
+    extraRoles.forEach(role => groups.push({
+      role,
+      members: sortByName(filterByDept(directReports.filter(u => u.role === role))),
+      isDrillable: true,
+    }));
+    return groups;
+  }, [currentParent, isSuperAdmin, isBH, isCSMPM, users, currentUser, effectiveHierarchyOrder, deptFilter]);
 
   const canDrillSelected = useMemo(() => {
     if (!selectedMember) return false;
     if (isBH || isCSMPM) return false;
     if (currentParent?.role === 'Business Head') return false;
-    if (selectedMember.role === 'Business Head' && !isSuperAdmin) return false;
     return users.some(u => String(u.managerId) === String(selectedMember.id));
-  }, [selectedMember, isBH, isCSMPM, isSuperAdmin, currentParent, users]);
+  }, [selectedMember, isBH, isCSMPM, currentParent, users]);
 
   const drillInto = () => {
     if (!selectedMember || !canDrillSelected) return;
@@ -461,10 +465,12 @@ const TeamView = ({
 
   if (!currentUser) return null;
 
+  const showDeptFilter = allDepartments.length > 1;
+
   return (
     <div className="flex gap-4 h-full">
       <div className="w-72 flex-shrink-0 flex flex-col space-y-3">
-        <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col gap-1">
+        <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col gap-2">
           <div className="flex items-center gap-2 text-xs text-slate-500 font-semibold min-h-[24px] flex-wrap">
             <button onClick={() => drillBack(0)} className={`flex items-center gap-1 ${drillStack.length === 0 ? 'text-blue-600 font-bold cursor-default' : 'hover:text-slate-700 cursor-pointer'}`}>
               <Users size={13}/><span>Team</span>
@@ -482,6 +488,16 @@ const TeamView = ({
             <button onClick={() => drillBack(drillStack.length - 1)} className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-600 transition-colors">
               <ChevronLeft size={10}/> Back
             </button>
+          )}
+          {showDeptFilter && (
+            <div className="flex items-center gap-1.5">
+              <Filter size={11} className="text-slate-400 flex-shrink-0"/>
+              <select value={deptFilter} onChange={e => { setDeptFilter(e.target.value); setSelectedMember(null); }}
+                className="flex-1 text-[10px] border border-slate-200 rounded-lg px-2 py-1.5 bg-slate-50 outline-none focus:ring-2 ring-blue-500/20 text-slate-700">
+                <option value="all">All Departments</option>
+                {allDepartments.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
           )}
         </div>
 

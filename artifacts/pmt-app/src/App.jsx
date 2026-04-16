@@ -1336,7 +1336,8 @@ const App = () => {
 
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const canSeeApprovals = managementRoles.includes(currentUser?.role);
-  const canSeeTeam = managementRoles.includes(currentUser?.role);
+  const teamViewRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Asst Manager', 'Project Manager', 'CSM'];
+  const canSeeTeam = teamViewRoles.includes(currentUser?.role);
 
   const CROSS_DEPT_ROLES_APP = ['Super Admin', 'Admin', 'Director', 'Business Head'];
   const isCrossDeptApp = CROSS_DEPT_ROLES_APP.includes(currentUser?.role) || currentUser?.department === 'All';

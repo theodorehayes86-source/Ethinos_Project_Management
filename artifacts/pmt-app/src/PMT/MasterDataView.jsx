@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Plus, Trash2, Search, ShieldCheck, Edit2, X, ChevronUp, ChevronDown, Lock, Users, Crown, Check, Star, UserCheck, UserPlus, Edit3, Mail, MessageSquare, Bug, Lightbulb, AlertCircle, CheckCircle2, Clock, Filter, Eye, EyeOff, FlaskConical, Archive, ArchiveRestore, ChevronRight, CornerDownLeft, Send, Upload } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import CsvImportModal from './CsvImportModal';
@@ -170,6 +170,7 @@ const MasterDataView = ({
   const effectiveHierarchyOrder = (hierarchyOrder && hierarchyOrder.length > 0) ? hierarchyOrder : DEFAULT_STANDARD_TRACK;
   const [hierarchyDraft, setHierarchyDraft] = useState(() => [...effectiveHierarchyOrder]);
   const [hierarchySaved, setHierarchySaved] = useState(false);
+  useEffect(() => { setHierarchyDraft([...effectiveHierarchyOrder]); }, [effectiveHierarchyOrder.join(',')]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const moveHierarchyRole = (idx, dir) => {
     setHierarchyDraft(prev => {
