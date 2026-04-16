@@ -1,8 +1,25 @@
-import { Router, type Request, type Response } from "express";
+import { Router, type Request, type Response, type NextFunction } from "express";
+import admin from "firebase-admin";
 import { sendEmail, isEmailConfigured } from "../lib/microsoft-graph";
 import { logger } from "../lib/logger";
 
 const router = Router();
+
+async function requireFirebaseAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Missing or invalid Authorization header" });
+    return;
+  }
+  const idToken = authHeader.slice(7);
+  try {
+    await admin.auth().verifyIdToken(idToken);
+    next();
+  } catch (err) {
+    logger.warn({ err }, "[Notify] Invalid Firebase ID token");
+    res.status(401).json({ error: "Invalid or expired auth token" });
+  }
+}
 
 /* ─── HTML builders ─── */
 
@@ -103,7 +120,7 @@ function buildFeedbackResponseHtml(d: {
 
 /* ─── Route ─── */
 
-router.post("/notify", async (req: Request, res: Response) => {
+router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) => {
   if (!isEmailConfigured()) {
     logger.warn("[Notify] Email not configured — skipping notification");
     return res.json({ sent: false, reason: "email_not_configured" });
