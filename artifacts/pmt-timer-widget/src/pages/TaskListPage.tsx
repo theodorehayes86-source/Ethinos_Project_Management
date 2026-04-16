@@ -1,11 +1,87 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useTasks } from "../context/TasksContext";
 import { GroupedTasks, TaskLog, getTaskName } from "../types";
-import { ChevronRight, ChevronDown, Clock, CheckCircle, Circle, Loader2, AlertCircle, ShieldCheck, ShieldX } from "lucide-react";
+import { ChevronRight, ChevronDown, Clock, CheckCircle, Circle, Loader2, AlertCircle, ShieldCheck, ShieldX, Calendar } from "lucide-react";
 
-interface TaskListPageProps {
-  onSelectTask: (task: TaskLog, clientName: string) => void;
+/* ─── Date helpers ─── */
+
+const ORDINAL_SUFFIXES = /(\d+)(st|nd|rd|th)/i;
+
+function parseTaskDate(raw?: string): Date | null {
+  if (!raw) return null;
+
+  // Strip ordinal suffix: "1st Apr 2024" → "1 Apr 2024"
+  const cleaned = raw.replace(ORDINAL_SUFFIXES, "$1");
+
+  const attempt = new Date(cleaned);
+  if (!isNaN(attempt.getTime())) return attempt;
+
+  return null;
 }
+
+function startOfDay(d: Date): Date {
+  const c = new Date(d);
+  c.setHours(0, 0, 0, 0);
+  return c;
+}
+
+function endOfDay(d: Date): Date {
+  const c = new Date(d);
+  c.setHours(23, 59, 59, 999);
+  return c;
+}
+
+function startOfWeek(d: Date): Date {
+  const c = new Date(d);
+  const day = c.getDay(); // 0=Sun
+  c.setDate(c.getDate() - day);
+  c.setHours(0, 0, 0, 0);
+  return c;
+}
+
+function endOfWeek(d: Date): Date {
+  const c = new Date(d);
+  const day = c.getDay();
+  c.setDate(c.getDate() + (6 - day));
+  c.setHours(23, 59, 59, 999);
+  return c;
+}
+
+function startOfMonth(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
+}
+
+function endOfMonth(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+}
+
+type Preset = "today" | "week" | "month" | "all";
+type DateField = "created" | "due";
+
+function getPresetRange(preset: Preset): { from: Date; to: Date } | null {
+  if (preset === "all") return null;
+  const now = new Date();
+  if (preset === "today")  return { from: startOfDay(now),   to: endOfDay(now) };
+  if (preset === "week")   return { from: startOfWeek(now),  to: endOfWeek(now) };
+  if (preset === "month")  return { from: startOfMonth(now), to: endOfMonth(now) };
+  return null;
+}
+
+function taskMatchesFilter(task: TaskLog, preset: Preset, field: DateField): boolean {
+  if (preset === "all") return true;
+  const range = getPresetRange(preset);
+  if (!range) return true;
+
+  const rawDate = field === "due" ? task.dueDate : task.date;
+  const parsed = parseTaskDate(rawDate);
+
+  // If filtering by due date and no due date exists, hide the task for time-scoped presets
+  if (!parsed) return false;
+
+  return parsed >= range.from && parsed <= range.to;
+}
+
+/* ─── Sub-components ─── */
 
 function getStatusIcon(status: string) {
   switch (status?.toLowerCase()) {
@@ -106,6 +182,12 @@ function TaskRow({ task, onSelect }: { task: TaskLog; onSelect: () => void }) {
               {formatDuration(task.elapsedMs ?? 0)}
             </span>
           )}
+          {task.dueDate && (
+            <span className="flex items-center gap-1 text-[10px] text-slate-500">
+              <Calendar size={9} />
+              {task.dueDate}
+            </span>
+          )}
         </div>
       </div>
       {isRunning && (
@@ -176,8 +258,97 @@ function ClientGroup({
   );
 }
 
+/* ─── Filter bar ─── */
+
+const PRESETS: { key: Preset; label: string }[] = [
+  { key: "today", label: "Today" },
+  { key: "week",  label: "This Week" },
+  { key: "month", label: "This Month" },
+  { key: "all",   label: "All" },
+];
+
+function FilterBar({
+  preset,
+  field,
+  onPreset,
+  onField,
+}: {
+  preset: Preset;
+  field: DateField;
+  onPreset: (p: Preset) => void;
+  onField: (f: DateField) => void;
+}) {
+  return (
+    <div className="px-4 pt-3 pb-2 space-y-2 flex-shrink-0">
+      {/* Preset pills */}
+      <div className="flex gap-1.5">
+        {PRESETS.map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => onPreset(key)}
+            className={`flex-1 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${
+              preset === key
+                ? "bg-indigo-500 text-white shadow-sm shadow-indigo-500/30"
+                : "bg-white/6 text-slate-400 hover:bg-white/10 hover:text-slate-300"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Field toggle — only shown when a time filter is active */}
+      {preset !== "all" && (
+        <div className="flex gap-1.5">
+          <button
+            onClick={() => onField("created")}
+            className={`flex-1 py-1 rounded-lg text-[10px] font-semibold transition-all ${
+              field === "created"
+                ? "bg-white/15 text-white"
+                : "bg-transparent text-slate-500 hover:text-slate-400"
+            }`}
+          >
+            By Created
+          </button>
+          <button
+            onClick={() => onField("due")}
+            className={`flex-1 py-1 rounded-lg text-[10px] font-semibold transition-all ${
+              field === "due"
+                ? "bg-white/15 text-white"
+                : "bg-transparent text-slate-500 hover:text-slate-400"
+            }`}
+          >
+            By Due Date
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Main page ─── */
+
+interface TaskListPageProps {
+  onSelectTask: (task: TaskLog, clientName: string) => void;
+}
+
 export default function TaskListPage({ onSelectTask }: TaskListPageProps) {
   const { groupedTasks, loading } = useTasks();
+
+  const [preset, setPreset] = useState<Preset>("all");
+  const [field, setField] = useState<DateField>("created");
+
+  const filteredGroups = useMemo<GroupedTasks[]>(() => {
+    if (preset === "all") return groupedTasks;
+    return groupedTasks
+      .map((group) => ({
+        ...group,
+        tasks: group.tasks.filter((t) => taskMatchesFilter(t, preset, field)),
+      }))
+      .filter((g) => g.tasks.length > 0);
+  }, [groupedTasks, preset, field]);
+
+  const totalVisible = filteredGroups.reduce((n, g) => n + g.tasks.length, 0);
 
   if (loading) {
     return (
@@ -190,29 +361,65 @@ export default function TaskListPage({ onSelectTask }: TaskListPageProps) {
     );
   }
 
-  if (!groupedTasks.length) {
-    return (
-      <div className="flex-1 flex items-center justify-center px-6">
-        <div className="text-center">
-          <div className="w-12 h-12 rounded-2xl bg-slate-800 border border-white/10 flex items-center justify-center mx-auto mb-3">
-            <Clock size={20} className="text-slate-500" />
-          </div>
-          <p className="text-slate-400 text-sm font-medium">No tasks assigned</p>
-          <p className="text-slate-600 text-xs mt-1">Check with your project manager</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-5">
-      {groupedTasks.map((group: GroupedTasks) => (
-        <ClientGroup
-          key={String(group.clientId)}
-          group={group}
-          onSelectTask={onSelectTask}
-        />
-      ))}
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <FilterBar
+        preset={preset}
+        field={field}
+        onPreset={(p) => { setPreset(p); }}
+        onField={setField}
+      />
+
+      {!groupedTasks.length ? (
+        <div className="flex-1 flex items-center justify-center px-6">
+          <div className="text-center">
+            <div className="w-12 h-12 rounded-2xl bg-slate-800 border border-white/10 flex items-center justify-center mx-auto mb-3">
+              <Clock size={20} className="text-slate-500" />
+            </div>
+            <p className="text-slate-400 text-sm font-medium">No tasks assigned</p>
+            <p className="text-slate-600 text-xs mt-1">Check with your project manager</p>
+          </div>
+        </div>
+      ) : !filteredGroups.length ? (
+        <div className="flex-1 flex items-center justify-center px-6">
+          <div className="text-center">
+            <div className="w-12 h-12 rounded-2xl bg-slate-800 border border-white/10 flex items-center justify-center mx-auto mb-3">
+              <Calendar size={20} className="text-slate-500" />
+            </div>
+            <p className="text-slate-400 text-sm font-medium">No tasks match this filter</p>
+            <p className="text-slate-600 text-xs mt-1">
+              {field === "due"
+                ? "Try switching to Created or a wider range"
+                : "Try a wider date range or All"}
+            </p>
+            <button
+              onClick={() => setPreset("all")}
+              className="mt-3 text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors"
+            >
+              Show all tasks
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-5">
+          {preset !== "all" && (
+            <p className="text-[10px] text-slate-600 px-1">
+              {totalVisible} task{totalVisible !== 1 ? "s" : ""}
+              {" "}
+              {field === "due" ? "due" : "created"}
+              {" "}
+              {preset === "today" ? "today" : preset === "week" ? "this week" : "this month"}
+            </p>
+          )}
+          {filteredGroups.map((group) => (
+            <ClientGroup
+              key={String(group.clientId)}
+              group={group}
+              onSelectTask={onSelectTask}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

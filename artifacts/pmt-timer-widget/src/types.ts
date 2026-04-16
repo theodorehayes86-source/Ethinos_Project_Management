@@ -27,6 +27,10 @@ export interface TaskLog {
   taskIndex: number;
   description?: string;
   category?: string;
+  /** Created date — format: "1st Apr 2024" (do MMM yyyy) */
+  date?: string;
+  /** Due date — format: "1st Apr 2024" (do MMM yyyy) */
+  dueDate?: string;
   qcEnabled?: boolean;
   qcStatus?: string | null;
   qcAssigneeName?: string | null;
