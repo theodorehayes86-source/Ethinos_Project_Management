@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { X, Plus, Trash2, Send, Link, Check, ExternalLink, AtSign } from 'lucide-react';
 import { format } from 'date-fns';
+import { sendNotification } from '../utils/notify';
 
 const statusColors = {
   Done: 'bg-emerald-100 text-emerald-700',
@@ -149,6 +150,16 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNot
         taskId: task.id,
         clientId: task.cid,
       }, ...prev]);
+
+      if (mentioned.email) {
+        sendNotification('mention', {
+          recipientEmail: mentioned.email,
+          recipientName: mentioned.name,
+          mentionerName: currentUser?.name,
+          taskName: task.name || task.comment,
+          messageText: text,
+        });
+      }
     });
   };
 

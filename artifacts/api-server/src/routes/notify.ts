@@ -118,6 +118,43 @@ function buildFeedbackResponseHtml(d: {
   return brandedWrapper("#2563eb", "Feedback Response", "Your feedback has a new response", body);
 }
 
+/* ─── Test-mode redirect helper ─── */
+
+function resolveRecipient(email: string): string {
+  return process.env.NOTIFY_TEST_EMAIL || email;
+}
+
+function testSubjectPrefix(subject: string): string {
+  return process.env.NOTIFY_TEST_EMAIL ? `[TEST] ${subject}` : subject;
+}
+
+/* ─── Mention HTML builder ─── */
+
+function buildMentionHtml(d: {
+  mentionedName?: string;
+  mentionerName?: string;
+  taskName?: string;
+  clientName?: string;
+  messageText: string;
+}): string {
+  const tableBody = [
+    row("Task", d.taskName || ""),
+    row("Client", d.clientName || ""),
+    row("From", d.mentionerName || ""),
+  ].join("");
+  const body = `
+    <p style="margin:0 0 16px;font-size:14px;color:#475569;">
+      <strong>${d.mentionerName || "A teammate"}</strong> mentioned you in a task message. Log in to view the full thread and reply.
+    </p>
+    <div style="background:#f8fafc;border-left:3px solid #7c3aed;padding:12px 16px;margin-bottom:20px;border-radius:0 4px 4px 0;">
+      <p style="margin:0;font-size:14px;color:#1e293b;line-height:1.6;">${d.messageText}</p>
+    </div>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">${tableBody}</table>
+    <a href="https://pmt.ethinos.com" style="display:inline-block;background:#7c3aed;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View Task</a>
+  `;
+  return brandedWrapper("#7c3aed", "You were mentioned", `${d.mentionerName || "Someone"} mentioned you`, body);
+}
+
 /* ─── Route ─── */
 
 router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) => {
@@ -132,45 +169,65 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
     return res.status(400).json({ error: "type and data are required" });
   }
 
+  const testMode = !!process.env.NOTIFY_TEST_EMAIL;
+
   try {
     switch (type) {
       case "task-assigned": {
         const { assigneeEmail, assigneeName, taskName, taskDescription, clientName, dueDate, creatorName } = data as Record<string, string>;
         if (!assigneeEmail) return res.json({ sent: false, reason: "no_email" });
+        const to = resolveRecipient(assigneeEmail);
         await sendEmail({
-          to: assigneeEmail,
-          subject: `[PMT] New task assigned: "${taskName}"`,
+          to,
+          subject: testSubjectPrefix(`[PMT] New task assigned: "${taskName}"`),
           bodyHtml: buildTaskAssignedHtml({ assigneeName, taskName, taskDescription, clientName, dueDate, creatorName }),
         });
-        logger.info({ to: assigneeEmail, taskName }, "[Notify] task-assigned email sent");
+        logger.info({ to, original: assigneeEmail, taskName, testMode }, "[Notify] task-assigned email sent");
         break;
       }
 
       case "approval-required": {
         const { recipientEmails, requesterName, taskName, clientName } = data as { recipientEmails: string[]; requesterName: string; taskName: string; clientName: string };
         if (!recipientEmails?.length) return res.json({ sent: false, reason: "no_recipients" });
+        const dedupedTo = testMode
+          ? [resolveRecipient(recipientEmails[0])]
+          : recipientEmails;
         await Promise.allSettled(
-          recipientEmails.map((email) =>
+          dedupedTo.map((email) =>
             sendEmail({
               to: email,
-              subject: `[PMT] Assignment request: ${requesterName} → "${taskName}"`,
+              subject: testSubjectPrefix(`[PMT] Assignment request: ${requesterName} → "${taskName}"`),
               bodyHtml: buildApprovalRequiredHtml({ requesterName, taskName, clientName }),
             })
           )
         );
-        logger.info({ recipients: recipientEmails.length, taskName }, "[Notify] approval-required emails sent");
+        logger.info({ recipients: dedupedTo.length, taskName, testMode }, "[Notify] approval-required emails sent");
         break;
       }
 
       case "feedback-response": {
         const { recipientEmail, recipientName, feedbackText, replyText, adminName } = data as Record<string, string>;
         if (!recipientEmail) return res.json({ sent: false, reason: "no_email" });
+        const to = resolveRecipient(recipientEmail);
         await sendEmail({
-          to: recipientEmail,
-          subject: "[PMT] Your feedback has received a response",
+          to,
+          subject: testSubjectPrefix("[PMT] Your feedback has received a response"),
           bodyHtml: buildFeedbackResponseHtml({ recipientName, feedbackText, replyText, adminName }),
         });
-        logger.info({ to: recipientEmail }, "[Notify] feedback-response email sent");
+        logger.info({ to, original: recipientEmail, testMode }, "[Notify] feedback-response email sent");
+        break;
+      }
+
+      case "mention": {
+        const { recipientEmail, recipientName, mentionerName, taskName, clientName, messageText } = data as Record<string, string>;
+        if (!recipientEmail) return res.json({ sent: false, reason: "no_email" });
+        const to = resolveRecipient(recipientEmail);
+        await sendEmail({
+          to,
+          subject: testSubjectPrefix(`[PMT] ${mentionerName || "Someone"} mentioned you in "${taskName}"`),
+          bodyHtml: buildMentionHtml({ mentionedName: recipientName, mentionerName, taskName, clientName, messageText }),
+        });
+        logger.info({ to, original: recipientEmail, taskName, testMode }, "[Notify] mention email sent");
         break;
       }
 

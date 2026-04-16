@@ -28,3 +28,6 @@ timeoutMs = 20000
 [userenv]
 
 [userenv.shared]
+
+[userenv.development]
+NOTIFY_TEST_EMAIL = "theo.hayes@ethinos.com"
