@@ -16,6 +16,11 @@ import { Bell, LogOut, Loader2 } from 'lucide-react';
 
 const MANAGEMENT_ROLES = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
 
+const SYNTHETIC_CLIENTS = [
+  { id: '__personal__', name: 'Personal', synthetic: true, isPersonal: true },
+  { id: '__ethinos__', name: 'Ethinos Internal', synthetic: true, isEthinos: true },
+];
+
 async function generatePkce() {
   const array = new Uint8Array(32);
   crypto.getRandomValues(array);
@@ -157,8 +162,10 @@ function MainApp() {
 
   const isManager = MANAGEMENT_ROLES.includes(currentUser?.role);
 
-  const myTasks = useMyTasks(currentUser, clientLogs, clients);
-  const pendingApprovals = usePendingApprovals(currentUser, clientLogs, clients);
+  const allClients = [...SYNTHETIC_CLIENTS, ...clients];
+
+  const myTasks = useMyTasks(currentUser, clientLogs, allClients);
+  const pendingApprovals = usePendingApprovals(currentUser, clientLogs, allClients);
   const employeeNotifications = useEmployeeNotifications(currentUser, clientLogs);
 
   const lastNotifSeenKey = currentUser ? `pmt_notif_seen_${currentUser.id}` : null;
@@ -328,7 +335,7 @@ function MainApp() {
           <ManagerDashboard
             currentUser={currentUser}
             users={users}
-            clients={clients}
+            clients={allClients}
             clientLogs={clientLogs}
             categories={categories}
             pendingApprovals={pendingApprovals}
@@ -340,7 +347,7 @@ function MainApp() {
             myTasks={myTasks}
             clientLogs={clientLogs}
             currentUser={currentUser}
-            clients={clients}
+            clients={allClients}
             categories={categories}
             users={users}
           />
