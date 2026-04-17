@@ -54,6 +54,15 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
   const [showQcPrompt, setShowQcPrompt] = useState(false);
   const [qcSent, setQcSent] = useState(false);
   const [autoPaused, setAutoPaused] = useState(false);
+  // Guard: briefly disable Done after Pause/Stop to prevent accidental clicks
+  const [doneGuarded, setDoneGuarded] = useState(false);
+  const doneGuardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const activateDoneGuard = useCallback(() => {
+    setDoneGuarded(true);
+    if (doneGuardTimerRef.current) clearTimeout(doneGuardTimerRef.current);
+    doneGuardTimerRef.current = setTimeout(() => setDoneGuarded(false), 700);
+  }, []);
 
   useEffect(() => {
     if (timerState === "running") {
@@ -150,6 +159,7 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
 
   const handlePause = useCallback(() => {
     stopSyncInterval();
+    activateDoneGuard();
     if (startedAtRef.current !== null) {
       baseElapsedRef.current = computeElapsed();
     }
@@ -164,10 +174,11 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
       timerStartedAt: null,
       status: liveStatus,
     });
-  }, [task, updateTaskTimer, computeElapsed, liveStatus, stopSyncInterval]);
+  }, [task, updateTaskTimer, computeElapsed, liveStatus, stopSyncInterval, activateDoneGuard]);
 
   const handleStop = useCallback(() => {
     stopSyncInterval();
+    activateDoneGuard();
     if (startedAtRef.current !== null) {
       baseElapsedRef.current = computeElapsed();
     }
@@ -182,7 +193,7 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
       timerStartedAt: null,
       status: liveStatus,
     });
-  }, [task, updateTaskTimer, computeElapsed, liveStatus, stopSyncInterval]);
+  }, [task, updateTaskTimer, computeElapsed, liveStatus, stopSyncInterval, activateDoneGuard]);
 
   /** Called when user clicks the Done button — stop timer and show QC prompt if enabled. */
   const handleDone = useCallback(() => {
@@ -360,66 +371,77 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
           </div>
         )}
 
-        {/* Normal controls */}
+        {/* Normal controls — two separate rows so Done never overlaps Pause/Stop */}
         {!showQcPrompt && !qcSent && !isQcRejected && (
-          <div className="flex items-center gap-3">
-            {isStopped && (
-              <button
-                onClick={handleStart}
-                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl px-6 py-3 text-sm transition-all shadow-lg"
-              >
-                <Play size={16} />
-                {elapsedMs > 0 ? "Resume" : "Start"}
-              </button>
-            )}
-
-            {isRunning && (
-              <>
-                <button
-                  onClick={handlePause}
-                  className="flex items-center gap-2 bg-amber-600/80 hover:bg-amber-500 text-white font-bold rounded-2xl px-5 py-3 text-sm transition-all shadow-md border border-amber-400/30"
-                >
-                  <Pause size={16} />
-                  Pause
-                </button>
-                <button
-                  onClick={handleStop}
-                  className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white font-bold rounded-2xl px-5 py-3 text-sm transition-all border border-white/15"
-                >
-                  <Square size={16} />
-                  Stop
-                </button>
-              </>
-            )}
-
-            {isPaused && (
-              <>
+          <div className="flex flex-col items-center gap-4 w-full">
+            {/* Row 1: primary action (Start / Pause+Stop / Resume+Stop) */}
+            <div className="flex items-center justify-center gap-3">
+              {isStopped && (
                 <button
                   onClick={handleStart}
-                  className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl px-5 py-3 text-sm transition-all shadow-md"
+                  className="flex items-center gap-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold rounded-2xl px-8 py-3.5 text-sm transition-all shadow-lg"
                 >
-                  <Play size={16} />
-                  Resume
+                  <Play size={18} />
+                  {elapsedMs > 0 ? "Resume" : "Start"}
                 </button>
-                <button
-                  onClick={handleStop}
-                  className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white font-bold rounded-2xl px-5 py-3 text-sm transition-all border border-white/15"
-                >
-                  <Square size={16} />
-                  Stop
-                </button>
-              </>
-            )}
+              )}
 
-            {(isPaused || timerState === "stopped") && elapsedMs > 0 && (
-              <button
-                onClick={handleDone}
-                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-2xl px-5 py-3 text-sm transition-all shadow-md"
-              >
-                <CheckCircle size={16} />
-                Done
-              </button>
-            )}
+              {isRunning && (
+                <>
+                  <button
+                    onClick={handlePause}
+                    className="flex items-center gap-2.5 bg-amber-600/90 hover:bg-amber-500 active:scale-95 text-white font-bold rounded-2xl px-6 py-3.5 text-sm transition-all shadow-md border border-amber-400/30"
+                  >
+                    <Pause size={18} />
+                    Pause
+                  </button>
+                  <button
+                    onClick={handleStop}
+                    className="flex items-center gap-2.5 bg-white/10 hover:bg-white/20 active:scale-95 text-white font-bold rounded-2xl px-6 py-3.5 text-sm transition-all border border-white/15"
+                  >
+                    <Square size={18} />
+                    Stop
+                  </button>
+                </>
+              )}
+
+              {isPaused && (
+                <>
+                  <button
+                    onClick={handleStart}
+                    className="flex items-center gap-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold rounded-2xl px-6 py-3.5 text-sm transition-all shadow-md"
+                  >
+                    <Play size={18} />
+                    Resume
+                  </button>
+                  <button
+                    onClick={handleStop}
+                    className="flex items-center gap-2.5 bg-white/10 hover:bg-white/20 active:scale-95 text-white font-bold rounded-2xl px-6 py-3.5 text-sm transition-all border border-white/15"
+                  >
+                    <Square size={18} />
+                    Stop
+                  </button>
+                </>
+              )}
+            </div>
+
+            {/* Row 2: Done — always a fixed distance below Row 1, never overlaps the controls above */}
+            <div className="h-12 flex items-center">
+              {(isPaused || timerState === "stopped") && elapsedMs > 0 && (
+                <button
+                  onClick={handleDone}
+                  disabled={doneGuarded}
+                  className={`flex items-center gap-2.5 font-bold rounded-2xl px-8 py-3 text-sm transition-all shadow-md ${
+                    doneGuarded
+                      ? "bg-indigo-800/50 text-indigo-400/50 cursor-not-allowed"
+                      : "bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white"
+                  }`}
+                >
+                  <CheckCircle size={18} />
+                  Mark Done
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>

@@ -1,19 +1,26 @@
 import React from "react";
-import { LogOut, Timer, Minus, X } from "lucide-react";
+import { LogOut, Timer, Minus, X, Maximize2, Minimize2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useTasks } from "../context/TasksContext";
 import SyncIndicator from "./SyncIndicator";
 
 interface HeaderProps {
-  onMinimize?: () => void;
+  onMinimizeToClock?: () => void;
+  onMinimizeWindow?: () => void;
+  onToggleMaximize?: () => void;
   onClose?: () => void;
+  isMaximized?: boolean;
 }
 
-/** On macOS with titleBarStyle:'hidden', traffic lights sit at ~x:12 y:8.
- *  We need ~76px left padding so content starts after the three dots. */
 const isMac = window.electronAPI?.platform === "darwin";
 
-export default function Header({ onMinimize, onClose }: HeaderProps) {
+export default function Header({
+  onMinimizeToClock,
+  onMinimizeWindow,
+  onToggleMaximize,
+  onClose,
+  isMaximized,
+}: HeaderProps) {
   const { pmtUser, logout } = useAuth();
   const { syncStatus, flushQueue } = useTasks();
 
@@ -39,7 +46,7 @@ export default function Header({ onMinimize, onClose }: HeaderProps) {
       </div>
 
       <div
-        className="flex items-center gap-2"
+        className="flex items-center gap-1.5"
         style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       >
         <SyncIndicator
@@ -48,13 +55,13 @@ export default function Header({ onMinimize, onClose }: HeaderProps) {
           onFlush={flushQueue}
         />
 
-        {onMinimize && (
+        {onMinimizeToClock && (
           <button
-            onClick={onMinimize}
+            onClick={onMinimizeToClock}
             className="w-7 h-7 rounded-lg bg-white/5 hover:bg-indigo-500/30 border border-white/10 flex items-center justify-center transition-all"
-            title="Minimize to clock"
+            title="Minimize to clock bar"
           >
-            <Minus size={12} className="text-slate-400" />
+            <Timer size={11} className="text-slate-400" />
           </button>
         )}
 
@@ -63,16 +70,39 @@ export default function Header({ onMinimize, onClose }: HeaderProps) {
           className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/15 border border-white/10 flex items-center justify-center transition-all"
           title="Logout"
         >
-          <LogOut size={12} className="text-slate-400" />
+          <LogOut size={11} className="text-slate-400" />
         </button>
+
+        {!isMac && onMinimizeWindow && (
+          <button
+            onClick={onMinimizeWindow}
+            className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/15 border border-white/10 flex items-center justify-center transition-all"
+            title="Minimise"
+          >
+            <Minus size={11} className="text-slate-400" />
+          </button>
+        )}
+
+        {!isMac && onToggleMaximize && (
+          <button
+            onClick={onToggleMaximize}
+            className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/15 border border-white/10 flex items-center justify-center transition-all"
+            title={isMaximized ? "Restore" : "Maximise"}
+          >
+            {isMaximized
+              ? <Minimize2 size={11} className="text-slate-400" />
+              : <Maximize2 size={11} className="text-slate-400" />
+            }
+          </button>
+        )}
 
         {!isMac && onClose && (
           <button
             onClick={onClose}
-            className="w-7 h-7 rounded-lg bg-white/5 hover:bg-red-500/40 border border-white/10 flex items-center justify-center transition-all"
+            className="w-7 h-7 rounded-lg bg-white/5 hover:bg-red-500/50 border border-white/10 hover:border-red-500/40 flex items-center justify-center transition-all group"
             title="Close"
           >
-            <X size={12} className="text-slate-400" />
+            <X size={11} className="text-slate-400 group-hover:text-red-300 transition-colors" />
           </button>
         )}
       </div>

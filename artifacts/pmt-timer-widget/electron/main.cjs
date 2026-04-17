@@ -141,6 +141,20 @@ ipcMain.on("close-window", () => {
   mainWindow.close();
 });
 
+ipcMain.on("minimize-window", () => {
+  if (!mainWindow) return;
+  mainWindow.minimize();
+});
+
+ipcMain.on("toggle-maximize", () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMaximized()) {
+    mainWindow.unmaximize();
+  } else {
+    mainWindow.maximize();
+  }
+});
+
 ipcMain.on("minimize-to-clock", () => {
   if (!mainWindow) return;
   const [x, y] = mainWindow.getPosition();

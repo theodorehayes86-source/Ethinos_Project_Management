@@ -90,7 +90,14 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
       ? clients
       : clients.filter((c) => assignedProjects.includes(c.name));
 
-    return accessibleClients
+    const SYNTHETIC_CLIENTS: Client[] = [
+      { id: "__personal__", name: "Personal" },
+      { id: "__ethinos__", name: "Ethinos" },
+    ];
+
+    const allClients = [...accessibleClients, ...SYNTHETIC_CLIENTS];
+
+    return allClients
       .map((client) => {
         const allLogs = rawLogs[String(client.id)] || [];
         const arr: TaskLog[] = Array.isArray(allLogs)

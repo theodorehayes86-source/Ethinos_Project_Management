@@ -16,6 +16,9 @@ declare global {
     electronAPI?: {
       minimizeToClock: () => void;
       restoreWindow: () => void;
+      closeWindow: () => void;
+      minimizeWindow: () => void;
+      toggleMaximize: () => void;
       onMiniModeChange: (cb: (isMini: boolean) => void) => () => void;
       isElectron: boolean;
       platform: string;
@@ -28,6 +31,7 @@ export default function MainApp() {
   const [miniMode, setMiniMode] = useState(false);
   const [liveElapsedMs, setLiveElapsedMs] = useState(0);
   const [liveIsRunning, setLiveIsRunning] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
 
   const isElectron = !!window.electronAPI?.isElectron;
 
@@ -39,12 +43,25 @@ export default function MainApp() {
     return unsub;
   }, []);
 
-  const handleMinimize = useCallback(() => {
+  const handleMinimizeToClock = useCallback(() => {
     window.electronAPI?.minimizeToClock();
   }, []);
 
   const handleRestore = useCallback(() => {
     window.electronAPI?.restoreWindow();
+  }, []);
+
+  const handleMinimizeWindow = useCallback(() => {
+    window.electronAPI?.minimizeWindow();
+  }, []);
+
+  const handleToggleMaximize = useCallback(() => {
+    window.electronAPI?.toggleMaximize();
+    setIsMaximized((prev) => !prev);
+  }, []);
+
+  const handleClose = useCallback(() => {
+    window.electronAPI?.closeWindow();
   }, []);
 
   const handleElapsedUpdate = useCallback((ms: number, running: boolean) => {
@@ -78,8 +95,11 @@ export default function MainApp() {
         style={{ visibility: miniMode ? "hidden" : "visible" }}
       >
         <Header
-          onMinimize={isElectron && selected ? handleMinimize : undefined}
-          onClose={isElectron ? () => window.electronAPI?.closeWindow?.() : undefined}
+          onMinimizeToClock={isElectron && selected ? handleMinimizeToClock : undefined}
+          onMinimizeWindow={isElectron ? handleMinimizeWindow : undefined}
+          onToggleMaximize={isElectron ? handleToggleMaximize : undefined}
+          onClose={isElectron ? handleClose : undefined}
+          isMaximized={isMaximized}
         />
         {selected ? (
           <TimerPage
