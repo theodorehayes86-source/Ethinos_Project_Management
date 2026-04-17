@@ -1025,8 +1025,8 @@ const App = () => {
   const [clients, setClients] = useState([]);
   const [users, setUsers] = useState(DEFAULT_USERS);
   const [taskCategories, setTaskCategories] = useState(DEFAULT_TASK_CATEGORIES);
-  const [departments, setDepartments] = useState(['Creative', 'Biddable', 'Growth', 'Client Servicing']);
-  const [regions, setRegions] = useState(['North', 'South', 'West']);
+  const [departments, setDepartments] = useState([]);
+  const [regions, setRegions] = useState([]);
   const DEFAULT_CC_TAB_ACCESS = { users: ['Super Admin', 'Director'], clients: ['Super Admin', 'Director'], categories: ['Super Admin', 'Director'], departments: ['Super Admin', 'Director'], regions: ['Super Admin', 'Director'], conditions: ['Super Admin'], templates: ['Super Admin', 'Director'], feedback: ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM', 'Employee', 'Snr Executive', 'Executive', 'Intern'] };
   const [controlCenterTabAccess, setControlCenterTabAccess] = useState(DEFAULT_CC_TAB_ACCESS);
   const [userManagementAccessRoles, setUserManagementAccessRoles] = useState(['Super Admin', 'Director']);
@@ -1135,7 +1135,7 @@ const App = () => {
       }
       const rSnap = await get(ref(db, 'regions'));
       if (!rSnap.exists()) {
-        await set(ref(db, 'regions'), ['North', 'South', 'East', 'West', 'Pan India']);
+        await set(ref(db, 'regions'), ['North', 'South', 'West']);
       }
     };
     seedDepartmentsRegions();
@@ -1745,7 +1745,7 @@ const App = () => {
   if (!testModeUserId && firebaseUser && !currentUser) {
     // Firebase DB hasn't finished loading yet — keep showing the spinner rather
     // than flashing the "Access Not Set Up" screen prematurely.
-    if (!dbReady) {
+    if (!dbReady || departments.length === 0 || regions.length === 0) {
       return (
         <div className="flex items-center justify-center min-h-screen bg-slate-50">
           <div className="text-sm font-semibold text-slate-500">Loading…</div>
@@ -1753,9 +1753,8 @@ const App = () => {
       );
     }
 
-    if (dbReady) {
-      return (
-        <MicrosoftProfileSetup
+    return (
+      <MicrosoftProfileSetup
           firebaseUser={firebaseUser}
           departments={departments}
           regions={regions}
@@ -1782,7 +1781,6 @@ const App = () => {
           onSignOut={handleLogout}
         />
       );
-    }
   }
 
   return (

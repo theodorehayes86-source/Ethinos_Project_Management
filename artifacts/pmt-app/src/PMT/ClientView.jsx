@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Search, ChevronLeft, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus, Hourglass, Archive, ArchiveRestore } from 'lucide-react';
+import { Search, ChevronLeft, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, AlertTriangle, Calendar, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus, Hourglass, Archive, ArchiveRestore } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import DatePicker from "react-datepicker";
 import { format, subDays, parse } from 'date-fns';
@@ -479,6 +479,8 @@ const ClientView = ({
   const getTaskCounts = (clientId) => {
     const logs = (clientLogs[clientId] || []).filter(t => isTaskVisible(t, currentUser) && !t.archived);
     const twoDaysAgo = subDays(new Date(), 2);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
     return {
       open: logs.filter(l => l.status === 'Pending').length,
@@ -490,7 +492,23 @@ const ClientView = ({
           const taskDate = parse(l.date, 'do MMM yyyy', new Date());
           return taskDate <= twoDaysAgo;
         } catch (e) { return false; }
-      }).length
+      }).length,
+      overdue: logs.filter(l => {
+        if (l.status === 'Done' || !l.dueDate) return false;
+        try {
+          const d = parse(l.dueDate, 'do MMM yyyy', new Date());
+          d.setHours(0, 0, 0, 0);
+          return d < today;
+        } catch (e) { return false; }
+      }).length,
+      dueToday: logs.filter(l => {
+        if (l.status === 'Done' || !l.dueDate) return false;
+        try {
+          const d = parse(l.dueDate, 'do MMM yyyy', new Date());
+          d.setHours(0, 0, 0, 0);
+          return d.getTime() === today.getTime();
+        } catch (e) { return false; }
+      }).length,
     };
   };
 
@@ -936,7 +954,7 @@ const ClientView = ({
         )}
 
         {/* --- OVERALL NUMBERS ROW --- */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
           <div className="bg-white p-2 rounded-lg border border-slate-100 shadow-sm flex items-center justify-between min-h-[62px]">
             <div>
               <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Total Pending</p>
@@ -964,6 +982,20 @@ const ClientView = ({
               <p className="text-base font-bold text-red-600 mt-0.5">{stats.recentPending}</p>
             </div>
             <div className="p-1 bg-red-50 rounded-md"><AlertCircle size={12} className="text-red-500"/></div>
+          </div>
+          <div className={`bg-white p-2 rounded-lg border shadow-sm flex items-center justify-between min-h-[62px] ${stats.overdue > 0 ? 'border-red-200' : 'border-slate-100'}`}>
+            <div>
+              <p className={`text-[10px] font-semibold uppercase tracking-wider ${stats.overdue > 0 ? 'text-red-500' : 'text-slate-500'}`}>Overdue</p>
+              <p className={`text-base font-bold mt-0.5 ${stats.overdue > 0 ? 'text-red-600' : 'text-slate-900'}`}>{stats.overdue}</p>
+            </div>
+            <div className={`p-1 rounded-md ${stats.overdue > 0 ? 'bg-red-50' : 'bg-slate-50'}`}><AlertTriangle size={12} className={stats.overdue > 0 ? 'text-red-500' : 'text-slate-400'}/></div>
+          </div>
+          <div className={`bg-white p-2 rounded-lg border shadow-sm flex items-center justify-between min-h-[62px] ${stats.dueToday > 0 ? 'border-amber-200' : 'border-slate-100'}`}>
+            <div>
+              <p className={`text-[10px] font-semibold uppercase tracking-wider ${stats.dueToday > 0 ? 'text-amber-600' : 'text-slate-500'}`}>Due Today</p>
+              <p className={`text-base font-bold mt-0.5 ${stats.dueToday > 0 ? 'text-amber-700' : 'text-slate-900'}`}>{stats.dueToday}</p>
+            </div>
+            <div className={`p-1 rounded-md ${stats.dueToday > 0 ? 'bg-amber-50' : 'bg-slate-50'}`}><Calendar size={12} className={stats.dueToday > 0 ? 'text-amber-500' : 'text-slate-400'}/></div>
           </div>
         </div>
 

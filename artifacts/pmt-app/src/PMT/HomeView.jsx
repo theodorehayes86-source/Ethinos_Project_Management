@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { format, parse, isBefore } from 'date-fns';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
-import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, CheckCircle, Tag, Calendar, Archive, ArchiveRestore, LayoutTemplate, ChevronDown, Play, Square, Pause } from 'lucide-react';
+import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, CheckCircle, Tag, Calendar, Archive, ArchiveRestore, LayoutTemplate, ChevronDown, Play, Square, Pause, Send, ThumbsUp, ThumbsDown, RotateCcw } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import TaskDetailPanel from './TaskDetailPanel';
 
@@ -62,6 +62,7 @@ const HomeView = ({
   const [taskCategoryQuery, setTaskCategoryQuery] = useState('');
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
   const [taskRepeat, setTaskRepeat] = useState('Once');
+  const [taskRepeatEnd, setTaskRepeatEnd] = useState(null);
   const [taskName, setTaskName] = useState('');
   const [taskComment, setTaskComment] = useState('');
   const [taskDueDate, setTaskDueDate] = useState(null);
@@ -75,6 +76,10 @@ const HomeView = ({
   const [showQcPicker, setShowQcPicker] = useState(false);
   const [qcPickerSearch, setQcPickerSearch] = useState('');
   const [taskError, setTaskError] = useState('');
+  const [qcReviewingTask, setQcReviewingTask] = useState(null);
+  const [qcReviewRating, setQcReviewRating] = useState('');
+  const [qcReviewFeedback, setQcReviewFeedback] = useState('');
+  const [qcReviewDecision, setQcReviewDecision] = useState('approved');
   const [taskDepartments, setTaskDepartments] = useState([]);
   const [taskBillable, setTaskBillable] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
@@ -177,6 +182,7 @@ const HomeView = ({
     setTaskCategoryQuery('');
     setShowCategoryMenu(false);
     setTaskRepeat('Once');
+    setTaskRepeatEnd(null);
     setTaskName('');
     setTaskComment('');
     setTaskDueDate(null);
@@ -232,6 +238,7 @@ const HomeView = ({
       creatorRole: currentUser?.role || 'Employee',
       category: taskCategory,
       repeatFrequency: taskRepeat,
+      repeatEnd: taskRepeat !== 'Once' ? (taskRepeatEnd ? format(taskRepeatEnd, 'do MMM yyyy') : null) : null,
       dueDate: taskDueDate ? format(taskDueDate, 'do MMM yyyy') : null,
       timerState: 'idle',
       timerStartedAt: null,
@@ -341,8 +348,9 @@ const HomeView = ({
         : (task.elapsedMs || 0);
       timerUpdate = { timerState: 'stopped', timerStartedAt: null, elapsedMs, timeTaken: formatDuration(elapsedMs) };
     }
-    handleUpdateTask(task, { status: newStatus, ...timerUpdate });
-    setDetailTask(prev => prev?.id === task.id ? { ...prev, status: newStatus, ...timerUpdate } : prev);
+    const qcReset = newStatus !== 'Done' && task.qcStatus === 'sent' ? { qcStatus: null } : {};
+    handleUpdateTask(task, { status: newStatus, ...timerUpdate, ...qcReset });
+    setDetailTask(prev => prev?.id === task.id ? { ...prev, status: newStatus, ...timerUpdate, ...qcReset } : prev);
   };
 
   // Group tasks by client
@@ -569,6 +577,45 @@ const HomeView = ({
                               </select>
                             ) : (
                               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Archived</span>
+                            )}
+
+                            {/* QC badges */}
+                            {task.qcEnabled && task.status === 'Done' && !task.qcStatus && (String(task.assigneeId) === String(currentUser?.id) || isManagement) && !task.archived && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleUpdateTask(task, { qcStatus: 'sent' }); }}
+                                className="flex items-center gap-0.5 text-[9px] font-semibold bg-indigo-50 text-indigo-600 border border-indigo-200 rounded px-1 py-0.5 hover:bg-indigo-100 transition-all whitespace-nowrap"
+                                title="Send for Quality Check"
+                              >
+                                <Send size={8} /> Send for QC
+                              </button>
+                            )}
+                            {task.qcEnabled && task.qcStatus === 'sent' && !isManagement && (
+                              <span className="flex items-center gap-0.5 text-[9px] font-semibold bg-amber-50 text-amber-600 border border-amber-200 rounded px-1 py-0.5 whitespace-nowrap">
+                                <ShieldCheck size={8} /> Pending QC
+                              </span>
+                            )}
+                            {task.qcEnabled && task.qcStatus === 'sent' && isManagement && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setQcReviewingTask(task); setQcReviewDecision('approved'); setQcReviewRating(''); setQcReviewFeedback(''); }}
+                                className="flex items-center gap-0.5 text-[9px] font-semibold bg-amber-50 text-amber-600 border border-amber-200 rounded px-1 py-0.5 hover:bg-amber-100 transition-all whitespace-nowrap"
+                                title="Review QC submission"
+                              >
+                                <ShieldCheck size={8} /> Review QC
+                              </button>
+                            )}
+                            {task.qcEnabled && task.qcStatus === 'approved' && (
+                              <span className="flex items-center gap-0.5 text-[9px] font-semibold bg-emerald-50 text-emerald-600 border border-emerald-200 rounded px-1 py-0.5 whitespace-nowrap">
+                                <ThumbsUp size={8} /> Approved{task.qcRating ? ` · ${task.qcRating}/10` : ''}
+                              </span>
+                            )}
+                            {task.qcEnabled && task.qcStatus === 'rejected' && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleUpdateTask(task, { qcStatus: 'sent' }); }}
+                                className="flex items-center gap-0.5 text-[9px] font-semibold bg-red-50 text-red-600 border border-red-200 rounded px-1 py-0.5 hover:bg-red-100 transition-all whitespace-nowrap"
+                                title="Resubmit for QC"
+                              >
+                                <RotateCcw size={8} /> Returned
+                              </button>
                             )}
 
                             {/* Timer controls */}
@@ -965,11 +1012,31 @@ const HomeView = ({
                         <label key={freq} className="flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer hover:bg-slate-50 transition-all"
                           style={taskRepeat === freq ? { borderColor: '#2563eb', backgroundColor: '#eff6ff' } : { borderColor: '#e2e8f0' }}
                         >
-                          <input type="radio" name="homeTaskRepeat" value={freq} checked={taskRepeat === freq} onChange={e => setTaskRepeat(e.target.value)} className="w-4 h-4 accent-blue-600 cursor-pointer"/>
+                          <input type="radio" name="homeTaskRepeat" value={freq} checked={taskRepeat === freq} onChange={e => { setTaskRepeat(e.target.value); if (e.target.value === 'Once') setTaskRepeatEnd(null); }} className="w-4 h-4 accent-blue-600 cursor-pointer"/>
                           <span className="text-xs font-semibold text-slate-700">{freq}</span>
                         </label>
                       ))}
                     </div>
+                    {taskRepeat !== 'Once' && (
+                      <div className="mt-2 space-y-1">
+                        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Repeat Until <span className="text-slate-400 font-normal normal-case">(optional)</span>
+                        </label>
+                        <DatePicker
+                          selected={taskRepeatEnd}
+                          onChange={(date) => setTaskRepeatEnd(date)}
+                          placeholderText="Select end date"
+                          dateFormat="do MMM yyyy"
+                          minDate={selectedDate || new Date()}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                        />
+                        {taskRepeatEnd && (
+                          <button type="button" onClick={() => setTaskRepeatEnd(null)} className="text-xs font-semibold text-red-600 hover:text-red-700 transition-all">
+                            Clear End Date
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-1.5">
@@ -1149,6 +1216,105 @@ const HomeView = ({
           setPickerSearch={setQcPickerSearch}
         />
       )}
+
+      {qcReviewingTask && (() => {
+        const handleSubmitQcReview = () => {
+          const ratingNum = parseInt(qcReviewRating, 10);
+          const validRating = !isNaN(ratingNum) && ratingNum >= 1 && ratingNum <= 10 ? ratingNum : null;
+          if (qcReviewDecision === 'rejected' && !qcReviewFeedback.trim()) return;
+          const feedbackText = qcReviewFeedback.trim();
+          const existing = Array.isArray(qcReviewingTask.feedbackThread) ? qcReviewingTask.feedbackThread : [];
+          const entry = feedbackText ? {
+            id: `fb-${Date.now()}`,
+            authorId: currentUser?.id || null,
+            authorName: currentUser?.name || 'Reviewer',
+            text: feedbackText,
+            type: qcReviewDecision,
+            timestamp: new Date().toISOString(),
+          } : null;
+          handleUpdateTask(qcReviewingTask, {
+            qcStatus: qcReviewDecision,
+            qcRating: validRating,
+            qcFeedback: feedbackText || null,
+            qcReviewedAt: new Date().toISOString(),
+            qcReviewerName: currentUser?.name || null,
+            feedbackThread: entry ? [...existing, entry] : existing,
+          });
+          setQcReviewingTask(null);
+          setQcReviewRating('');
+          setQcReviewFeedback('');
+        };
+        return (
+          <div className="fixed inset-0 z-[700] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4">
+            <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck size={17} className="text-indigo-600" />
+                  <h3 className="text-base font-bold text-slate-800">QC Review</h3>
+                </div>
+                <button onClick={() => setQcReviewingTask(null)} className="p-1.5 hover:bg-slate-100 rounded-lg transition-all"><X size={16}/></button>
+              </div>
+              <div className="px-6 py-4 space-y-4">
+                <div className="bg-slate-50 rounded-xl p-3 border border-slate-200">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Task</p>
+                  <p className="text-sm font-medium text-slate-700 line-clamp-3">{qcReviewingTask.name || qcReviewingTask.comment}</p>
+                  <p className="text-[10px] text-slate-500 mt-1">Assigned to: {qcReviewingTask.assigneeName}</p>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Decision</label>
+                  <div className="flex gap-3">
+                    <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${qcReviewDecision === 'approved' ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                      <input type="radio" name="homeQcDecision" value="approved" checked={qcReviewDecision === 'approved'} onChange={() => setQcReviewDecision('approved')} className="sr-only" />
+                      <ThumbsUp size={14} /> <span className="text-xs font-semibold">Approve</span>
+                    </label>
+                    <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${qcReviewDecision === 'rejected' ? 'bg-red-50 border-red-300 text-red-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                      <input type="radio" name="homeQcDecision" value="rejected" checked={qcReviewDecision === 'rejected'} onChange={() => setQcReviewDecision('rejected')} className="sr-only" />
+                      <ThumbsDown size={14} /> <span className="text-xs font-semibold">Return</span>
+                    </label>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Rating (1–10) <span className="text-slate-400 font-normal normal-case">optional</span></label>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {[1,2,3,4,5,6,7,8,9,10].map(n => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => setQcReviewRating(String(n) === qcReviewRating ? '' : String(n))}
+                        className={`w-8 h-8 rounded-lg text-xs font-bold border transition-all ${String(n) === qcReviewRating ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50'}`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Feedback {qcReviewDecision === 'rejected' && <span className="text-red-500">*</span>}
+                  </label>
+                  <textarea
+                    value={qcReviewFeedback}
+                    onChange={e => setQcReviewFeedback(e.target.value)}
+                    placeholder={qcReviewDecision === 'rejected' ? 'Required — describe what needs to be fixed' : 'Optional comments…'}
+                    rows={3}
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-700 outline-none focus:ring-2 ring-indigo-300/30 resize-none"
+                  />
+                </div>
+              </div>
+              <div className="px-6 py-4 border-t border-slate-100 flex gap-3">
+                <button onClick={() => setQcReviewingTask(null)} className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all">Cancel</button>
+                <button
+                  onClick={handleSubmitQcReview}
+                  disabled={qcReviewDecision === 'rejected' && !qcReviewFeedback.trim()}
+                  className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all ${qcReviewDecision === 'approved' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'} disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  {qcReviewDecision === 'approved' ? 'Approve' : 'Return for Revision'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {detailTask && (
         <TaskDetailPanel
