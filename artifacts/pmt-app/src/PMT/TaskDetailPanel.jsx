@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Plus, Trash2, Send, Link, Check, ExternalLink, AtSign } from 'lucide-react';
+import { X, Plus, Trash2, Send, Link, Check, ExternalLink, AtSign, MessageSquare, CheckCircle, XCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { sendNotification } from '../utils/notify';
 
@@ -27,10 +27,21 @@ const renderMessageText = (text) => {
   });
 };
 
+function buildFeedbackThread(task) {
+  const thread = Array.isArray(task.feedbackThread) ? [...task.feedbackThread] : [];
+  if (thread.length === 0) {
+    if (task.qcComment) thread.push({ id: 'legacy-approved', authorName: task.qcReviewerName || 'Reviewer', text: task.qcComment, type: 'approved', timestamp: task.qcReviewedAt });
+    if (task.qcFeedback) thread.push({ id: 'legacy-rejected', authorName: task.qcReviewerName || 'Reviewer', text: task.qcFeedback, type: 'rejected', timestamp: task.qcReviewedAt });
+  }
+  return thread;
+}
+
 const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNotifications = () => {}, onClose, onUpdate }) => {
   const [steps, setSteps] = useState(() => task.steps || []);
   const [messages, setMessages] = useState(() => task.messages || []);
   const [links, setLinks] = useState(() => task.links || []);
+  const [feedbackThread, setFeedbackThread] = useState(() => buildFeedbackThread(task));
+  const [newFeedback, setNewFeedback] = useState('');
 
   const [newStepLabel, setNewStepLabel] = useState('');
   const [newMessage, setNewMessage] = useState('');
@@ -155,6 +166,24 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNot
         });
       }
     });
+  };
+
+  // --- Feedback Thread ---
+  const handleAddFeedback = () => {
+    const text = newFeedback.trim();
+    if (!text) return;
+    const entry = {
+      id: `fb-${Date.now()}`,
+      authorId: currentUser?.id || null,
+      authorName: currentUser?.name || 'Anonymous',
+      text,
+      type: 'comment',
+      timestamp: new Date().toISOString(),
+    };
+    const updated = [...feedbackThread, entry];
+    setFeedbackThread(updated);
+    setNewFeedback('');
+    saveUpdate({ ...task, steps, messages, links, feedbackThread: updated });
   };
 
   // --- Links ---
@@ -389,6 +418,76 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNot
               </div>
             </div>
           </section>
+
+          {/* Feedback Thread */}
+          {(feedbackThread.length > 0 || task.qcEnabled) && (
+            <section>
+              <div className="flex items-center gap-1.5 mb-2">
+                <h3 className="text-xs font-bold uppercase tracking-wide text-slate-700">
+                  QC Feedback
+                  {feedbackThread.length > 0 && (
+                    <span className="ml-1.5 text-slate-400 font-normal normal-case">{feedbackThread.length}</span>
+                  )}
+                </h3>
+              </div>
+              <div className="space-y-2 mb-3 max-h-48 overflow-y-auto pr-1">
+                {feedbackThread.length === 0 && (
+                  <p className="text-xs text-slate-400 italic">No feedback yet.</p>
+                )}
+                {feedbackThread.map(entry => {
+                  const isMine = String(entry.authorId) === String(currentUser?.id);
+                  const bgColor = entry.type === 'approved' ? 'bg-emerald-50 border border-emerald-100'
+                    : entry.type === 'rejected' ? 'bg-red-50 border border-red-100'
+                    : isMine ? 'bg-blue-50 border border-blue-100'
+                    : 'bg-slate-100 border border-slate-100';
+                  const textColor = entry.type === 'approved' ? 'text-emerald-800'
+                    : entry.type === 'rejected' ? 'text-red-800'
+                    : 'text-slate-800';
+                  return (
+                    <div key={entry.id} className={`rounded-xl px-3 py-2.5 ${bgColor}`}>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <span className={`text-[10px] font-bold ${textColor}`}>{entry.authorName}</span>
+                        {entry.type === 'approved' && (
+                          <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                            <CheckCircle size={8} /> Approved
+                          </span>
+                        )}
+                        {entry.type === 'rejected' && (
+                          <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">
+                            <XCircle size={8} /> Returned
+                          </span>
+                        )}
+                        {entry.timestamp && (
+                          <span className="text-[9px] text-slate-400 ml-auto">
+                            {format(new Date(entry.timestamp), 'dd MMM, h:mm a')}
+                          </span>
+                        )}
+                      </div>
+                      <p className={`text-xs leading-relaxed ${textColor}`}>{entry.text}</p>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newFeedback}
+                  onChange={e => setNewFeedback(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAddFeedback(); } }}
+                  placeholder="Add a comment to this feedback…"
+                  className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                />
+                <button
+                  onClick={handleAddFeedback}
+                  disabled={!newFeedback.trim()}
+                  className="p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+                  title="Add comment"
+                >
+                  <Send size={14} />
+                </button>
+              </div>
+            </section>
+          )}
 
           {/* Links */}
           <section>

@@ -1,5 +1,21 @@
 import React, { useState } from 'react';
-import { CheckCircle, XCircle, Star, ChevronDown, ChevronUp, Clock, User, Tag, Calendar, MessageSquare, UserPlus, UserCheck, UserX, Check, X } from 'lucide-react';
+import { CheckCircle, XCircle, Star, ChevronDown, ChevronUp, Clock, User, Tag, Calendar, MessageSquare, UserPlus, UserCheck, UserX, Check, X, Send } from 'lucide-react';
+
+function formatTs(ts) {
+  if (!ts) return '';
+  try {
+    return new Date(ts).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  } catch { return ''; }
+}
+
+function buildThread(task) {
+  const thread = Array.isArray(task.feedbackThread) ? [...task.feedbackThread] : [];
+  if (thread.length === 0) {
+    if (task.qcComment) thread.push({ id: 'legacy-approved', authorName: task.qcReviewerName || 'Reviewer', text: task.qcComment, type: 'approved', timestamp: task.qcReviewedAt });
+    if (task.qcFeedback) thread.push({ id: 'legacy-rejected', authorName: task.qcReviewerName || 'Reviewer', text: task.qcFeedback, type: 'rejected', timestamp: task.qcReviewedAt });
+  }
+  return thread;
+}
 
 const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
 
@@ -171,9 +187,18 @@ const ReturnModal = ({ task, onConfirm, onClose }) => {
   );
 };
 
-const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed }) => {
+const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed, currentUser, onAddComment }) => {
   const [expanded, setExpanded] = useState(false);
+  const [replyText, setReplyText] = useState('');
   const assignee = users.find(u => String(u.id) === String(task.assigneeId));
+  const thread = buildThread(task);
+
+  const handleReply = () => {
+    const text = replyText.trim();
+    if (!text) return;
+    onAddComment(task, text);
+    setReplyText('');
+  };
 
   const formatMs = (ms = 0) => {
     const totalSeconds = Math.floor(ms / 1000);
@@ -305,17 +330,65 @@ const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed }) => {
             )}
           </div>
 
-          {isReviewed && task.qcStatus === 'approved' && task.qcComment && (
+          {(thread.length > 0 || isReviewed) && (
             <div>
-              <p className="text-slate-400 font-semibold uppercase tracking-wider text-xs mb-1">Approval Comment</p>
-              <p className="text-sm text-slate-700 bg-emerald-50 rounded-xl px-4 py-3 border border-emerald-100">{task.qcComment}</p>
-            </div>
-          )}
-
-          {isReviewed && task.qcStatus === 'rejected' && task.qcFeedback && (
-            <div>
-              <p className="text-slate-400 font-semibold uppercase tracking-wider text-xs mb-1">Return Feedback</p>
-              <p className="text-sm text-slate-700 bg-red-50 rounded-xl px-4 py-3 border border-red-100">{task.qcFeedback}</p>
+              <p className="text-slate-400 font-semibold uppercase tracking-wider text-xs mb-2 flex items-center gap-1">
+                <MessageSquare size={10} /> Comments ({thread.length})
+              </p>
+              <div className="space-y-2 mb-2">
+                {thread.length === 0 && (
+                  <p className="text-xs text-slate-400 italic">No comments yet.</p>
+                )}
+                {thread.map(entry => {
+                  const isMine = currentUser && String(entry.authorId) === String(currentUser.id);
+                  const bgColor = entry.type === 'approved' ? 'bg-emerald-50 border-emerald-100'
+                    : entry.type === 'rejected' ? 'bg-red-50 border-red-100'
+                    : isMine ? 'bg-blue-50 border-blue-100'
+                    : 'bg-white border-slate-200';
+                  const textColor = entry.type === 'approved' ? 'text-emerald-800'
+                    : entry.type === 'rejected' ? 'text-red-800'
+                    : 'text-slate-800';
+                  const badge = entry.type === 'approved' ? (
+                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 ml-1">
+                      <CheckCircle size={8} /> Approved
+                    </span>
+                  ) : entry.type === 'rejected' ? (
+                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 ml-1">
+                      <XCircle size={8} /> Returned
+                    </span>
+                  ) : null;
+                  return (
+                    <div key={entry.id} className={`rounded-xl px-3 py-2.5 border ${bgColor}`}>
+                      <div className="flex items-center gap-1 mb-1">
+                        <span className={`text-[10px] font-bold ${textColor}`}>{entry.authorName}</span>
+                        {badge}
+                        {entry.timestamp && (
+                          <span className="text-[9px] text-slate-400 ml-auto">{formatTs(entry.timestamp)}</span>
+                        )}
+                      </div>
+                      <p className={`text-xs leading-relaxed ${textColor}`}>{entry.text}</p>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={replyText}
+                  onChange={e => setReplyText(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleReply()}
+                  placeholder="Add a comment…"
+                  className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                />
+                <button
+                  onClick={handleReply}
+                  disabled={!replyText.trim()}
+                  className="p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+                  title="Send comment"
+                >
+                  <Send size={13} />
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -492,23 +565,58 @@ const ApprovalsView = ({ clientLogs, clients, users, currentUser, persistClientL
   };
 
   const handleApproveConfirm = ({ rating, comment }) => {
+    const existing = approvingTask.feedbackThread || [];
+    const entry = comment ? {
+      id: `fb-${Date.now()}`,
+      authorId: currentUser.id,
+      authorName: currentUser.name,
+      text: comment,
+      type: 'approved',
+      timestamp: new Date().toISOString(),
+    } : null;
     updateTask(approvingTask, {
       qcStatus: 'approved',
       qcRating: rating,
       qcComment: comment || '',
+      qcReviewerName: currentUser.name,
       qcReviewedAt: Date.now(),
+      feedbackThread: entry ? [...existing, entry] : existing,
     });
     setApprovingTask(null);
   };
 
   const handleReturnConfirm = ({ rating, feedback }) => {
+    const existing = returningTask.feedbackThread || [];
+    const entry = {
+      id: `fb-${Date.now()}`,
+      authorId: currentUser.id,
+      authorName: currentUser.name,
+      text: feedback,
+      type: 'rejected',
+      timestamp: new Date().toISOString(),
+    };
     updateTask(returningTask, {
       qcStatus: 'rejected',
       qcRating: rating,
       qcFeedback: feedback,
+      qcReviewerName: currentUser.name,
       qcReviewedAt: Date.now(),
+      feedbackThread: [...existing, entry],
     });
     setReturningTask(null);
+  };
+
+  const handleAddFeedbackComment = (task, text) => {
+    const entry = {
+      id: `fb-${Date.now()}`,
+      authorId: currentUser.id,
+      authorName: currentUser.name,
+      text,
+      type: 'comment',
+      timestamp: new Date().toISOString(),
+    };
+    const existing = task.feedbackThread || [];
+    updateTask(task, { feedbackThread: [...existing, entry] });
   };
 
   const handleAcceptAssignment = (task, request) => {
@@ -573,6 +681,8 @@ const ApprovalsView = ({ clientLogs, clients, users, currentUser, persistClientL
                   onApprove={setApprovingTask}
                   onReturn={setReturningTask}
                   isReviewed={isReviewed}
+                  currentUser={currentUser}
+                  onAddComment={handleAddFeedbackComment}
                 />
               ))}
             </div>

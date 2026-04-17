@@ -2187,16 +2187,28 @@ const ClientView = ({
             const ratingNum = parseInt(qcReviewRating, 10);
             const validRating = !isNaN(ratingNum) && ratingNum >= 1 && ratingNum <= 10 ? ratingNum : null;
             if (qcReviewDecision === 'rejected' && !qcReviewFeedback.trim()) return;
-            const updated = clientLogs[selectedClient.id].map(l =>
-              l.id === qcReviewingTaskId ? {
+            const feedbackText = qcReviewFeedback.trim();
+            const updated = clientLogs[selectedClient.id].map(l => {
+              if (l.id !== qcReviewingTaskId) return l;
+              const existing = Array.isArray(l.feedbackThread) ? l.feedbackThread : [];
+              const entry = feedbackText ? {
+                id: `fb-${Date.now()}`,
+                authorId: currentUser?.id || null,
+                authorName: currentUser?.name || 'Reviewer',
+                text: feedbackText,
+                type: qcReviewDecision,
+                timestamp: new Date().toISOString(),
+              } : null;
+              return {
                 ...l,
                 qcStatus: qcReviewDecision,
                 qcRating: validRating,
-                qcFeedback: qcReviewFeedback.trim() || null,
+                qcFeedback: feedbackText || null,
                 qcReviewedAt: new Date().toISOString(),
-                qcReviewerName: currentUser?.name || null
-              } : l
-            );
+                qcReviewerName: currentUser?.name || null,
+                feedbackThread: entry ? [...existing, entry] : existing,
+              };
+            });
             setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
             setQcReviewingTaskId(null);
             setQcReviewRating('');
