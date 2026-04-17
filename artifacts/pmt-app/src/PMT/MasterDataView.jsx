@@ -169,6 +169,7 @@ const MasterDataView = ({
   const [replyingFbId, setReplyingFbId] = useState(null);
   const [replyingFbEntryId, setReplyingFbEntryId] = useState(null);
   const [replyDraft, setReplyDraft] = useState('');
+  const [fbUserFilter, setFbUserFilter] = useState('All');
 
   const buildFbThread = (item) => {
     const thread = Array.isArray(item.thread) ? [...item.thread] : [];
@@ -1620,8 +1621,13 @@ const MasterDataView = ({
         const isAdmin = currentUser?.role === 'Super Admin';
         const myItems = feedbackItems.filter(f => f.userId === currentUser?.id).sort((a,b) => b.timestamp - a.timestamp);
         const adminItems = feedbackItems
-          .filter(f => !f.archived && (fbAdminFilter === 'All' || f.status === fbAdminFilter))
+          .filter(f => !f.archived && (
+            fbAdminFilter === 'All' ? true :
+            fbAdminFilter === 'Mine' ? String(f.userId) === String(currentUser?.id) :
+            f.status === fbAdminFilter
+          ))
           .sort((a,b) => b.timestamp - a.timestamp);
+        const myFilteredItems = myItems.filter(f => fbUserFilter === 'All' || f.status === fbUserFilter);
         const archivedItems = feedbackItems
           .filter(f => f.archived)
           .sort((a,b) => b.timestamp - a.timestamp);
@@ -1861,7 +1867,7 @@ const MasterDataView = ({
                     <span className="text-xs font-semibold text-slate-400">({adminItems.length})</span>
                   </h3>
                   <div className="flex gap-1">
-                    {['All','New','In Progress','Awaiting Testing','Resolved'].map(s => (
+                    {['All','Mine','New','In Progress','Awaiting Testing','Resolved'].map(s => (
                       <button key={s} type="button" onClick={() => setFbAdminFilter(s)}
                         className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg border transition-all ${fbAdminFilter === s ? 'bg-slate-800 text-white border-slate-800' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}>
                         {s}
@@ -2013,11 +2019,27 @@ const MasterDataView = ({
               </div>
             ) : null}
 
-            {myItems.length > 0 && (
+            {!isAdmin && myItems.length > 0 && (
               <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
-                <h3 className="text-sm font-bold text-slate-800">My Submissions</h3>
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                    <MessageSquare size={14} className="text-slate-500"/> My Submissions
+                    <span className="text-xs font-semibold text-slate-400">({myFilteredItems.length})</span>
+                  </h3>
+                  <div className="flex gap-1 flex-wrap">
+                    {['All','New','In Progress','Awaiting Testing','Resolved'].map(s => (
+                      <button key={s} type="button" onClick={() => setFbUserFilter(s)}
+                        className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg border transition-all ${fbUserFilter === s ? 'bg-slate-800 text-white border-slate-800' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}>
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {myFilteredItems.length === 0 ? (
+                  <p className="text-sm text-slate-400 text-center py-4">No items match this filter.</p>
+                ) : (
                 <div className="space-y-2">
-                  {myItems.map(item => {
+                  {myFilteredItems.map(item => {
                     const typeInfo = TYPES.find(t => t.id === item.type) || TYPES[2];
                     const sm = STATUS_META[item.status] || STATUS_META['New'];
                     return (
@@ -2090,6 +2112,7 @@ const MasterDataView = ({
                     );
                   })}
                 </div>
+                )}
               </div>
             )}
           </div>
