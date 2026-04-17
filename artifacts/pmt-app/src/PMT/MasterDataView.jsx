@@ -167,7 +167,22 @@ const MasterDataView = ({
   const [editingFbId, setEditingFbId] = useState(null);
   const [editingFbDraft, setEditingFbDraft] = useState({});
   const [replyingFbId, setReplyingFbId] = useState(null);
+  const [replyingFbEntryId, setReplyingFbEntryId] = useState(null);
   const [replyDraft, setReplyDraft] = useState('');
+
+  const buildFbThread = (item) => {
+    const thread = Array.isArray(item.thread) ? [...item.thread] : [];
+    if (thread.length === 0 && item.reply) {
+      thread.push({
+        id: 'legacy-reply',
+        authorId: null,
+        authorName: item.replyAdminName || 'Admin',
+        text: item.reply,
+        timestamp: item.replyTimestamp || null,
+      });
+    }
+    return thread;
+  };
 
   // --- HIERARCHY STATE ---
   const effectiveHierarchyOrder = (hierarchyOrder && hierarchyOrder.length > 0) ? hierarchyOrder : DEFAULT_STANDARD_TRACK;
@@ -1653,40 +1668,141 @@ const MasterDataView = ({
         };
         const cancelEdit = () => setEditingFbId(null);
 
-        const saveReply = (id) => {
-          if (!replyDraft.trim()) return;
-          const targetItem = feedbackItems.find(f => f.id === id);
-          setFeedbackItems(feedbackItems.map(f => f.id === id ? {
+        const addThreadEntry = (itemId, text, replyToEntryId) => {
+          if (!text.trim()) return;
+          const entry = {
+            id: `fbr-${Date.now()}`,
+            authorId: currentUser?.id || null,
+            authorName: currentUser?.name || currentUser?.email || 'Admin',
+            text: text.trim(),
+            timestamp: Date.now(),
+            ...(replyToEntryId ? { replyToId: replyToEntryId } : {}),
+          };
+          const targetItem = feedbackItems.find(f => f.id === itemId);
+          const existingThread = buildFbThread(targetItem || {});
+          const isFirstReply = existingThread.length === 0;
+          setFeedbackItems(feedbackItems.map(f => f.id === itemId ? {
             ...f,
-            reply: replyDraft.trim(),
-            replyTimestamp: Date.now(),
-            replyAdminName: currentUser?.name || currentUser?.email,
+            thread: [...existingThread, entry],
           } : f));
           setReplyingFbId(null);
+          setReplyingFbEntryId(null);
           setReplyDraft('');
-          if (targetItem) {
+          if (isFirstReply && targetItem) {
             const submitter = (users || []).find(u => String(u.id) === String(targetItem.userId));
             const recipientEmail = submitter?.email || targetItem.userEmail;
             if (recipientEmail) {
               sendNotification('feedback-response', {
                 recipientEmail,
                 recipientName: targetItem.userName || submitter?.name,
-                feedbackText: targetItem.text,
-                replyText: replyDraft.trim(),
+                feedbackText: targetItem.description || targetItem.text || '',
+                replyText: text.trim(),
                 adminName: currentUser?.name,
               });
             }
           }
         };
-        const deleteReply = (id) => {
-          setFeedbackItems(feedbackItems.map(f => f.id === id ? {
-            ...f, reply: null, replyTimestamp: null, replyAdminName: null,
-          } : f));
-        };
-        const startReply = (item) => {
-          setReplyingFbId(item.id);
-          setReplyDraft(item.reply || '');
+        const startReply = (itemId, entryId) => {
+          setReplyingFbId(itemId);
+          setReplyingFbEntryId(entryId || null);
+          setReplyDraft('');
           setEditingFbId(null);
+        };
+        const cancelReply = () => {
+          setReplyingFbId(null);
+          setReplyingFbEntryId(null);
+          setReplyDraft('');
+        };
+        const renderFbThread = (item, thread, editable = false) => {
+          const renderEntry = (entry, allEntries, depth = 0) => {
+            const children = allEntries.filter(e => e.replyToId === entry.id);
+            const parentEntry = entry.replyToId ? allEntries.find(e => e.id === entry.replyToId) : null;
+            const isComposing = replyingFbId === item.id && replyingFbEntryId === entry.id;
+            const indent = depth === 1 ? 'ml-3' : depth >= 2 ? 'ml-5' : '';
+            return (
+              <div key={entry.id}>
+                <div className={`pl-3 border-l-2 border-indigo-200 space-y-0.5 py-1 ${indent}`}>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {parentEntry && (
+                      <span className="inline-flex items-center gap-0.5 text-[9px] text-slate-400">
+                        <CornerDownLeft size={8}/> {parentEntry.authorName}
+                      </span>
+                    )}
+                    <span className="text-[10px] font-semibold text-indigo-600">{entry.authorName}</span>
+                    {entry.timestamp && (
+                      <span className="text-[10px] text-slate-400">· {new Date(entry.timestamp).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}</span>
+                    )}
+                    {editable && !isComposing && (
+                      <button
+                        onClick={() => startReply(item.id, entry.id)}
+                        className="ml-auto flex items-center gap-0.5 text-[10px] text-slate-300 hover:text-indigo-500 transition-colors font-semibold"
+                      >
+                        <CornerDownLeft size={9}/> Reply
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs text-indigo-800 leading-relaxed">{entry.text}</p>
+                </div>
+                {isComposing && (
+                  <div className={`mt-1 ${depth > 0 ? 'ml-5' : 'ml-3'} space-y-1.5`}>
+                    <textarea
+                      value={replyDraft}
+                      onChange={e => setReplyDraft(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addThreadEntry(item.id, replyDraft, entry.id); } if (e.key === 'Escape') cancelReply(); }}
+                      placeholder={`Reply to ${entry.authorName}…`}
+                      rows={2}
+                      autoFocus
+                      className="w-full bg-white border border-indigo-200 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-indigo-400 transition-all resize-none"
+                    />
+                    <div className="flex items-center justify-end gap-2">
+                      <button type="button" onClick={cancelReply} className="px-3 py-1 text-[11px] font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all">Cancel</button>
+                      <button type="button" onClick={() => addThreadEntry(item.id, replyDraft, entry.id)} disabled={!replyDraft.trim()} className="px-3 py-1 text-[11px] font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-all disabled:opacity-50 flex items-center gap-1.5">
+                        <Send size={10}/> Send
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {children.length > 0 && (
+                  <div className="mt-1 space-y-1">
+                    {children.map(child => renderEntry(child, allEntries, depth + 1))}
+                  </div>
+                )}
+              </div>
+            );
+          };
+          return (
+            <div className="space-y-1 mt-1">
+              {thread.filter(e => !e.replyToId).map(entry => renderEntry(entry, thread))}
+              {editable && (
+                replyingFbId === item.id && replyingFbEntryId === null ? (
+                  <div className="ml-3 space-y-1.5 mt-1">
+                    <textarea
+                      value={replyDraft}
+                      onChange={e => setReplyDraft(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addThreadEntry(item.id, replyDraft, null); } if (e.key === 'Escape') cancelReply(); }}
+                      placeholder="Write a reply…"
+                      rows={2}
+                      autoFocus
+                      className="w-full bg-white border border-indigo-200 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-indigo-400 transition-all resize-none"
+                    />
+                    <div className="flex items-center justify-end gap-2">
+                      <button type="button" onClick={cancelReply} className="px-3 py-1 text-[11px] font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all">Cancel</button>
+                      <button type="button" onClick={() => addThreadEntry(item.id, replyDraft, null)} disabled={!replyDraft.trim()} className="px-3 py-1 text-[11px] font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-all disabled:opacity-50 flex items-center gap-1.5">
+                        <Send size={10}/> Send
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => startReply(item.id, null)}
+                    className="ml-3 flex items-center gap-1 text-[11px] text-slate-400 hover:text-indigo-500 font-semibold transition-colors mt-1"
+                  >
+                    <CornerDownLeft size={10}/> Add comment
+                  </button>
+                )
+              )}
+            </div>
+          );
         };
 
         return (
@@ -1815,7 +1931,7 @@ const MasterDataView = ({
                                     <option>Awaiting Testing</option>
                                     <option>Resolved</option>
                                   </select>
-                                  <button onClick={() => startReply(item)} className={`p-1 transition-all ${replyingFbId === item.id ? 'text-indigo-500' : item.reply ? 'text-indigo-400 hover:text-indigo-600' : 'text-slate-300 hover:text-indigo-500'}`} title={item.reply ? 'Edit reply' : 'Reply to user'}>
+                                  <button onClick={() => startReply(item.id, null)} className={`p-1 transition-all ${replyingFbId === item.id ? 'text-indigo-500' : buildFbThread(item).length > 0 ? 'text-indigo-400 hover:text-indigo-600' : 'text-slate-300 hover:text-indigo-500'}`} title="Add to thread">
                                     <CornerDownLeft size={13}/>
                                   </button>
                                   <button onClick={() => startEdit(item)} className="p-1 text-slate-300 hover:text-blue-500 transition-all" title="Edit">
@@ -1832,43 +1948,7 @@ const MasterDataView = ({
                                 </div>
                               </div>
                               <p className="text-xs text-slate-600 leading-relaxed">{item.description}</p>
-                              {item.reply && replyingFbId !== item.id && (
-                                <div className="ml-2 pl-3 border-l-2 border-indigo-200 space-y-1">
-                                  <div className="flex items-center gap-1.5">
-                                    <CornerDownLeft size={10} className="text-indigo-400"/>
-                                    <span className="text-[10px] font-semibold text-indigo-600">{item.replyAdminName}</span>
-                                    {item.replyTimestamp && (
-                                      <span className="text-[10px] text-slate-400">· {new Date(item.replyTimestamp).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}</span>
-                                    )}
-                                    <button onClick={() => deleteReply(item.id)} className="ml-auto p-0.5 text-slate-300 hover:text-red-400 transition-all" title="Remove reply">
-                                      <X size={10}/>
-                                    </button>
-                                  </div>
-                                  <p className="text-xs text-indigo-800 leading-relaxed">{item.reply}</p>
-                                </div>
-                              )}
-                              {replyingFbId === item.id && (
-                                <div className="ml-2 pl-3 border-l-2 border-indigo-300 space-y-2">
-                                  <textarea
-                                    value={replyDraft}
-                                    onChange={e => setReplyDraft(e.target.value)}
-                                    placeholder="Write a reply visible to the user..."
-                                    rows={3}
-                                    autoFocus
-                                    className="w-full bg-white border border-indigo-200 rounded-lg px-3 py-2 text-xs outline-none focus:border-indigo-400 transition-all resize-none"
-                                  />
-                                  <div className="flex items-center justify-end gap-2">
-                                    <button type="button" onClick={() => { setReplyingFbId(null); setReplyDraft(''); }}
-                                      className="px-3 py-1 text-[11px] font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all">
-                                      Cancel
-                                    </button>
-                                    <button type="button" onClick={() => saveReply(item.id)} disabled={!replyDraft.trim()}
-                                      className="px-3 py-1 text-[11px] font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-all disabled:opacity-50 flex items-center gap-1.5">
-                                      <Send size={10}/> Send Reply
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
+                              {renderFbThread(item, buildFbThread(item), true)}
                               <div className="flex items-center gap-3 text-[10px] text-slate-400 font-medium">
                                 <span>{item.userName} · {item.userRole}{item.userDept ? ` · ${item.userDept}` : ''}</span>
                                 <span>{new Date(item.timestamp).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })}</span>
@@ -2002,18 +2082,7 @@ const MasterDataView = ({
                               </div>
                             </div>
                             <p className="text-xs text-slate-500 leading-relaxed">{item.description}</p>
-                            {item.reply && (
-                              <div className="ml-2 pl-3 border-l-2 border-indigo-200 space-y-1 mt-1">
-                                <div className="flex items-center gap-1.5">
-                                  <CornerDownLeft size={10} className="text-indigo-400"/>
-                                  <span className="text-[10px] font-semibold text-indigo-600">{item.replyAdminName || 'Admin'}</span>
-                                  {item.replyTimestamp && (
-                                    <span className="text-[10px] text-slate-400">· {new Date(item.replyTimestamp).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}</span>
-                                  )}
-                                </div>
-                                <p className="text-xs text-indigo-800 leading-relaxed">{item.reply}</p>
-                              </div>
-                            )}
+                            {buildFbThread(item).length > 0 && renderFbThread(item, buildFbThread(item), false)}
                             <p className="text-[10px] text-slate-400 font-medium">{new Date(item.timestamp).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}</p>
                           </>
                         )}
