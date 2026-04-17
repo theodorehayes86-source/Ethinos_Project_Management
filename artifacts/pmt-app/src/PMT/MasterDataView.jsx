@@ -2017,9 +2017,7 @@ const MasterDataView = ({
                   </div>
                 )}
               </div>
-            ) : null}
-
-            {!isAdmin && myItems.length > 0 && (
+            ) : myItems.length > 0 ? (
               <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
@@ -2114,7 +2112,7 @@ const MasterDataView = ({
                 </div>
                 )}
               </div>
-            )}
+            ) : null}
           </div>
         );
       })()}
