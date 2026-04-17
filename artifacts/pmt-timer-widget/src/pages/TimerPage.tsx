@@ -285,20 +285,36 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
       </div>
 
       <div className="flex-1 flex flex-col items-center justify-center px-6">
+        {/* Clock face is the primary button — large click target to start/pause/resume */}
         <div className="relative mb-8">
-          <div
-            className={`w-48 h-48 rounded-full border-2 flex items-center justify-center transition-all duration-500 ${
+          <button
+            onClick={!showQcPrompt && !qcSent && !isQcRejected ? (isRunning ? handlePause : handleStart) : undefined}
+            disabled={showQcPrompt || qcSent || isQcRejected}
+            className={`w-48 h-48 rounded-full border-2 flex items-center justify-center transition-all duration-300 group focus:outline-none ${
               isRunning
-                ? "border-emerald-400/60 shadow-[0_0_48px_rgba(52,211,153,0.25)]"
+                ? "border-emerald-400/60 shadow-[0_0_48px_rgba(52,211,153,0.25)] hover:border-amber-400/60 hover:shadow-[0_0_48px_rgba(251,191,36,0.2)] active:scale-95"
                 : isPaused
-                ? "border-amber-400/60 shadow-[0_0_32px_rgba(251,191,36,0.15)]"
+                ? "border-amber-400/60 shadow-[0_0_32px_rgba(251,191,36,0.15)] hover:border-emerald-400/60 active:scale-95"
+                : isStopped
+                ? "border-white/20 hover:border-indigo-400/50 hover:shadow-[0_0_32px_rgba(99,102,241,0.2)] active:scale-95"
                 : "border-white/15"
             }`}
           >
             {isRunning && (
-              <div className="absolute inset-0 rounded-full border-2 border-emerald-400/20 animate-ping" />
+              <div className="absolute inset-0 rounded-full border-2 border-emerald-400/20 animate-ping pointer-events-none" />
             )}
-            <div className="text-center">
+            {/* Hover overlay hint */}
+            {!showQcPrompt && !qcSent && !isQcRejected && (
+              <div className={`absolute inset-0 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none ${
+                isRunning ? "bg-amber-500/10" : "bg-emerald-500/10"
+              }`}>
+                {isRunning
+                  ? <Pause size={32} className="text-amber-300/60" />
+                  : <Play size={32} className="text-emerald-300/60" />
+                }
+              </div>
+            )}
+            <div className="text-center pointer-events-none">
               <p
                 className={`text-4xl font-mono font-bold tracking-wider transition-colors ${
                   isRunning
@@ -311,15 +327,15 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
                 {formatMs(elapsedMs)}
               </p>
               <p className="text-xs text-slate-500 uppercase tracking-widest mt-1">
-                {isRunning ? "Running" : isPaused ? "Paused" : "Stopped"}
+                {isRunning ? "tap to pause" : isPaused ? "tap to resume" : "tap to start"}
               </p>
               {isPaused && autoPaused && (
                 <p className="text-[10px] text-amber-400/80 uppercase tracking-widest mt-1">
-                  Auto-paused (screen locked)
+                  Auto-paused
                 </p>
               )}
             </div>
-          </div>
+          </button>
         </div>
 
         {/* QC sent confirmation */}
@@ -371,61 +387,23 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
           </div>
         )}
 
-        {/* Normal controls — two separate rows so Done never overlaps Pause/Stop */}
+        {/* Secondary controls — clock handles start/pause/resume; these are Stop + Done */}
         {!showQcPrompt && !qcSent && !isQcRejected && (
-          <div className="flex flex-col items-center gap-4 w-full">
-            {/* Row 1: primary action (Start / Pause+Stop / Resume+Stop) */}
-            <div className="flex items-center justify-center gap-3">
-              {isStopped && (
+          <div className="flex flex-col items-center gap-3 w-full">
+            {/* Stop — shown while running or paused */}
+            <div className="h-12 flex items-center">
+              {(isRunning || isPaused) && (
                 <button
-                  onClick={handleStart}
-                  className="flex items-center gap-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold rounded-2xl px-8 py-3.5 text-sm transition-all shadow-lg"
+                  onClick={handleStop}
+                  className="flex items-center gap-2.5 bg-white/10 hover:bg-white/20 active:scale-95 text-white font-bold rounded-2xl px-8 py-3 text-sm transition-all border border-white/15"
                 >
-                  <Play size={18} />
-                  {elapsedMs > 0 ? "Resume" : "Start"}
+                  <Square size={18} />
+                  Stop
                 </button>
-              )}
-
-              {isRunning && (
-                <>
-                  <button
-                    onClick={handlePause}
-                    className="flex items-center gap-2.5 bg-amber-600/90 hover:bg-amber-500 active:scale-95 text-white font-bold rounded-2xl px-6 py-3.5 text-sm transition-all shadow-md border border-amber-400/30"
-                  >
-                    <Pause size={18} />
-                    Pause
-                  </button>
-                  <button
-                    onClick={handleStop}
-                    className="flex items-center gap-2.5 bg-white/10 hover:bg-white/20 active:scale-95 text-white font-bold rounded-2xl px-6 py-3.5 text-sm transition-all border border-white/15"
-                  >
-                    <Square size={18} />
-                    Stop
-                  </button>
-                </>
-              )}
-
-              {isPaused && (
-                <>
-                  <button
-                    onClick={handleStart}
-                    className="flex items-center gap-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold rounded-2xl px-6 py-3.5 text-sm transition-all shadow-md"
-                  >
-                    <Play size={18} />
-                    Resume
-                  </button>
-                  <button
-                    onClick={handleStop}
-                    className="flex items-center gap-2.5 bg-white/10 hover:bg-white/20 active:scale-95 text-white font-bold rounded-2xl px-6 py-3.5 text-sm transition-all border border-white/15"
-                  >
-                    <Square size={18} />
-                    Stop
-                  </button>
-                </>
               )}
             </div>
 
-            {/* Row 2: Done — always a fixed distance below Row 1, never overlaps the controls above */}
+            {/* Mark Done — separate row, guarded for 700 ms after Stop/Pause */}
             <div className="h-12 flex items-center">
               {(isPaused || timerState === "stopped") && elapsedMs > 0 && (
                 <button
