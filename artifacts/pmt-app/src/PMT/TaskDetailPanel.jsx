@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Plus, Trash2, Send, Link, Check, ExternalLink, AtSign, MessageSquare, CheckCircle, XCircle } from 'lucide-react';
+import { X, Plus, Trash2, Send, Link, Check, ExternalLink, AtSign, MessageSquare, CheckCircle, XCircle, CornerDownLeft } from 'lucide-react';
 import { format } from 'date-fns';
 import { sendNotification } from '../utils/notify';
 
@@ -42,6 +42,8 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNot
   const [links, setLinks] = useState(() => task.links || []);
   const [feedbackThread, setFeedbackThread] = useState(() => buildFeedbackThread(task));
   const [newFeedback, setNewFeedback] = useState('');
+  const [showFeedbackReply, setShowFeedbackReply] = useState(false);
+  const feedbackInputRef = useRef(null);
 
   const [newStepLabel, setNewStepLabel] = useState('');
   const [newMessage, setNewMessage] = useState('');
@@ -169,6 +171,10 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNot
   };
 
   // --- Feedback Thread ---
+  useEffect(() => {
+    if (showFeedbackReply) feedbackInputRef.current?.focus();
+  }, [showFeedbackReply]);
+
   const handleAddFeedback = () => {
     const text = newFeedback.trim();
     if (!text) return;
@@ -183,6 +189,7 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNot
     const updated = [...feedbackThread, entry];
     setFeedbackThread(updated);
     setNewFeedback('');
+    setShowFeedbackReply(false);
     saveUpdate({ ...task, steps, messages, links, feedbackThread: updated });
   };
 
@@ -468,24 +475,44 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNot
                   );
                 })}
               </div>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={newFeedback}
-                  onChange={e => setNewFeedback(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAddFeedback(); } }}
-                  placeholder="Add a comment to this feedback…"
-                  className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
-                />
+              {!showFeedbackReply ? (
                 <button
-                  onClick={handleAddFeedback}
-                  disabled={!newFeedback.trim()}
-                  className="p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
-                  title="Add comment"
+                  onClick={() => setShowFeedbackReply(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 hover:border-blue-300 hover:text-blue-600 transition-all"
                 >
-                  <Send size={14} />
+                  <CornerDownLeft size={12} /> Reply
                 </button>
-              </div>
+              ) : (
+                <div className="space-y-2">
+                  <textarea
+                    ref={feedbackInputRef}
+                    value={newFeedback}
+                    onChange={e => setNewFeedback(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAddFeedback(); }
+                      if (e.key === 'Escape') { setNewFeedback(''); setShowFeedbackReply(false); }
+                    }}
+                    placeholder="Write your reply…"
+                    rows={2}
+                    className="w-full bg-white border border-blue-300 rounded-lg px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 resize-none"
+                  />
+                  <div className="flex gap-2 justify-end">
+                    <button
+                      onClick={() => { setNewFeedback(''); setShowFeedbackReply(false); }}
+                      className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-500 hover:bg-slate-50 transition-all"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleAddFeedback}
+                      disabled={!newFeedback.trim()}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <Send size={11} /> Send reply
+                    </button>
+                  </div>
+                </div>
+              )}
             </section>
           )}
 

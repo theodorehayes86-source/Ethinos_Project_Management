@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { CheckCircle, XCircle, Star, ChevronDown, ChevronUp, Clock, User, Tag, Calendar, MessageSquare, UserPlus, UserCheck, UserX, Check, X, Send } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { CheckCircle, XCircle, Star, ChevronDown, ChevronUp, Clock, User, Tag, Calendar, MessageSquare, UserPlus, UserCheck, UserX, Check, X, Send, CornerDownLeft } from 'lucide-react';
 
 function formatTs(ts) {
   if (!ts) return '';
@@ -189,15 +189,27 @@ const ReturnModal = ({ task, onConfirm, onClose }) => {
 
 const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed, currentUser, onAddComment }) => {
   const [expanded, setExpanded] = useState(false);
+  const [showReply, setShowReply] = useState(false);
   const [replyText, setReplyText] = useState('');
+  const replyInputRef = useRef(null);
   const assignee = users.find(u => String(u.id) === String(task.assigneeId));
   const thread = buildThread(task);
+
+  useEffect(() => {
+    if (showReply) replyInputRef.current?.focus();
+  }, [showReply]);
 
   const handleReply = () => {
     const text = replyText.trim();
     if (!text) return;
     onAddComment(task, text);
     setReplyText('');
+    setShowReply(false);
+  };
+
+  const handleCancelReply = () => {
+    setReplyText('');
+    setShowReply(false);
   };
 
   const formatMs = (ms = 0) => {
@@ -371,24 +383,44 @@ const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed, curren
                   );
                 })}
               </div>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={replyText}
-                  onChange={e => setReplyText(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleReply()}
-                  placeholder="Add a comment…"
-                  className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
-                />
+              {!showReply ? (
                 <button
-                  onClick={handleReply}
-                  disabled={!replyText.trim()}
-                  className="p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
-                  title="Send comment"
+                  onClick={() => setShowReply(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 hover:border-blue-300 hover:text-blue-600 transition-all"
                 >
-                  <Send size={13} />
+                  <CornerDownLeft size={12} /> Reply
                 </button>
-              </div>
+              ) : (
+                <div className="space-y-2">
+                  <textarea
+                    ref={replyInputRef}
+                    value={replyText}
+                    onChange={e => setReplyText(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleReply(); }
+                      if (e.key === 'Escape') handleCancelReply();
+                    }}
+                    placeholder="Write your reply…"
+                    rows={2}
+                    className="w-full bg-white border border-blue-300 rounded-lg px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 resize-none"
+                  />
+                  <div className="flex gap-2 justify-end">
+                    <button
+                      onClick={handleCancelReply}
+                      className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-500 hover:bg-slate-50 transition-all"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleReply}
+                      disabled={!replyText.trim()}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <Send size={11} /> Send reply
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
