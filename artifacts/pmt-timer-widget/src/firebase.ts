@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getDatabase } from "firebase/database";
+import { getDatabase, ref } from "firebase/database";
 import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
@@ -15,4 +15,9 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const db = getDatabase(app);
 export const auth = getAuth(app);
+
+/** Firebase's own connection sentinel — far more reliable than navigator.onLine.
+ *  Subscribe with onValue; value is boolean true when actively connected. */
+export const connectedRef = ref(db, ".info/connected");
+
 export default app;

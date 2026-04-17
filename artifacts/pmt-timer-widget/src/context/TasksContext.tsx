@@ -4,12 +4,16 @@ import React, {
   useEffect,
   useState,
   useCallback,
+  useRef,
 } from "react";
 import { ref, onValue, update } from "firebase/database";
-import { db } from "../firebase";
+import { db, connectedRef } from "../firebase";
 import { useAuth } from "./AuthContext";
 import { Client, GroupedTasks, TaskLog } from "../types";
 import { enqueue, loadQueue, dequeueByKey, QueuedWrite } from "../offlineQueue";
+
+/** Max ms to wait for Firebase write acknowledgment before falling back to local queue. */
+const WRITE_TIMEOUT_MS = 2000;
 
 interface SyncStatus {
   state: "synced" | "pending" | "offline";
@@ -45,15 +49,110 @@ function formatDuration(ms: number): string {
   return `${h}:${m}:${s}`;
 }
 
+/** Race a Firebase write against a hard timeout. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("write timeout")), ms)
+    ),
+  ]);
+}
+
 export function TasksProvider({ children }: { children: React.ReactNode }) {
   const { pmtUser } = useAuth();
   const [clients, setClients] = useState<Client[]>([]);
   const [rawLogs, setRawLogs] = useState<Record<string, TaskLog[]>>({});
   const [loading, setLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => ({
-    state: navigator.onLine ? (loadQueue().length > 0 ? "pending" : "synced") : "offline",
+    state: loadQueue().length > 0 ? "pending" : "synced",
     pendingCount: loadQueue().length,
   }));
+
+  /**
+   * Tracks whether Firebase's own WebSocket is connected.
+   * Using a ref so read/write inside callbacks is always current without
+   * causing extra re-renders of the whole component tree.
+   */
+  const firebaseConnectedRef = useRef<boolean>(false);
+
+  /**
+   * Ref to the latest flush function so the connectivity listener can always
+   * call the current version without needing to be re-registered.
+   */
+  const flushQueueRef = useRef<() => Promise<void>>(async () => {});
+
+  // ─── Write helper ───────────────────────────────────────────────────────
+
+  const doWrite = useCallback(
+    async (
+      clientId: number | string,
+      taskIndex: number,
+      payload: Record<string, unknown>
+    ) => {
+      await withTimeout(
+        update(ref(db, `clientLogs/${clientId}/${taskIndex}`), payload),
+        WRITE_TIMEOUT_MS
+      );
+    },
+    []
+  );
+
+  // ─── Queue flush ─────────────────────────────────────────────────────────
+
+  const flushQueueInternal = useCallback(async () => {
+    const queue = loadQueue();
+    if (!queue.length) {
+      setSyncStatus({ state: "synced", pendingCount: 0 });
+      return;
+    }
+    setSyncStatus({ state: "pending", pendingCount: queue.length });
+
+    for (const item of queue) {
+      try {
+        await doWrite(item.clientId, item.taskIndex, item.payload);
+        dequeueByKey(item);
+      } catch {
+        // Leave it — will retry on next reconnect
+      }
+    }
+
+    const remaining = loadQueue().length;
+    setSyncStatus({
+      state: remaining > 0 ? "pending" : "synced",
+      pendingCount: remaining,
+    });
+  }, [doWrite]);
+
+  // Keep the ref in sync with the latest flush function
+  useEffect(() => {
+    flushQueueRef.current = flushQueueInternal;
+  }, [flushQueueInternal]);
+
+  // ─── Firebase connection sentinel ────────────────────────────────────────
+
+  useEffect(() => {
+    const unsub = onValue(connectedRef, (snap) => {
+      const connected = snap.val() === true;
+      const wasConnected = firebaseConnectedRef.current;
+      firebaseConnectedRef.current = connected;
+
+      setSyncStatus((prev) => ({
+        ...prev,
+        state: connected
+          ? prev.pendingCount > 0 ? "pending" : "synced"
+          : "offline",
+      }));
+
+      // Flush the local queue immediately on reconnect
+      if (connected && !wasConnected) {
+        void flushQueueRef.current();
+      }
+    });
+    return unsub;
+  }, []); // empty — stable ref handles the callback update
+
+  // ─── Data listeners ──────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!pmtUser) return;
@@ -76,6 +175,8 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
 
     return () => unsubs.forEach((u) => u());
   }, [pmtUser]);
+
+  // ─── Grouped tasks ───────────────────────────────────────────────────────
 
   const groupedTasks = React.useMemo<GroupedTasks[]>(() => {
     if (!pmtUser) return [];
@@ -117,16 +218,7 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
       .filter((g) => g.tasks.length > 0);
   }, [clients, rawLogs, pmtUser]);
 
-  const doWrite = useCallback(
-    async (
-      clientId: number | string,
-      taskIndex: number,
-      payload: Record<string, unknown>
-    ) => {
-      await update(ref(db, `clientLogs/${clientId}/${taskIndex}`), payload);
-    },
-    []
-  );
+  // ─── Write helpers ───────────────────────────────────────────────────────
 
   const updateTaskTimer = useCallback(
     async (
@@ -146,9 +238,16 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
         payload.status = partial.status;
       }
 
-      const queueItem: QueuedWrite = { id: taskId, clientId, taskIndex, payload, timestamp: Date.now() };
+      const queueItem: QueuedWrite = {
+        id: taskId,
+        clientId,
+        taskIndex,
+        payload,
+        timestamp: Date.now(),
+      };
 
-      if (!navigator.onLine) {
+      // If Firebase is known offline, skip the attempt — queue immediately
+      if (!firebaseConnectedRef.current) {
         enqueue(queueItem);
         setSyncStatus({ state: "offline", pendingCount: loadQueue().length });
         return;
@@ -161,6 +260,7 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
           pendingCount: prev.pendingCount,
         }));
       } catch {
+        // Timed out or network error — save locally, sync on reconnect
         enqueue(queueItem);
         setSyncStatus({ state: "pending", pendingCount: loadQueue().length });
       }
@@ -187,7 +287,7 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
         timestamp: Date.now(),
       };
 
-      if (!navigator.onLine) {
+      if (!firebaseConnectedRef.current) {
         enqueue(queueItem);
         setSyncStatus({ state: "offline", pendingCount: loadQueue().length });
         return;
@@ -208,46 +308,8 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
   );
 
   const flushQueue = useCallback(async () => {
-    const queue = loadQueue();
-    if (!queue.length) {
-      setSyncStatus({ state: "synced", pendingCount: 0 });
-      return;
-    }
-    setSyncStatus({ state: "pending", pendingCount: queue.length });
-
-    for (const item of queue) {
-      try {
-        await doWrite(item.clientId, item.taskIndex, item.payload);
-        dequeueByKey(item);
-      } catch {
-      }
-    }
-
-    const remaining = loadQueue().length;
-    setSyncStatus({
-      state: remaining > 0 ? "pending" : "synced",
-      pendingCount: remaining,
-    });
-  }, [doWrite]);
-
-  useEffect(() => {
-    function handleOnline() {
-      setSyncStatus((prev) => ({
-        ...prev,
-        state: prev.pendingCount > 0 ? "pending" : "synced",
-      }));
-      flushQueue();
-    }
-    function handleOffline() {
-      setSyncStatus((prev) => ({ ...prev, state: "offline" }));
-    }
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
-    return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
-    };
-  }, [flushQueue]);
+    await flushQueueInternal();
+  }, [flushQueueInternal]);
 
   return (
     <TasksContext.Provider
