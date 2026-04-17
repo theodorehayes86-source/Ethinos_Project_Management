@@ -72,6 +72,10 @@ export default defineConfig({
       strict: true,
       deny: ["**/.*"],
     },
+    headers: process.env.NODE_ENV !== "production" ? {
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+      "Pragma": "no-cache",
+    } : {},
   },
   preview: {
     port,
