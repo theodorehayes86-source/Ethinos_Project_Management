@@ -42,7 +42,7 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNot
   const [links, setLinks] = useState(() => task.links || []);
   const [feedbackThread, setFeedbackThread] = useState(() => buildFeedbackThread(task));
   const [newFeedback, setNewFeedback] = useState('');
-  const [showFeedbackReply, setShowFeedbackReply] = useState(false);
+  const [replyingToFeedbackId, setReplyingToFeedbackId] = useState(null);
   const feedbackInputRef = useRef(null);
 
   const [newStepLabel, setNewStepLabel] = useState('');
@@ -172,10 +172,10 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNot
 
   // --- Feedback Thread ---
   useEffect(() => {
-    if (showFeedbackReply) feedbackInputRef.current?.focus();
-  }, [showFeedbackReply]);
+    if (replyingToFeedbackId !== null) feedbackInputRef.current?.focus();
+  }, [replyingToFeedbackId]);
 
-  const handleAddFeedback = () => {
+  const handleAddFeedback = (replyToId) => {
     const text = newFeedback.trim();
     if (!text) return;
     const entry = {
@@ -185,11 +185,12 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNot
       text,
       type: 'comment',
       timestamp: new Date().toISOString(),
+      ...(replyToId && replyToId !== '__new__' ? { replyToId } : {}),
     };
     const updated = [...feedbackThread, entry];
     setFeedbackThread(updated);
     setNewFeedback('');
-    setShowFeedbackReply(false);
+    setReplyingToFeedbackId(null);
     saveUpdate({ ...task, steps, messages, links, feedbackThread: updated });
   };
 
@@ -427,94 +428,123 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNot
           </section>
 
           {/* Feedback Thread */}
-          {(feedbackThread.length > 0 || task.qcEnabled) && (
-            <section>
-              <div className="flex items-center gap-1.5 mb-2">
-                <h3 className="text-xs font-bold uppercase tracking-wide text-slate-700">
-                  QC Feedback
-                  {feedbackThread.length > 0 && (
-                    <span className="ml-1.5 text-slate-400 font-normal normal-case">{feedbackThread.length}</span>
-                  )}
-                </h3>
-              </div>
-              <div className="space-y-2 mb-3 max-h-48 overflow-y-auto pr-1">
-                {feedbackThread.length === 0 && (
-                  <p className="text-xs text-slate-400 italic">No feedback yet.</p>
-                )}
-                {feedbackThread.map(entry => {
-                  const isMine = String(entry.authorId) === String(currentUser?.id);
-                  const bgColor = entry.type === 'approved' ? 'bg-emerald-50 border border-emerald-100'
-                    : entry.type === 'rejected' ? 'bg-red-50 border border-red-100'
-                    : isMine ? 'bg-blue-50 border border-blue-100'
-                    : 'bg-slate-100 border border-slate-100';
-                  const textColor = entry.type === 'approved' ? 'text-emerald-800'
-                    : entry.type === 'rejected' ? 'text-red-800'
-                    : 'text-slate-800';
-                  return (
-                    <div key={entry.id} className={`rounded-xl px-3 py-2.5 ${bgColor}`}>
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <span className={`text-[10px] font-bold ${textColor}`}>{entry.authorName}</span>
-                        {entry.type === 'approved' && (
-                          <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
-                            <CheckCircle size={8} /> Approved
-                          </span>
-                        )}
-                        {entry.type === 'rejected' && (
-                          <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">
-                            <XCircle size={8} /> Returned
-                          </span>
-                        )}
-                        {entry.timestamp && (
-                          <span className="text-[9px] text-slate-400 ml-auto">
-                            {format(new Date(entry.timestamp), 'dd MMM, h:mm a')}
-                          </span>
-                        )}
-                      </div>
-                      <p className={`text-xs leading-relaxed ${textColor}`}>{entry.text}</p>
-                    </div>
-                  );
-                })}
-              </div>
-              {!showFeedbackReply ? (
-                <button
-                  onClick={() => setShowFeedbackReply(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 hover:border-blue-300 hover:text-blue-600 transition-all"
-                >
-                  <CornerDownLeft size={12} /> Reply
-                </button>
-              ) : (
-                <div className="space-y-2">
+          {(feedbackThread.length > 0 || task.qcEnabled) && (() => {
+            const fbEntryColors = (entry) => {
+              const isMine = String(entry.authorId) === String(currentUser?.id);
+              const bg = entry.type === 'approved' ? 'bg-emerald-50 border border-emerald-100'
+                : entry.type === 'rejected' ? 'bg-red-50 border border-red-100'
+                : isMine ? 'bg-blue-50 border border-blue-100'
+                : 'bg-slate-100 border border-slate-100';
+              const text = entry.type === 'approved' ? 'text-emerald-800'
+                : entry.type === 'rejected' ? 'text-red-800'
+                : 'text-slate-800';
+              return { bg, text };
+            };
+
+            const renderFbCompose = (entryId, authorName) => {
+              if (replyingToFeedbackId !== entryId) return null;
+              return (
+                <div className="mt-1.5 space-y-1.5">
                   <textarea
                     ref={feedbackInputRef}
                     value={newFeedback}
                     onChange={e => setNewFeedback(e.target.value)}
                     onKeyDown={e => {
-                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAddFeedback(); }
-                      if (e.key === 'Escape') { setNewFeedback(''); setShowFeedbackReply(false); }
+                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAddFeedback(entryId); }
+                      if (e.key === 'Escape') { setNewFeedback(''); setReplyingToFeedbackId(null); }
                     }}
-                    placeholder="Write your reply…"
+                    placeholder={authorName ? `Reply to ${authorName}…` : 'Write a comment…'}
                     rows={2}
                     className="w-full bg-white border border-blue-300 rounded-lg px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 resize-none"
                   />
                   <div className="flex gap-2 justify-end">
-                    <button
-                      onClick={() => { setNewFeedback(''); setShowFeedbackReply(false); }}
-                      className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-500 hover:bg-slate-50 transition-all"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleAddFeedback}
-                      disabled={!newFeedback.trim()}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <Send size={11} /> Send reply
+                    <button onClick={() => { setNewFeedback(''); setReplyingToFeedbackId(null); }} className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-500 hover:bg-slate-50 transition-all">Cancel</button>
+                    <button onClick={() => handleAddFeedback(entryId)} disabled={!newFeedback.trim()} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                      <Send size={11} /> Send
                     </button>
                   </div>
                 </div>
-              )}
-            </section>
-          )}
+              );
+            };
+
+            const renderFbEntry = (entry, allEntries, depth = 0) => {
+              const { bg, text: textColor } = fbEntryColors(entry);
+              const children = allEntries.filter(e => e.replyToId === entry.id);
+              const parentEntry = entry.replyToId ? allEntries.find(e => e.id === entry.replyToId) : null;
+              const indent = depth === 1 ? 'ml-4' : depth >= 2 ? 'ml-6' : '';
+              return (
+                <div key={entry.id}>
+                  <div className={`rounded-xl px-3 py-2.5 ${bg} ${indent}`}>
+                    <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                      {parentEntry && (
+                        <span className="inline-flex items-center gap-0.5 text-[9px] text-slate-400 mr-0.5">
+                          <CornerDownLeft size={8} /> {parentEntry.authorName}
+                        </span>
+                      )}
+                      <span className={`text-[10px] font-bold ${textColor}`}>{entry.authorName}</span>
+                      {entry.type === 'approved' && (
+                        <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                          <CheckCircle size={8} /> Approved
+                        </span>
+                      )}
+                      {entry.type === 'rejected' && (
+                        <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">
+                          <XCircle size={8} /> Returned
+                        </span>
+                      )}
+                      {entry.timestamp && (
+                        <span className="text-[9px] text-slate-400 ml-auto">
+                          {format(new Date(entry.timestamp), 'dd MMM, h:mm a')}
+                        </span>
+                      )}
+                    </div>
+                    <p className={`text-xs leading-relaxed ${textColor}`}>{entry.text}</p>
+                    {replyingToFeedbackId !== entry.id && (
+                      <button
+                        onClick={() => { setReplyingToFeedbackId(entry.id); setNewFeedback(''); }}
+                        className="mt-1.5 flex items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-blue-500 transition-colors"
+                      >
+                        <CornerDownLeft size={10} /> Reply
+                      </button>
+                    )}
+                  </div>
+                  {renderFbCompose(entry.id, entry.authorName)}
+                  {children.length > 0 && (
+                    <div className="mt-1 space-y-1.5">
+                      {children.map(child => renderFbEntry(child, allEntries, depth + 1))}
+                    </div>
+                  )}
+                </div>
+              );
+            };
+
+            return (
+              <section>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <h3 className="text-xs font-bold uppercase tracking-wide text-slate-700">
+                    QC Feedback
+                    {feedbackThread.length > 0 && (
+                      <span className="ml-1.5 text-slate-400 font-normal normal-case">{feedbackThread.length}</span>
+                    )}
+                  </h3>
+                </div>
+                <div className="space-y-2 mb-3 max-h-64 overflow-y-auto pr-1">
+                  {feedbackThread.length === 0 && (
+                    <p className="text-xs text-slate-400 italic">No feedback yet.</p>
+                  )}
+                  {feedbackThread.filter(e => !e.replyToId).map(entry => renderFbEntry(entry, feedbackThread))}
+                </div>
+                {replyingToFeedbackId !== '__new__' ? (
+                  <button
+                    onClick={() => { setReplyingToFeedbackId('__new__'); setNewFeedback(''); }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 hover:border-blue-300 hover:text-blue-600 transition-all"
+                  >
+                    <MessageSquare size={12} /> Add comment
+                  </button>
+                ) : renderFbCompose('__new__', null)}
+              </section>
+            );
+          })()}
 
           {/* Links */}
           <section>

@@ -189,27 +189,115 @@ const ReturnModal = ({ task, onConfirm, onClose }) => {
 
 const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed, currentUser, onAddComment }) => {
   const [expanded, setExpanded] = useState(false);
-  const [showReply, setShowReply] = useState(false);
+  const [replyingToId, setReplyingToId] = useState(null);
   const [replyText, setReplyText] = useState('');
   const replyInputRef = useRef(null);
   const assignee = users.find(u => String(u.id) === String(task.assigneeId));
   const thread = buildThread(task);
 
   useEffect(() => {
-    if (showReply) replyInputRef.current?.focus();
-  }, [showReply]);
+    if (replyingToId !== null) replyInputRef.current?.focus();
+  }, [replyingToId]);
 
   const handleReply = () => {
     const text = replyText.trim();
     if (!text) return;
-    onAddComment(task, text);
+    const replyToId = replyingToId === '__new__' ? undefined : replyingToId;
+    onAddComment(task, text, replyToId);
     setReplyText('');
-    setShowReply(false);
+    setReplyingToId(null);
   };
 
   const handleCancelReply = () => {
     setReplyText('');
-    setShowReply(false);
+    setReplyingToId(null);
+  };
+
+  const entryColors = (entry) => {
+    const isMine = currentUser && String(entry.authorId) === String(currentUser.id);
+    const bg = entry.type === 'approved' ? 'bg-emerald-50 border-emerald-100'
+      : entry.type === 'rejected' ? 'bg-red-50 border-red-100'
+      : isMine ? 'bg-blue-50 border-blue-100'
+      : 'bg-white border-slate-200';
+    const text = entry.type === 'approved' ? 'text-emerald-800'
+      : entry.type === 'rejected' ? 'text-red-800'
+      : 'text-slate-800';
+    return { bg, text };
+  };
+
+  const renderReplyCompose = (entryId, authorName) => {
+    if (replyingToId !== entryId) return null;
+    return (
+      <div className="mt-1.5 space-y-1.5">
+        <textarea
+          ref={replyInputRef}
+          value={replyText}
+          onChange={e => setReplyText(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleReply(); }
+            if (e.key === 'Escape') handleCancelReply();
+          }}
+          placeholder={authorName ? `Reply to ${authorName}…` : 'Write a comment…'}
+          rows={2}
+          className="w-full bg-white border border-blue-300 rounded-lg px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 resize-none"
+        />
+        <div className="flex gap-2 justify-end">
+          <button onClick={handleCancelReply} className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-500 hover:bg-slate-50 transition-all">Cancel</button>
+          <button onClick={handleReply} disabled={!replyText.trim()} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+            <Send size={11} /> Send
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderEntry = (entry, allEntries, depth = 0) => {
+    const { bg, text: textColor } = entryColors(entry);
+    const badge = entry.type === 'approved' ? (
+      <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 ml-1">
+        <CheckCircle size={8} /> Approved
+      </span>
+    ) : entry.type === 'rejected' ? (
+      <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 ml-1">
+        <XCircle size={8} /> Returned
+      </span>
+    ) : null;
+    const children = allEntries.filter(e => e.replyToId === entry.id);
+    const parentEntry = entry.replyToId ? allEntries.find(e => e.id === entry.replyToId) : null;
+    const indent = depth === 1 ? 'ml-4' : depth >= 2 ? 'ml-6' : '';
+    return (
+      <div key={entry.id}>
+        <div className={`rounded-xl px-3 py-2.5 border ${bg} ${indent}`}>
+          <div className="flex items-center gap-1 mb-1 flex-wrap">
+            {parentEntry && (
+              <span className="inline-flex items-center gap-0.5 text-[9px] text-slate-400 mr-0.5">
+                <CornerDownLeft size={8} /> {parentEntry.authorName}
+              </span>
+            )}
+            <span className={`text-[10px] font-bold ${textColor}`}>{entry.authorName}</span>
+            {badge}
+            {entry.timestamp && (
+              <span className="text-[9px] text-slate-400 ml-auto">{formatTs(entry.timestamp)}</span>
+            )}
+          </div>
+          <p className={`text-xs leading-relaxed ${textColor}`}>{entry.text}</p>
+          {replyingToId !== entry.id && (
+            <button
+              onClick={() => { setReplyingToId(entry.id); setReplyText(''); }}
+              className="mt-1.5 flex items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-blue-500 transition-colors"
+            >
+              <CornerDownLeft size={10} /> Reply
+            </button>
+          )}
+        </div>
+        {renderReplyCompose(entry.id, entry.authorName)}
+        {children.length > 0 && (
+          <div className="mt-1 space-y-1.5">
+            {children.map(child => renderEntry(child, allEntries, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
   };
 
   const formatMs = (ms = 0) => {
@@ -351,75 +439,17 @@ const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed, curren
                 {thread.length === 0 && (
                   <p className="text-xs text-slate-400 italic">No comments yet.</p>
                 )}
-                {thread.map(entry => {
-                  const isMine = currentUser && String(entry.authorId) === String(currentUser.id);
-                  const bgColor = entry.type === 'approved' ? 'bg-emerald-50 border-emerald-100'
-                    : entry.type === 'rejected' ? 'bg-red-50 border-red-100'
-                    : isMine ? 'bg-blue-50 border-blue-100'
-                    : 'bg-white border-slate-200';
-                  const textColor = entry.type === 'approved' ? 'text-emerald-800'
-                    : entry.type === 'rejected' ? 'text-red-800'
-                    : 'text-slate-800';
-                  const badge = entry.type === 'approved' ? (
-                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 ml-1">
-                      <CheckCircle size={8} /> Approved
-                    </span>
-                  ) : entry.type === 'rejected' ? (
-                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 ml-1">
-                      <XCircle size={8} /> Returned
-                    </span>
-                  ) : null;
-                  return (
-                    <div key={entry.id} className={`rounded-xl px-3 py-2.5 border ${bgColor}`}>
-                      <div className="flex items-center gap-1 mb-1">
-                        <span className={`text-[10px] font-bold ${textColor}`}>{entry.authorName}</span>
-                        {badge}
-                        {entry.timestamp && (
-                          <span className="text-[9px] text-slate-400 ml-auto">{formatTs(entry.timestamp)}</span>
-                        )}
-                      </div>
-                      <p className={`text-xs leading-relaxed ${textColor}`}>{entry.text}</p>
-                    </div>
-                  );
-                })}
+                {thread.filter(e => !e.replyToId).map(entry => renderEntry(entry, thread))}
               </div>
-              {!showReply ? (
+              {replyingToId !== '__new__' ? (
                 <button
-                  onClick={() => setShowReply(true)}
+                  onClick={() => { setReplyingToId('__new__'); setReplyText(''); }}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 hover:border-blue-300 hover:text-blue-600 transition-all"
                 >
-                  <CornerDownLeft size={12} /> Reply
+                  <MessageSquare size={12} /> Add comment
                 </button>
               ) : (
-                <div className="space-y-2">
-                  <textarea
-                    ref={replyInputRef}
-                    value={replyText}
-                    onChange={e => setReplyText(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleReply(); }
-                      if (e.key === 'Escape') handleCancelReply();
-                    }}
-                    placeholder="Write your reply…"
-                    rows={2}
-                    className="w-full bg-white border border-blue-300 rounded-lg px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 resize-none"
-                  />
-                  <div className="flex gap-2 justify-end">
-                    <button
-                      onClick={handleCancelReply}
-                      className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-500 hover:bg-slate-50 transition-all"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleReply}
-                      disabled={!replyText.trim()}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <Send size={11} /> Send reply
-                    </button>
-                  </div>
-                </div>
+                renderReplyCompose('__new__', null)
               )}
             </div>
           )}
@@ -638,7 +668,7 @@ const ApprovalsView = ({ clientLogs, clients, users, currentUser, persistClientL
     setReturningTask(null);
   };
 
-  const handleAddFeedbackComment = (task, text) => {
+  const handleAddFeedbackComment = (task, text, replyToId) => {
     const entry = {
       id: `fb-${Date.now()}`,
       authorId: currentUser.id,
@@ -646,6 +676,7 @@ const ApprovalsView = ({ clientLogs, clients, users, currentUser, persistClientL
       text,
       type: 'comment',
       timestamp: new Date().toISOString(),
+      ...(replyToId ? { replyToId } : {}),
     };
     const existing = task.feedbackThread || [];
     updateTask(task, { feedbackThread: [...existing, entry] });
