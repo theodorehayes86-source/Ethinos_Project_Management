@@ -456,8 +456,7 @@ export default function ManagerDashboard({
           task={selectedTask}
           onClose={() => setSelectedTask(null)}
           clientLogs={clientLogs}
-          currentUser={null}
-          readOnly
+          currentUser={currentUser}
         />
       )}
 

@@ -25,7 +25,7 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
   const messagesEndRef = useRef(null);
 
   const canEdit = !readOnly && currentUser && String(task.assigneeId) === String(currentUser.id);
-  const canChat = !readOnly && !!currentUser;
+  const canChat = !!currentUser;
 
   useEffect(() => {
     if (activeSection === 'chat') {
