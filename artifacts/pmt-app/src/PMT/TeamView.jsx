@@ -1,8 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { Users, ChevronRight, ChevronLeft, Plus, X, Search, Star, ArrowUp, ArrowDown, Filter } from 'lucide-react';
 import { format, isBefore, isAfter, startOfWeek, endOfWeek, startOfMonth, endOfMonth, parse } from 'date-fns';
-import DatePicker from 'react-datepicker';
-import 'react-datepicker/dist/react-datepicker.css';
 import TaskDetailPanel from './TaskDetailPanel';
 import { sendNotification } from '../utils/notify';
 import DueDateInput from './DueDateInput';
@@ -62,6 +60,7 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
   const [taskName, setTaskName] = useState('');
   const [taskComment, setTaskComment] = useState('');
   const [taskCategory, setTaskCategory] = useState('');
+  const [taskDate] = useState(new Date());
   const [taskDueDate, setTaskDueDate] = useState(null);
   const [taskBillable, setTaskBillable] = useState(true);
   const [taskRepeat, setTaskRepeat] = useState('Monthly');
@@ -84,7 +83,7 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
     const newTask = {
       id: Date.now(),
       name: taskName.trim(),
-      date: format(new Date(), 'do MMM yyyy'),
+      date: format(taskDate, 'do MMM yyyy'),
       comment: taskComment.trim(),
       result: '',
       status: 'Pending',
@@ -161,10 +160,10 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
           <div>
             <label className="text-xs font-semibold text-slate-600 mb-1 block">Due Date</label>
             <DueDateInput
-              startDate={new Date()}
+              startDate={taskDate}
               value={taskDueDate}
               onChange={setTaskDueDate}
-              minDate={new Date()}
+              minDate={taskDate}
             />
             {taskDueDate && (
               <button type="button" onClick={() => setTaskDueDate(null)} className="mt-1 text-xs font-semibold text-red-600 hover:text-red-700">
