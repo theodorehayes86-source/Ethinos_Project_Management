@@ -682,20 +682,19 @@ const MasterDataView = ({
     return errs;
   };
 
-  const validateCsvClient = (row, idx, allRows) => {
+  const validateCsvClient = (row) => {
     const errs = [];
     if (!row.entityName?.trim()) errs.push('Entity name required');
     if (!row.clientName?.trim()) errs.push('Client name required');
-    else if ((clients || []).some(c => c.name.toLowerCase() === row.clientName.trim().toLowerCase())) errs.push('Client name already exists');
-    else if (allRows.slice(0, idx).some(r => r.clientName?.trim().toLowerCase() === row.clientName?.trim().toLowerCase())) errs.push('Duplicate in file');
+    // Existing clients and within-file duplicates are handled at import time (skipped, not errored)
     return errs;
   };
 
-  const validateCsvCombined = (row, idx, allRows) => {
+  const validateCsvCombined = (row) => {
     const errs = [];
     if (!row.entityName?.trim()) errs.push('Entity name required');
     if (!row.clientName?.trim()) errs.push('Client name required');
-    else if (allRows.slice(0, idx).some(r => r.clientName?.trim().toLowerCase() === row.clientName?.trim().toLowerCase())) errs.push('Duplicate in file');
+    // Within-file duplicates are handled at import time (first occurrence wins)
     return errs;
   };
 
@@ -734,13 +733,32 @@ const MasterDataView = ({
   };
 
   const handleCsvImportClients = async (rows) => {
-    const newClients = rows.map(row => ({
-      id: `client-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      name: row.clientName.trim(),
-      entityName: row.entityName.trim(),
-    }));
-    if (setClients) setClients([...(clients || []), ...newClients]);
-    return newClients.map(c => ({ label: c.name, success: true }));
+    const results = [];
+    const seenInFile = new Set();
+    const newClients = [];
+
+    for (const row of rows) {
+      const name = row.clientName.trim();
+      const entityName = row.entityName.trim();
+      const nameKey = name.toLowerCase();
+
+      if (seenInFile.has(nameKey)) {
+        results.push({ label: name, success: true, skipped: true, reason: 'Duplicate in file — first occurrence used' });
+        continue;
+      }
+      seenInFile.add(nameKey);
+
+      if ((clients || []).some(c => c.name.toLowerCase() === nameKey)) {
+        results.push({ label: name, success: true, skipped: true, reason: 'Already exists — skipped' });
+        continue;
+      }
+
+      newClients.push({ id: `client-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name, entityName });
+      results.push({ label: name, success: true });
+    }
+
+    if (setClients && newClients.length > 0) setClients([...(clients || []), ...newClients]);
+    return results;
   };
 
   const handleCsvImportCombined = async (rows) => {
