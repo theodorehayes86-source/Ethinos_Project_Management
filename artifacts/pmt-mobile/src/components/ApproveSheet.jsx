@@ -61,6 +61,7 @@ export default function ApproveSheet({ task, onClose, clientLogs, onDone }) {
     setSaving(true);
     try {
       await updateTaskInFirebase(task._clientId, task.id, {
+        status: 'Pending',
         qcStatus: 'rejected',
         qcRating: rating,
         qcFeedback: feedback.trim(),

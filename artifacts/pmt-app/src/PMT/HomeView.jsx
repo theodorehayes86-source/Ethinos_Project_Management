@@ -1372,6 +1372,7 @@ const HomeView = ({
             timestamp: new Date().toISOString(),
           } : null;
           handleUpdateTask(qcReviewingTask, {
+            ...(qcReviewDecision === 'rejected' ? { status: 'Pending' } : {}),
             qcStatus: qcReviewDecision,
             qcRating: validRating,
             qcFeedback: feedbackText || null,
