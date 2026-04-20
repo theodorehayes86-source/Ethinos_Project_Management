@@ -1712,7 +1712,7 @@ const MasterDataView = ({
           setReplyingFbId(null);
           setReplyingFbEntryId(null);
           setReplyDraft('');
-          if (isFirstReply && targetItem) {
+          if (targetItem) {
             const submitter = (users || []).find(u => String(u.id) === String(targetItem.userId));
             const recipientEmail = submitter?.email || targetItem.userEmail;
             if (recipientEmail) {

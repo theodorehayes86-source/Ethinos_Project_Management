@@ -146,6 +146,48 @@ function testSubjectPrefix(subject: string): string {
   return process.env.NOTIFY_TEST_EMAIL ? `[TEST] ${subject}` : subject;
 }
 
+/* ─── Client-added HTML builder ─── */
+
+function buildClientAddedHtml(d: {
+  recipientName?: string;
+  clientName: string;
+  approverName?: string;
+}): string {
+  const tableBody = [
+    row("Client / Project", d.clientName),
+    row("Approved by", d.approverName || ""),
+  ].join("");
+  const body = `
+    <p style="margin:0 0 16px;font-size:14px;color:#475569;">Hi${d.recipientName ? ` ${d.recipientName}` : ""},</p>
+    <p style="margin:0 0 20px;font-size:14px;color:#475569;">Your request to join <strong>${d.clientName}</strong> has been approved. You now have access to this client's tasks in the Ethinos PMT.</p>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">${tableBody}</table>
+    <a href="https://pmt.ethinos.com" style="display:inline-block;background:#059669;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">Open PMT</a>
+  `;
+  return brandedWrapper("#059669", "Client Access Granted", `You've been added to "${d.clientName}"`, body);
+}
+
+/* ─── Assignment-accepted HTML builder ─── */
+
+function buildAssignmentAcceptedHtml(d: {
+  recipientName?: string;
+  taskName: string;
+  clientName?: string;
+  approverName?: string;
+}): string {
+  const tableBody = [
+    row("Task", d.taskName),
+    row("Client", d.clientName || ""),
+    row("Approved by", d.approverName || ""),
+  ].join("");
+  const body = `
+    <p style="margin:0 0 16px;font-size:14px;color:#475569;">Hi${d.recipientName ? ` ${d.recipientName}` : ""},</p>
+    <p style="margin:0 0 20px;font-size:14px;color:#475569;">Your request to be assigned to the following task has been approved. Please log in to get started.</p>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">${tableBody}</table>
+    <a href="https://pmt.ethinos.com" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View Task</a>
+  `;
+  return brandedWrapper("#2563eb", "Assignment Approved", `You've been assigned to "${d.taskName}"`, body);
+}
+
 /* ─── Mention HTML builder ─── */
 
 function buildMentionHtml(d: {
@@ -257,6 +299,32 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
           bodyHtml: buildMentionHtml({ mentionedName: recipientName, mentionerName, taskName, clientName, messageText }),
         });
         logger.info({ to, original: recipientEmail, taskName, testMode }, "[Notify] mention email sent");
+        break;
+      }
+
+      case "client-added": {
+        const { recipientEmail, recipientName, clientName, approverName } = data as Record<string, string>;
+        if (!recipientEmail) return res.json({ sent: false, reason: "no_email" });
+        const to = resolveRecipient(recipientEmail);
+        await sendEmail({
+          to,
+          subject: testSubjectPrefix(`[PMT] You've been added to "${clientName}"`),
+          bodyHtml: buildClientAddedHtml({ recipientName, clientName, approverName }),
+        });
+        logger.info({ to, original: recipientEmail, clientName, testMode }, "[Notify] client-added email sent");
+        break;
+      }
+
+      case "assignment-accepted": {
+        const { recipientEmail, recipientName, taskName, clientName, approverName } = data as Record<string, string>;
+        if (!recipientEmail) return res.json({ sent: false, reason: "no_email" });
+        const to = resolveRecipient(recipientEmail);
+        await sendEmail({
+          to,
+          subject: testSubjectPrefix(`[PMT] Your assignment request was approved: "${taskName}"`),
+          bodyHtml: buildAssignmentAcceptedHtml({ recipientName, taskName, clientName, approverName }),
+        });
+        logger.info({ to, original: recipientEmail, taskName, testMode }, "[Notify] assignment-accepted email sent");
         break;
       }
 

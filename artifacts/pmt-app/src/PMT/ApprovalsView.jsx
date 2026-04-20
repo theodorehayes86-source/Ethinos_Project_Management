@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { CheckCircle, XCircle, Star, ChevronDown, ChevronUp, Clock, User, Tag, Calendar, MessageSquare, UserPlus, UserCheck, UserX, Check, X, Send, CornerDownLeft } from 'lucide-react';
+import { sendNotification } from '../utils/notify';
 
 function formatTs(ts) {
   if (!ts) return '';
@@ -594,6 +595,16 @@ const ApprovalsView = ({ clientLogs, clients, users, currentUser, persistClientL
       : u
     );
     setUsers(updatedUsers);
+    const requester = (users || []).find(u => String(u.id) === String(request.requesterId));
+    const recipientEmail = requester?.email || request.requesterEmail;
+    if (recipientEmail) {
+      sendNotification('client-added', {
+        recipientEmail,
+        recipientName: request.requesterName || requester?.name,
+        clientName: client.name,
+        approverName: currentUser?.name,
+      });
+    }
   };
 
   const handleDeclineClientJoin = (client, request) => {
@@ -688,6 +699,17 @@ const ApprovalsView = ({ clientLogs, clients, users, currentUser, persistClientL
       assigneeName: request.requesterName,
       assignmentRequests: (task.assignmentRequests || []).filter(r => String(r.requesterId) !== String(request.requesterId)),
     });
+    const requester = (users || []).find(u => String(u.id) === String(request.requesterId));
+    const recipientEmail = requester?.email || request.requesterEmail;
+    if (recipientEmail) {
+      sendNotification('assignment-accepted', {
+        recipientEmail,
+        recipientName: request.requesterName || requester?.name,
+        taskName: task.name || task.comment || '',
+        clientName: task._client?.name || '',
+        approverName: currentUser?.name,
+      });
+    }
   };
 
   const handleDeclineAssignment = (task, request) => {
