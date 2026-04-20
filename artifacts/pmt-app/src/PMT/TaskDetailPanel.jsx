@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { X, Plus, Trash2, Send, Link, Check, ExternalLink, AtSign, MessageSquare, CheckCircle, XCircle, CornerDownLeft } from 'lucide-react';
-import { format, parse } from 'date-fns';
+import { format, parse, isBefore } from 'date-fns';
 import { sendNotification } from '../utils/notify';
 import DueDateInput from './DueDateInput';
 
@@ -237,6 +237,14 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNot
   const checkedCount = steps.filter(s => s.checked).length;
   const progressPct = steps.length > 0 ? Math.round((checkedCount / steps.length) * 100) : 0;
 
+  const isOverdue = (() => {
+    if (!task.dueDate || task.status === 'Done') return false;
+    try {
+      const due = parse(task.dueDate, 'do MMM yyyy', new Date());
+      return isBefore(due, new Date());
+    } catch { return false; }
+  })();
+
   return (
     <div className="fixed inset-0 z-[800] flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" aria-hidden="true" />
@@ -311,7 +319,12 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNot
           {/* Due Date */}
           {canEdit && (
             <section>
-              <h3 className="text-xs font-bold uppercase tracking-wide text-slate-700 mb-2">Due Date</h3>
+              <div className="flex items-center gap-2 mb-2">
+                <h3 className="text-xs font-bold uppercase tracking-wide text-slate-700">Due Date</h3>
+                {isOverdue && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-600">Overdue</span>
+                )}
+              </div>
               <DueDateInput
                 key={task.id}
                 startDate={tryParseDate(task.date)}
@@ -332,7 +345,12 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNot
           )}
           {!canEdit && task.dueDate && (
             <section>
-              <h3 className="text-xs font-bold uppercase tracking-wide text-slate-700 mb-1">Due Date</h3>
+              <div className="flex items-center gap-2 mb-1">
+                <h3 className="text-xs font-bold uppercase tracking-wide text-slate-700">Due Date</h3>
+                {isOverdue && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-600">Overdue</span>
+                )}
+              </div>
               <p className="text-sm font-semibold text-slate-700">{task.dueDate}</p>
             </section>
           )}
