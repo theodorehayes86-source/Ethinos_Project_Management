@@ -234,6 +234,7 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
   const [steps, setSteps] = useState([]);
   const [stepInput, setStepInput] = useState('');
   const stepInputRef = useRef(null);
+  const [reminderOffsets, setReminderOffsets] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -287,6 +288,7 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
         repeatMonthlyWeek: frequency === 'Monthly' ? repeatMonthlyWeek : null,
         repeatMonthlyDay: frequency === 'Monthly' ? repeatMonthlyDay : null,
         steps: steps.length > 0 ? steps : [],
+        reminderOffsets: reminderOffsets.length > 0 ? reminderOffsets : null,
       };
       if (frequency !== 'Once' && repeatEnd && dueDate) {
         const startDate = new Date(dueDate);
@@ -527,6 +529,44 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
                     })()}
                   </div>
                 )}
+                {dueDate && (
+                  <div className="mt-4">
+                    <p className="text-sm font-bold text-slate-700 mb-2">Email Reminders</p>
+                    <p className="text-xs text-slate-400 mb-2">Relative to due date — "after" reminders also alert the QC reviewer</p>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { value: '-7', label: '7d before' },
+                        { value: '-3', label: '3d before' },
+                        { value: '-2', label: '2d before' },
+                        { value: '-1', label: '1d before' },
+                        { value: '0',  label: 'On day' },
+                        { value: '+1', label: '1d after', overdue: true },
+                        { value: '+2', label: '2d after', overdue: true },
+                        { value: '+3', label: '3d after', overdue: true },
+                      ].map(opt => {
+                        const active = reminderOffsets.includes(opt.value);
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => setReminderOffsets(prev =>
+                              prev.includes(opt.value) ? prev.filter(v => v !== opt.value) : [...prev, opt.value]
+                            )}
+                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                              active
+                                ? opt.overdue
+                                  ? 'bg-red-100 border-red-400 text-red-700'
+                                  : 'bg-indigo-100 border-indigo-400 text-indigo-700'
+                                : 'bg-white border-slate-200 text-slate-500'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -548,6 +588,7 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
                     ? `Monthly (${WEEK_ORDINALS[repeatMonthlyWeek - 1]} ${WEEKDAY_FULL[repeatMonthlyDay]})`
                     : frequency },
                 frequency !== 'Once' && repeatEnd && { label: 'Repeat Until', value: formatDate(repeatEnd) },
+                reminderOffsets.length > 0 && { label: 'Reminders', value: reminderOffsets.join(', ') + ' days vs due date' },
                 steps.length > 0 && { label: 'Checklist', value: `${steps.length} item${steps.length !== 1 ? 's' : ''}` },
               ].filter(Boolean).map(({ label, value }) => (
                 <div key={label} className="flex gap-3 py-3 border-b border-slate-100 last:border-0">

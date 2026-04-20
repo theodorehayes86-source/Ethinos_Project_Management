@@ -2,10 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { Search, ChevronLeft, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, AlertTriangle, Calendar, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus, Hourglass, Archive, ArchiveRestore, LayoutGrid, LayoutList } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import DatePicker from "react-datepicker";
-import { format, subDays, parse } from 'date-fns';
+import { format, subDays, parse, addDays, differenceInCalendarDays } from 'date-fns';
 import "react-datepicker/dist/react-datepicker.css";
 import TaskDetailPanel from './TaskDetailPanel';
 import { sendNotification } from '../utils/notify';
+import { REMINDER_OPTIONS, ReminderPills } from './ReminderPills';
 
 const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Business Head'];
 
@@ -24,46 +25,6 @@ const ROLE_RANK = {
   'Intern':          20,
 };
 const roleRank = (role) => ROLE_RANK[role] ?? 10;
-
-const REMINDER_OPTIONS = [
-  { value: '-7', label: '7 days before' },
-  { value: '-3', label: '3 days before' },
-  { value: '-2', label: '2 days before' },
-  { value: '-1', label: '1 day before' },
-  { value: '0',  label: 'On due date' },
-  { value: '+1', label: '1 day after', overdue: true },
-  { value: '+2', label: '2 days after', overdue: true },
-  { value: '+3', label: '3 days after', overdue: true },
-];
-
-function ReminderPills({ selected, onChange }) {
-  const toggle = (val) => {
-    onChange(selected.includes(val) ? selected.filter(v => v !== val) : [...selected, val]);
-  };
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {REMINDER_OPTIONS.map(opt => {
-        const active = selected.includes(opt.value);
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => toggle(opt.value)}
-            className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all ${
-              active
-                ? opt.overdue
-                  ? 'bg-red-100 border-red-400 text-red-700'
-                  : 'bg-blue-100 border-blue-400 text-blue-700'
-                : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
-            }`}
-          >
-            {opt.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 const isTaskVisible = (task, currentUser) => {
   if (CROSS_DEPT_ROLES.includes(currentUser?.role)) return true;
@@ -632,6 +593,9 @@ const ClientView = ({
     ]);
 
     // Generate all occurrences if repeating with an end date
+    const dueDateOffsetDays = taskDueDate && selectedDate
+      ? differenceInCalendarDays(taskDueDate, selectedDate)
+      : null;
     let logsToAdd = [newLog];
     if (newTaskRepeat !== 'Once' && newTaskRepeatEnd) {
       const dates = generateRecurringDates(
@@ -643,6 +607,7 @@ const ClientView = ({
           ...newLog,
           id: Date.now() + i + Math.random(),
           date: format(dt, 'do MMM yyyy'),
+          dueDate: dueDateOffsetDays !== null ? format(addDays(dt, dueDateOffsetDays), 'do MMM yyyy') : null,
         }));
       }
     }
@@ -790,13 +755,21 @@ const ClientView = ({
       };
 
       // Generate all occurrences if repeating with an end date
+      const tplDueDateOffset = (cfg.dueDate && cfg.startDate)
+        ? differenceInCalendarDays(cfg.dueDate, cfg.startDate)
+        : null;
       if (freq !== 'Once' && cfg.repeatEnd && cfg.startDate) {
         const dates = generateRecurringDates(
           cfg.startDate, cfg.repeatEnd, freq,
           cfg.repeatDays, cfg.repeatMonthlyWeek, cfg.repeatMonthlyDay
         );
         dates.forEach((dt, i) => {
-          newTasks.push({ ...baseTask, id: Date.now() + newTasks.length + i + Math.random(), date: format(dt, 'do MMM yyyy') });
+          newTasks.push({
+            ...baseTask,
+            id: Date.now() + newTasks.length + i + Math.random(),
+            date: format(dt, 'do MMM yyyy'),
+            dueDate: tplDueDateOffset !== null ? format(addDays(dt, tplDueDateOffset), 'do MMM yyyy') : null,
+          });
         });
       } else {
         newTasks.push({

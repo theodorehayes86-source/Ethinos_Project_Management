@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { format, parse, isBefore } from 'date-fns';
+import { format, parse, isBefore, addDays, differenceInCalendarDays } from 'date-fns';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, CheckCircle, Tag, Calendar, Archive, ArchiveRestore, LayoutTemplate, ChevronDown, Play, Square, Pause, Send, ThumbsUp, ThumbsDown, RotateCcw } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import TaskDetailPanel from './TaskDetailPanel';
 import { sendNotification } from '../utils/notify';
+import { ReminderPills } from './ReminderPills';
 
 const managementRoles = ['Super Admin', 'Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
 
@@ -89,6 +90,7 @@ const HomeView = ({
   const [statusFilter, setStatusFilter] = useState('all');
   const [estimatedHrs, setEstimatedHrs] = useState('');
   const [estimatedMins, setEstimatedMins] = useState('');
+  const [taskReminders, setTaskReminders] = useState([]);
   const [showArchived, setShowArchived] = useState(false);
   const [detailTask, setDetailTask] = useState(null);
 
@@ -213,6 +215,7 @@ const HomeView = ({
     setTaskBillable(defaultClientId === '__ethinos__' ? false : true);
     setEstimatedHrs('');
     setEstimatedMins('');
+    setTaskReminders([]);
   };
 
   const openAddTaskModal = () => { resetModal(); setShowAddTaskModal(true); };
@@ -320,7 +323,11 @@ const HomeView = ({
       departments: taskDepartments.length > 0 ? taskDepartments : (currentUser?.department ? [currentUser.department] : null),
       billable: effectiveBillable,
       estimatedMs: homeEstimatedMs,
+      reminderOffsets: taskReminders.length > 0 ? taskReminders : null,
     };
+    const dueDateOffsetDays = taskDueDate && selectedDate
+      ? differenceInCalendarDays(taskDueDate, selectedDate)
+      : null;
     let logsToAdd = [newTask];
     if (taskRepeat !== 'Once' && taskRepeatEnd) {
       const dates = hvGenerateRecurring(
@@ -332,6 +339,7 @@ const HomeView = ({
         ...newTask,
         id: Date.now() + i,
         date: format(dt, 'do MMM yyyy'),
+        dueDate: dueDateOffsetDays !== null ? format(addDays(dt, dueDateOffsetDays), 'do MMM yyyy') : null,
       }));
       if (logsToAdd.length === 0) logsToAdd = [newTask];
     }
@@ -1189,11 +1197,21 @@ const HomeView = ({
                       className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
                     />
                     {taskDueDate && (
-                      <button type="button" onClick={() => setTaskDueDate(null)} className="text-xs font-semibold text-red-600 hover:text-red-700">
+                      <button type="button" onClick={() => { setTaskDueDate(null); setTaskReminders([]); }} className="text-xs font-semibold text-red-600 hover:text-red-700">
                         Clear Due Date
                       </button>
                     )}
                   </div>
+
+                  {taskDueDate && (
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Email Reminders
+                        <span className="ml-1.5 text-slate-400 normal-case font-normal">— "after" reminders go to QC manager too</span>
+                      </label>
+                      <ReminderPills selected={taskReminders} onChange={setTaskReminders} />
+                    </div>
+                  )}
 
                   {/* Billable Toggle */}
                   <div className={`flex items-center justify-between border rounded-xl px-4 py-3 ${selectedClientId === '__ethinos__' ? 'border-slate-100 bg-slate-50/40 opacity-70' : 'border-slate-200 bg-slate-50/60'}`}>
