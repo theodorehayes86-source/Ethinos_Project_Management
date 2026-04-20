@@ -412,8 +412,9 @@ const HomeView = ({
       (t.qcEnabled && (!t.qcStatus || t.qcStatus === 'rejected'))
     );
     if (statusFilter === 'done') return myDone;
+    if (statusFilter === 'overdue') return myOverdue;
     return myTasks.filter(t => t.status === statusFilter);
-  }, [myTasks, myDone, myArchivedTasks, statusFilter, showArchived]);
+  }, [myTasks, myDone, myArchivedTasks, myOverdue, statusFilter, showArchived]);
 
   const handleArchiveTask = (task) => {
     const cid = task.cid;
@@ -653,6 +654,7 @@ const HomeView = ({
                 { key: 'all', label: 'Open' },
                 { key: 'WIP', label: 'WIP' },
                 { key: 'Pending', label: 'Pending' },
+                { key: 'overdue', label: 'Overdue' },
                 { key: 'done', label: 'Done' },
               ].map(f => (
                 <button
@@ -660,11 +662,15 @@ const HomeView = ({
                   onClick={() => setStatusFilter(f.key)}
                   className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
                     statusFilter === f.key
-                      ? 'bg-slate-900 text-white shadow-sm'
-                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                      ? f.key === 'overdue'
+                        ? 'bg-rose-600 text-white shadow-sm'
+                        : 'bg-slate-900 text-white shadow-sm'
+                      : f.key === 'overdue' && myOverdue.length > 0
+                        ? 'text-rose-600 hover:text-rose-700 hover:bg-rose-50'
+                        : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
                   }`}
                 >
-                  {f.label}
+                  {f.label}{f.key === 'overdue' && myOverdue.length > 0 ? ` (${myOverdue.length})` : ''}
                 </button>
               ))}
             </div>
@@ -705,10 +711,10 @@ const HomeView = ({
             <CheckCircle size={24} className="text-slate-300" />
           </div>
           <p className="text-sm font-semibold text-slate-500">
-            {showArchived ? 'No archived tasks' : statusFilter === 'done' ? 'No completed tasks yet' : 'No tasks here'}
+            {showArchived ? 'No archived tasks' : statusFilter === 'done' ? 'No completed tasks yet' : statusFilter === 'overdue' ? 'No overdue tasks' : 'No tasks here'}
           </p>
           <p className="text-xs text-slate-400 mt-1">
-            {showArchived ? 'Tasks you archive will appear here.' : statusFilter === 'all' ? 'Tasks assigned to you will appear here.' : 'Switch filter to see other tasks.'}
+            {showArchived ? 'Tasks you archive will appear here.' : statusFilter === 'overdue' ? 'Tasks past their due date will appear here.' : statusFilter === 'all' ? 'Tasks assigned to you will appear here.' : 'Switch filter to see other tasks.'}
           </p>
         </div>
       ) : (
