@@ -81,11 +81,18 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-white rounded-t-3xl max-h-[90vh] flex flex-col">
 
-        <div className="sticky top-0 bg-white border-b border-slate-100 px-5 py-4 flex items-center justify-between rounded-t-3xl">
-          <h2 className="text-base font-bold text-slate-900 truncate pr-4 flex-1">
-            {task.name || task.comment || 'Task'}
-          </h2>
-          <div className="flex items-center gap-2">
+        <div className="sticky top-0 bg-white border-b border-slate-100 px-5 py-4 flex items-start justify-between rounded-t-3xl">
+          <div className="flex-1 min-w-0 pr-4">
+            <h2 className="text-base font-bold text-slate-900 truncate">
+              {task.name || task.comment || 'Task'}
+            </h2>
+            {isOverdue && (
+              <span className="inline-flex items-center gap-1 mt-1.5 text-xs font-bold px-2.5 py-0.5 rounded-full bg-red-100 text-red-600">
+                <AlertTriangle size={10} /> Overdue
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
             {saving && <Loader2 size={16} className="text-indigo-400 animate-spin" />}
             <button onClick={onClose} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
               <X size={16} className="text-slate-600" />
