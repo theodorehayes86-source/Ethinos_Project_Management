@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { X, Plus, Trash2, Send, Link, Check, ExternalLink, AtSign, MessageSquare, CheckCircle, XCircle, CornerDownLeft } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, parse } from 'date-fns';
 import { sendNotification } from '../utils/notify';
+import DueDateInput from './DueDateInput';
 
 const statusColors = {
   Done: 'bg-emerald-100 text-emerald-700',
@@ -36,9 +37,20 @@ function buildFeedbackThread(task) {
   return thread;
 }
 
+const tryParseDate = (str) => {
+  if (!str) return null;
+  try {
+    const d = parse(str, 'do MMM yyyy', new Date());
+    return isNaN(d.getTime()) ? null : d;
+  } catch {
+    return null;
+  }
+};
+
 const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNotifications = () => {}, onClose, onUpdate }) => {
   const [steps, setSteps] = useState(() => task.steps || []);
   const [messages, setMessages] = useState(() => task.messages || []);
+  const [localDueDate, setLocalDueDate] = useState(() => tryParseDate(task.dueDate));
   const [links, setLinks] = useState(() => task.links || []);
   const [feedbackThread, setFeedbackThread] = useState(() => buildFeedbackThread(task));
   const [newFeedback, setNewFeedback] = useState('');
@@ -61,7 +73,16 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNot
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  useEffect(() => {
+    setLocalDueDate(tryParseDate(task.dueDate));
+  }, [task.id, task.dueDate]);
+
   const saveUpdate = (updatedTask) => onUpdate(updatedTask);
+
+  const handleDueDateChange = (date) => {
+    setLocalDueDate(date);
+    saveUpdate({ ...task, steps, messages, links, dueDate: date ? format(date, 'do MMM yyyy') : null });
+  };
 
   // --- Mention helpers ---
   const mentionableUsers = users.filter(u => String(u.id) !== String(currentUser?.id));
@@ -255,6 +276,35 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNot
 
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
+
+          {/* Due Date */}
+          {canEdit && (
+            <section>
+              <h3 className="text-xs font-bold uppercase tracking-wide text-slate-700 mb-2">Due Date</h3>
+              <DueDateInput
+                key={task.id}
+                startDate={tryParseDate(task.date)}
+                value={localDueDate}
+                onChange={handleDueDateChange}
+                minDate={tryParseDate(task.date) || new Date()}
+              />
+              {localDueDate && (
+                <button
+                  type="button"
+                  onClick={() => handleDueDateChange(null)}
+                  className="mt-1.5 text-xs font-semibold text-red-500 hover:text-red-700 transition-colors"
+                >
+                  Clear due date
+                </button>
+              )}
+            </section>
+          )}
+          {!canEdit && task.dueDate && (
+            <section>
+              <h3 className="text-xs font-bold uppercase tracking-wide text-slate-700 mb-1">Due Date</h3>
+              <p className="text-sm font-semibold text-slate-700">{task.dueDate}</p>
+            </section>
+          )}
 
           {/* Steps */}
           <section>
