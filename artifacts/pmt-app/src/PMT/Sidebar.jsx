@@ -1,14 +1,42 @@
-import React, { useState } from 'react';
-import { Home, Briefcase, Network, SlidersHorizontal, BarChart3, FileSpreadsheet, ChevronLeft, ChevronRight, ClipboardCheck, Download, Monitor, Apple, Info, X, Users } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Home, Briefcase, Network, SlidersHorizontal, BarChart3, FileSpreadsheet, ChevronLeft, ChevronRight, ClipboardCheck, Download, Monitor, Apple, Info, X, Users, Loader2 } from 'lucide-react';
 
-const RELEASES_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/latest';
-const WIN_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/download/v1.0.22/Ethinos.Timer.Pro.Setup.1.0.22.exe';
-const MAC_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/download/v1.0.22/Ethinos.Timer.Pro-1.0.22-universal.dmg';
-const LINUX_URL = 'https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/download/v1.0.22/Ethinos.Timer.Pro-1.0.22-x86_64.AppImage';
+const REPO = 'theodorehayes86-source/Ethinos_Project_Management';
+const RELEASES_URL = `https://github.com/${REPO}/releases/latest`;
+const API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
+
+function useLatestRelease() {
+  const [data, setData] = useState({ winUrl: null, macUrl: null, linuxUrl: null, version: null, loading: true });
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(API_URL, { headers: { Accept: 'application/vnd.github+json' } })
+      .then(r => r.json())
+      .then(release => {
+        if (cancelled) return;
+        const assets = release.assets || [];
+        const find = (ext) => assets.find(a => a.name.endsWith(ext))?.browser_download_url || null;
+        setData({
+          winUrl:   find('.exe'),
+          macUrl:   find('.dmg'),
+          linuxUrl: find('.AppImage'),
+          version:  release.tag_name || null,
+          loading:  false,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setData({ winUrl: null, macUrl: null, linuxUrl: null, version: null, loading: false });
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  return data;
+}
 
 const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setIsMinimized, canSeeControlCenter = false, canSeeEmployeeView = true, canSeeMetrics = true, canSeeReports = true, canSeeApprovals = false, canSeeTeam = false, pendingApprovalsCount = 0 }) => {
   const [logoError, setLogoError] = useState(false);
   const [showMacInfo, setShowMacInfo] = useState(false);
+  const { winUrl, macUrl, linuxUrl, version, loading } = useLatestRelease();
 
   const menuItems = [
     { id: 'home', label: 'Home', icon: <Home size={18}/> },
@@ -29,11 +57,24 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
     return true;
   });
 
+  const dlBtn = (href, icon, label, title) => (
+    <a
+      href={href || RELEASES_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 transition-all text-[9px] font-bold text-slate-600 hover:text-indigo-700"
+      title={title}
+    >
+      {icon}
+      {label}
+    </a>
+  );
+
   return (
     <aside
       className={`${isMinimized ? 'w-20' : 'w-64'} border-r border-white/45 bg-white/30 backdrop-blur-sm flex flex-col transition-all duration-300 z-30`}
     >
-      {/* XP Logo Section - Maintained professional black/white style */}
+      {/* XP Logo Section */}
       <div className={`${isMinimized ? 'p-4 flex justify-center' : 'p-7 flex justify-start pl-7'}`}>
         <div
           className={`${
@@ -59,17 +100,16 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
       <nav className="flex-1 px-3.5 space-y-2.5">
         {menuItems.map((item) => {
           const isActive = activeTab === item.id;
-          
           return (
-            <button 
-              key={item.id} 
-              onClick={() => { 
-                setActiveTab(item.id); 
-                if(setSelectedClient) setSelectedClient(null); // Safety check
-              }} 
+            <button
+              key={item.id}
+              onClick={() => {
+                setActiveTab(item.id);
+                if(setSelectedClient) setSelectedClient(null);
+              }}
               className={`w-full flex items-center ${isMinimized ? 'justify-center' : 'gap-4'} py-3.5 px-4 rounded-xl font-bold text-[11px] uppercase tracking-widest transition-all duration-200 ${
-                isActive 
-                  ? 'border border-indigo-200/70 text-slate-900 bg-white/80 backdrop-blur-sm shadow-sm' 
+                isActive
+                  ? 'border border-indigo-200/70 text-slate-900 bg-white/80 backdrop-blur-sm shadow-sm'
                   : 'text-slate-600 border border-transparent hover:text-slate-900 hover:bg-white/65 hover:border-white/80 bg-transparent'
               }`}
             >
@@ -81,7 +121,6 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
                   </span>
                 )}
               </div>
-              
               {!isMinimized && (
                 <span className="whitespace-nowrap flex-1 text-left">
                   {item.label}
@@ -109,41 +148,22 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest leading-none">Ethinos Timer Pro</p>
-                <p className="text-[8px] text-slate-400 leading-none mt-0.5">Desktop app · always on top</p>
+                <p className="text-[8px] text-slate-400 leading-none mt-0.5">
+                  {loading ? (
+                    <span className="flex items-center gap-0.5"><Loader2 size={7} className="animate-spin" /> checking…</span>
+                  ) : version ? (
+                    `${version} · always on top`
+                  ) : (
+                    'Desktop app · always on top'
+                  )}
+                </p>
               </div>
             </div>
 
             <div className="flex gap-1.5">
-              <a
-                href={WIN_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 transition-all text-[9px] font-bold text-slate-600 hover:text-indigo-700"
-                title="Download for Windows"
-              >
-                <Monitor size={10} />
-                Win
-              </a>
-              <a
-                href={MAC_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 transition-all text-[9px] font-bold text-slate-600 hover:text-indigo-700"
-                title="Download for Mac"
-              >
-                <Apple size={10} />
-                Mac
-              </a>
-              <a
-                href={LINUX_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 transition-all text-[9px] font-bold text-slate-600 hover:text-indigo-700"
-                title="Download for Linux (AppImage)"
-              >
-                <Download size={10} />
-                Linux
-              </a>
+              {dlBtn(winUrl,   <Monitor size={10} />, 'Win',   'Download for Windows')}
+              {dlBtn(macUrl,   <Apple   size={10} />, 'Mac',   'Download for Mac')}
+              {dlBtn(linuxUrl, <Download size={10}/>, 'Linux', 'Download for Linux (AppImage)')}
               <button
                 onClick={() => setShowMacInfo(v => !v)}
                 className="w-6 flex items-center justify-center rounded-lg bg-amber-50 border border-amber-200 hover:bg-amber-100 transition-all"
@@ -179,7 +199,7 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
             href={RELEASES_URL}
             target="_blank"
             rel="noopener noreferrer"
-            title="Download Ethinos Timer Pro"
+            title={version ? `Download Ethinos Timer Pro ${version}` : 'Download Ethinos Timer Pro'}
             className="w-full flex items-center justify-center py-2.5 rounded-xl bg-indigo-50/80 border border-indigo-200/60 hover:bg-indigo-100/80 transition-all"
           >
             <Download size={14} className="text-indigo-500" />
