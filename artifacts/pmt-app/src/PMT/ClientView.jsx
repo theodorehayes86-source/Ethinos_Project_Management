@@ -6,7 +6,7 @@ import { format, subDays, parse, addDays, differenceInCalendarDays } from 'date-
 import "react-datepicker/dist/react-datepicker.css";
 import TaskDetailPanel from './TaskDetailPanel';
 import { sendNotification } from '../utils/notify';
-import { REMINDER_OPTIONS, ReminderPills } from './ReminderPills';
+import { ReminderPills } from './ReminderPills';
 
 const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Business Head'];
 
