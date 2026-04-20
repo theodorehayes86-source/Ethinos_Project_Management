@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { format, parse, isBefore, addDays, differenceInCalendarDays } from 'date-fns';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
@@ -89,6 +89,7 @@ const HomeView = ({
   const [taskDepartments, setTaskDepartments] = useState([]);
   const [taskBillable, setTaskBillable] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
+  const taskListRef = useRef(null);
   const [estimatedHrs, setEstimatedHrs] = useState('');
   const [estimatedMins, setEstimatedMins] = useState('');
   const [taskReminders, setTaskReminders] = useState([]);
@@ -607,6 +608,11 @@ const HomeView = ({
             iconBgColor: myOverdue.length > 0 ? 'bg-rose-100' : 'bg-slate-100',
             border: myOverdue.length > 0 ? 'border-rose-200' : 'border-slate-100',
             valueColor: myOverdue.length > 0 ? 'text-rose-700' : 'text-slate-400',
+            onClick: myOverdue.length > 0 ? () => {
+              setShowArchived(false);
+              setStatusFilter('overdue');
+              setTimeout(() => taskListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+            } : undefined,
           },
           {
             label: 'Due Today',
@@ -629,7 +635,8 @@ const HomeView = ({
         ].map((stat, i) => (
           <div
             key={i}
-            className={`${stat.bgColor} p-4 rounded-2xl shadow-sm border ${stat.border} flex flex-col justify-between h-20 transition-all`}
+            onClick={stat.onClick}
+            className={`${stat.bgColor} p-4 rounded-2xl shadow-sm border ${stat.border} flex flex-col justify-between h-20 transition-all ${stat.onClick ? 'cursor-pointer hover:shadow-md hover:scale-[1.02]' : ''}`}
           >
             <div className="flex justify-between items-start">
               <span className="text-xs font-semibold text-slate-500">{stat.label}</span>
@@ -641,7 +648,7 @@ const HomeView = ({
       </div>
 
       {/* TASK LIST HEADER */}
-      <div className="flex items-center justify-between">
+      <div ref={taskListRef} className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-bold text-slate-800">My Tasks</h2>
           <span className="text-xs text-slate-400 font-medium">({myTasks.length} total)</span>
