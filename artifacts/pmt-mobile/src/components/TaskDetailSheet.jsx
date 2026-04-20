@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { X, Star, CheckCircle, XCircle, Clock, Tag, Calendar, Loader2, Send, MessageCircle, ListChecks, Check, Square, AlertTriangle } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { X, Star, CheckCircle, XCircle, Clock, Tag, Calendar, Loader2, Send, MessageCircle, ListChecks, Check, AlertTriangle, CornerUpLeft, Pencil, Trash2, Smile } from 'lucide-react';
 import { updateTaskInFirebase } from '../hooks/useFirebaseData.js';
 import { isTaskOverdue } from '../utils/taskUtils.js';
 
@@ -10,13 +10,25 @@ const STATUS_COLORS = {
   Done: 'bg-emerald-100 text-emerald-700',
 };
 
+const EMOJIS = ['👍','👎','❤️','😊','😂','🎉','🙏','👏','🔥','✅','⚠️','💪','😅','🤔','💡','🚀','✨','👋','😍','🤝','👀','💯','🫡','😬','🙌'];
+
 function formatTime(ts) {
   if (!ts) return '';
   const d = new Date(ts);
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser, readOnly }) {
+function renderMentions(text) {
+  if (!text) return text;
+  const parts = text.split(/(@\w[\w\s]*)/g);
+  return parts.map((part, i) =>
+    part.startsWith('@')
+      ? <span key={i} className="text-indigo-500 font-semibold">{part}</span>
+      : part
+  );
+}
+
+export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser, readOnly, users = [] }) {
   const [status, setStatus] = useState(task.status || 'Pending');
   const [steps, setSteps] = useState(() => Array.isArray(task.steps) ? task.steps : []);
   const [messages, setMessages] = useState(() => Array.isArray(task.messages) ? task.messages : []);
@@ -24,10 +36,26 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
   const [saving, setSaving] = useState(false);
   const [activeSection, setActiveSection] = useState('details');
   const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
+
+  const [replyingTo, setReplyingTo] = useState(null);
+  const [editingMsgId, setEditingMsgId] = useState(null);
+  const [editText, setEditText] = useState('');
+  const [activeMenu, setActiveMenu] = useState(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+
+  const [mentionQuery, setMentionQuery] = useState('');
+  const [showMentionMenu, setShowMentionMenu] = useState(false);
+  const [mentionStartIndex, setMentionStartIndex] = useState(null);
 
   const canEdit = !readOnly && currentUser && String(task.assigneeId) === String(currentUser.id);
   const canChat = !!currentUser;
   const isOverdue = isTaskOverdue(task, status);
+
+  const mentionableUsers = (users || []).filter(u => String(u.id) !== String(currentUser?.id));
+  const filteredMentions = mentionQuery
+    ? mentionableUsers.filter(u => u.name?.toLowerCase().includes(mentionQuery.toLowerCase()))
+    : mentionableUsers;
 
   useEffect(() => {
     if (activeSection === 'chat') {
@@ -58,28 +86,89 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
     await persistUpdate({ steps: updated });
   };
 
+  const handleInputChange = (e) => {
+    const val = e.target.value;
+    setNewMessage(val);
+
+    const cursor = e.target.selectionStart;
+    const upToCursor = val.slice(0, cursor);
+    const atIdx = upToCursor.lastIndexOf('@');
+    if (atIdx !== -1) {
+      const query = upToCursor.slice(atIdx + 1);
+      if (/^[\w\s]*$/.test(query) && !query.includes('  ')) {
+        setMentionQuery(query);
+        setMentionStartIndex(atIdx);
+        setShowMentionMenu(true);
+        return;
+      }
+    }
+    setShowMentionMenu(false);
+    setMentionQuery('');
+    setMentionStartIndex(null);
+  };
+
+  const insertMention = (user) => {
+    const before = newMessage.slice(0, mentionStartIndex);
+    const after = newMessage.slice(mentionStartIndex + 1 + mentionQuery.length);
+    setNewMessage(before + '@' + user.name + ' ' + after);
+    setShowMentionMenu(false);
+    setMentionQuery('');
+    setMentionStartIndex(null);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const insertEmoji = (emoji) => {
+    setNewMessage(prev => prev + emoji);
+    setShowEmojiPicker(false);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
   const handleSendMessage = async () => {
     const text = newMessage.trim();
     if (!text || !currentUser) return;
     const msg = {
-      id: `msg-${Date.now()}`,
+      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       text,
       author: currentUser.name || 'You',
-      authorId: currentUser.id,
+      authorId: String(currentUser.id),
       timestamp: new Date().toISOString(),
+      ...(replyingTo ? { replyTo: { id: replyingTo.id, author: replyingTo.author, text: replyingTo.text } } : {}),
     };
     const updated = [...messages, msg];
     setMessages(updated);
     setNewMessage('');
+    setReplyingTo(null);
+    setShowEmojiPicker(false);
+    await persistUpdate({ messages: updated });
+  };
+
+  const handleEditSave = async (msgId) => {
+    const text = editText.trim();
+    if (!text) return;
+    const updated = messages.map(m =>
+      m.id === msgId ? { ...m, text, edited: true } : m
+    );
+    setMessages(updated);
+    setEditingMsgId(null);
+    setEditText('');
+    await persistUpdate({ messages: updated });
+  };
+
+  const handleDelete = async (msgId) => {
+    const updated = messages.map(m =>
+      m.id === msgId ? { ...m, deleted: true, text: '' } : m
+    );
+    setMessages(updated);
+    setActiveMenu(null);
     await persistUpdate({ messages: updated });
   };
 
   const doneCount = steps.filter(s => s.done).length;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end">
+    <div className="fixed inset-0 z-50 flex flex-col justify-end" onClick={() => { setActiveMenu(null); setShowEmojiPicker(false); }}>
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-t-3xl max-h-[90vh] flex flex-col">
+      <div className="relative bg-white rounded-t-3xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
 
         <div className="sticky top-0 bg-white border-b border-slate-100 px-5 py-4 flex items-start justify-between rounded-t-3xl">
           <div className="flex-1 min-w-0 pr-4">
@@ -104,7 +193,7 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
           {[
             { id: 'details', label: 'Details' },
             { id: 'steps', label: `Checklist${steps.length ? ` (${doneCount}/${steps.length})` : ''}` },
-            { id: 'chat', label: `Chat${messages.length ? ` (${messages.length})` : ''}` },
+            { id: 'chat', label: `Chat${messages.length ? ` (${messages.filter(m => !m.deleted).length})` : ''}` },
           ].map(tab => (
             <button
               key={tab.id}
@@ -120,7 +209,7 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
           ))}
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto min-h-0">
 
           {activeSection === 'details' && (
             <div className="px-5 py-4 space-y-5">
@@ -242,9 +331,7 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
                       onClick={() => handleToggleStep(step.id)}
                       disabled={!canEdit}
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all min-h-[48px] ${
-                        step.done
-                          ? 'bg-emerald-50 border-emerald-100'
-                          : 'bg-white border-slate-200'
+                        step.done ? 'bg-emerald-50 border-emerald-100' : 'bg-white border-slate-200'
                       } ${canEdit ? 'active:scale-[0.98]' : 'cursor-default'}`}
                     >
                       <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
@@ -264,8 +351,14 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
 
           {activeSection === 'chat' && (
             <div className="flex flex-col h-full">
-              <div className="flex-1 px-5 py-4 space-y-3 overflow-y-auto">
-                {messages.length === 0 ? (
+              <div className="flex-1 px-4 py-3 space-y-3 overflow-y-auto min-h-0" style={{ maxHeight: 'calc(90vh - 240px)' }}>
+                {messages.filter(m => !m.deleted || activeMenu === m.id).length === 0 && messages.every(m => m.deleted) ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <MessageCircle size={32} className="text-slate-200 mx-auto mb-2" />
+                    <p className="text-sm text-slate-400 font-medium">No messages yet</p>
+                    {canChat && <p className="text-xs text-slate-300 mt-1">Be the first to send a message</p>}
+                  </div>
+                ) : messages.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12 text-center">
                     <MessageCircle size={32} className="text-slate-200 mx-auto mb-2" />
                     <p className="text-sm text-slate-400 font-medium">No messages yet</p>
@@ -274,18 +367,85 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
                 ) : (
                   messages.map(msg => {
                     const isMe = currentUser && String(msg.authorId) === String(currentUser.id);
+                    const isMenuOpen = activeMenu === msg.id;
+                    const isEditing = editingMsgId === msg.id;
+
+                    if (msg.deleted) {
+                      return (
+                        <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                          <span className="text-xs italic text-slate-300 px-3 py-1.5">Message deleted</span>
+                        </div>
+                      );
+                    }
+
                     return (
                       <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                         <span className="text-[10px] text-slate-400 font-medium mb-1 px-1">
-                          {msg.author} · {formatTime(msg.timestamp)}
+                          {msg.author} · {formatTime(msg.timestamp)}{msg.edited ? ' · edited' : ''}
                         </span>
-                        <div className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                          isMe
-                            ? 'bg-indigo-600 text-white rounded-br-sm'
-                            : 'bg-slate-100 text-slate-800 rounded-bl-sm'
-                        }`}>
-                          {msg.text}
-                        </div>
+
+                        {msg.replyTo && (
+                          <div className={`max-w-[80%] mb-1 px-3 py-1.5 rounded-xl border-l-2 border-indigo-300 bg-indigo-50/60 ${isMe ? 'mr-1' : 'ml-1'}`}>
+                            <p className="text-[10px] font-semibold text-indigo-500 mb-0.5">{msg.replyTo.author}</p>
+                            <p className="text-[11px] text-slate-500 truncate">{msg.replyTo.text}</p>
+                          </div>
+                        )}
+
+                        {isEditing ? (
+                          <div className="max-w-[85%] w-full space-y-1.5">
+                            <textarea
+                              value={editText}
+                              onChange={e => setEditText(e.target.value)}
+                              autoFocus
+                              rows={2}
+                              className="w-full px-3 py-2 rounded-xl border border-indigo-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30 bg-white resize-none"
+                            />
+                            <div className="flex gap-2 justify-end">
+                              <button onClick={() => setEditingMsgId(null)} className="text-xs text-slate-400 px-3 py-1.5 rounded-lg border border-slate-200 font-semibold">Cancel</button>
+                              <button onClick={() => handleEditSave(msg.id)} className="text-xs text-white bg-indigo-600 px-3 py-1.5 rounded-lg font-semibold">Save</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setActiveMenu(isMenuOpen ? null : msg.id)}
+                            className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed text-left transition-opacity active:opacity-70 ${
+                              isMe
+                                ? 'bg-indigo-600 text-white rounded-br-sm'
+                                : 'bg-slate-100 text-slate-800 rounded-bl-sm'
+                            }`}
+                          >
+                            {renderMentions(msg.text)}
+                          </button>
+                        )}
+
+                        {isMenuOpen && !isEditing && (
+                          <div className={`flex items-center gap-1 mt-1.5 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                            {canChat && (
+                              <button
+                                onClick={() => { setReplyingTo({ id: msg.id, author: msg.author, text: msg.text }); setActiveMenu(null); setTimeout(() => inputRef.current?.focus(), 100); }}
+                                className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 bg-white border border-slate-200 rounded-full px-2.5 py-1 shadow-sm"
+                              >
+                                <CornerUpLeft size={10} /> Reply
+                              </button>
+                            )}
+                            {isMe && (
+                              <>
+                                <button
+                                  onClick={() => { setEditingMsgId(msg.id); setEditText(msg.text); setActiveMenu(null); }}
+                                  className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 bg-white border border-slate-200 rounded-full px-2.5 py-1 shadow-sm"
+                                >
+                                  <Pencil size={10} /> Edit
+                                </button>
+                                <button
+                                  onClick={() => handleDelete(msg.id)}
+                                  className="flex items-center gap-1 text-[10px] font-semibold text-red-500 bg-white border border-red-100 rounded-full px-2.5 py-1 shadow-sm"
+                                >
+                                  <Trash2 size={10} /> Delete
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })
@@ -294,22 +454,82 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
               </div>
 
               {canChat && (
-                <div className="px-4 py-3 border-t border-slate-100 flex gap-2 items-end">
-                  <input
-                    type="text"
-                    value={newMessage}
-                    onChange={e => setNewMessage(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
-                    placeholder="Write a message…"
-                    className="flex-1 px-4 py-2.5 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-slate-50"
-                  />
-                  <button
-                    onClick={handleSendMessage}
-                    disabled={!newMessage.trim()}
-                    className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center flex-shrink-0 disabled:opacity-40 transition-opacity"
-                  >
-                    <Send size={16} className="text-white" />
-                  </button>
+                <div className="flex-shrink-0 border-t border-slate-100">
+                  {replyingTo && (
+                    <div className="flex items-center gap-2 px-4 pt-2.5 pb-1">
+                      <div className="flex-1 flex items-start gap-2 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2 min-w-0">
+                        <CornerUpLeft size={12} className="text-indigo-400 flex-shrink-0 mt-0.5" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[10px] font-semibold text-indigo-500">{replyingTo.author}</p>
+                          <p className="text-[11px] text-slate-500 truncate">{replyingTo.text}</p>
+                        </div>
+                      </div>
+                      <button onClick={() => setReplyingTo(null)} className="p-1 text-slate-400 hover:text-slate-600 flex-shrink-0">
+                        <X size={14} />
+                      </button>
+                    </div>
+                  )}
+
+                  {showMentionMenu && filteredMentions.length > 0 && (
+                    <div className="mx-4 mb-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-32 overflow-y-auto">
+                      {filteredMentions.slice(0, 6).map(u => (
+                        <button
+                          key={u.id}
+                          onClick={() => insertMention(u)}
+                          className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-indigo-50 transition-colors border-b border-slate-50 last:border-0"
+                        >
+                          <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                            <span className="text-[10px] font-black text-indigo-600">{(u.name || '?')[0].toUpperCase()}</span>
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold text-slate-800">{u.name}</p>
+                            {u.role && <p className="text-[10px] text-slate-400">{u.role}</p>}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {showEmojiPicker && (
+                    <div className="mx-4 mb-1 bg-white border border-slate-200 rounded-xl shadow-lg p-2.5">
+                      <div className="grid grid-cols-5 gap-1">
+                        {EMOJIS.map(emoji => (
+                          <button
+                            key={emoji}
+                            onClick={() => insertEmoji(emoji)}
+                            className="text-xl p-1.5 rounded-lg hover:bg-slate-100 transition-colors min-h-[40px] flex items-center justify-center"
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="px-4 py-3 flex gap-2 items-end">
+                    <button
+                      onClick={() => { setShowEmojiPicker(p => !p); setShowMentionMenu(false); }}
+                      className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 border transition-colors ${showEmojiPicker ? 'bg-indigo-50 border-indigo-200 text-indigo-500' : 'bg-slate-50 border-slate-200 text-slate-400'}`}
+                    >
+                      <Smile size={18} />
+                    </button>
+                    <input
+                      ref={inputRef}
+                      type="text"
+                      value={newMessage}
+                      onChange={handleInputChange}
+                      onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
+                      placeholder={replyingTo ? 'Write a reply…' : 'Write a message… (@ to mention)'}
+                      className="flex-1 px-4 py-2.5 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-slate-50 min-h-[44px]"
+                    />
+                    <button
+                      onClick={handleSendMessage}
+                      disabled={!newMessage.trim()}
+                      className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center flex-shrink-0 disabled:opacity-40 transition-opacity"
+                    >
+                      <Send size={16} className="text-white" />
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
