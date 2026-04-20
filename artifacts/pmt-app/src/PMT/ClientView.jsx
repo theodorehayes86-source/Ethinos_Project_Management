@@ -3092,12 +3092,47 @@ const ClientView = ({
   }
 
   // --- GRID VIEW ---
-  const accessibleClientIds = new Set(accessibleClients.map(c => c.id));
+  const isSuperAdmin = currentUser?.role === 'Super Admin';
 
-  const myClients = clients.filter(c => accessibleClientIds.has(c.id) && c.name.toLowerCase().includes(clientSearch.toLowerCase()));
-  const pendingClients = clients.filter(c => !accessibleClientIds.has(c.id) && (c.joinRequests || []).some(r => r.requesterId === currentUser?.id) && c.name.toLowerCase().includes(clientSearch.toLowerCase()));
+  // "My Clients" — always driven by explicit assignment on the user record,
+  // even for Super Admins (accessibleClients for SA = all clients for task access,
+  // but the card list should only show where they're explicitly added).
+  const explicitlyAssignedIds = new Set(
+    clients
+      .filter(c => currentUser?.assignedProjects?.includes(c.name))
+      .map(c => c.id)
+  );
+
+  // "Available" for non-Super-Admin: only clients where the user's department
+  // is already represented (at least one assigned user shares their department).
+  const departmentLinkedClientNames = isSuperAdmin
+    ? null
+    : new Set(
+        (users || [])
+          .filter(u => u.department === currentUser?.department && String(u.id) !== String(currentUser?.id))
+          .flatMap(u => u.assignedProjects || [])
+      );
+
+  const searchLower = clientSearch.toLowerCase();
+
+  const myClients = clients.filter(c =>
+    explicitlyAssignedIds.has(c.id) && c.name.toLowerCase().includes(searchLower)
+  );
+  const pendingClients = clients.filter(c =>
+    !explicitlyAssignedIds.has(c.id) &&
+    (c.joinRequests || []).some(r => r.requesterId === currentUser?.id) &&
+    c.name.toLowerCase().includes(searchLower)
+  );
   const pendingClientIds = new Set(pendingClients.map(c => c.id));
-  const availableClients = clients.filter(c => !accessibleClientIds.has(c.id) && !pendingClientIds.has(c.id) && c.name.toLowerCase().includes(clientSearch.toLowerCase()));
+  const availableClients = clients.filter(c => {
+    if (explicitlyAssignedIds.has(c.id)) return false;
+    if (pendingClientIds.has(c.id)) return false;
+    if (!c.name.toLowerCase().includes(searchLower)) return false;
+    // Super Admins see all non-assigned clients as Available
+    if (isSuperAdmin) return true;
+    // Other users only see Available clients where their department is represented
+    return departmentLinkedClientNames?.has(c.name) ?? false;
+  });
   const filteredClients = clientViewFilter === 'mine' ? myClients : clientViewFilter === 'pending' ? pendingClients : availableClients;
 
   // --- PICKER CONFIG (only qcReviewer remains here) ---
