@@ -1227,7 +1227,7 @@ const ClientView = ({
                             }`}>{log.status}</span>
                           )}
                           {/* QC badges */}
-                          {log.qcEnabled && log.status === 'Done' && !log.qcStatus && canChangeTaskStatus(log) && (
+                          {log.qcEnabled && log.status === 'Done' && (!log.qcStatus || log.qcStatus === 'rejected') && canChangeTaskStatus(log) && (
                             <button
                               onClick={() => {
                                 const updated = clientLogs[selectedClient.id].map(l =>
@@ -2261,6 +2261,7 @@ const ClientView = ({
               } : null;
               return {
                 ...l,
+                status: qcReviewDecision === 'rejected' ? 'Pending' : l.status,
                 qcStatus: qcReviewDecision,
                 qcRating: validRating,
                 qcFeedback: feedbackText || null,
