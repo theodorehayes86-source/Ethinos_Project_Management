@@ -701,6 +701,8 @@ const MasterDataView = ({
   const handleCsvImportUsers = async (rows) => {
     const results = [];
     const newUserRecords = [];
+
+    // First pass: create all Firebase accounts and build user records (without managerId yet)
     for (const row of rows) {
       const clientNames = (row.clients || '').split('|').map(s => s.trim()).filter(Boolean);
       const assignedProjects = clientNames.filter(name => (clients || []).some(c => c.name === name));
@@ -720,12 +722,31 @@ const MasterDataView = ({
           region: row.region?.trim() || '',
           position: row.position?.trim() || '',
           assignedProjects,
+          _rawManagerEmail: row.reportingManager?.trim().toLowerCase() || '',
         });
         results.push({ label, success: true, warning: emailWarning || undefined });
       } catch (err) {
         results.push({ label, success: false, error: err.message || 'Failed to create user' });
       }
     }
+
+    // Second pass: resolve reportingManager email → managerId
+    // Build a combined email→id lookup: existing users + newly imported users in this batch
+    const emailToId = {};
+    for (const u of (users || [])) {
+      if (u.email) emailToId[u.email.toLowerCase()] = u.id;
+    }
+    for (const u of newUserRecords) {
+      if (u.email) emailToId[u.email.toLowerCase()] = u.id;
+    }
+    for (const u of newUserRecords) {
+      const managerEmail = u._rawManagerEmail;
+      if (managerEmail && emailToId[managerEmail]) {
+        u.managerId = emailToId[managerEmail];
+      }
+      delete u._rawManagerEmail;
+    }
+
     if (newUserRecords.length > 0 && setUsers) {
       setUsers([...(users || []), ...newUserRecords]);
     }

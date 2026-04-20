@@ -39,11 +39,11 @@ const parseCsv = (text) => {
 const MODE_CONFIG = {
   users: {
     title: 'Import Users',
-    subtitle: 'Bulk upload users from a CSV. Clients column is pipe-separated (|). Password must be 6+ characters.',
-    templateContent: 'name,email,password,role,department,region,position,clients\nJane Doe,jane@ethinos.com,TempPass123!,Executive,Growth,North,Account Manager,Client A|Client B',
+    subtitle: 'Bulk upload users from a CSV. Clients column is pipe-separated (|). Reporting Manager is the manager\'s email address (optional). Password must be 6+ characters.',
+    templateContent: 'name,email,password,role,department,region,position,clients,reportingManager\nJane Doe,jane@ethinos.com,TempPass123!,Executive,Growth,North,Account Manager,Client A|Client B,manager@ethinos.com',
     templateName: 'users-template.csv',
-    columns: ['name', 'email', 'password', 'role', 'department', 'region', 'position', 'clients'],
-    columnLabels: { name: 'Name', email: 'Email', password: 'Password', role: 'Role', department: 'Dept', region: 'Region', position: 'Position', clients: 'Clients (pipe-sep)' },
+    columns: ['name', 'email', 'password', 'role', 'department', 'region', 'position', 'clients', 'reportingManager'],
+    columnLabels: { name: 'Name', email: 'Email', password: 'Password', role: 'Role', department: 'Dept', region: 'Region', position: 'Position', clients: 'Clients (pipe-sep)', reportingManager: 'Reporting Manager (email)' },
   },
   clients: {
     title: 'Import Clients',
