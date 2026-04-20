@@ -139,6 +139,11 @@ const ClientView = ({
   const [newTaskReminders, setNewTaskReminders] = useState([]);
   // Repeat end date for new task
   const [newTaskRepeatEnd, setNewTaskRepeatEnd] = useState(null);
+  // Weekly day picker (0=Mon … 4=Fri)
+  const [newTaskRepeatDays, setNewTaskRepeatDays] = useState([0, 1, 2, 3, 4]);
+  // Monthly nth-weekday picker
+  const [newTaskRepeatMonthlyWeek, setNewTaskRepeatMonthlyWeek] = useState(1);
+  const [newTaskRepeatMonthlyDay, setNewTaskRepeatMonthlyDay] = useState(0);
   // Estimated time for new task (hours + minutes inputs)
   const [newTaskEstimatedHrs, setNewTaskEstimatedHrs] = useState('');
   const [newTaskEstimatedMins, setNewTaskEstimatedMins] = useState('');
@@ -233,6 +238,56 @@ const ClientView = ({
       });
     }
   };
+
+  // ─── Recurrence helpers ────────────────────────────────────────────────────
+  const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+  const WEEKDAY_FULL  = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+  const WEEK_ORDINALS = ['1st', '2nd', '3rd', '4th'];
+
+  const getNthWeekdayOfMonth = (year, month, weekNum, dayIdx) => {
+    const jsDay = dayIdx + 1; // 0=Mon → JS 1; 4=Fri → JS 5
+    let count = 0;
+    const d = new Date(year, month, 1);
+    while (d.getMonth() === month) {
+      if (d.getDay() === jsDay) { count++; if (count === weekNum) return new Date(d); }
+      d.setDate(d.getDate() + 1);
+    }
+    return null;
+  };
+
+  const generateRecurringDates = (startDate, endDate, freq, repeatDays, repeatMonthlyWeek, repeatMonthlyDay) => {
+    if (!endDate || !startDate) return startDate ? [startDate] : [];
+    const end = new Date(endDate); end.setHours(23, 59, 59, 999);
+    const dates = [];
+    if (freq === 'Daily') {
+      const d = new Date(startDate);
+      while (d <= end) {
+        const jd = d.getDay();
+        if (jd >= 1 && jd <= 5) dates.push(new Date(d));
+        d.setDate(d.getDate() + 1);
+      }
+    } else if (freq === 'Weekly') {
+      const days = (repeatDays && repeatDays.length > 0) ? repeatDays : [0];
+      const d = new Date(startDate);
+      while (d <= end) {
+        const jd = d.getDay();
+        if (jd >= 1 && jd <= 5 && days.includes(jd - 1)) dates.push(new Date(d));
+        d.setDate(d.getDate() + 1);
+      }
+    } else if (freq === 'Monthly') {
+      const wk = repeatMonthlyWeek || 1;
+      const di = repeatMonthlyDay !== undefined ? repeatMonthlyDay : 0;
+      let yr = startDate.getFullYear(), mo = startDate.getMonth();
+      const endYr = end.getFullYear(), endMo = end.getMonth();
+      while (yr < endYr || (yr === endYr && mo <= endMo)) {
+        const dt = getNthWeekdayOfMonth(yr, mo, wk, di);
+        if (dt && dt >= startDate && dt <= end) dates.push(dt);
+        mo++; if (mo > 11) { mo = 0; yr++; }
+      }
+    }
+    return dates.length > 0 ? dates : [startDate];
+  };
+  // ───────────────────────────────────────────────────────────────────────────
 
   const openEditModal = (log) => {
     const tryParse = (str) => {
@@ -538,6 +593,9 @@ const ClientView = ({
       category: newTaskCategory,
       repeatFrequency: newTaskRepeat,
       repeatEnd: newTaskRepeat !== 'Once' && newTaskRepeatEnd ? format(newTaskRepeatEnd, 'do MMM yyyy') : null,
+      repeatDays: newTaskRepeat === 'Weekly' ? newTaskRepeatDays : null,
+      repeatMonthlyWeek: newTaskRepeat === 'Monthly' ? newTaskRepeatMonthlyWeek : null,
+      repeatMonthlyDay: newTaskRepeat === 'Monthly' ? newTaskRepeatMonthlyDay : null,
       lastSpawnedDate: null,
       timerState: 'idle',
       timerStartedAt: null,
@@ -572,9 +630,24 @@ const ClientView = ({
       ...prev
     ]);
 
+    // Generate all occurrences if repeating with an end date
+    let logsToAdd = [newLog];
+    if (newTaskRepeat !== 'Once' && newTaskRepeatEnd) {
+      const dates = generateRecurringDates(
+        selectedDate, newTaskRepeatEnd, newTaskRepeat,
+        newTaskRepeatDays, newTaskRepeatMonthlyWeek, newTaskRepeatMonthlyDay
+      );
+      if (dates.length > 1) {
+        logsToAdd = dates.map((dt, i) => ({
+          ...newLog,
+          id: Date.now() + i + Math.random(),
+          date: format(dt, 'do MMM yyyy'),
+        }));
+      }
+    }
     setClientLogs({
       ...clientLogs,
-      [selectedClient.id]: [newLog, ...(clientLogs[selectedClient.id] || [])]
+      [selectedClient.id]: [...logsToAdd, ...(clientLogs[selectedClient.id] || [])]
     });
 
     if (selectedAssignee.email) {
@@ -600,6 +673,9 @@ const ClientView = ({
     setTaskFormError("");
     setNewTaskRepeat('Once');
     setNewTaskRepeatEnd(null);
+    setNewTaskRepeatDays([0, 1, 2, 3, 4]);
+    setNewTaskRepeatMonthlyWeek(1);
+    setNewTaskRepeatMonthlyDay(0);
     setTaskDueDate(null);
     setQcEnabled(true);
     setQcAssigneeId('');
@@ -675,15 +751,15 @@ const ClientView = ({
     }
 
     const creatorDept = currentUser?.department;
-    const newTasks = tpl.tasks.map((taskItem, idx) => {
+    const newTasks = [];
+    tpl.tasks.forEach((taskItem, idx) => {
       const cfg = perTaskConfig[idx] || {};
       const assignee = (users || []).find(u => String(u.id) === String(cfg.assigneeId));
       const qcAssignee = cfg.qcAssigneeId ? (users || []).find(u => String(u.id) === String(cfg.qcAssigneeId)) : null;
       const hasQc = !!qcAssignee;
-      return {
-        id: Date.now() + Math.random(),
+      const freq = taskItem.repeatFrequency || 'Once';
+      const baseTask = {
         name: taskItem.name || taskItem.comment,
-        date: cfg.startDate ? format(cfg.startDate, 'do MMM yyyy') : format(new Date(), 'do MMM yyyy'),
         dueDate: cfg.dueDate ? format(cfg.dueDate, 'do MMM yyyy') : null,
         comment: taskItem.comment,
         result: '',
@@ -695,7 +771,12 @@ const ClientView = ({
         assigneeName: assignee?.name || '',
         assigneeEmail: assignee?.email || '',
         category: taskItem.category || '',
-        repeatFrequency: taskItem.repeatFrequency || 'Once',
+        repeatFrequency: freq,
+        repeatDays: freq === 'Weekly' ? (cfg.repeatDays || [0,1,2,3,4]) : null,
+        repeatMonthlyWeek: freq === 'Monthly' ? (cfg.repeatMonthlyWeek || 1) : null,
+        repeatMonthlyDay: freq === 'Monthly' ? (cfg.repeatMonthlyDay !== undefined ? cfg.repeatMonthlyDay : 0) : null,
+        repeatEnd: freq !== 'Once' && cfg.repeatEnd ? format(cfg.repeatEnd, 'do MMM yyyy') : null,
+        lastSpawnedDate: null,
         timerState: 'idle',
         timerStartedAt: null,
         elapsedMs: 0,
@@ -706,6 +787,23 @@ const ClientView = ({
         qcAssigneeName: hasQc ? qcAssignee.name : null,
         billable: true,
       };
+
+      // Generate all occurrences if repeating with an end date
+      if (freq !== 'Once' && cfg.repeatEnd && cfg.startDate) {
+        const dates = generateRecurringDates(
+          cfg.startDate, cfg.repeatEnd, freq,
+          cfg.repeatDays, cfg.repeatMonthlyWeek, cfg.repeatMonthlyDay
+        );
+        dates.forEach((dt, i) => {
+          newTasks.push({ ...baseTask, id: Date.now() + newTasks.length + i + Math.random(), date: format(dt, 'do MMM yyyy') });
+        });
+      } else {
+        newTasks.push({
+          ...baseTask,
+          id: Date.now() + newTasks.length + Math.random(),
+          date: cfg.startDate ? format(cfg.startDate, 'do MMM yyyy') : format(new Date(), 'do MMM yyyy'),
+        });
+      }
     });
 
     setClientLogs({
@@ -913,6 +1011,10 @@ const ClientView = ({
                 setShowAssigneeMenu(false);
                 setTaskFormError('');
                 setNewTaskRepeat('Once');
+                setNewTaskRepeatEnd(null);
+                setNewTaskRepeatDays([0, 1, 2, 3, 4]);
+                setNewTaskRepeatMonthlyWeek(1);
+                setNewTaskRepeatMonthlyDay(0);
                 setTaskDueDate(null);
                 setQcEnabled(true);
                 setQcAssigneeId('');
@@ -1729,13 +1831,51 @@ const ClientView = ({
                         </label>
                       </div>
                       {newTaskRepeat === 'Weekly' && (
-                        <p className="text-[11px] text-blue-600 font-medium">Task will repeat every week on the same day</p>
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Repeat on Days</label>
+                          <div className="flex gap-1.5 flex-wrap">
+                            {WEEKDAY_SHORT.map((d, i) => (
+                              <button
+                                key={i} type="button"
+                                onClick={() => setNewTaskRepeatDays(prev =>
+                                  prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i]
+                                )}
+                                className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${newTaskRepeatDays.includes(i) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'}`}
+                              >{d}</button>
+                            ))}
+                          </div>
+                          {newTaskRepeatDays.length === 0 && <p className="text-[10px] text-red-500 font-medium">Select at least one day</p>}
+                        </div>
+                      )}
+                      {newTaskRepeat === 'Monthly' && (
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Repeat on</label>
+                          <div className="flex gap-2">
+                            <select
+                              value={newTaskRepeatMonthlyWeek}
+                              onChange={e => setNewTaskRepeatMonthlyWeek(Number(e.target.value))}
+                              className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 bg-white"
+                            >
+                              {WEEK_ORDINALS.map((w, i) => <option key={i} value={i + 1}>{w}</option>)}
+                            </select>
+                            <select
+                              value={newTaskRepeatMonthlyDay}
+                              onChange={e => setNewTaskRepeatMonthlyDay(Number(e.target.value))}
+                              className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 bg-white"
+                            >
+                              {WEEKDAY_FULL.map((d, i) => <option key={i} value={i}>{d}</option>)}
+                            </select>
+                          </div>
+                          <p className="text-[10px] text-blue-600 font-medium">
+                            {WEEK_ORDINALS[newTaskRepeatMonthlyWeek - 1]} {WEEKDAY_FULL[newTaskRepeatMonthlyDay]} of each month
+                          </p>
+                        </div>
                       )}
                     </div>
                     {newTaskRepeat !== 'Once' && (
                       <div className="space-y-1.5">
                         <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          Repeat Until <span className="text-slate-400 font-normal normal-case">(optional)</span>
+                          Repeat Until <span className="text-slate-400 font-normal normal-case">(contract / end date)</span>
                         </label>
                         <DatePicker
                           selected={newTaskRepeatEnd}
@@ -1745,6 +1885,17 @@ const ClientView = ({
                           minDate={taskDueDate || selectedDate || new Date()}
                           className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
                         />
+                        {newTaskRepeatEnd && (() => {
+                          const previewDates = generateRecurringDates(
+                            selectedDate || new Date(), newTaskRepeatEnd, newTaskRepeat,
+                            newTaskRepeatDays, newTaskRepeatMonthlyWeek, newTaskRepeatMonthlyDay
+                          );
+                          return (
+                            <p className="text-[10px] text-blue-600 font-medium">
+                              Will create {previewDates.length} task{previewDates.length !== 1 ? 's' : ''}
+                            </p>
+                          );
+                        })()}
                         {newTaskRepeatEnd && (
                           <button type="button" onClick={() => setNewTaskRepeatEnd(null)} className="text-xs font-semibold text-red-600 hover:text-red-700 transition-all">
                             Clear End Date
@@ -2760,6 +2911,73 @@ const ClientView = ({
                                 )}
                               </div>
                             </div>
+
+                            {/* Recurrence controls for repeating tasks */}
+                            {taskItem.repeatFrequency === 'Weekly' && (
+                              <div className="space-y-1.5 pt-1 border-t border-slate-100">
+                                <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Repeat on Days</label>
+                                <div className="flex gap-1.5 flex-wrap">
+                                  {WEEKDAY_SHORT.map((d, i) => (
+                                    <button
+                                      key={i} type="button"
+                                      onClick={() => updateTaskConfig(idx, 'repeatDays',
+                                        (cfg.repeatDays || []).includes(i)
+                                          ? (cfg.repeatDays || []).filter(x => x !== i)
+                                          : [...(cfg.repeatDays || []), i]
+                                      )}
+                                      className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition-all ${(cfg.repeatDays || []).includes(i) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'}`}
+                                    >{d}</button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {taskItem.repeatFrequency === 'Monthly' && (
+                              <div className="space-y-1.5 pt-1 border-t border-slate-100">
+                                <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Repeat on</label>
+                                <div className="flex gap-2">
+                                  <select
+                                    value={cfg.repeatMonthlyWeek || 1}
+                                    onChange={e => updateTaskConfig(idx, 'repeatMonthlyWeek', Number(e.target.value))}
+                                    className="border border-slate-200 rounded-lg px-2 py-1 text-xs font-medium text-slate-700 outline-none bg-white"
+                                  >
+                                    {WEEK_ORDINALS.map((w, i) => <option key={i} value={i + 1}>{w}</option>)}
+                                  </select>
+                                  <select
+                                    value={cfg.repeatMonthlyDay !== undefined ? cfg.repeatMonthlyDay : 0}
+                                    onChange={e => updateTaskConfig(idx, 'repeatMonthlyDay', Number(e.target.value))}
+                                    className="flex-1 border border-slate-200 rounded-lg px-2 py-1 text-xs font-medium text-slate-700 outline-none bg-white"
+                                  >
+                                    {WEEKDAY_FULL.map((d, i) => <option key={i} value={i}>{d}</option>)}
+                                  </select>
+                                </div>
+                                <p className="text-[10px] text-blue-600 font-medium">
+                                  {WEEK_ORDINALS[(cfg.repeatMonthlyWeek || 1) - 1]} {WEEKDAY_FULL[cfg.repeatMonthlyDay !== undefined ? cfg.repeatMonthlyDay : 0]} of each month
+                                </p>
+                              </div>
+                            )}
+                            {taskItem.repeatFrequency !== 'Once' && (
+                              <div className="space-y-1 pt-1 border-t border-slate-100">
+                                <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                  Repeat Until <span className="text-slate-400 font-normal normal-case">(contract end date)</span>
+                                </label>
+                                <DatePicker
+                                  selected={cfg.repeatEnd || null}
+                                  onChange={date => updateTaskConfig(idx, 'repeatEnd', date)}
+                                  dateFormat="do MMM yyyy"
+                                  isClearable
+                                  placeholderText="No end date"
+                                  minDate={cfg.startDate || new Date()}
+                                  className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 ring-blue-500/20"
+                                />
+                                {cfg.repeatEnd && cfg.startDate && (() => {
+                                  const cnt = generateRecurringDates(
+                                    cfg.startDate, cfg.repeatEnd, taskItem.repeatFrequency,
+                                    cfg.repeatDays, cfg.repeatMonthlyWeek, cfg.repeatMonthlyDay
+                                  ).length;
+                                  return <p className="text-[10px] text-blue-600 font-medium">Will create {cnt} task{cnt !== 1 ? 's' : ''}</p>;
+                                })()}
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -2786,9 +3004,13 @@ const ClientView = ({
                         const tpl = taskTemplates.find(t => t.id === selectedTemplateId);
                         if (tpl) {
                           resetPerTaskDefaults();
-                          setPerTaskConfig((tpl.tasks || []).map(() => ({
+                          setPerTaskConfig((tpl.tasks || []).map((taskItem) => ({
                             startDate: new Date(),
                             dueDate: null,
+                            repeatEnd: null,
+                            repeatDays: [0, 1, 2, 3, 4],
+                            repeatMonthlyWeek: 1,
+                            repeatMonthlyDay: 0,
                             assigneeId: '',
                             qcAssigneeId: '',
                             _assigneeQuery: '',
