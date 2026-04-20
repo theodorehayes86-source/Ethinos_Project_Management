@@ -440,7 +440,17 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
             <div className="space-y-5">
               <div>
                 <p className="text-sm font-bold text-slate-700 mb-2">Due date <span className="text-red-400">*</span></p>
-                <div className="flex gap-0.5 p-0.5 bg-slate-100 rounded-xl mb-3 w-fit">
+                <div className="flex gap-0.5 p-0.5 bg-slate-100 rounded-xl mb-3 w-fit flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDueDateMode('same-day');
+                      setDueDate(new Date().toISOString().split('T')[0]);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${dueDateMode === 'same-day' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500'}`}
+                  >
+                    Same day
+                  </button>
                   <button
                     type="button"
                     onClick={() => setDueDateMode('pick')}
@@ -468,7 +478,10 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
                     Days from start
                   </button>
                 </div>
-                {dueDateMode === 'pick' ? (
+                {dueDateMode === 'same-day' && (
+                  <p className="text-xs font-semibold text-emerald-600">Due: same day as task date ({formatDate(new Date().toISOString().split('T')[0])})</p>
+                )}
+                {dueDateMode === 'pick' && (
                   <input
                     type="date"
                     value={dueDate}
@@ -476,7 +489,8 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
                     min={new Date().toISOString().split('T')[0]}
                     className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-slate-50"
                   />
-                ) : (
+                )}
+                {dueDateMode === 'relative' && (
                   <div className="space-y-2">
                     <div className="flex items-center gap-3">
                       <input
