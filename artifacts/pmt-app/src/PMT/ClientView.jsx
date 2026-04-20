@@ -560,6 +560,9 @@ const ClientView = ({
     const newEstHrs = parseInt(newTaskEstimatedHrs || '0', 10) || 0;
     const newEstMins = parseInt(newTaskEstimatedMins || '0', 10) || 0;
     const newEstimatedMs = (newEstHrs * 60 + newEstMins) > 0 ? (newEstHrs * 3600000 + newEstMins * 60000) : null;
+    const newLogRepeatGroupId = newTaskRepeat !== 'Once'
+      ? `rg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+      : undefined;
     const newLog = {
       id: Date.now(),
       name: newTaskName.trim(),
@@ -594,6 +597,7 @@ const ClientView = ({
       billable: newTaskBillable,
       estimatedMs: newEstimatedMs,
       reminderOffsets: newTaskReminders.length > 0 ? newTaskReminders : null,
+      ...(newLogRepeatGroupId ? { repeatGroupId: newLogRepeatGroupId } : {}),
     };
 
     setNotifications(prev => [
@@ -623,10 +627,8 @@ const ClientView = ({
         newTaskRepeatDays, newTaskRepeatMonthlyWeek, newTaskRepeatMonthlyDay
       );
       if (dates.length > 1) {
-        const repeatGroupId = `rg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
         logsToAdd = dates.map((dt, i) => ({
           ...newLog,
-          repeatGroupId,
           id: Date.now() + i + Math.random(),
           date: format(dt, 'do MMM yyyy'),
           dueDate: dueDateOffsetDays !== null ? format(addDays(dt, dueDateOffsetDays), 'do MMM yyyy') : null,

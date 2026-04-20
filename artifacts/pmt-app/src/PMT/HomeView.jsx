@@ -291,6 +291,9 @@ const HomeView = ({
     const homeEstMins = parseInt(estimatedMins || '0', 10) || 0;
     const homeEstimatedMs = (homeEstHrs * 60 + homeEstMins) > 0 ? (homeEstHrs * 3600000 + homeEstMins * 60000) : null;
     const effectiveBillable = selectedClientId === '__ethinos__' ? false : taskBillable;
+    const newRepeatGroupId = taskRepeat !== 'Once'
+      ? `rg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+      : undefined;
     const newTask = {
       id: Date.now(),
       name: taskName.trim(),
@@ -325,6 +328,7 @@ const HomeView = ({
       billable: effectiveBillable,
       estimatedMs: homeEstimatedMs,
       reminderOffsets: taskReminders.length > 0 ? taskReminders : null,
+      ...(newRepeatGroupId ? { repeatGroupId: newRepeatGroupId } : {}),
     };
     const dueDateOffsetDays = taskDueDate && selectedDate
       ? differenceInCalendarDays(taskDueDate, selectedDate)
@@ -337,10 +341,8 @@ const HomeView = ({
         taskRepeatMonthlyWeek, taskRepeatMonthlyDay
       );
       if (dates.length > 1) {
-        const repeatGroupId = `rg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
         logsToAdd = dates.map((dt, i) => ({
           ...newTask,
-          repeatGroupId,
           id: Date.now() + i,
           date: format(dt, 'do MMM yyyy'),
           dueDate: dueDateOffsetDays !== null ? format(addDays(dt, dueDateOffsetDays), 'do MMM yyyy') : null,

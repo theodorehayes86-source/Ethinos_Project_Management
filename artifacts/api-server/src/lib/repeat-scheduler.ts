@@ -141,6 +141,7 @@ export async function runRepeatCheck(): Promise<void> {
         logsArr[i] = {
           ...task,
           lastSpawnedDate: today.toISOString().slice(0, 10),
+          repeatGroupId: task.repeatGroupId || String(task.id),
         };
         modified = true;
         spawned++;
