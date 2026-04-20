@@ -325,13 +325,14 @@ export default function ManagerDashboard({
   const [approvingTask, setApprovingTask] = useState(null);
   const [selectedTask, setSelectedTask] = useState(null);
   const [showAddTask, setShowAddTask] = useState(false);
+  const [showAllDrillTasks, setShowAllDrillTasks] = useState(false);
 
   const viewUser = drillStack.length > 0 ? drillStack[drillStack.length - 1] : null;
   const displayUser = viewUser || currentUser;
   const directReports = getDirectReports(displayUser.id, users);
 
-  const drillIn  = (user) => setDrillStack(s => [...s, user]);
-  const drillOut = () => setDrillStack(s => s.slice(0, -1));
+  const drillIn  = (user) => { setDrillStack(s => [...s, user]); setShowAllDrillTasks(false); };
+  const drillOut = () => { setDrillStack(s => s.slice(0, -1)); setShowAllDrillTasks(false); };
 
   const drillPersonalStats = viewUser ? getUserTaskStats(viewUser.id, clientLogs, clients) : null;
 
@@ -381,27 +382,38 @@ export default function ManagerDashboard({
                 </div>
                 {drillPersonalStats.allTasks.length > 0 ? (
                   <div className="space-y-1.5">
-                    {[...drillPersonalStats.todayTasks, ...drillPersonalStats.overdueTasks].slice(0, 4).map(t => {
-                      const taskOverdue = isTaskOverdue(t);
-                      return (
-                        <button
-                          key={`${t._clientId}-${t.id}`}
-                          onClick={() => setSelectedTask(t)}
-                          className={`w-full flex items-center gap-2 px-3 py-2 bg-white rounded-xl border text-left hover:border-indigo-300 transition-colors ${taskOverdue ? 'border-red-200' : 'border-indigo-100'}`}
-                        >
-                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${t.status === 'Done' ? 'bg-emerald-500' : t.status === 'WIP' ? 'bg-blue-500' : 'bg-amber-400'}`} />
-                          <span className="text-sm text-slate-700 font-medium flex-1 truncate">{t.name || t.comment}</span>
-                          {taskOverdue && (
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 flex items-center gap-0.5 flex-shrink-0">
-                              <AlertTriangle size={9} /> Overdue
-                            </span>
-                          )}
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold flex-shrink-0 ${STATUS_COLORS[t.status] || 'bg-slate-100 text-slate-500'}`}>{t.status}</span>
-                        </button>
-                      );
-                    })}
+                    {(() => {
+                      const prioritised = [...drillPersonalStats.todayTasks, ...drillPersonalStats.overdueTasks, ...drillPersonalStats.allTasks.filter(t => !drillPersonalStats.todayTasks.includes(t) && !drillPersonalStats.overdueTasks.includes(t))];
+                      const visible = showAllDrillTasks ? prioritised : prioritised.slice(0, 4);
+                      return visible.map(t => {
+                        const taskOverdue = isTaskOverdue(t);
+                        return (
+                          <button
+                            key={`${t._clientId}-${t.id}`}
+                            onClick={() => setSelectedTask(t)}
+                            className={`w-full flex items-center gap-2 px-3 py-2 bg-white rounded-xl border text-left hover:border-indigo-300 transition-colors ${taskOverdue ? 'border-red-200' : 'border-indigo-100'}`}
+                          >
+                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${t.status === 'Done' ? 'bg-emerald-500' : t.status === 'WIP' ? 'bg-blue-500' : 'bg-amber-400'}`} />
+                            <span className="text-sm text-slate-700 font-medium flex-1 truncate">{t.name || t.comment}</span>
+                            {taskOverdue && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 flex items-center gap-0.5 flex-shrink-0">
+                                <AlertTriangle size={9} /> Overdue
+                              </span>
+                            )}
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold flex-shrink-0 ${STATUS_COLORS[t.status] || 'bg-slate-100 text-slate-500'}`}>{t.status}</span>
+                          </button>
+                        );
+                      });
+                    })()}
                     {drillPersonalStats.allTasks.length > 4 && (
-                      <p className="text-xs text-indigo-400 text-center pt-1">+{drillPersonalStats.allTasks.length - 4} more tasks</p>
+                      <button
+                        onClick={() => setShowAllDrillTasks(v => !v)}
+                        className="w-full text-xs text-indigo-500 font-semibold text-center pt-1.5 pb-0.5 hover:text-indigo-700 transition-colors active:opacity-70"
+                      >
+                        {showAllDrillTasks
+                          ? 'Show less'
+                          : `+${drillPersonalStats.allTasks.length - 4} more tasks`}
+                      </button>
                     )}
                   </div>
                 ) : (
