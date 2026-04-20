@@ -96,6 +96,123 @@ function generatePassword(length = 12): string {
   return password;
 }
 
+// ---------------------------------------------------------------------------
+// Download links — read from Firebase /config/downloads with fallbacks.
+// Admins can update these values in the database when a new version ships.
+// ---------------------------------------------------------------------------
+
+interface DownloadLinks {
+  widgetVersion: string;
+  winUrl: string;
+  macUrl: string;
+  mobileUrl: string;
+}
+
+const DEFAULT_DOWNLOADS: DownloadLinks = {
+  widgetVersion: "1.0.22",
+  winUrl: "https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/latest",
+  macUrl: "https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/latest",
+  mobileUrl: "https://pmt.ethinos.com/pmt-mobile/",
+};
+
+async function getDownloadLinks(db: admin.database.Database): Promise<DownloadLinks> {
+  try {
+    const snap = await db.ref("config/downloads").once("value");
+    if (snap.exists()) {
+      const val = snap.val() as Partial<DownloadLinks>;
+      return { ...DEFAULT_DOWNLOADS, ...val };
+    }
+    // Seed the defaults on first use so admins can see and edit them in the DB.
+    await db.ref("config/downloads").set(DEFAULT_DOWNLOADS);
+  } catch (err) {
+    logger.warn({ err }, "[Auth] Could not read /config/downloads — using defaults");
+  }
+  return DEFAULT_DOWNLOADS;
+}
+
+// ---------------------------------------------------------------------------
+// Welcome email HTML builder — used for both MS SSO first-login and
+// admin-created accounts.
+// ---------------------------------------------------------------------------
+
+function buildWelcomeEmail(d: {
+  firstName: string;
+  email: string;
+  tempPassword: string;
+  links: DownloadLinks;
+  isAdminCreated?: boolean;
+}): string {
+  const intro = d.isAdminCreated
+    ? `Your Ethinos PMT account has been created by an administrator. Use the credentials below to sign in.`
+    : `You've signed into Ethinos PMT with your Microsoft account. Welcome aboard! Use these credentials to also log into the <strong>Ethinos Timer Pro</strong> desktop widget and the mobile companion app.`;
+
+  const downloadSection = `
+    <div style="margin-top:28px;">
+      <p style="margin:0 0 14px;font-size:13px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:0.06em;">Download the apps</p>
+      <p style="margin:0 0 12px;font-size:13px;color:#64748b;">Timer Pro widget v${d.links.widgetVersion}</p>
+      <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:16px;">
+        <tr>
+          <td style="padding-right:10px;">
+            <a href="${d.links.winUrl}" style="display:inline-block;background:#0078d4;color:#ffffff;text-decoration:none;font-size:13px;font-weight:600;padding:10px 18px;border-radius:7px;">
+              ⬇ Windows (.exe)
+            </a>
+          </td>
+          <td>
+            <a href="${d.links.macUrl}" style="display:inline-block;background:#1e293b;color:#ffffff;text-decoration:none;font-size:13px;font-weight:600;padding:10px 18px;border-radius:7px;">
+              ⬇ macOS (.dmg)
+            </a>
+          </td>
+        </tr>
+      </table>
+      <a href="${d.links.mobileUrl}" style="display:inline-block;background:#059669;color:#ffffff;text-decoration:none;font-size:13px;font-weight:600;padding:10px 18px;border-radius:7px;">
+        📱 Open Mobile App
+      </a>
+    </div>
+  `;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f1f5f9;margin:0;padding:32px 16px;">
+  <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+    <div style="background:linear-gradient(135deg,#1e3a8a,#312e81);padding:28px 32px;">
+      <p style="margin:0 0 6px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.65);">Ethinos PMT</p>
+      <h1 style="margin:0;font-size:22px;font-weight:700;color:#ffffff;">Welcome, ${d.firstName}!</h1>
+    </div>
+    <div style="padding:32px;">
+      <p style="margin:0 0 24px;font-size:14px;color:#475569;line-height:1.6;">${intro}</p>
+
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px 24px;margin-bottom:8px;">
+        <p style="margin:0 0 4px;font-size:11px;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:#94a3b8;">Your Login Details</p>
+        <table style="width:100%;border-collapse:collapse;margin-top:12px;">
+          <tr>
+            <td style="padding:6px 0;font-size:13px;color:#64748b;width:120px;">Email</td>
+            <td style="padding:6px 0;font-size:13px;color:#1e293b;font-weight:600;">${d.email}</td>
+          </tr>
+          <tr>
+            <td style="padding:6px 0;font-size:13px;color:#64748b;">Password</td>
+            <td style="padding:6px 0;">
+              <code style="background:#e2e8f0;color:#1e293b;padding:3px 8px;border-radius:5px;font-size:15px;letter-spacing:0.03em;">${d.tempPassword}</code>
+            </td>
+          </tr>
+        </table>
+      </div>
+      <p style="margin:0 0 24px;font-size:12px;color:#94a3b8;">Please change your password after your first login.</p>
+
+      ${downloadSection}
+
+      <div style="margin-top:28px;padding-top:20px;border-top:1px solid #f1f5f9;">
+        <a href="https://pmt.ethinos.com" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">Open PMT Web App</a>
+      </div>
+    </div>
+    <div style="background:#f8fafc;padding:16px 32px;border-top:1px solid #e2e8f0;text-align:center;">
+      <p style="margin:0;font-size:12px;color:#94a3b8;">This is an automated notification from the Ethinos PMT. Please do not reply to this email.</p>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
 /**
  * Look up a user's PMT role from the Firebase Realtime Database by email.
  * Returns null if no matching record is found.
@@ -212,25 +329,19 @@ router.post("/create-user", requireAdminRole, async (req, res) => {
 
     if (isEmailConfigured()) {
       try {
-        const greeting = name?.trim() ? `Hi ${name.trim()},` : "Hi,";
+        const firstName = name?.trim().split(" ")[0] || "there";
+        const { db } = getFirebaseAdmin();
+        const links = await getDownloadLinks(db);
         await sendEmail({
           to: normalizedEmail,
-          subject: "Welcome to Ethinos PMT – Your Login Details",
-          bodyHtml: `
-            <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; background: #f8fafc; padding: 32px 24px; border-radius: 12px;">
-              <div style="background: white; border-radius: 10px; padding: 32px; border: 1px solid #e2e8f0;">
-                <h2 style="color: #1e293b; margin: 0 0 8px;">${greeting}</h2>
-                <p style="color: #475569; margin: 0 0 24px;">Your Ethinos Project Management Tool account has been created by an administrator.</p>
-                <div style="background: #f1f5f9; border-radius: 8px; padding: 16px 20px; margin-bottom: 24px;">
-                  <p style="margin: 0 0 8px; color: #64748b; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Your login details</p>
-                  <p style="margin: 0 0 6px; color: #1e293b;"><strong>Email:</strong> ${normalizedEmail}</p>
-                  <p style="margin: 0; color: #1e293b;"><strong>Temporary Password:</strong> <code style="background: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-size: 15px;">${tempPassword}</code></p>
-                </div>
-                <p style="color: #475569; margin: 0 0 16px;">Please sign in and change your password as soon as possible.</p>
-                <p style="color: #94a3b8; font-size: 12px; margin: 0;">If you did not expect this email, please contact your IT administrator.</p>
-              </div>
-            </div>
-          `,
+          subject: "Welcome to Ethinos PMT – Your Login Details & Downloads",
+          bodyHtml: buildWelcomeEmail({
+            firstName,
+            email: normalizedEmail,
+            tempPassword,
+            links,
+            isAdminCreated: true,
+          }),
         });
         logger.info({ email: normalizedEmail }, "Welcome email sent to new user");
       } catch (emailErr) {
@@ -429,7 +540,7 @@ router.post("/ms-code-exchange", async (req, res) => {
       return;
     }
 
-    const { auth } = getFirebaseAdmin();
+    const { auth, db } = getFirebaseAdmin();
 
     let uid: string;
     try {
@@ -451,32 +562,25 @@ router.post("/ms-code-exchange", async (req, res) => {
         uid = newUser.uid;
         logger.info({ email: verifiedEmail }, "Auto-provisioned Firebase user for Microsoft SSO login");
 
-        // Send the temp password via email so the user can also use the widget.
+        // Send welcome email with credentials and download links.
         if (isEmailConfigured()) {
           try {
             const firstName = displayName?.split(" ")[0] || "there";
+            const links = await getDownloadLinks(db);
             await sendEmail({
               to: verifiedEmail,
-              subject: "Welcome to Ethinos PMT – Your Widget Login Details",
-              bodyHtml: `
-                <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; background: #f8fafc; padding: 32px 24px; border-radius: 12px;">
-                  <div style="background: white; border-radius: 10px; padding: 32px; border: 1px solid #e2e8f0;">
-                    <h2 style="color: #1e293b; margin: 0 0 8px;">Hi ${firstName},</h2>
-                    <p style="color: #475569; margin: 0 0 16px;">You've signed into Ethinos PMT with your Microsoft account. Welcome aboard!</p>
-                    <p style="color: #475569; margin: 0 0 16px;">To also use the <strong>Ethinos Timer Pro</strong> desktop widget, you'll need these credentials:</p>
-                    <div style="background: #f1f5f9; border-radius: 8px; padding: 16px 20px; margin-bottom: 24px;">
-                      <p style="margin: 0 0 6px; color: #1e293b;"><strong>Email:</strong> ${verifiedEmail}</p>
-                      <p style="margin: 0; color: #1e293b;"><strong>Temporary Password:</strong> <code style="background: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-size: 15px;">${tempPassword}</code></p>
-                    </div>
-                    <p style="color: #475569; margin: 0 0 16px;">Please change this password after your first widget login. You can continue using Microsoft sign-in for the web app.</p>
-                    <p style="color: #94a3b8; font-size: 12px; margin: 0;">If you didn't sign into Ethinos PMT, please contact your administrator.</p>
-                  </div>
-                </div>
-              `,
+              subject: "Welcome to Ethinos PMT – Your Login Details & Downloads",
+              bodyHtml: buildWelcomeEmail({
+                firstName,
+                email: verifiedEmail,
+                tempPassword,
+                links,
+                isAdminCreated: false,
+              }),
             });
-            logger.info({ email: verifiedEmail }, "Widget credentials email sent to new MS SSO user");
+            logger.info({ email: verifiedEmail }, "Welcome email sent to new MS SSO user");
           } catch (emailErr) {
-            logger.error({ err: emailErr, email: verifiedEmail }, "Failed to send widget credentials email — user still created");
+            logger.error({ err: emailErr, email: verifiedEmail }, "Failed to send welcome email — user still created");
           }
         }
       } else {
