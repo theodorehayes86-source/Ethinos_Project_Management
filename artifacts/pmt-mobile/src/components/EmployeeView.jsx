@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Tag, Calendar, ChevronRight, AlertTriangle, CheckCircle, Clock, Plus } from 'lucide-react';
+import { Tag, Calendar, ChevronRight, AlertTriangle, CheckCircle, Clock, Plus, ChevronDown, ChevronUp } from 'lucide-react';
 import TaskDetailSheet from './TaskDetailSheet.jsx';
 import AddTaskSheet from './AddTaskSheet.jsx';
 import { isTaskOverdue } from '../utils/taskUtils.js';
@@ -60,20 +60,32 @@ function TaskCard({ task, onClick }) {
   );
 }
 
-function Section({ title, tasks, onTaskClick, icon }) {
+function Section({ title, tasks, onTaskClick, icon, defaultOpen = true }) {
+  const [open, setOpen] = useState(defaultOpen);
   if (tasks.length === 0) return null;
   return (
     <div>
-      <div className="flex items-center gap-2 mb-3">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-2 mb-3 group"
+      >
         {icon}
         <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest">{title}</h3>
-        <span className="ml-auto text-xs font-bold text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">{tasks.length}</span>
-      </div>
-      <div className="space-y-2">
-        {tasks.map(task => (
-          <TaskCard key={`${task._clientId}-${task.id}`} task={task} onClick={onTaskClick} />
-        ))}
-      </div>
+        <span className="ml-auto flex items-center gap-1.5">
+          <span className="text-xs font-bold text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">{tasks.length}</span>
+          {open
+            ? <ChevronUp size={14} className="text-slate-400 group-hover:text-slate-600 transition-colors" />
+            : <ChevronDown size={14} className="text-slate-400 group-hover:text-slate-600 transition-colors" />
+          }
+        </span>
+      </button>
+      {open && (
+        <div className="space-y-2">
+          {tasks.map(task => (
+            <TaskCard key={`${task._clientId}-${task.id}`} task={task} onClick={onTaskClick} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -86,7 +98,7 @@ export default function EmployeeView({ myTasks, clientLogs, currentUser, clients
 
   return (
     <div className="flex-1 overflow-y-auto relative">
-      <div className="p-4 pb-24 space-y-6">
+      <div className="p-4 pb-6 space-y-6">
         {allEmpty && (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
@@ -98,12 +110,15 @@ export default function EmployeeView({ myTasks, clientLogs, currentUser, clients
         )}
         {overdue.length > 0 && (
           <Section title="Overdue" tasks={overdue} onTaskClick={setSelectedTask}
-            icon={<AlertTriangle size={13} className="text-red-400" />} />
+            icon={<AlertTriangle size={13} className="text-red-400" />}
+            defaultOpen={true} />
         )}
         <Section title="Due Today" tasks={today} onTaskClick={setSelectedTask}
-          icon={<Clock size={13} className="text-indigo-400" />} />
+          icon={<Clock size={13} className="text-indigo-400" />}
+          defaultOpen={true} />
         <Section title="Upcoming" tasks={upcoming} onTaskClick={setSelectedTask}
-          icon={<Calendar size={13} className="text-slate-400" />} />
+          icon={<Calendar size={13} className="text-slate-400" />}
+          defaultOpen={true} />
       </div>
 
       <button
@@ -120,6 +135,7 @@ export default function EmployeeView({ myTasks, clientLogs, currentUser, clients
           onClose={() => setSelectedTask(null)}
           clientLogs={clientLogs}
           currentUser={currentUser}
+          users={users || []}
         />
       )}
 
