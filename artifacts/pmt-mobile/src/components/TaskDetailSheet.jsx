@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Star, CheckCircle, XCircle, Clock, Tag, Calendar, Loader2, Send, MessageCircle, ListChecks, Check, AlertTriangle, CornerUpLeft, Pencil, Trash2, Smile } from 'lucide-react';
+import { X, Star, CheckCircle, XCircle, Clock, Tag, Calendar, Loader2, Send, MessageCircle, ListChecks, Check, AlertTriangle, CornerUpLeft, Pencil, Trash2, Smile, Archive } from 'lucide-react';
 import { updateTaskInFirebase } from '../hooks/useFirebaseData.js';
 import { isTaskOverdue } from '../utils/taskUtils.js';
 
@@ -48,9 +48,22 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
   const [showMentionMenu, setShowMentionMenu] = useState(false);
   const [mentionStartIndex, setMentionStartIndex] = useState(null);
 
+  const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+
   const canEdit = !readOnly && currentUser && String(task.assigneeId) === String(currentUser.id);
   const canChat = !!currentUser;
   const isOverdue = isTaskOverdue(task, status);
+
+  const handleArchive = async () => {
+    setArchiving(true);
+    try {
+      await updateTaskInFirebase(task._clientId, task.id, { archived: true }, clientLogs);
+      onClose();
+    } finally {
+      setArchiving(false);
+    }
+  };
 
   const mentionableUsers = (users || []).filter(u => String(u.id) !== String(currentUser?.id));
   const filteredMentions = mentionQuery
@@ -183,6 +196,15 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             {saving && <Loader2 size={16} className="text-indigo-400 animate-spin" />}
+            {canEdit && (
+              <button
+                onClick={() => setShowArchiveConfirm(true)}
+                className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0"
+                title="Archive task"
+              >
+                <Archive size={15} className="text-slate-500" />
+              </button>
+            )}
             <button onClick={onClose} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
               <X size={16} className="text-slate-600" />
             </button>
@@ -537,6 +559,38 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
 
         </div>
       </div>
+
+      {showArchiveConfirm && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center p-6 bg-black/50 rounded-t-3xl">
+          <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-2xl">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                <Archive size={18} className="text-amber-600" />
+              </div>
+              <h3 className="text-sm font-bold text-slate-900">Archive this task?</h3>
+            </div>
+            <p className="text-xs text-slate-500 leading-relaxed mb-4">
+              Archived tasks are hidden from your mobile view. You can only view and restore them from the <span className="font-semibold text-slate-700">desktop app</span>. This task will no longer appear in your mobile task lists.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowArchiveConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-100 text-sm font-semibold text-slate-600 active:bg-slate-200 transition-colors min-h-[44px]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleArchive}
+                disabled={archiving}
+                className="flex-1 py-2.5 rounded-xl bg-amber-500 text-sm font-bold text-white active:bg-amber-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 min-h-[44px]"
+              >
+                {archiving ? <Loader2 size={15} className="animate-spin" /> : <Archive size={15} />}
+                Archive
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

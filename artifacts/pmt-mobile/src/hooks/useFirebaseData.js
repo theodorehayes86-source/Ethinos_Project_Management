@@ -25,7 +25,10 @@ function bucketTask(task) {
   const today = todayMidnight();
   const due = parseDueDate(task.dueDate);
   if (!due) return 'upcoming';
-  if (due < today && task.status !== 'Done') return 'overdue';
+  if (due < today) {
+    // Past date: overdue only if not Done; Done tasks with old dates go to upcoming
+    return task.status !== 'Done' ? 'overdue' : 'upcoming';
+  }
   const todayEnd = new Date(today);
   todayEnd.setHours(23,59,59,999);
   if (due <= todayEnd) return 'today';
@@ -163,7 +166,7 @@ export function useMyTasks(currentUser, clientLogs, clients) {
   Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
     const client = clients.find(c => String(c.id) === String(clientId));
     (logs || []).forEach(task => {
-      if (String(task.assigneeId) === String(currentUser.id)) {
+      if (String(task.assigneeId) === String(currentUser.id) && !task.archived) {
         allTasks.push({ ...task, _clientId: clientId, _clientName: client?.name || clientId });
       }
     });
