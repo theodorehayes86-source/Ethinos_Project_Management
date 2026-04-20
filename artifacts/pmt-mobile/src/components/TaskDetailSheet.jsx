@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Star, CheckCircle, XCircle, Clock, Tag, Calendar, Loader2, Send, MessageCircle, ListChecks, Check, Square } from 'lucide-react';
+import { X, Star, CheckCircle, XCircle, Clock, Tag, Calendar, Loader2, Send, MessageCircle, ListChecks, Check, Square, AlertTriangle } from 'lucide-react';
 import { updateTaskInFirebase } from '../hooks/useFirebaseData.js';
+import { isTaskOverdue } from '../utils/taskUtils.js';
 
 const STATUS_OPTIONS = ['Pending', 'WIP', 'Done'];
 const STATUS_COLORS = {
@@ -26,6 +27,7 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
 
   const canEdit = !readOnly && currentUser && String(task.assigneeId) === String(currentUser.id);
   const canChat = !!currentUser;
+  const isOverdue = isTaskOverdue(task, status);
 
   useEffect(() => {
     if (activeSection === 'chat') {
@@ -119,6 +121,11 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
                 <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${STATUS_COLORS[status] || 'bg-slate-100 text-slate-600'}`}>
                   {status}
                 </span>
+                {isOverdue && (
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-red-100 text-red-600 flex items-center gap-1">
+                    <AlertTriangle size={10} /> Overdue
+                  </span>
+                )}
                 {task.category && (
                   <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-600 flex items-center gap-1">
                     <Tag size={10} /> {task.category}
@@ -135,7 +142,9 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
                   <span className="flex items-center gap-1"><Tag size={11} /> {task._clientName}</span>
                 )}
                 {task.dueDate && (
-                  <span className="flex items-center gap-1"><Calendar size={11} /> Due {task.dueDate}</span>
+                  <span className={`flex items-center gap-1 ${isOverdue ? 'text-red-500 font-semibold' : ''}`}>
+                    <Calendar size={11} /> Due {task.dueDate}
+                  </span>
                 )}
               </div>
 

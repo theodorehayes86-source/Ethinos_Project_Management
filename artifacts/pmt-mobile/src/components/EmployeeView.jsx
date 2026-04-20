@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Tag, Calendar, ChevronRight, AlertTriangle, CheckCircle, Clock, Plus } from 'lucide-react';
 import TaskDetailSheet from './TaskDetailSheet.jsx';
 import AddTaskSheet from './AddTaskSheet.jsx';
+import { isTaskOverdue } from '../utils/taskUtils.js';
 
 const STATUS_COLORS = {
   Pending: 'bg-amber-100 text-amber-700 border-amber-200',
@@ -10,10 +11,11 @@ const STATUS_COLORS = {
 };
 
 function TaskCard({ task, onClick }) {
+  const overdue = isTaskOverdue(task);
   return (
     <button
       onClick={() => onClick(task)}
-      className="w-full bg-white rounded-2xl border border-slate-200 shadow-sm p-4 text-left active:scale-[0.98] transition-transform"
+      className={`w-full bg-white rounded-2xl border shadow-sm p-4 text-left active:scale-[0.98] transition-transform ${overdue ? 'border-red-200' : 'border-slate-200'}`}
     >
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
@@ -21,6 +23,11 @@ function TaskCard({ task, onClick }) {
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${STATUS_COLORS[task.status] || 'bg-slate-100 text-slate-600'}`}>
               {task.status || 'Pending'}
             </span>
+            {overdue && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-600 flex items-center gap-0.5">
+                <AlertTriangle size={9} /> Overdue
+              </span>
+            )}
             {task.category && (
               <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600">
                 {task.category}
