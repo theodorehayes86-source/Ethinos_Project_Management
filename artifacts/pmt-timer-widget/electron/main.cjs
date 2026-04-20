@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, shell, session, protocol, net, powerMonitor } = require("electron");
+const { autoUpdater } = require("electron-updater");
 const path = require("path");
 
 let mainWindow = null;
@@ -37,6 +38,60 @@ protocol.registerSchemesAsPrivileged([
     },
   },
 ]);
+
+// ─── Auto-updater ────────────────────────────────────────────────────────────
+
+function setupAutoUpdater() {
+  // Skip updates in dev mode
+  if (!app.isPackaged) return;
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  function send(status, data) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("update-status", { status, ...data });
+    }
+  }
+
+  autoUpdater.on("checking-for-update", () => {
+    send("checking");
+  });
+
+  autoUpdater.on("update-available", (info) => {
+    send("available", { version: info.version });
+  });
+
+  autoUpdater.on("update-not-available", () => {
+    send("not-available");
+  });
+
+  autoUpdater.on("download-progress", (progress) => {
+    send("progress", { percent: Math.round(progress.percent) });
+  });
+
+  autoUpdater.on("update-downloaded", (info) => {
+    send("downloaded", { version: info.version });
+  });
+
+  autoUpdater.on("error", (err) => {
+    console.error("[AutoUpdater] Error:", err.message);
+    send("error", { message: err.message });
+  });
+
+  // Check for updates 5 seconds after launch so the UI is fully ready
+  setTimeout(() => {
+    autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+      console.error("[AutoUpdater] checkForUpdates failed:", err.message);
+    });
+  }, 5000);
+}
+
+ipcMain.on("install-update", () => {
+  autoUpdater.quitAndInstall(false, true);
+});
+
+// ─── Session setup ───────────────────────────────────────────────────────────
 
 function setupSession() {
   const ses = session.defaultSession;
@@ -124,6 +179,7 @@ function createWindow() {
 
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
+    setupAutoUpdater();
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

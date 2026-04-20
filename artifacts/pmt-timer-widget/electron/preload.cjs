@@ -16,6 +16,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("auto-pause-timer", handler);
     return () => ipcRenderer.removeListener("auto-pause-timer", handler);
   },
+  onUpdateStatus: (cb) => {
+    const handler = (_event, payload) => cb(payload);
+    ipcRenderer.on("update-status", handler);
+    return () => ipcRenderer.removeListener("update-status", handler);
+  },
+  installUpdate: () => ipcRenderer.send("install-update"),
   isElectron: true,
   platform: process.platform,
 });
