@@ -716,6 +716,11 @@ const HomeView = ({
                                   <Calendar size={9} /> {task.dueDate}
                                 </span>
                               )}
+                              {task.repeatGroupId && (
+                                <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-violet-50 text-violet-600">
+                                  <RotateCcw size={9} /> Series
+                                </span>
+                              )}
                               {elapsed > 0 && (
                                 <span className={`flex items-center gap-1 text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full ${
                                   isRunning ? 'bg-blue-50 text-blue-700' : 'bg-slate-50 text-slate-500'
