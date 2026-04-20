@@ -47,7 +47,7 @@ const tryParseDate = (str) => {
   }
 };
 
-const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNotifications = () => {}, onClose, onUpdate }) => {
+const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNotifications = () => {}, onClose, onUpdate, seriesCount = 0 }) => {
   const [steps, setSteps] = useState(() => task.steps || []);
   const [messages, setMessages] = useState(() => task.messages || []);
   const [localDueDate, setLocalDueDate] = useState(() => tryParseDate(task.dueDate));
@@ -277,7 +277,7 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNot
                   <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Update:</span>
                   {[
                     { id: 'one', label: 'This task only' },
-                    { id: 'all', label: 'All tasks in this series' },
+                    { id: 'all', label: seriesCount > 0 ? `All tasks in this series (${seriesCount})` : 'All tasks in this series' },
                   ].map(opt => (
                     <label
                       key={opt.id}

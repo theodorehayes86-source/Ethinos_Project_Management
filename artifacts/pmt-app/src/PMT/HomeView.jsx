@@ -1539,6 +1539,11 @@ const HomeView = ({
           users={users}
           canEdit={canFullyEditTaskFor(detailTask, currentUser)}
           setNotifications={setNotifications}
+          seriesCount={
+            detailTask.repeatGroupId
+              ? (clientLogs[detailTask.cid] || []).filter(t => t.repeatGroupId === detailTask.repeatGroupId).length
+              : 0
+          }
           onClose={() => setDetailTask(null)}
           onUpdate={(updatedTask, scope) => {
             if (scope === 'all' && updatedTask.repeatGroupId) {
