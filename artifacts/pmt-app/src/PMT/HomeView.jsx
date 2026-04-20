@@ -293,7 +293,11 @@ const HomeView = ({
 
   const filteredMyTasks = useMemo(() => {
     if (showArchived) return myArchivedTasks;
-    if (statusFilter === 'all') return myTasks.filter(t => t.status !== 'Done');
+    if (statusFilter === 'all') return myTasks.filter(t =>
+      t.status !== 'Done' ||
+      // Keep Done tasks that still need a QC action (send or re-send after rejection)
+      (t.qcEnabled && (!t.qcStatus || t.qcStatus === 'rejected'))
+    );
     if (statusFilter === 'done') return myDone;
     return myTasks.filter(t => t.status === statusFilter);
   }, [myTasks, myDone, myArchivedTasks, statusFilter, showArchived]);
@@ -597,7 +601,7 @@ const HomeView = ({
                             )}
 
                             {/* QC badges */}
-                            {task.qcEnabled && task.status === 'Done' && !task.qcStatus && (String(task.assigneeId) === String(currentUser?.id) || isManagement) && !task.archived && (
+                            {task.qcEnabled && task.status === 'Done' && (!task.qcStatus || task.qcStatus === 'rejected') && (String(task.assigneeId) === String(currentUser?.id) || isManagement) && !task.archived && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleUpdateTask(task, { qcStatus: 'sent' }); }}
                                 className="flex items-center gap-0.5 text-[9px] font-semibold bg-indigo-50 text-indigo-600 border border-indigo-200 rounded px-1 py-0.5 hover:bg-indigo-100 transition-all whitespace-nowrap"
