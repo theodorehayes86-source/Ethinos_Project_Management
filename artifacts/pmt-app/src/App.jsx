@@ -1068,6 +1068,29 @@ const App = () => {
 
 
 
+  // --- Pre-login fetch: load regions & departments so the registration form is accurate ---
+  useEffect(() => {
+    const fetchPublicLists = async () => {
+      try {
+        const [dSnap, rSnap] = await Promise.all([
+          get(ref(db, 'departments')),
+          get(ref(db, 'regions')),
+        ]);
+        if (dSnap.exists()) {
+          const val = dSnap.val();
+          setDepartments(Array.isArray(val) ? val : Object.values(val));
+        }
+        if (rSnap.exists()) {
+          const val = rSnap.val();
+          setRegions(Array.isArray(val) ? val : Object.values(val));
+        }
+      } catch {
+        // Non-critical — logged-in listeners will populate these after sign-in
+      }
+    };
+    fetchPublicLists();
+  }, []);
+
   // --- FIREBASE DATA SYNC (read once on auth) ---
   useEffect(() => {
     if (!firebaseUser) return;
@@ -1127,36 +1150,20 @@ const App = () => {
     };
     migrateCategoriesInFirebase();
 
-    // Seed default departments & regions if they don't exist, and migrate
-    // existing data to ensure required items are always present.
-    const REQUIRED_DEPARTMENTS = ['Analytics', 'Biddable', 'Client Servicing', 'Content', 'Creative', 'Growth', 'Performance', 'SEO', 'Technology'];
-    const REQUIRED_REGIONS = ['North', 'South', 'West', 'East', 'Pan India'];
+    // Seed default departments & regions only if they don't exist yet.
+    // Never force-add items to an existing list — admins manage the lists via Control Centre.
+    const SEED_DEPARTMENTS = ['Analytics', 'Biddable', 'Client Servicing', 'Content', 'Creative', 'Growth', 'Performance', 'SEO', 'Technology'];
+    const SEED_REGIONS = ['North', 'South', 'West'];
 
     const seedDepartmentsRegions = async () => {
       const dSnap = await get(ref(db, 'departments'));
       if (!dSnap.exists()) {
-        await set(ref(db, 'departments'), REQUIRED_DEPARTMENTS);
-      } else {
-        // Migrate: add any missing required departments without removing existing custom ones
-        const existing = dSnap.val();
-        const arr = Array.isArray(existing) ? existing : Object.values(existing);
-        const missing = REQUIRED_DEPARTMENTS.filter(d => !arr.includes(d));
-        if (missing.length > 0) {
-          await set(ref(db, 'departments'), [...arr, ...missing]);
-        }
+        await set(ref(db, 'departments'), SEED_DEPARTMENTS);
       }
 
       const rSnap = await get(ref(db, 'regions'));
       if (!rSnap.exists()) {
-        await set(ref(db, 'regions'), REQUIRED_REGIONS);
-      } else {
-        // Migrate: add any missing required regions without removing existing ones
-        const existing = rSnap.val();
-        const arr = Array.isArray(existing) ? existing : Object.values(existing);
-        const missing = REQUIRED_REGIONS.filter(r => !arr.includes(r));
-        if (missing.length > 0) {
-          await set(ref(db, 'regions'), [...arr, ...missing]);
-        }
+        await set(ref(db, 'regions'), SEED_REGIONS);
       }
     };
     seedDepartmentsRegions();

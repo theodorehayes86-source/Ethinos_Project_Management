@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 
 const DEPARTMENTS = ['Analytics', 'Biddable', 'Client Servicing', 'Content', 'Creative', 'Growth', 'Performance', 'SEO', 'Technology'];
-const REGIONS = ['North', 'South', 'West', 'East', 'Pan India'];
+const REGIONS = ['North', 'South', 'West'];
 
 const Field = ({ label, children }) => (
   <div>
