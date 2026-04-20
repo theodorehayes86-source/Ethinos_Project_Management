@@ -541,8 +541,16 @@ const MasterDataView = ({
   };
 
   const handleDeleteClient = (clientId) => {
-    if (!window.confirm('Delete this client? This cannot be undone.')) return;
     const clientToDelete = (clients || []).find(c => c.id === clientId);
+    const taskCount = ((clientLogs || {})[clientId] || []).filter(t => !t.deleted).length;
+    if (taskCount > 0) {
+      const proceed = window.confirm(
+        `⚠️ Warning: "${clientToDelete?.name || 'This client'}" has ${taskCount} task${taskCount !== 1 ? 's' : ''} that will become orphaned if you delete this client.\n\nPlease reassign or remove all tasks before deleting a client.\n\nClick OK only if you want to proceed anyway.`
+      );
+      if (!proceed) return;
+    } else {
+      if (!window.confirm(`Delete "${clientToDelete?.name || 'this client'}"? This cannot be undone.`)) return;
+    }
     if (setClients) setClients((clients || []).filter(c => c.id !== clientId));
     if (setUsers && clientToDelete) {
       setUsers((users || []).map(u => ({

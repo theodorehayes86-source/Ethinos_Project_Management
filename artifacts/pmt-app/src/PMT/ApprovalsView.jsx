@@ -522,10 +522,13 @@ const AssignmentRequestCard = ({ task, client, request, onAccept, onDecline }) =
 
 const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Business Head'];
 
-const ApprovalsView = ({ clientLogs, clients, users, currentUser, persistClientLogs, setClients, setUsers }) => {
+const ApprovalsView = ({ clientLogs, clients, syntheticClients = [], users, currentUser, persistClientLogs, setClients, setUsers }) => {
   const [activeSubTab, setActiveSubTab] = useState('pending');
   const [approvingTask, setApprovingTask] = useState(null);
   const [returningTask, setReturningTask] = useState(null);
+  const [hideDone, setHideDone] = useState(false);
+
+  const allClients = [...(clients || []), ...(syntheticClients || [])];
 
   const isManager = managementRoles.includes(currentUser?.role);
   if (!isManager) {
@@ -542,7 +545,7 @@ const ApprovalsView = ({ clientLogs, clients, users, currentUser, persistClientL
   // --- QC tasks ---
   const allTasksFlat = [];
   Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
-    const client = clients.find(c => String(c.id) === String(clientId));
+    const client = allClients.find(c => String(c.id) === String(clientId));
     (logs || []).forEach(task => {
       if (String(task.qcAssigneeId) === String(currentUser.id)) {
         if (!isCrossDept && Array.isArray(task.departments) && !task.departments.includes(userDept)) return;
@@ -555,15 +558,19 @@ const ApprovalsView = ({ clientLogs, clients, users, currentUser, persistClientL
     .filter(t => t.qcStatus === 'sent')
     .sort((a, b) => (b.qcSubmittedAt || 0) - (a.qcSubmittedAt || 0));
 
-  const reviewedTasks = allTasksFlat
+  const reviewedTasksAll = allTasksFlat
     .filter(t => t.qcStatus === 'approved' || t.qcStatus === 'rejected')
     .sort((a, b) => (b.qcReviewedAt || 0) - (a.qcReviewedAt || 0));
+
+  const reviewedTasks = hideDone
+    ? reviewedTasksAll.filter(t => t.status !== 'done' && t.status !== 'Done')
+    : reviewedTasksAll;
 
   // --- Assignment requests: all tasks on clients where currentUser is assigned (as management) ---
   const assignmentRequestItems = [];
   const myClientNames = (currentUser?.assignedProjects || []);
   Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
-    const client = clients.find(c => String(c.id) === String(clientId));
+    const client = allClients.find(c => String(c.id) === String(clientId));
     if (!isCrossDept && client && !myClientNames.includes(client.name)) return;
     (logs || []).forEach(task => {
       (task.assignmentRequests || []).forEach(req => {
@@ -719,60 +726,101 @@ const ApprovalsView = ({ clientLogs, clients, users, currentUser, persistClientL
   };
 
   const renderGroups = (groups, isReviewed) => {
-    if (groups.length === 0) {
-      return (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
-            {isReviewed
-              ? <CheckCircle size={24} className="text-slate-400" />
-              : <Clock size={24} className="text-slate-400" />
-            }
-          </div>
-          <p className="text-sm font-semibold text-slate-500">
-            {isReviewed ? 'No reviewed tasks yet' : 'No tasks awaiting review'}
-          </p>
-          <p className="text-xs text-slate-400 mt-1">
-            {isReviewed
-              ? 'Tasks you approve or return will appear here.'
-              : 'Tasks sent to you for QC will appear here.'
-            }
-          </p>
-        </div>
-      );
-    }
+    const isEmpty = groups.length === 0;
 
     return (
-      <div className="space-y-8">
-        {groups.map(({ client, tasks }) => (
-          <div key={client?.id || 'unknown'}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 rounded-xl bg-indigo-100 flex items-center justify-center flex-shrink-0">
-                <span className="text-xs font-black text-indigo-700">
-                  {(client?.name || '?')[0].toUpperCase()}
-                </span>
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-slate-800">{client?.name || 'Unknown Client'}</h3>
-                <p className="text-xs text-slate-400">{tasks.length} task{tasks.length !== 1 ? 's' : ''}</p>
-              </div>
-            </div>
-            <div className="space-y-3 pl-11">
-              {tasks.map(task => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  client={client}
-                  users={users}
-                  onApprove={setApprovingTask}
-                  onReturn={setReturningTask}
-                  isReviewed={isReviewed}
-                  currentUser={currentUser}
-                  onAddComment={handleAddFeedbackComment}
-                />
-              ))}
-            </div>
+      <div className="space-y-6">
+        {isReviewed && (
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-slate-400">
+              {reviewedTasksAll.length} reviewed task{reviewedTasksAll.length !== 1 ? 's' : ''} total
+            </p>
+            <button
+              onClick={() => setHideDone(v => !v)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
+                hideDone
+                  ? 'bg-indigo-600 border-indigo-600 text-white'
+                  : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-600'
+              }`}
+            >
+              <CheckCircle size={12} />
+              {hideDone ? 'Showing active only' : 'Hide Done tasks'}
+            </button>
           </div>
-        ))}
+        )}
+
+        {isEmpty ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
+              {isReviewed
+                ? <CheckCircle size={24} className="text-slate-400" />
+                : <Clock size={24} className="text-slate-400" />
+              }
+            </div>
+            <p className="text-sm font-semibold text-slate-500">
+              {isReviewed ? 'No reviewed tasks' : 'No tasks awaiting review'}
+            </p>
+            <p className="text-xs text-slate-400 mt-1">
+              {isReviewed
+                ? hideDone ? 'All reviewed tasks are marked Done.' : 'Tasks you approve or return will appear here.'
+                : 'Tasks sent to you for QC will appear here.'
+              }
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-8">
+            {groups.map(({ client, tasks }) => {
+              const isPersonal = client?.isPersonal || client?.id === '__personal__';
+              const isDeleted = !client;
+              const displayName = isPersonal
+                ? 'Personal'
+                : isDeleted
+                  ? 'Deleted Client'
+                  : client.name;
+              const iconBg = isDeleted ? 'bg-red-100' : isPersonal ? 'bg-slate-100' : 'bg-indigo-100';
+              const iconText = isDeleted ? 'text-red-600' : isPersonal ? 'text-slate-500' : 'text-indigo-700';
+              const iconChar = isDeleted ? '!' : (displayName || '?')[0].toUpperCase();
+
+              return (
+                <div key={client?.id || 'deleted'}>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className={`w-8 h-8 rounded-xl ${iconBg} flex items-center justify-center flex-shrink-0`}>
+                      <span className={`text-xs font-black ${iconText}`}>{iconChar}</span>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className={`text-sm font-bold ${isDeleted ? 'text-red-700' : 'text-slate-800'}`}>
+                          {displayName}
+                        </h3>
+                        {isDeleted && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">
+                            Client removed
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-400">{tasks.length} task{tasks.length !== 1 ? 's' : ''}</p>
+                    </div>
+                  </div>
+                  <div className="space-y-3 pl-11">
+                    {tasks.map(task => (
+                      <TaskCard
+                        key={task.id}
+                        task={task}
+                        client={client}
+                        users={users}
+                        onApprove={setApprovingTask}
+                        onReturn={setReturningTask}
+                        isReviewed={isReviewed}
+                        currentUser={currentUser}
+                        onAddComment={handleAddFeedbackComment}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   };

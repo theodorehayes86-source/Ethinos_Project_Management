@@ -1887,6 +1887,7 @@ const App = () => {
             <ApprovalsView
               clientLogs={clientLogs}
               clients={clients}
+              syntheticClients={SYNTHETIC_CLIENTS}
               users={users}
               currentUser={currentUser}
               persistClientLogs={persistClientLogs}
