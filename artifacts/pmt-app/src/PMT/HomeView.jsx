@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { format, parse, isBefore, addDays, differenceInCalendarDays } from 'date-fns';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
-import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, CheckCircle, Tag, Calendar, Archive, ArchiveRestore, LayoutTemplate, ChevronDown, Play, Square, Pause, Send, ThumbsUp, ThumbsDown, RotateCcw } from 'lucide-react';
+import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, CheckCircle, Tag, Calendar, Archive, ArchiveRestore, LayoutTemplate, ChevronDown, Play, Square, Pause, Send, ThumbsUp, ThumbsDown, RotateCcw, Pencil } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import TaskDetailPanel from './TaskDetailPanel';
 import { sendNotification } from '../utils/notify';
@@ -94,6 +94,14 @@ const HomeView = ({
   const [taskReminders, setTaskReminders] = useState([]);
   const [showArchived, setShowArchived] = useState(false);
   const [detailTask, setDetailTask] = useState(null);
+
+  // --- Edit task modal state ---
+  const [editingTask, setEditingTask] = useState(null);
+  const [editDraft, setEditDraft] = useState(null);
+  const [editDraftError, setEditDraftError] = useState('');
+  const [editScope, setEditScope] = useState('one');
+  const [editDraftCategoryQuery, setEditDraftCategoryQuery] = useState('');
+  const [editDraftShowCategoryMenu, setEditDraftShowCategoryMenu] = useState(false);
 
   // --- Home Template state ---
   const [showHomeTemplateModal, setShowHomeTemplateModal] = useState(false);
@@ -425,6 +433,59 @@ const HomeView = ({
     setClientLogs({ ...clientLogs, [cid]: updated });
   };
 
+  const hvTryParse = (str) => {
+    if (!str) return null;
+    try { const d = parse(str, 'do MMM yyyy', new Date()); return isNaN(d) ? null : d; } catch { return null; }
+  };
+
+  const handleOpenEditTask = (task) => {
+    setEditingTask(task);
+    setEditDraft({
+      name: task.name || '',
+      comment: task.comment || '',
+      category: task.category || '',
+      dueDate: hvTryParse(task.dueDate) || null,
+      status: task.status || 'Pending',
+    });
+    setEditDraftCategoryQuery(task.category || '');
+    setEditDraftShowCategoryMenu(false);
+    setEditDraftError('');
+    setEditScope('one');
+  };
+
+  const handleSaveEditTask = () => {
+    if (!editDraft || !editingTask) return;
+    if (!editDraft.name.trim() || !editDraft.comment.trim() || !editDraft.category) {
+      setEditDraftError('Task name, description and category are all required.');
+      return;
+    }
+    const cid = editingTask.cid;
+    if (!cid) return;
+    const updateAll = editScope === 'all' && editingTask.repeatGroupId;
+    const sharedFields = {
+      name: editDraft.name.trim(),
+      comment: editDraft.comment.trim(),
+      category: editDraft.category,
+    };
+    const updated = (clientLogs[cid] || []).map(t => {
+      if (updateAll && t.repeatGroupId === editingTask.repeatGroupId && t.id !== editingTask.id) {
+        return { ...t, ...sharedFields };
+      }
+      if (t.id === editingTask.id) {
+        return {
+          ...t,
+          ...sharedFields,
+          dueDate: editDraft.dueDate ? format(editDraft.dueDate, 'do MMM yyyy') : null,
+          status: editDraft.status,
+        };
+      }
+      return t;
+    });
+    setClientLogs({ ...clientLogs, [cid]: updated });
+    setEditingTask(null);
+    setEditDraft(null);
+  };
+
   // Timer tick for live display
   const [timerTick, setTimerTick] = useState(Date.now());
   useEffect(() => {
@@ -752,6 +813,17 @@ const HomeView = ({
                               </select>
                             ) : (
                               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Archived</span>
+                            )}
+
+                            {/* Edit button */}
+                            {!task.archived && canFullyEditTaskFor(task, currentUser) && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleOpenEditTask(task); }}
+                                className="flex items-center gap-0.5 text-[9px] font-semibold bg-slate-50 text-slate-500 border border-slate-200 rounded px-1.5 py-0.5 hover:bg-slate-100 hover:text-slate-700 transition-all whitespace-nowrap"
+                                title="Edit task"
+                              >
+                                <Pencil size={8} /> Edit
+                              </button>
                             )}
 
                             {/* QC badges */}
@@ -1539,12 +1611,144 @@ const HomeView = ({
         );
       })()}
 
+      {/* EDIT TASK MODAL */}
+      {editingTask && editDraft && (
+        <div className="fixed inset-0 z-[700] flex items-center justify-center bg-slate-900/20 backdrop-blur-md p-4">
+          <div className="bg-white w-full max-w-lg border border-slate-200 shadow-xl rounded-2xl animate-in zoom-in-95 flex flex-col" style={{maxHeight:'90vh'}}>
+            {/* Header */}
+            <div className="flex-shrink-0 flex justify-between items-center px-6 pt-6 pb-4 border-b border-slate-100">
+              <div>
+                <h4 className="text-base font-semibold text-slate-900">Edit Task</h4>
+                <p className="text-xs text-slate-400 mt-0.5">{editingTask.name || editingTask.comment}</p>
+              </div>
+              <button
+                onClick={() => { setEditingTask(null); setEditDraft(null); }}
+                className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all"
+              >
+                <X size={16}/>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto space-y-4 px-6 py-5">
+              {/* Task Name */}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Task Name</label>
+                <input
+                  type="text"
+                  value={editDraft.name}
+                  onChange={e => setEditDraft(d => ({ ...d, name: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-800 outline-none focus:ring-2 ring-blue-500/20 bg-white"
+                  placeholder="Task name"
+                />
+              </div>
+              {/* Description */}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Description</label>
+                <textarea
+                  value={editDraft.comment}
+                  onChange={e => setEditDraft(d => ({ ...d, comment: e.target.value }))}
+                  rows={3}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 outline-none focus:ring-2 ring-blue-500/20 bg-white resize-none"
+                  placeholder="Description"
+                />
+              </div>
+              {/* Category */}
+              <div className="space-y-1 relative">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Category</label>
+                <input
+                  type="text"
+                  value={editDraftCategoryQuery}
+                  onChange={e => { setEditDraftCategoryQuery(e.target.value); setEditDraftShowCategoryMenu(true); }}
+                  onFocus={() => setEditDraftShowCategoryMenu(true)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 outline-none focus:ring-2 ring-blue-500/20 bg-white"
+                  placeholder="Search category…"
+                />
+                {editDraftShowCategoryMenu && (
+                  <div className="absolute z-10 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-40 overflow-y-auto">
+                    {(taskCategories || []).filter(c => c.toLowerCase().includes(editDraftCategoryQuery.toLowerCase())).map(c => (
+                      <button
+                        key={c} type="button"
+                        className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors ${editDraft.category === c ? 'bg-blue-50 font-semibold text-blue-700' : 'text-slate-700'}`}
+                        onClick={() => { setEditDraft(d => ({ ...d, category: c })); setEditDraftCategoryQuery(c); setEditDraftShowCategoryMenu(false); }}
+                      >
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {/* Due Date */}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Due Date</label>
+                <DueDateInput
+                  key={editingTask.id}
+                  startDate={hvTryParse(editingTask.date) || new Date()}
+                  value={editDraft.dueDate}
+                  onChange={date => setEditDraft(d => ({ ...d, dueDate: date }))}
+                  minDate={hvTryParse(editingTask.date) || new Date()}
+                />
+                {editDraft.dueDate && (
+                  <button type="button" onClick={() => setEditDraft(d => ({ ...d, dueDate: null }))} className="text-xs font-semibold text-red-500 hover:text-red-700">
+                    Clear due date
+                  </button>
+                )}
+              </div>
+              {/* Status */}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</label>
+                <select
+                  value={editDraft.status}
+                  onChange={e => setEditDraft(d => ({ ...d, status: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 bg-white"
+                >
+                  <option value="Pending">Pending</option>
+                  <option value="WIP">WIP</option>
+                  <option value="Done">Done</option>
+                </select>
+              </div>
+              {/* Series scope */}
+              {editingTask.repeatGroupId && (
+                <div className="space-y-2 pt-1">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Apply changes to</label>
+                  <div className="flex gap-2">
+                    {[{ id: 'one', label: 'This task only' }, { id: 'all', label: 'All tasks in this series' }].map(opt => (
+                      <label
+                        key={opt.id}
+                        className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-xs font-semibold transition-all ${
+                          editScope === opt.id
+                            ? opt.id === 'all' ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-blue-400 bg-blue-50 text-blue-700'
+                            : 'border-slate-200 text-slate-500 hover:border-slate-300'
+                        }`}
+                      >
+                        <input type="radio" name="hvEditScope" value={opt.id} checked={editScope === opt.id} onChange={() => setEditScope(opt.id)} className="w-3.5 h-3.5 accent-blue-600" />
+                        {opt.label}
+                      </label>
+                    ))}
+                  </div>
+                  {editScope === 'all' && (
+                    <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
+                      Name, description and category will be updated on all tasks in this series. Due date and status apply to this task only.
+                    </p>
+                  )}
+                </div>
+              )}
+              {editDraftError && <p className="text-xs text-red-600 font-semibold">{editDraftError}</p>}
+            </div>
+            {/* Footer */}
+            <div className="flex-shrink-0 flex gap-3 px-6 py-4 border-t border-slate-100">
+              <button onClick={() => { setEditingTask(null); setEditDraft(null); }} className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all">Cancel</button>
+              <button onClick={handleSaveEditTask} className="flex-1 px-4 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-slate-800 transition-all">Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {detailTask && (
         <TaskDetailPanel
           task={detailTask}
           currentUser={currentUser}
           users={users}
           canEdit={canFullyEditTaskFor(detailTask, currentUser)}
+          canEditDueDate={false}
           setNotifications={setNotifications}
           seriesCount={
             detailTask.repeatGroupId

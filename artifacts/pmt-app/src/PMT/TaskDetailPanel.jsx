@@ -47,7 +47,7 @@ const tryParseDate = (str) => {
   }
 };
 
-const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNotifications = () => {}, onClose, onUpdate, seriesCount = 0 }) => {
+const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEditDueDate = true, setNotifications = () => {}, onClose, onUpdate, seriesCount = 0 }) => {
   const [steps, setSteps] = useState(() => task.steps || []);
   const [messages, setMessages] = useState(() => task.messages || []);
   const [localDueDate, setLocalDueDate] = useState(() => tryParseDate(task.dueDate));
@@ -317,7 +317,7 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNot
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
 
           {/* Due Date */}
-          {canEdit && (
+          {canEdit && canEditDueDate && (
             <section>
               <div className="flex items-center gap-2 mb-2">
                 <h3 className="text-xs font-bold uppercase tracking-wide text-slate-700">Due Date</h3>
@@ -343,7 +343,7 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNot
               )}
             </section>
           )}
-          {!canEdit && task.dueDate && (
+          {((!canEdit) || (!canEditDueDate)) && task.dueDate && (
             <section>
               <div className="flex items-center gap-2 mb-1">
                 <h3 className="text-xs font-bold uppercase tracking-wide text-slate-700">Due Date</h3>
