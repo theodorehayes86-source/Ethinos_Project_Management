@@ -216,8 +216,8 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUse
       trendData = eachDayOfInterval({ start: rangeStart, end: startOfDay(rangeEnd) }).map(day => {
         const dateKey = format(day, 'yyyy-MM-dd');
         const daily = dailyMap.get(dateKey);
-        const taskCount = daily?.taskCount || 0;
-        const avgSeconds = taskCount > 0 ? Math.floor(daily.totalSeconds / taskCount) : 0;
+        const userCount = daily?.users.size || 0;
+        const avgSeconds = userCount > 0 ? Math.floor(daily.totalSeconds / userCount) : 0;
         return {
           date: format(day, 'dd MMM'),
           avgSeconds
@@ -512,7 +512,7 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUse
 
             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm lg:col-span-2">
               <div className="px-4 py-3 border-b border-slate-200 bg-slate-100">
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-700">{rangeLabels[rangePreset]} - Daily Avg Time/Task</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-700">{rangeLabels[rangePreset]} - Daily Avg Time/User</p>
               </div>
               <div className="p-3" style={{ minHeight: '220px' }}>
                 {metrics.trendData.length > 0 ? (
@@ -542,6 +542,7 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUse
                       <Line
                         type="monotone"
                         dataKey="avgSeconds"
+                        name="Avg Time/User"
                         stroke="#3b82f6"
                         strokeWidth={2}
                         dot={{ fill: '#3b82f6', r: 3 }}
