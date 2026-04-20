@@ -12,6 +12,57 @@ const DEFAULT_CATEGORIES = [
 
 const FREQ_OPTIONS = ['Once','Daily','Weekly','Monthly'];
 
+const WEEKDAY_SHORT = ['Mon','Tue','Wed','Thu','Fri'];
+const WEEKDAY_FULL  = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
+const WEEK_ORDINALS = ['1st','2nd','3rd','4th'];
+
+function getNthWeekday(year, month, weekNum, dayIdx) {
+  const jsDay = dayIdx + 1;
+  let count = 0;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  for (let d = 1; d <= daysInMonth; d++) {
+    if (new Date(year, month, d).getDay() === jsDay) {
+      count++;
+      if (count === weekNum) return new Date(year, month, d);
+    }
+  }
+  return null;
+}
+
+function generateRecurringDates(startDate, endDate, freq, rDays, rWeek, rDay) {
+  if (!endDate || !startDate) return startDate ? [startDate] : [];
+  const end = new Date(endDate); end.setHours(23, 59, 59, 999);
+  const dates = [];
+  if (freq === 'Daily') {
+    const d = new Date(startDate);
+    while (d <= end) {
+      const dow = d.getDay();
+      if (dow >= 1 && dow <= 5) dates.push(new Date(d));
+      d.setDate(d.getDate() + 1);
+    }
+  } else if (freq === 'Weekly') {
+    const days = (rDays && rDays.length > 0) ? rDays : [0];
+    const d = new Date(startDate);
+    while (d <= end) {
+      const dow = d.getDay();
+      const mapped = dow === 0 ? -1 : dow - 1;
+      if (days.includes(mapped)) dates.push(new Date(d));
+      d.setDate(d.getDate() + 1);
+    }
+  } else if (freq === 'Monthly') {
+    const wk = rWeek || 1;
+    const di = rDay !== undefined ? rDay : 0;
+    let yr = startDate.getFullYear(), mo = startDate.getMonth();
+    const endYr = end.getFullYear(), endMo = end.getMonth();
+    while (yr < endYr || (yr === endYr && mo <= endMo)) {
+      const dt = getNthWeekday(yr, mo, wk, di);
+      if (dt && dt >= startDate && dt <= end) dates.push(dt);
+      mo++; if (mo > 11) { mo = 0; yr++; }
+    }
+  }
+  return dates;
+}
+
 const MANAGER_STEPS = [
   { id: 'who',      label: 'Assignee',   icon: User },
   { id: 'client',   label: 'Client',     icon: Briefcase },
@@ -176,6 +227,10 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
   const [dueDate, setDueDate] = useState('');
   const [category, setCategory] = useState('');
   const [frequency, setFrequency] = useState('Once');
+  const [repeatDays, setRepeatDays] = useState([]);
+  const [repeatMonthlyWeek, setRepeatMonthlyWeek] = useState(1);
+  const [repeatMonthlyDay, setRepeatMonthlyDay] = useState(0);
+  const [repeatEnd, setRepeatEnd] = useState('');
   const [steps, setSteps] = useState([]);
   const [stepInput, setStepInput] = useState('');
   const stepInputRef = useRef(null);
@@ -220,15 +275,44 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
     setError('');
     setSaving(true);
     try {
-      await createTaskInFirebase(String(client.id), {
+      const baseTask = {
         name: name.trim(),
         comment: description.trim(),
         assigneeId: assignee.id,
         dueDate: formatDate(dueDate),
         category,
         repeatFrequency: frequency,
+        repeatEnd: frequency !== 'Once' && repeatEnd ? formatDate(repeatEnd) : null,
+        repeatDays: frequency === 'Weekly' ? (repeatDays.length > 0 ? repeatDays : [0,1,2,3,4]) : null,
+        repeatMonthlyWeek: frequency === 'Monthly' ? repeatMonthlyWeek : null,
+        repeatMonthlyDay: frequency === 'Monthly' ? repeatMonthlyDay : null,
         steps: steps.length > 0 ? steps : [],
-      }, clientLogs);
+      };
+      if (frequency !== 'Once' && repeatEnd && dueDate) {
+        const startDate = new Date(dueDate);
+        const endDate = new Date(repeatEnd);
+        const dates = generateRecurringDates(
+          startDate, endDate, frequency,
+          frequency === 'Weekly' ? (repeatDays.length > 0 ? repeatDays : [0,1,2,3,4]) : repeatDays,
+          repeatMonthlyWeek, repeatMonthlyDay
+        );
+        const occurrences = dates.length > 0 ? dates : [startDate];
+        const existing = Array.isArray(clientLogs[String(client.id)]) ? clientLogs[String(client.id)] : [];
+        const newTasks = occurrences.map((dt, i) => ({
+          id: Date.now() + i,
+          status: 'Pending',
+          createdAt: Date.now(),
+          elapsedMs: 0,
+          timerState: 'stopped',
+          ...baseTask,
+          dueDate: formatDate(dt.toISOString().split('T')[0]),
+        }));
+        const { set, ref } = await import('firebase/database');
+        const { db } = await import('../firebase.js');
+        await set(ref(db, `clientLogs/${String(client.id)}`), [...existing, ...newTasks]);
+      } else {
+        await createTaskInFirebase(String(client.id), baseTask, clientLogs);
+      }
       onCreated?.();
       onClose();
     } catch (e) {
@@ -382,7 +466,7 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
                   {FREQ_OPTIONS.map(f => (
                     <button
                       key={f}
-                      onClick={() => setFrequency(f)}
+                      onClick={() => { setFrequency(f); if (f === 'Once') { setRepeatEnd(''); setRepeatDays([]); }}}
                       className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${
                         frequency === f ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'
                       }`}
@@ -391,6 +475,58 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
                     </button>
                   ))}
                 </div>
+                {frequency === 'Weekly' && (
+                  <div className="mt-3">
+                    <p className="text-xs font-semibold text-slate-500 mb-1.5">Repeat on Days</p>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {WEEKDAY_SHORT.map((d, i) => (
+                        <button key={i} type="button"
+                          onClick={() => setRepeatDays(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i])}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${repeatDays.includes(i) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}
+                        >{d}</button>
+                      ))}
+                    </div>
+                    {repeatDays.length === 0 && <p className="text-[11px] text-slate-400 mt-1">No days selected — defaults to Mon–Fri</p>}
+                  </div>
+                )}
+                {frequency === 'Monthly' && (
+                  <div className="mt-3">
+                    <p className="text-xs font-semibold text-slate-500 mb-1.5">Repeat on</p>
+                    <div className="flex gap-2">
+                      <select value={repeatMonthlyWeek} onChange={e => setRepeatMonthlyWeek(Number(e.target.value))}
+                        className="border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400/30 bg-slate-50">
+                        {WEEK_ORDINALS.map((w, i) => <option key={i} value={i + 1}>{w}</option>)}
+                      </select>
+                      <select value={repeatMonthlyDay} onChange={e => setRepeatMonthlyDay(Number(e.target.value))}
+                        className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400/30 bg-slate-50">
+                        {WEEKDAY_FULL.map((d, i) => <option key={i} value={i}>{d}</option>)}
+                      </select>
+                    </div>
+                    <p className="text-[11px] text-indigo-500 font-medium mt-1">{WEEK_ORDINALS[repeatMonthlyWeek - 1]} {WEEKDAY_FULL[repeatMonthlyDay]} of each month</p>
+                  </div>
+                )}
+                {frequency !== 'Once' && (
+                  <div className="mt-3">
+                    <p className="text-xs font-semibold text-slate-500 mb-1.5">Repeat Until <span className="font-normal text-slate-400">(contract / end date)</span></p>
+                    <input
+                      type="date"
+                      value={repeatEnd}
+                      onChange={e => setRepeatEnd(e.target.value)}
+                      min={dueDate || new Date().toISOString().split('T')[0]}
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-slate-50"
+                    />
+                    {repeatEnd && dueDate && (() => {
+                      const cnt = generateRecurringDates(
+                        new Date(dueDate), new Date(repeatEnd), frequency,
+                        frequency === 'Weekly' ? (repeatDays.length > 0 ? repeatDays : [0,1,2,3,4]) : repeatDays,
+                        repeatMonthlyWeek, repeatMonthlyDay
+                      ).length;
+                      return cnt > 0 ? (
+                        <p className="text-xs font-semibold text-indigo-600 mt-1">{cnt} task{cnt !== 1 ? 's' : ''} will be created</p>
+                      ) : null;
+                    })()}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -406,7 +542,12 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
                 { label: 'Description', value: description || '—' },
                 { label: 'Due date',    value: dueDate ? formatDate(dueDate) : '—' },
                 { label: 'Category',    value: category },
-                { label: 'Repeat',      value: frequency },
+                { label: 'Repeat', value: frequency === 'Weekly' && repeatDays.length > 0
+                    ? `Weekly (${repeatDays.map(i => WEEKDAY_SHORT[i]).join(', ')})`
+                    : frequency === 'Monthly'
+                    ? `Monthly (${WEEK_ORDINALS[repeatMonthlyWeek - 1]} ${WEEKDAY_FULL[repeatMonthlyDay]})`
+                    : frequency },
+                frequency !== 'Once' && repeatEnd && { label: 'Repeat Until', value: formatDate(repeatEnd) },
                 steps.length > 0 && { label: 'Checklist', value: `${steps.length} item${steps.length !== 1 ? 's' : ''}` },
               ].filter(Boolean).map(({ label, value }) => (
                 <div key={label} className="flex gap-3 py-3 border-b border-slate-100 last:border-0">
