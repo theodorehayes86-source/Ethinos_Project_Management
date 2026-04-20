@@ -28,7 +28,7 @@ function renderMentions(text) {
   );
 }
 
-export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser, readOnly, users = [] }) {
+export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser, readOnly, users = [], clients = [] }) {
   const [status, setStatus] = useState(task.status || 'Pending');
   const [steps, setSteps] = useState(() => Array.isArray(task.steps) ? task.steps : []);
   const [messages, setMessages] = useState(() => Array.isArray(task.messages) ? task.messages : []);
@@ -65,10 +65,18 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
     }
   };
 
+  const taskClient = (clients || []).find(c => String(c.id) === String(task._clientId));
   const mentionableUsers = (users || []).filter(u => String(u.id) !== String(currentUser?.id));
+  const projectUsers = taskClient
+    ? mentionableUsers.filter(u => (u.assignedProjects || []).includes(taskClient.name))
+    : [];
+  const projectUserIds = new Set(projectUsers.map(u => u.id));
+  const otherUsers = mentionableUsers.filter(u => !projectUserIds.has(u.id));
+  const orderedUsers = [...projectUsers, ...otherUsers];
+
   const filteredMentions = mentionQuery
-    ? mentionableUsers.filter(u => u.name?.toLowerCase().includes(mentionQuery.toLowerCase()))
-    : mentionableUsers;
+    ? orderedUsers.filter(u => u.name?.toLowerCase().includes(mentionQuery.toLowerCase()))
+    : orderedUsers;
 
   useEffect(() => {
     if (activeSection === 'chat') {
@@ -493,22 +501,47 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
                   )}
 
                   {showMentionMenu && filteredMentions.length > 0 && (
-                    <div className="mx-4 mb-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-32 overflow-y-auto">
-                      {filteredMentions.slice(0, 6).map(u => (
-                        <button
-                          key={u.id}
-                          onClick={() => insertMention(u)}
-                          className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-indigo-50 transition-colors border-b border-slate-50 last:border-0"
-                        >
-                          <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
-                            <span className="text-[10px] font-black text-indigo-600">{(u.name || '?')[0].toUpperCase()}</span>
-                          </div>
-                          <div>
-                            <p className="text-xs font-semibold text-slate-800">{u.name}</p>
-                            {u.role && <p className="text-[10px] text-slate-400">{u.role}</p>}
-                          </div>
-                        </button>
-                      ))}
+                    <div className="mx-4 mb-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-48 overflow-y-auto">
+                      {(() => {
+                        const visibleFiltered = filteredMentions.slice(0, 8);
+                        const visibleProjectIds = new Set(projectUsers.map(u => u.id));
+                        const hasProjectSection = !mentionQuery && projectUsers.length > 0;
+                        const hasOtherSection = !mentionQuery && otherUsers.length > 0 && projectUsers.length > 0;
+                        return visibleFiltered.map((u, idx) => {
+                          const isProjectUser = visibleProjectIds.has(u.id);
+                          const showProjectHeader = hasProjectSection && idx === 0;
+                          const showOtherHeader = hasOtherSection && !isProjectUser &&
+                            (idx === 0 || visibleProjectIds.has(visibleFiltered[idx - 1].id));
+                          return (
+                            <React.Fragment key={u.id}>
+                              {showProjectHeader && (
+                                <div className="px-3 py-1 bg-indigo-50 border-b border-indigo-100">
+                                  <p className="text-[9px] font-bold uppercase tracking-wider text-indigo-500">
+                                    {taskClient?.name || 'Project'} Team
+                                  </p>
+                                </div>
+                              )}
+                              {showOtherHeader && (
+                                <div className="px-3 py-1 bg-slate-50 border-b border-slate-100">
+                                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Others</p>
+                                </div>
+                              )}
+                              <button
+                                onClick={() => insertMention(u)}
+                                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-indigo-50 transition-colors border-b border-slate-50 last:border-0"
+                              >
+                                <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${isProjectUser ? 'bg-indigo-100' : 'bg-slate-100'}`}>
+                                  <span className={`text-[10px] font-black ${isProjectUser ? 'text-indigo-600' : 'text-slate-500'}`}>{(u.name || '?')[0].toUpperCase()}</span>
+                                </div>
+                                <div>
+                                  <p className="text-xs font-semibold text-slate-800">{u.name}</p>
+                                  {u.role && <p className="text-[10px] text-slate-400">{u.role}</p>}
+                                </div>
+                              </button>
+                            </React.Fragment>
+                          );
+                        });
+                      })()}
                     </div>
                   )}
 

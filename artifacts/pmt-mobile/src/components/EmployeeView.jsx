@@ -136,6 +136,7 @@ export default function EmployeeView({ myTasks, clientLogs, currentUser, clients
           clientLogs={clientLogs}
           currentUser={currentUser}
           users={users || []}
+          clients={clients || []}
         />
       )}
 
