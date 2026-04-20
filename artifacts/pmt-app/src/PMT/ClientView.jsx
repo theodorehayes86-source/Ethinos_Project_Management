@@ -303,32 +303,33 @@ const ClientView = ({
 
     const updateAll = editScope === 'all' && editingTask.repeatGroupId;
 
-    // Fields that are shared across every occurrence in the series
-    const sharedFields = {
+    // Shared fields applied to all occurrences; assignee names fall back to
+    // each log's existing value if the user lookup fails (e.g. deleted user)
+    const sharedFields = (l) => ({
       name: editDraft.name.trim(),
       comment: editDraft.comment.trim(),
       category: editDraft.category,
       assigneeId: editDraft.assigneeId,
-      assigneeName: assignee?.name || '',
-      assigneeEmail: assignee?.email || '',
+      assigneeName: assignee?.name || l.assigneeName,
+      assigneeEmail: assignee?.email || l.assigneeEmail,
       billable: editDraft.billable ?? true,
       estimatedMs: editEstimatedMs,
       qcEnabled: editDraft.qcEnabled,
       qcAssigneeId: editDraft.qcEnabled && editDraft.qcAssigneeId ? editDraft.qcAssigneeId : null,
       qcAssigneeName: editDraft.qcEnabled && editDraft.qcAssigneeName ? editDraft.qcAssigneeName : null,
       reminderOffsets: editDraft.reminderOffsets?.length > 0 ? editDraft.reminderOffsets : null,
-    };
+    });
 
     const updated = (clientLogs[selectedClient.id] || []).map(l => {
       // "Update all" — apply shared fields to every sibling in the series
       if (updateAll && l.repeatGroupId === editingTask.repeatGroupId && l.id !== editingTask.id) {
-        return { ...l, ...sharedFields };
+        return { ...l, ...sharedFields(l) };
       }
       // Always fully update the task being edited (per-occurrence fields included)
       if (l.id === editingTask.id) {
         return {
           ...l,
-          ...sharedFields,
+          ...sharedFields(l),
           date: format(editDraft.date || new Date(), 'do MMM yyyy'),
           dueDate: editDraft.dueDate ? format(editDraft.dueDate, 'do MMM yyyy') : null,
           repeatFrequency: editDraft.repeatFrequency,
