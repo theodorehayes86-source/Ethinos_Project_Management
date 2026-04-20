@@ -383,6 +383,17 @@ const HomeView = ({
   const myPending = myTasks.filter(t => t.status === 'Pending');
   const myDone = myTasks.filter(t => t.status === 'Done');
 
+  const todayStr = format(new Date(), 'do MMM yyyy');
+  const myOverdue = myTasks.filter(t => {
+    if (!t.dueDate || t.status === 'Done') return false;
+    try { return isBefore(parse(t.dueDate, 'do MMM yyyy', new Date()), new Date()); } catch { return false; }
+  });
+  const myDueToday = myTasks.filter(t => t.dueDate === todayStr && t.status !== 'Done');
+  const my48Plus = myTasks.filter(t => {
+    if (t.status === 'Done') return false;
+    try { return differenceInCalendarDays(new Date(), parse(t.date, 'do MMM yyyy', new Date())) >= 2; } catch { return false; }
+  });
+
   const filteredMyTasks = useMemo(() => {
     if (showArchived) return myArchivedTasks;
     if (statusFilter === 'all') return myTasks.filter(t =>
@@ -517,6 +528,50 @@ const HomeView = ({
               <div className={`p-2 ${stat.iconBgColor} rounded-lg`}>{stat.icon}</div>
             </div>
             <p className="text-2xl font-bold text-slate-900">{stat.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* ALERT STAT CARDS: Overdue / Due Today / 48+ hrs open */}
+      <div className="grid grid-cols-3 gap-4">
+        {[
+          {
+            label: 'Overdue',
+            value: myOverdue.length,
+            icon: <AlertTriangle size={16} className="text-rose-600"/>,
+            bgColor: myOverdue.length > 0 ? 'bg-rose-50' : 'bg-slate-50',
+            iconBgColor: myOverdue.length > 0 ? 'bg-rose-100' : 'bg-slate-100',
+            border: myOverdue.length > 0 ? 'border-rose-200' : 'border-slate-100',
+            valueColor: myOverdue.length > 0 ? 'text-rose-700' : 'text-slate-400',
+          },
+          {
+            label: 'Due Today',
+            value: myDueToday.length,
+            icon: <Calendar size={16} className="text-amber-600"/>,
+            bgColor: myDueToday.length > 0 ? 'bg-amber-50' : 'bg-slate-50',
+            iconBgColor: myDueToday.length > 0 ? 'bg-amber-100' : 'bg-slate-100',
+            border: myDueToday.length > 0 ? 'border-amber-200' : 'border-slate-100',
+            valueColor: myDueToday.length > 0 ? 'text-amber-700' : 'text-slate-400',
+          },
+          {
+            label: '48 hrs+ Open',
+            value: my48Plus.length,
+            icon: <Clock size={16} className="text-purple-600"/>,
+            bgColor: my48Plus.length > 0 ? 'bg-purple-50' : 'bg-slate-50',
+            iconBgColor: my48Plus.length > 0 ? 'bg-purple-100' : 'bg-slate-100',
+            border: my48Plus.length > 0 ? 'border-purple-200' : 'border-slate-100',
+            valueColor: my48Plus.length > 0 ? 'text-purple-700' : 'text-slate-400',
+          },
+        ].map((stat, i) => (
+          <div
+            key={i}
+            className={`${stat.bgColor} p-4 rounded-2xl shadow-sm border ${stat.border} flex flex-col justify-between h-20 transition-all`}
+          >
+            <div className="flex justify-between items-start">
+              <span className="text-xs font-semibold text-slate-500">{stat.label}</span>
+              <div className={`p-1.5 ${stat.iconBgColor} rounded-lg`}>{stat.icon}</div>
+            </div>
+            <p className={`text-2xl font-bold ${stat.valueColor}`}>{stat.value}</p>
           </div>
         ))}
       </div>
