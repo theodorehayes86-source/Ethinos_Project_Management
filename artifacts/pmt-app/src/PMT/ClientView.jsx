@@ -805,7 +805,32 @@ const ClientView = ({
     const filteredTaskLogs = visibleTaskLogs.filter(log => {
       if (!showArchived && log.archived) return false;
       if (showArchived) return !!log.archived;
-      return taskStatusFilter === 'All' ? true : log.status === taskStatusFilter;
+      if (taskStatusFilter === 'All') return true;
+      if (taskStatusFilter === 'Overdue') {
+        if (log.status === 'Done' || !log.dueDate) return false;
+        try {
+          const tod = new Date(); tod.setHours(0, 0, 0, 0);
+          const d = parse(log.dueDate, 'do MMM yyyy', new Date()); d.setHours(0, 0, 0, 0);
+          return d < tod;
+        } catch { return false; }
+      }
+      if (taskStatusFilter === 'Today') {
+        if (log.status === 'Done' || !log.dueDate) return false;
+        try {
+          const tod = new Date(); tod.setHours(0, 0, 0, 0);
+          const d = parse(log.dueDate, 'do MMM yyyy', new Date()); d.setHours(0, 0, 0, 0);
+          return d.getTime() === tod.getTime();
+        } catch { return false; }
+      }
+      if (taskStatusFilter === '48H+') {
+        if (log.status === 'Done') return false;
+        try {
+          const twoDaysAgo = subDays(new Date(), 2);
+          const taskDate = parse(log.date, 'do MMM yyyy', new Date());
+          return taskDate <= twoDaysAgo;
+        } catch { return false; }
+      }
+      return log.status === taskStatusFilter;
     });
     const selectedClientRecord = clients.find(client => client.id === selectedClient.id) || selectedClient;
     const dailyReportUrl = selectedClientRecord?.dailyReportUrl || '';
@@ -862,6 +887,9 @@ const ClientView = ({
                 <option value="Pending">Pending</option>
                 <option value="WIP">WIP</option>
                 <option value="Done">Completed</option>
+                <option value="Today">Due Today</option>
+                <option value="Overdue">Overdue</option>
+                <option value="48H+">48H+ Not Done</option>
               </select>
             )}
             {isManagement && (
@@ -2930,7 +2958,7 @@ const ClientView = ({
           return (
             <div
               key={c.id}
-              onClick={!isAvailable && !isPending ? () => setSelectedClient(c) : undefined}
+              onClick={!isAvailable && !isPending ? () => { setTaskStatusFilter('All'); setSelectedClient(c); } : undefined}
               className={`group bg-white border-2 rounded-2xl p-4 shadow-sm transition-all ${
                 isPending
                   ? 'border-amber-200 bg-amber-50/30'
@@ -2990,21 +3018,28 @@ const ClientView = ({
               {/* Status Cards — only for assigned clients */}
               {!isAvailable && !isPending && (
                 <div className="grid grid-cols-3 gap-1.5 mb-3">
-                  <div className="bg-orange-50 px-2 py-2 rounded-xl border border-orange-200 text-center">
-                    <Clock size={14} className="text-orange-500 mx-auto mb-0.5" />
-                    <p className="text-xs font-bold text-orange-600">{counts.open}</p>
-                    <p className="text-[9px] text-orange-500 font-medium">Pending</p>
-                  </div>
-                  <div className="bg-blue-50 px-2 py-2 rounded-xl border border-blue-200 text-center">
-                    <Activity size={14} className="text-blue-500 mx-auto mb-0.5" />
-                    <p className="text-xs font-bold text-blue-600">{counts.wip}</p>
-                    <p className="text-[9px] text-blue-500 font-medium">WIP</p>
-                  </div>
-                  <div className="bg-emerald-50 px-2 py-2 rounded-xl border border-emerald-200 text-center">
-                    <CheckCircle size={14} className="text-emerald-500 mx-auto mb-0.5" />
-                    <p className="text-xs font-bold text-emerald-600">{counts.done}</p>
-                    <p className="text-[9px] text-emerald-500 font-medium">Done</p>
-                  </div>
+                  {[
+                    { label: 'Pending',  value: counts.open,          filter: 'Pending', icon: <Clock size={13} className="text-orange-500 mx-auto mb-0.5"/>,   bg: 'bg-orange-50',  border: 'border-orange-200',  text: 'text-orange-600',  subtext: 'text-orange-400' },
+                    { label: 'WIP',      value: counts.wip,           filter: 'WIP',     icon: <Activity size={13} className="text-blue-500 mx-auto mb-0.5"/>,    bg: 'bg-blue-50',    border: 'border-blue-200',    text: 'text-blue-600',    subtext: 'text-blue-400' },
+                    { label: 'Done',     value: counts.done,          filter: 'Done',    icon: <CheckCircle size={13} className="text-emerald-500 mx-auto mb-0.5"/>, bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-600', subtext: 'text-emerald-400' },
+                    { label: 'Today',    value: counts.dueToday,      filter: 'Today',   icon: <Calendar size={13} className="text-amber-500 mx-auto mb-0.5"/>,    bg: counts.dueToday > 0 ? 'bg-amber-50' : 'bg-slate-50',  border: counts.dueToday > 0 ? 'border-amber-300' : 'border-slate-200', text: counts.dueToday > 0 ? 'text-amber-600' : 'text-slate-400',  subtext: counts.dueToday > 0 ? 'text-amber-400' : 'text-slate-300' },
+                    { label: 'Overdue',  value: counts.overdue,       filter: 'Overdue', icon: <AlertTriangle size={13} className={`${counts.overdue > 0 ? 'text-red-500' : 'text-slate-400'} mx-auto mb-0.5`}/>, bg: counts.overdue > 0 ? 'bg-red-50' : 'bg-slate-50', border: counts.overdue > 0 ? 'border-red-300' : 'border-slate-200', text: counts.overdue > 0 ? 'text-red-600' : 'text-slate-400', subtext: counts.overdue > 0 ? 'text-red-400' : 'text-slate-300' },
+                    { label: '48H+',     value: counts.recentPending, filter: '48H+',    icon: <Hourglass size={13} className={`${counts.recentPending > 0 ? 'text-rose-500' : 'text-slate-400'} mx-auto mb-0.5`}/>, bg: counts.recentPending > 0 ? 'bg-rose-50' : 'bg-slate-50', border: counts.recentPending > 0 ? 'border-rose-300' : 'border-slate-200', text: counts.recentPending > 0 ? 'text-rose-600' : 'text-slate-400', subtext: counts.recentPending > 0 ? 'text-rose-400' : 'text-slate-300' },
+                  ].map(({ label, value, filter, icon, bg, border, text, subtext }) => (
+                    <button
+                      key={label}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setTaskStatusFilter(filter);
+                        setSelectedClient(c);
+                      }}
+                      className={`${bg} px-2 py-1.5 rounded-xl border ${border} text-center transition-all hover:opacity-80 hover:scale-[1.03] active:scale-95 cursor-pointer`}
+                    >
+                      {icon}
+                      <p className={`text-xs font-bold ${text}`}>{value}</p>
+                      <p className={`text-[9px] font-medium ${subtext}`}>{label}</p>
+                    </button>
+                  ))}
                 </div>
               )}
 
