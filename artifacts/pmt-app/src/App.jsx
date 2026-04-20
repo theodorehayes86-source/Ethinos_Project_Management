@@ -1127,15 +1127,36 @@ const App = () => {
     };
     migrateCategoriesInFirebase();
 
-    // Seed default departments & regions if they don't exist in Firebase yet
+    // Seed default departments & regions if they don't exist, and migrate
+    // existing data to ensure required items are always present.
+    const REQUIRED_DEPARTMENTS = ['Analytics', 'Biddable', 'Client Servicing', 'Content', 'Creative', 'Growth', 'Performance', 'SEO', 'Technology'];
+    const REQUIRED_REGIONS = ['North', 'South', 'West', 'East', 'Pan India'];
+
     const seedDepartmentsRegions = async () => {
       const dSnap = await get(ref(db, 'departments'));
       if (!dSnap.exists()) {
-        await set(ref(db, 'departments'), ['Creative', 'Biddable', 'Growth', 'Client Servicing']);
+        await set(ref(db, 'departments'), REQUIRED_DEPARTMENTS);
+      } else {
+        // Migrate: add any missing required departments without removing existing custom ones
+        const existing = dSnap.val();
+        const arr = Array.isArray(existing) ? existing : Object.values(existing);
+        const missing = REQUIRED_DEPARTMENTS.filter(d => !arr.includes(d));
+        if (missing.length > 0) {
+          await set(ref(db, 'departments'), [...arr, ...missing]);
+        }
       }
+
       const rSnap = await get(ref(db, 'regions'));
       if (!rSnap.exists()) {
-        await set(ref(db, 'regions'), ['North', 'South', 'West']);
+        await set(ref(db, 'regions'), REQUIRED_REGIONS);
+      } else {
+        // Migrate: add any missing required regions without removing existing ones
+        const existing = rSnap.val();
+        const arr = Array.isArray(existing) ? existing : Object.values(existing);
+        const missing = REQUIRED_REGIONS.filter(r => !arr.includes(r));
+        if (missing.length > 0) {
+          await set(ref(db, 'regions'), [...arr, ...missing]);
+        }
       }
     };
     seedDepartmentsRegions();
@@ -1724,7 +1745,7 @@ const App = () => {
   if (!firebaseUser && !testModeUserId) {
     return (
       <>
-        <LoginView onLogin={handleLogin} onMicrosoftLogin={handleMicrosoftLogin} onCreateAccount={handleCreateAccount} onResetPassword={handleResetPassword} loginError={loginError} msLoginStatus={msLoginStatus} onCancelMsLogin={() => setMsLoginStatus('')} />
+        <LoginView onLogin={handleLogin} onMicrosoftLogin={handleMicrosoftLogin} onCreateAccount={handleCreateAccount} onResetPassword={handleResetPassword} loginError={loginError} msLoginStatus={msLoginStatus} onCancelMsLogin={() => setMsLoginStatus('')} departments={departments} regions={regions} />
         <TestModePanel
           currentUser={null}
           isTestMode={false}

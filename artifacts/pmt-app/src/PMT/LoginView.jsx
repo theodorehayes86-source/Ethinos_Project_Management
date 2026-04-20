@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-const DEPARTMENTS = ['Creative', 'Biddable', 'Growth', 'Client Servicing', 'Performance', 'Content', 'SEO', 'Technology'];
+const DEPARTMENTS = ['Analytics', 'Biddable', 'Client Servicing', 'Content', 'Creative', 'Growth', 'Performance', 'SEO', 'Technology'];
 const REGIONS = ['North', 'South', 'West', 'East', 'Pan India'];
 
 const Field = ({ label, children }) => (
@@ -21,7 +21,9 @@ const MicrosoftIcon = () => (
   </svg>
 );
 
-const LoginView = ({ onLogin, onMicrosoftLogin, onCreateAccount, onResetPassword, loginError, msLoginStatus, onCancelMsLogin }) => {
+const LoginView = ({ onLogin, onMicrosoftLogin, onCreateAccount, onResetPassword, loginError, msLoginStatus, onCancelMsLogin, departments: deptsProp, regions: regionsProp }) => {
+  const depts = (deptsProp && deptsProp.length > 0) ? [...deptsProp].sort() : DEPARTMENTS;
+  const regs  = (regionsProp && regionsProp.length > 0) ? regionsProp : REGIONS;
   const [mode, setMode] = useState('signin'); // 'signin' | 'register' | 'reset'
 
   // Sign-in state
@@ -304,13 +306,13 @@ const LoginView = ({ onLogin, onMicrosoftLogin, onCreateAccount, onResetPassword
                     <Field label="Department">
                       <select value={regDept} onChange={e => setRegDept(e.target.value)} className={inputCls} required>
                         <option value="">Select…</option>
-                        {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                        {depts.map(d => <option key={d} value={d}>{d}</option>)}
                       </select>
                     </Field>
                     <Field label="Region">
                       <select value={regRegion} onChange={e => setRegRegion(e.target.value)} className={inputCls} required>
                         <option value="">Select…</option>
-                        {REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
+                        {regs.map(r => <option key={r} value={r}>{r}</option>)}
                       </select>
                     </Field>
                   </div>
