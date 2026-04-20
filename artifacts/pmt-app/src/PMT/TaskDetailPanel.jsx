@@ -56,6 +56,7 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNot
   const [newFeedback, setNewFeedback] = useState('');
   const [replyingToFeedbackId, setReplyingToFeedbackId] = useState(null);
   const feedbackInputRef = useRef(null);
+  const [seriesScope, setSeriesScope] = useState('one');
 
   const [newStepLabel, setNewStepLabel] = useState('');
   const [newMessage, setNewMessage] = useState('');
@@ -77,7 +78,7 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNot
     setLocalDueDate(tryParseDate(task.dueDate));
   }, [task.id, task.dueDate]);
 
-  const saveUpdate = (updatedTask) => onUpdate(updatedTask);
+  const saveUpdate = (updatedTask) => onUpdate(updatedTask, seriesScope);
 
   const handleDueDateChange = (date) => {
     setLocalDueDate(date);
@@ -263,6 +264,36 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, setNot
                   </span>
                 )}
               </div>
+              {task.repeatGroupId && canEdit && (
+                <div className="flex items-center gap-2 mt-3 flex-wrap">
+                  <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Update:</span>
+                  {[
+                    { id: 'one', label: 'This task only' },
+                    { id: 'all', label: 'All tasks in this series' },
+                  ].map(opt => (
+                    <label
+                      key={opt.id}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 border rounded-lg cursor-pointer text-xs font-semibold transition-all select-none ${
+                        seriesScope === opt.id
+                          ? opt.id === 'all'
+                            ? 'border-amber-400 bg-amber-50 text-amber-800'
+                            : 'border-blue-500 bg-blue-50 text-blue-700'
+                          : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="detailPanelSeriesScope"
+                        value={opt.id}
+                        checked={seriesScope === opt.id}
+                        onChange={() => setSeriesScope(opt.id)}
+                        className="w-3.5 h-3.5 accent-blue-600"
+                      />
+                      {opt.label}
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
             <button
               onClick={onClose}

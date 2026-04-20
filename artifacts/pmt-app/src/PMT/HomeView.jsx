@@ -336,12 +336,16 @@ const HomeView = ({
         taskRepeat === 'Weekly' ? (taskRepeatDays.length > 0 ? taskRepeatDays : [0,1,2,3,4]) : taskRepeatDays,
         taskRepeatMonthlyWeek, taskRepeatMonthlyDay
       );
-      logsToAdd = dates.map((dt, i) => ({
-        ...newTask,
-        id: Date.now() + i,
-        date: format(dt, 'do MMM yyyy'),
-        dueDate: dueDateOffsetDays !== null ? format(addDays(dt, dueDateOffsetDays), 'do MMM yyyy') : null,
-      }));
+      if (dates.length > 1) {
+        const repeatGroupId = `rg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        logsToAdd = dates.map((dt, i) => ({
+          ...newTask,
+          repeatGroupId,
+          id: Date.now() + i,
+          date: format(dt, 'do MMM yyyy'),
+          dueDate: dueDateOffsetDays !== null ? format(addDays(dt, dueDateOffsetDays), 'do MMM yyyy') : null,
+        }));
+      }
       if (logsToAdd.length === 0) logsToAdd = [newTask];
     }
     const nextLogs = { ...clientLogs, [selectedClientId]: [...logsToAdd, ...(clientLogs[selectedClientId] || [])] };
@@ -1481,8 +1485,25 @@ const HomeView = ({
           canEdit={canFullyEditTaskFor(detailTask, currentUser)}
           setNotifications={setNotifications}
           onClose={() => setDetailTask(null)}
-          onUpdate={(updatedTask) => {
-            handleUpdateTask(updatedTask, updatedTask);
+          onUpdate={(updatedTask, scope) => {
+            if (scope === 'all' && updatedTask.repeatGroupId) {
+              const sharedFields = {
+                steps: updatedTask.steps,
+                links: updatedTask.links,
+              };
+              const nextLogs = {};
+              const taskCid = updatedTask.cid;
+              Object.entries(clientLogs).forEach(([cid, logs]) => {
+                nextLogs[cid] = (logs || []).map(t => {
+                  if (t.id === updatedTask.id && cid === taskCid) return { ...t, ...updatedTask };
+                  if (cid === taskCid && t.repeatGroupId === updatedTask.repeatGroupId) return { ...t, ...sharedFields };
+                  return t;
+                });
+              });
+              setClientLogs(nextLogs);
+            } else {
+              handleUpdateTask(updatedTask, updatedTask);
+            }
             setDetailTask(updatedTask);
           }}
         />
