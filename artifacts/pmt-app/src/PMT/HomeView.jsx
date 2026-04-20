@@ -5,6 +5,7 @@ import "react-datepicker/dist/react-datepicker.css";
 import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, CheckCircle, Tag, Calendar, Archive, ArchiveRestore, LayoutTemplate, ChevronDown, Play, Square, Pause, Send, ThumbsUp, ThumbsDown, RotateCcw } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import TaskDetailPanel from './TaskDetailPanel';
+import { sendNotification } from '../utils/notify';
 
 const managementRoles = ['Super Admin', 'Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
 
@@ -257,6 +258,22 @@ const HomeView = ({
     };
     const nextLogs = { ...clientLogs, [selectedClientId]: [newTask, ...(clientLogs[selectedClientId] || [])] };
     setClientLogs(nextLogs);
+
+    // Notify the assignee by email (fire-and-forget — never blocks the UI)
+    const assigneeUser = users.find(u => String(u.id) === String(effectiveAssigneeId));
+    if (assigneeUser?.email) {
+      sendNotification('task-assigned', {
+        assigneeEmail: assigneeUser.email,
+        assigneeName: effectiveAssigneeName,
+        taskName: taskName.trim(),
+        taskDescription: taskComment.trim(),
+        clientName: selectedClient?.name || '',
+        dueDate: taskDueDate ? format(taskDueDate, 'do MMM yyyy') : null,
+        creatorName: currentUser?.name,
+        steps: [],
+      });
+    }
+
     closeModal();
   };
 

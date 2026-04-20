@@ -4,6 +4,7 @@ import { format, isBefore, isAfter, startOfWeek, endOfWeek, startOfMonth, endOfM
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import TaskDetailPanel from './TaskDetailPanel';
+import { sendNotification } from '../utils/notify';
 
 const DEFAULT_STANDARD_TRACK = ['Director', 'Snr Manager', 'Manager', 'Asst Manager', 'Snr Executive', 'Executive', 'Employee', 'Intern'];
 const CS_REPORT_ROLES = new Set(['CSM', 'Project Manager', 'PM/CSM']);
@@ -101,6 +102,21 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
       estimatedMs,
     };
     setClientLogs({ ...clientLogs, [selectedClientId]: [newTask, ...(clientLogs[selectedClientId] || [])] });
+
+    // Notify the assignee by email (fire-and-forget — never blocks the UI)
+    if (prefilledAssignee?.email) {
+      sendNotification('task-assigned', {
+        assigneeEmail: prefilledAssignee.email,
+        assigneeName: prefilledAssignee.name,
+        taskName: taskName.trim(),
+        taskDescription: taskComment.trim(),
+        clientName: selectedClient?.name || '',
+        dueDate: taskDueDate ? format(taskDueDate, 'do MMM yyyy') : null,
+        creatorName: currentUser?.name,
+        steps: [],
+      });
+    }
+
     onClose();
   };
 

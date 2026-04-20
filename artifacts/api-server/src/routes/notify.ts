@@ -56,10 +56,27 @@ function buildTaskAssignedHtml(d: {
   clientName?: string;
   dueDate?: string | null;
   creatorName?: string;
+  steps?: Array<{ label: string; checked?: boolean }>;
 }): string {
   const desc = d.taskDescription
-    ? `<p style="margin:0 0 24px;color:#64748b;font-size:14px;line-height:1.6;">${d.taskDescription}</p>`
+    ? `<p style="margin:0 0 20px;color:#64748b;font-size:14px;line-height:1.6;">${d.taskDescription}</p>`
     : "";
+
+  const stepsHtml =
+    d.steps && d.steps.length > 0
+      ? `<div style="margin-bottom:24px;">
+          <p style="margin:0 0 10px;font-size:13px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:0.05em;">Steps</p>
+          <ol style="margin:0;padding-left:20px;">
+            ${d.steps
+              .map(
+                (s) =>
+                  `<li style="margin-bottom:6px;font-size:13px;color:#1e293b;line-height:1.5;">${s.label}</li>`
+              )
+              .join("")}
+          </ol>
+        </div>`
+      : "";
+
   const tableBody = [
     row("Assigned to", d.assigneeName || ""),
     row("Client", d.clientName || ""),
@@ -67,8 +84,9 @@ function buildTaskAssignedHtml(d: {
     row("Created by", d.creatorName || ""),
   ].join("");
   const body = `
-    ${desc}
     <p style="margin:0 0 16px;font-size:14px;color:#475569;">You have been assigned a new task in the Ethinos PMT. Please log in to review the details and get started.</p>
+    ${desc}
+    ${stepsHtml}
     <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">${tableBody}</table>
     <a href="https://pmt.ethinos.com" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View in PMT</a>
   `;
@@ -174,13 +192,24 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
   try {
     switch (type) {
       case "task-assigned": {
-        const { assigneeEmail, assigneeName, taskName, taskDescription, clientName, dueDate, creatorName } = data as Record<string, string>;
+        const { assigneeEmail, assigneeName, taskName, taskDescription, clientName, dueDate, creatorName, steps } = data as Record<string, unknown>;
         if (!assigneeEmail) return res.json({ sent: false, reason: "no_email" });
-        const to = resolveRecipient(assigneeEmail);
+        const to = resolveRecipient(assigneeEmail as string);
+        const stepList = Array.isArray(steps)
+          ? (steps as Array<{ label: string; checked?: boolean }>)
+          : [];
         await sendEmail({
           to,
           subject: testSubjectPrefix(`[PMT] New task assigned: "${taskName}"`),
-          bodyHtml: buildTaskAssignedHtml({ assigneeName, taskName, taskDescription, clientName, dueDate, creatorName }),
+          bodyHtml: buildTaskAssignedHtml({
+            assigneeName: assigneeName as string,
+            taskName: taskName as string,
+            taskDescription: taskDescription as string | undefined,
+            clientName: clientName as string | undefined,
+            dueDate: dueDate as string | null | undefined,
+            creatorName: creatorName as string | undefined,
+            steps: stepList,
+          }),
         });
         logger.info({ to, original: assigneeEmail, taskName, testMode }, "[Notify] task-assigned email sent");
         break;
