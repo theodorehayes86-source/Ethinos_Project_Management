@@ -15,6 +15,7 @@ interface TaskLog {
   status?: string;
   archived?: boolean;
   parentTaskId?: string | number;
+  repeatGroupId?: string;
   [key: string]: unknown;
 }
 
@@ -104,6 +105,7 @@ function buildChild(parent: TaskLog, today: Date): TaskLog {
     repeatEnd: null,
     lastSpawnedDate: null,
     parentTaskId: parent.id,
+    repeatGroupId: String(parent.repeatGroupId || parent.id),
   };
 }
 

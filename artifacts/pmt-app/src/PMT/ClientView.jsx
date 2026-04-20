@@ -53,6 +53,7 @@ const ClientView = ({
   const [editDraftAssigneeQuery, setEditDraftAssigneeQuery] = useState('');
   const [editDraftShowAssigneeMenu, setEditDraftShowAssigneeMenu] = useState(false);
   const [editDraftError, setEditDraftError] = useState('');
+  const [editScope, setEditScope] = useState('one');
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [taskDueDate, setTaskDueDate] = useState(null);
   const [newTaskComment, setNewTaskComment] = useState("");
@@ -286,6 +287,7 @@ const ClientView = ({
     setEditDraftShowCategoryMenu(false);
     setEditDraftShowAssigneeMenu(false);
     setEditDraftError('');
+    setEditScope('one');
   };
 
   const handleSaveEditTask = () => {
@@ -298,28 +300,44 @@ const ClientView = ({
     const editEstHrs = parseInt(editDraft.estimatedHrs || '0', 10) || 0;
     const editEstMins = parseInt(editDraft.estimatedMins || '0', 10) || 0;
     const editEstimatedMs = (editEstHrs * 60 + editEstMins) > 0 ? (editEstHrs * 3600000 + editEstMins * 60000) : null;
-    const updated = (clientLogs[selectedClient.id] || []).map(l =>
-      l.id === editingTask.id ? {
-        ...l,
-        name: editDraft.name.trim() || '',
-        comment: editDraft.comment.trim(),
-        category: editDraft.category,
-        assigneeId: editDraft.assigneeId,
-        assigneeName: assignee?.name || l.assigneeName,
-        assigneeEmail: assignee?.email || l.assigneeEmail,
-        date: format(editDraft.date || new Date(), 'do MMM yyyy'),
-        dueDate: editDraft.dueDate ? format(editDraft.dueDate, 'do MMM yyyy') : null,
-        repeatFrequency: editDraft.repeatFrequency,
-        repeatEnd: editDraft.repeatFrequency !== 'Once' && editDraft.repeatEnd ? format(editDraft.repeatEnd, 'do MMM yyyy') : null,
-        status: editDraft.status,
-        qcEnabled: editDraft.qcEnabled,
-        qcAssigneeId: editDraft.qcEnabled && editDraft.qcAssigneeId ? editDraft.qcAssigneeId : null,
-        qcAssigneeName: editDraft.qcEnabled && editDraft.qcAssigneeName ? editDraft.qcAssigneeName : null,
-        billable: editDraft.billable ?? true,
-        estimatedMs: editEstimatedMs,
-        reminderOffsets: editDraft.reminderOffsets?.length > 0 ? editDraft.reminderOffsets : null,
-      } : l
-    );
+
+    const updateAll = editScope === 'all' && editingTask.repeatGroupId;
+
+    // Fields that are shared across every occurrence in the series
+    const sharedFields = {
+      name: editDraft.name.trim(),
+      comment: editDraft.comment.trim(),
+      category: editDraft.category,
+      assigneeId: editDraft.assigneeId,
+      assigneeName: assignee?.name || '',
+      assigneeEmail: assignee?.email || '',
+      billable: editDraft.billable ?? true,
+      estimatedMs: editEstimatedMs,
+      qcEnabled: editDraft.qcEnabled,
+      qcAssigneeId: editDraft.qcEnabled && editDraft.qcAssigneeId ? editDraft.qcAssigneeId : null,
+      qcAssigneeName: editDraft.qcEnabled && editDraft.qcAssigneeName ? editDraft.qcAssigneeName : null,
+      reminderOffsets: editDraft.reminderOffsets?.length > 0 ? editDraft.reminderOffsets : null,
+    };
+
+    const updated = (clientLogs[selectedClient.id] || []).map(l => {
+      // "Update all" — apply shared fields to every sibling in the series
+      if (updateAll && l.repeatGroupId === editingTask.repeatGroupId && l.id !== editingTask.id) {
+        return { ...l, ...sharedFields };
+      }
+      // Always fully update the task being edited (per-occurrence fields included)
+      if (l.id === editingTask.id) {
+        return {
+          ...l,
+          ...sharedFields,
+          date: format(editDraft.date || new Date(), 'do MMM yyyy'),
+          dueDate: editDraft.dueDate ? format(editDraft.dueDate, 'do MMM yyyy') : null,
+          repeatFrequency: editDraft.repeatFrequency,
+          repeatEnd: editDraft.repeatFrequency !== 'Once' && editDraft.repeatEnd ? format(editDraft.repeatEnd, 'do MMM yyyy') : null,
+          status: editDraft.status,
+        };
+      }
+      return l;
+    });
     setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
     setEditingTask(null);
     setEditDraft(null);
@@ -604,8 +622,10 @@ const ClientView = ({
         newTaskRepeatDays, newTaskRepeatMonthlyWeek, newTaskRepeatMonthlyDay
       );
       if (dates.length > 1) {
+        const repeatGroupId = `rg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
         logsToAdd = dates.map((dt, i) => ({
           ...newLog,
+          repeatGroupId,
           id: Date.now() + i + Math.random(),
           date: format(dt, 'do MMM yyyy'),
           dueDate: dueDateOffsetDays !== null ? format(addDays(dt, dueDateOffsetDays), 'do MMM yyyy') : null,
@@ -2340,6 +2360,36 @@ const ClientView = ({
                     </div>
                   </div>
                   {editDraftError && <p className="text-sm font-medium text-red-600">{editDraftError}</p>}
+                  {editingTask.repeatGroupId && (
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Update:</span>
+                      {[
+                        { id: 'one', label: 'This task only' },
+                        { id: 'all', label: 'All tasks in this series' },
+                      ].map(opt => (
+                        <label
+                          key={opt.id}
+                          className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg cursor-pointer text-xs font-semibold transition-all select-none ${
+                            editScope === opt.id
+                              ? opt.id === 'all'
+                                ? 'border-amber-400 bg-amber-50 text-amber-800'
+                                : 'border-blue-500 bg-blue-50 text-blue-700'
+                              : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="editScope"
+                            value={opt.id}
+                            checked={editScope === opt.id}
+                            onChange={() => setEditScope(opt.id)}
+                            className="w-3.5 h-3.5 accent-blue-600"
+                          />
+                          {opt.label}
+                        </label>
+                      ))}
+                    </div>
+                  )}
                   <div className="flex justify-end gap-3 pt-2">
                     <button
                       type="button"
