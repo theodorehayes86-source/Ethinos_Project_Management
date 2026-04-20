@@ -5,6 +5,7 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import TaskDetailPanel from './TaskDetailPanel';
 import { sendNotification } from '../utils/notify';
+import DueDateInput from './DueDateInput';
 
 const DEFAULT_STANDARD_TRACK = ['Director', 'Snr Manager', 'Manager', 'Asst Manager', 'Snr Executive', 'Executive', 'Employee', 'Intern'];
 const CS_REPORT_ROLES = new Set(['CSM', 'Project Manager', 'PM/CSM']);
@@ -157,7 +158,20 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
             </div>
           </div>
           <div><label className="text-xs font-semibold text-slate-600 mb-1 block">Description *</label><textarea value={taskComment} onChange={e => setTaskComment(e.target.value)} rows={3} placeholder="Describe the task…" className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20 resize-none"/></div>
-          <div><label className="text-xs font-semibold text-slate-600 mb-1 block">Due Date</label><DatePicker selected={taskDueDate} onChange={setTaskDueDate} dateFormat="d MMM yyyy" placeholderText="Optional…" className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20"/></div>
+          <div>
+            <label className="text-xs font-semibold text-slate-600 mb-1 block">Due Date</label>
+            <DueDateInput
+              startDate={new Date()}
+              value={taskDueDate}
+              onChange={setTaskDueDate}
+              minDate={new Date()}
+            />
+            {taskDueDate && (
+              <button type="button" onClick={() => setTaskDueDate(null)} className="mt-1 text-xs font-semibold text-red-600 hover:text-red-700">
+                Clear Due Date
+              </button>
+            )}
+          </div>
           <div className="flex gap-3">
             <div className="flex-1"><label className="text-xs font-semibold text-slate-600 mb-1 block">Est. Hours</label><input type="number" min="0" value={estimatedHrs} onChange={e => setEstimatedHrs(e.target.value)} placeholder="0" className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20"/></div>
             <div className="flex-1"><label className="text-xs font-semibold text-slate-600 mb-1 block">Est. Mins</label><input type="number" min="0" max="59" value={estimatedMins} onChange={e => setEstimatedMins(e.target.value)} placeholder="0" className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20"/></div>
