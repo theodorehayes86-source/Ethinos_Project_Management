@@ -145,17 +145,18 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
   const handleStart = useCallback(() => {
     const now = Date.now();
     startedAtRef.current = now;
-    const nextStatus = liveStatus === "TODO" ? "WIP" : liveStatus;
+    // Always move to WIP when the timer starts — covers first start (Pending/TODO),
+    // resuming from pause, and restarting after Done.
     setAutoPaused(false);
     setTimerState("running");
-    setLiveStatus(nextStatus);
+    setLiveStatus("WIP");
     void updateTaskTimer(task.clientId, task.taskIndex, task.id, {
       elapsedMs: baseElapsedRef.current,
       timerState: "running",
       timerStartedAt: now,
-      status: nextStatus,
+      status: "WIP",
     });
-  }, [task, updateTaskTimer, liveStatus]);
+  }, [task, updateTaskTimer]);
 
   const handlePause = useCallback(() => {
     stopSyncInterval();
