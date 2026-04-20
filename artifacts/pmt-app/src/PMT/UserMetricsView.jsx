@@ -198,6 +198,8 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUse
     const totalSeconds = rows.reduce((total, row) => total + row.totalSeconds, 0);
     const totalTasks = rows.reduce((total, row) => total + row.taskCount, 0);
     const avgTaskSeconds = totalTasks > 0 ? Math.round(totalSeconds / totalTasks) : 0;
+    const totalUsers = rows.length;
+    const avgUserSeconds = totalUsers > 0 ? Math.round(totalSeconds / totalUsers) : 0;
 
     const dailyMap = new Map();
     filteredLogs.forEach(log => {
@@ -232,6 +234,7 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUse
       totalSeconds,
       totalTasks,
       avgTaskSeconds,
+      avgUserSeconds,
       trendData
     };
   }, [users, clients, effectiveLogs, rangeStart, rangeEnd]);
@@ -438,8 +441,8 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUse
 
             <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
               <div>
-                <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Avg Time / Task</p>
-                <p className="text-lg font-bold text-slate-900 mt-0.5">{formatDuration(metrics.avgTaskSeconds)}</p>
+                <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Avg Time / User</p>
+                <p className="text-lg font-bold text-slate-900 mt-0.5">{formatDuration(metrics.avgUserSeconds)}</p>
               </div>
               <div className="p-2 bg-orange-50 rounded-lg"><Users size={14} className="text-orange-600" /></div>
             </div>
