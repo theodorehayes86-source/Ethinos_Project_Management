@@ -374,7 +374,34 @@ function MainApp() {
   );
 }
 
+function useAutoFullscreen() {
+  useEffect(() => {
+    const request = () => {
+      const el = document.documentElement;
+      const fn = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+      if (fn) fn.call(el).catch(() => {});
+    };
+
+    // Attempt immediately (works in some contexts / PWA shells)
+    request();
+
+    // Fallback: grab it on the first user interaction if the above didn't work
+    const onInteract = () => {
+      if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+        request();
+      }
+      ['touchstart', 'click', 'keydown'].forEach(ev => document.removeEventListener(ev, onInteract));
+    };
+    ['touchstart', 'click', 'keydown'].forEach(ev => document.addEventListener(ev, onInteract, { once: true, passive: true }));
+
+    return () => {
+      ['touchstart', 'click', 'keydown'].forEach(ev => document.removeEventListener(ev, onInteract));
+    };
+  }, []);
+}
+
 export default function App() {
+  useAutoFullscreen();
   if (isAuthRedirectMode) return <AuthRedirectHandler />;
   return <MainApp />;
 }
