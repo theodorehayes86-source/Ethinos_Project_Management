@@ -451,15 +451,21 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
                   <button
                     type="button"
                     onClick={() => {
+                      const todayStr = new Date().toISOString().split('T')[0];
+                      let days = relDays;
+                      if (dueDate) {
+                        const diff = Math.round((new Date(dueDate) - new Date(todayStr)) / 86400000);
+                        if (diff > 0) days = Math.min(60, diff);
+                      }
+                      setRelDays(days);
                       setDueDateMode('relative');
-                      const today = new Date().toISOString().split('T')[0];
-                      const base = new Date(today);
-                      base.setDate(base.getDate() + relDays);
+                      const base = new Date(todayStr);
+                      base.setDate(base.getDate() + days);
                       setDueDate(base.toISOString().split('T')[0]);
                     }}
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${dueDateMode === 'relative' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500'}`}
                   >
-                    Days from today
+                    Days from start
                   </button>
                 </div>
                 {dueDateMode === 'pick' ? (
@@ -481,13 +487,13 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
                         onChange={e => {
                           const d = Math.max(1, Math.min(60, parseInt(e.target.value, 10) || 1));
                           setRelDays(d);
-                          const base = new Date();
+                          const base = new Date(new Date().toISOString().split('T')[0]);
                           base.setDate(base.getDate() + d);
                           setDueDate(base.toISOString().split('T')[0]);
                         }}
                         className="w-20 px-3 py-3 rounded-xl border border-slate-200 text-sm font-semibold text-center focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-slate-50"
                       />
-                      <span className="text-sm text-slate-500 font-medium">days from today</span>
+                      <span className="text-sm text-slate-500 font-medium">days from start</span>
                     </div>
                     {dueDate && (
                       <p className="text-xs font-semibold text-indigo-600">Due: {formatDate(dueDate)}</p>
