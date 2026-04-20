@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Plus, Trash2, Send, Link, Check, ExternalLink, AtSign, MessageSquare, CheckCircle, XCircle, CornerDownLeft } from 'lucide-react';
+import { X, Plus, Trash2, Send, Link, Check, ExternalLink, AtSign, MessageSquare, CheckCircle, XCircle, CornerDownLeft, Pencil } from 'lucide-react';
 import { format, parse, isBefore } from 'date-fns';
 import { sendNotification } from '../utils/notify';
 import DueDateInput from './DueDateInput';
@@ -57,6 +57,14 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
   const [replyingToFeedbackId, setReplyingToFeedbackId] = useState(null);
   const feedbackInputRef = useRef(null);
   const [seriesScope, setSeriesScope] = useState('one');
+
+  // Edit/delete state for messages
+  const [editingMsgId, setEditingMsgId] = useState(null);
+  const [editMsgText, setEditMsgText] = useState('');
+
+  // Edit/delete state for feedback thread entries
+  const [editingFbEntryId, setEditingFbEntryId] = useState(null);
+  const [editFbEntryText, setEditFbEntryText] = useState('');
 
   const [newStepLabel, setNewStepLabel] = useState('');
   const [newMessage, setNewMessage] = useState('');
@@ -190,6 +198,47 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
         });
       }
     });
+  };
+
+  // --- Message edit / delete ---
+  const handleSaveEditMsg = (msgId) => {
+    const text = editMsgText.trim();
+    if (!text) return;
+    const updated = messages.map(m => m.id === msgId ? { ...m, text, edited: true } : m);
+    setMessages(updated);
+    setEditingMsgId(null);
+    setEditMsgText('');
+    saveUpdate({ ...task, steps, messages: updated, links });
+  };
+
+  const handleDeleteMsg = (msgId) => {
+    const updated = messages.filter(m => m.id !== msgId);
+    setMessages(updated);
+    saveUpdate({ ...task, steps, messages: updated, links });
+  };
+
+  // --- Feedback thread entry edit / delete ---
+  const handleSaveEditFbEntry = (entryId) => {
+    const text = editFbEntryText.trim();
+    if (!text) return;
+    const updated = feedbackThread.map(e => e.id === entryId ? { ...e, text, edited: true } : e);
+    setFeedbackThread(updated);
+    setEditingFbEntryId(null);
+    setEditFbEntryText('');
+    saveUpdate({ ...task, steps, messages, links, feedbackThread: updated });
+  };
+
+  const handleDeleteFbEntry = (entryId) => {
+    // Remove entry and any children that reply to it
+    const removeIds = new Set([entryId]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      feedbackThread.forEach(e => { if (e.replyToId && removeIds.has(e.replyToId) && !removeIds.has(e.id)) { removeIds.add(e.id); changed = true; } });
+    }
+    const updated = feedbackThread.filter(e => !removeIds.has(e.id));
+    setFeedbackThread(updated);
+    saveUpdate({ ...task, steps, messages, links, feedbackThread: updated });
   };
 
   // --- Feedback Thread ---
@@ -457,15 +506,39 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
               )}
               {messages.map(msg => {
                 const isMine = String(msg.authorId) === String(currentUser?.id);
+                const isEditing = editingMsgId === msg.id;
                 return (
-                  <div key={msg.id} className={`flex flex-col ${isMine ? 'items-end' : 'items-start'}`}>
-                    <div className={`max-w-[85%] rounded-xl px-3 py-2 ${isMine ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-800'}`}>
-                      <p className="text-xs leading-relaxed">{renderMessageText(msg.text)}</p>
-                    </div>
+                  <div key={msg.id} className={`flex flex-col ${isMine ? 'items-end' : 'items-start'} group`}>
+                    {isEditing ? (
+                      <div className="w-full max-w-[85%] space-y-1.5">
+                        <textarea
+                          value={editMsgText}
+                          onChange={e => setEditMsgText(e.target.value)}
+                          autoFocus
+                          rows={2}
+                          className="w-full bg-white border border-blue-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 resize-none"
+                          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSaveEditMsg(msg.id); } if (e.key === 'Escape') { setEditingMsgId(null); } }}
+                        />
+                        <div className="flex gap-1.5 justify-end">
+                          <button onClick={() => setEditingMsgId(null)} className="px-2.5 py-1 text-[11px] font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all">Cancel</button>
+                          <button onClick={() => handleSaveEditMsg(msg.id)} disabled={!editMsgText.trim()} className="px-2.5 py-1 text-[11px] font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all disabled:opacity-40 flex items-center gap-1"><Send size={9}/> Save</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className={`relative max-w-[85%] rounded-xl px-3 py-2 ${isMine ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-800'}`}>
+                        <p className="text-xs leading-relaxed">{renderMessageText(msg.text)}</p>
+                        {isMine && (
+                          <div className="absolute -top-5 right-0 hidden group-hover:flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg shadow-sm px-1 py-0.5">
+                            <button onClick={() => { setEditingMsgId(msg.id); setEditMsgText(msg.text); }} className="p-0.5 text-slate-400 hover:text-blue-500 transition-colors" title="Edit"><Pencil size={10}/></button>
+                            <button onClick={() => handleDeleteMsg(msg.id)} className="p-0.5 text-slate-400 hover:text-red-500 transition-colors" title="Delete"><Trash2 size={10}/></button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     <div className="flex items-center gap-1.5 mt-0.5 px-1">
                       <span className="text-[9px] font-semibold text-slate-500">{msg.authorName}</span>
                       <span className="text-[9px] text-slate-400">
-                        {format(new Date(msg.timestamp), 'dd MMM, h:mm a')}
+                        {format(new Date(msg.timestamp), 'dd MMM, h:mm a')}{msg.edited ? ' · edited' : ''}
                       </span>
                     </div>
                   </div>
@@ -571,8 +644,11 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
               const children = allEntries.filter(e => e.replyToId === entry.id);
               const parentEntry = entry.replyToId ? allEntries.find(e => e.id === entry.replyToId) : null;
               const indent = depth === 1 ? 'ml-4' : depth >= 2 ? 'ml-6' : '';
+              const isMine = String(entry.authorId) === String(currentUser?.id);
+              const isLegacy = entry.id?.startsWith('legacy-');
+              const isEditingEntry = editingFbEntryId === entry.id;
               return (
-                <div key={entry.id}>
+                <div key={entry.id} className="group/fb">
                   <div className={`rounded-xl px-3 py-2.5 ${bg} ${indent}`}>
                     <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                       {parentEntry && (
@@ -593,12 +669,35 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
                       )}
                       {entry.timestamp && (
                         <span className="text-[9px] text-slate-400 ml-auto">
-                          {format(new Date(entry.timestamp), 'dd MMM, h:mm a')}
+                          {format(new Date(entry.timestamp), 'dd MMM, h:mm a')}{entry.edited ? ' · edited' : ''}
                         </span>
                       )}
+                      {isMine && !isLegacy && !isEditingEntry && (
+                        <div className="hidden group-hover/fb:flex items-center gap-0.5 ml-1">
+                          <button onClick={() => { setEditingFbEntryId(entry.id); setEditFbEntryText(entry.text); }} className="p-0.5 text-slate-400 hover:text-blue-500 transition-colors" title="Edit"><Pencil size={10}/></button>
+                          <button onClick={() => handleDeleteFbEntry(entry.id)} className="p-0.5 text-slate-400 hover:text-red-500 transition-colors" title="Delete"><Trash2 size={10}/></button>
+                        </div>
+                      )}
                     </div>
-                    <p className={`text-xs leading-relaxed ${textColor}`}>{entry.text}</p>
-                    {replyingToFeedbackId !== entry.id && (
+                    {isEditingEntry ? (
+                      <div className="space-y-1.5">
+                        <textarea
+                          value={editFbEntryText}
+                          onChange={e => setEditFbEntryText(e.target.value)}
+                          autoFocus
+                          rows={2}
+                          className="w-full bg-white border border-blue-300 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 resize-none"
+                          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSaveEditFbEntry(entry.id); } if (e.key === 'Escape') setEditingFbEntryId(null); }}
+                        />
+                        <div className="flex gap-1.5 justify-end">
+                          <button onClick={() => setEditingFbEntryId(null)} className="px-2.5 py-1 text-[11px] font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all">Cancel</button>
+                          <button onClick={() => handleSaveEditFbEntry(entry.id)} disabled={!editFbEntryText.trim()} className="px-2.5 py-1 text-[11px] font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all disabled:opacity-40 flex items-center gap-1"><Send size={9}/> Save</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className={`text-xs leading-relaxed ${textColor}`}>{entry.text}</p>
+                    )}
+                    {!isEditingEntry && replyingToFeedbackId !== entry.id && (
                       <button
                         onClick={() => { setReplyingToFeedbackId(entry.id); setNewFeedback(''); }}
                         className="mt-1.5 flex items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-blue-500 transition-colors"

@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { Plus, Trash2, Search, ShieldCheck, Edit2, X, ChevronUp, ChevronDown, Lock, Users, Crown, Check, Star, UserCheck, UserPlus, Edit3, Mail, MessageSquare, Bug, Lightbulb, AlertCircle, CheckCircle2, Clock, Filter, Eye, EyeOff, FlaskConical, Archive, ArchiveRestore, ChevronRight, CornerDownLeft, Send, Upload } from 'lucide-react';
+import { Plus, Trash2, Search, ShieldCheck, Edit2, X, ChevronUp, ChevronDown, Lock, Users, Crown, Check, Star, UserCheck, UserPlus, Edit3, Mail, MessageSquare, Bug, Lightbulb, AlertCircle, CheckCircle2, Clock, Filter, Eye, EyeOff, FlaskConical, Archive, ArchiveRestore, ChevronRight, CornerDownLeft, Send, Upload, Pencil } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import CsvImportModal from './CsvImportModal';
 import { sendNotification } from '../utils/notify';
@@ -169,6 +169,8 @@ const MasterDataView = ({
   const [replyingFbId, setReplyingFbId] = useState(null);
   const [replyingFbEntryId, setReplyingFbEntryId] = useState(null);
   const [replyDraft, setReplyDraft] = useState('');
+  const [editingFbEntryId, setEditingFbEntryId] = useState(null);
+  const [editFbEntryText, setEditFbEntryText] = useState('');
   const [fbUserFilter, setFbUserFilter] = useState('All');
 
   const buildFbThread = (item) => {
@@ -1758,14 +1760,40 @@ const MasterDataView = ({
           setReplyingFbEntryId(null);
           setReplyDraft('');
         };
+        const saveEditFbEntry = (itemId, entryId) => {
+          const text = editFbEntryText.trim();
+          if (!text) return;
+          setFeedbackItems(feedbackItems.map(f => f.id === itemId ? {
+            ...f,
+            thread: buildFbThread(f).map(e => e.id === entryId ? { ...e, text, edited: true } : e),
+          } : f));
+          setEditingFbEntryId(null);
+          setEditFbEntryText('');
+        };
+        const deleteThreadEntry = (itemId, entryId) => {
+          const removeIds = new Set([entryId]);
+          let changed = true;
+          while (changed) {
+            changed = false;
+            buildFbThread(feedbackItems.find(f => f.id === itemId) || {}).forEach(e => {
+              if (e.replyToId && removeIds.has(e.replyToId) && !removeIds.has(e.id)) { removeIds.add(e.id); changed = true; }
+            });
+          }
+          setFeedbackItems(feedbackItems.map(f => f.id === itemId ? {
+            ...f,
+            thread: buildFbThread(f).filter(e => !removeIds.has(e.id)),
+          } : f));
+        };
         const renderFbThread = (item, thread, editable = false) => {
           const renderEntry = (entry, allEntries, depth = 0) => {
             const children = allEntries.filter(e => e.replyToId === entry.id);
             const parentEntry = entry.replyToId ? allEntries.find(e => e.id === entry.replyToId) : null;
             const isComposing = replyingFbId === item.id && replyingFbEntryId === entry.id;
+            const isEditingEntry = editingFbEntryId === entry.id;
+            const isMyEntry = String(entry.authorId) === String(currentUser?.id);
             const indent = depth === 1 ? 'ml-3' : depth >= 2 ? 'ml-5' : '';
             return (
-              <div key={entry.id}>
+              <div key={entry.id} className="group/fbentry">
                 <div className={`pl-3 border-l-2 border-indigo-200 space-y-0.5 py-1 ${indent}`}>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {parentEntry && (
@@ -1775,9 +1803,9 @@ const MasterDataView = ({
                     )}
                     <span className="text-[10px] font-semibold text-indigo-600">{entry.authorName}</span>
                     {entry.timestamp && (
-                      <span className="text-[10px] text-slate-400">· {new Date(entry.timestamp).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}</span>
+                      <span className="text-[10px] text-slate-400">· {new Date(entry.timestamp).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}{entry.edited ? ' · edited' : ''}</span>
                     )}
-                    {editable && !isComposing && (
+                    {editable && !isComposing && !isEditingEntry && (
                       <button
                         onClick={() => startReply(item.id, entry.id)}
                         className="ml-auto flex items-center gap-0.5 text-[10px] text-slate-300 hover:text-indigo-500 transition-colors font-semibold"
@@ -1785,8 +1813,31 @@ const MasterDataView = ({
                         <CornerDownLeft size={9}/> Reply
                       </button>
                     )}
+                    {isMyEntry && !isEditingEntry && (
+                      <div className="hidden group-hover/fbentry:flex items-center gap-0.5 ml-1">
+                        <button onClick={() => { setEditingFbEntryId(entry.id); setEditFbEntryText(entry.text); setReplyingFbId(null); }} className="p-0.5 text-slate-300 hover:text-indigo-500 transition-colors" title="Edit"><Pencil size={9}/></button>
+                        <button onClick={() => deleteThreadEntry(item.id, entry.id)} className="p-0.5 text-slate-300 hover:text-red-500 transition-colors" title="Delete"><Trash2 size={9}/></button>
+                      </div>
+                    )}
                   </div>
-                  <p className="text-xs text-indigo-800 leading-relaxed">{entry.text}</p>
+                  {isEditingEntry ? (
+                    <div className="space-y-1.5 pt-0.5">
+                      <textarea
+                        value={editFbEntryText}
+                        onChange={e => setEditFbEntryText(e.target.value)}
+                        autoFocus
+                        rows={2}
+                        className="w-full bg-white border border-indigo-200 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-indigo-400 transition-all resize-none"
+                        onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEditFbEntry(item.id, entry.id); } if (e.key === 'Escape') setEditingFbEntryId(null); }}
+                      />
+                      <div className="flex items-center justify-end gap-2">
+                        <button onClick={() => setEditingFbEntryId(null)} className="px-3 py-1 text-[11px] font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all">Cancel</button>
+                        <button onClick={() => saveEditFbEntry(item.id, entry.id)} disabled={!editFbEntryText.trim()} className="px-3 py-1 text-[11px] font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-all disabled:opacity-50 flex items-center gap-1.5"><Send size={10}/> Save</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-indigo-800 leading-relaxed">{entry.text}</p>
+                  )}
                 </div>
                 {isComposing && (
                   <div className={`mt-1 ${depth > 0 ? 'ml-5' : 'ml-3'} space-y-1.5`}>
