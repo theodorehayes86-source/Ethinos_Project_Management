@@ -234,6 +234,8 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
   const [steps, setSteps] = useState([]);
   const [stepInput, setStepInput] = useState('');
   const stepInputRef = useRef(null);
+  const [dueDateMode, setDueDateMode] = useState('pick');
+  const [relDays, setRelDays] = useState(1);
   const [reminderOffsets, setReminderOffsets] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -438,13 +440,60 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
             <div className="space-y-5">
               <div>
                 <p className="text-sm font-bold text-slate-700 mb-2">Due date <span className="text-red-400">*</span></p>
-                <input
-                  type="date"
-                  value={dueDate}
-                  onChange={e => setDueDate(e.target.value)}
-                  min={new Date().toISOString().split('T')[0]}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-slate-50"
-                />
+                <div className="flex gap-0.5 p-0.5 bg-slate-100 rounded-xl mb-3 w-fit">
+                  <button
+                    type="button"
+                    onClick={() => setDueDateMode('pick')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${dueDateMode === 'pick' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}
+                  >
+                    Pick date
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDueDateMode('relative');
+                      const today = new Date().toISOString().split('T')[0];
+                      const base = new Date(today);
+                      base.setDate(base.getDate() + relDays);
+                      setDueDate(base.toISOString().split('T')[0]);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${dueDateMode === 'relative' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500'}`}
+                  >
+                    Days from today
+                  </button>
+                </div>
+                {dueDateMode === 'pick' ? (
+                  <input
+                    type="date"
+                    value={dueDate}
+                    onChange={e => setDueDate(e.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-slate-50"
+                  />
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="number"
+                        min="1"
+                        max="60"
+                        value={relDays}
+                        onChange={e => {
+                          const d = Math.max(1, Math.min(60, parseInt(e.target.value, 10) || 1));
+                          setRelDays(d);
+                          const base = new Date();
+                          base.setDate(base.getDate() + d);
+                          setDueDate(base.toISOString().split('T')[0]);
+                        }}
+                        className="w-20 px-3 py-3 rounded-xl border border-slate-200 text-sm font-semibold text-center focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-slate-50"
+                      />
+                      <span className="text-sm text-slate-500 font-medium">days from today</span>
+                    </div>
+                    {dueDate && (
+                      <p className="text-xs font-semibold text-indigo-600">Due: {formatDate(dueDate)}</p>
+                    )}
+                  </div>
+                )}
               </div>
               <div>
                 <p className="text-sm font-bold text-slate-700 mb-2">Category <span className="text-red-400">*</span></p>

@@ -7,6 +7,7 @@ import "react-datepicker/dist/react-datepicker.css";
 import TaskDetailPanel from './TaskDetailPanel';
 import { sendNotification } from '../utils/notify';
 import { ReminderPills } from './ReminderPills';
+import DueDateInput from './DueDateInput';
 
 const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Business Head'];
 
@@ -1879,13 +1880,11 @@ const ClientView = ({
                     )}
                     <div className="space-y-1.5">
                       <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Due Date</label>
-                      <DatePicker
-                        selected={taskDueDate}
-                        onChange={(date) => setTaskDueDate(date)}
-                        placeholderText="Select due date"
-                        dateFormat="do MMM yyyy"
+                      <DueDateInput
+                        startDate={selectedDate || new Date()}
+                        value={taskDueDate}
+                        onChange={setTaskDueDate}
                         minDate={selectedDate || new Date()}
-                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
                       />
                       {taskDueDate && (
                         <button
@@ -2094,13 +2093,12 @@ const ClientView = ({
                       </div>
                       <div className="space-y-1.5">
                         <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Due Date</label>
-                        <DatePicker
-                          selected={editDraft.dueDate}
+                        <DueDateInput
+                          key={editingTask?.id}
+                          startDate={editDraft.date || new Date()}
+                          value={editDraft.dueDate}
                           onChange={date => setEditDraft(d => ({ ...d, dueDate: date }))}
                           minDate={editDraft.date || new Date()}
-                          placeholderText="Select due date"
-                          dateFormat="do MMM yyyy"
-                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
                         />
                         {editDraft.dueDate && (
                           <button type="button" onClick={() => setEditDraft(d => ({ ...d, dueDate: null, reminderOffsets: [] }))} className="text-xs font-semibold text-red-600 hover:text-red-700">
