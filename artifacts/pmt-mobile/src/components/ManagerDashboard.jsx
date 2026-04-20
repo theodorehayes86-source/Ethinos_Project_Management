@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronRight, ChevronLeft, AlertTriangle, CheckCircle, Star, Users, Plus, Tag, Calendar, Clock, X } from 'lucide-react';
+import { ChevronRight, ChevronLeft, AlertTriangle, CheckCircle, Star, Users, Plus, Tag, Calendar, Clock, X, ChevronDown, ChevronUp } from 'lucide-react';
 import ApproveSheet from './ApproveSheet.jsx';
 import TaskDetailSheet from './TaskDetailSheet.jsx';
 import AddTaskSheet from './AddTaskSheet.jsx';
@@ -124,16 +124,63 @@ function PersonTaskSheet({ user, tasks, onClose, onTaskClick }) {
   );
 }
 
+function FilterBadge({ label, value, active, red, onClick }) {
+  if (!value) return null;
+  const base = active
+    ? (red ? 'bg-red-500 text-white' : 'bg-indigo-600 text-white')
+    : (red ? 'text-red-500 hover:bg-red-50' : 'text-indigo-600 hover:bg-indigo-50');
+  return (
+    <button onClick={onClick} className={`text-center px-2 py-0.5 rounded-lg transition-colors ${base}`}>
+      <p className="text-base font-black leading-none">{value}</p>
+      <p className="text-[9px] uppercase tracking-wide leading-tight mt-0.5">{label}</p>
+    </button>
+  );
+}
+
+function TaskRow({ task, onTaskClick }) {
+  const overdue = isTaskOverdue(task);
+  return (
+    <button
+      onClick={() => onTaskClick(task)}
+      className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl border bg-white text-left active:bg-slate-50 transition-colors ${overdue ? 'border-red-200' : 'border-slate-100'}`}
+    >
+      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${task.status === 'Done' ? 'bg-emerald-500' : task.status === 'WIP' ? 'bg-blue-500' : 'bg-amber-400'}`} />
+      <span className="text-xs font-semibold text-slate-700 flex-1 truncate">{task.name || task.comment}</span>
+      {task._clientName && <span className="text-[10px] text-slate-400 flex-shrink-0 truncate max-w-[80px]">· {task._clientName}</span>}
+      {overdue && <AlertTriangle size={10} className="text-red-400 flex-shrink-0" />}
+    </button>
+  );
+}
+
 function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onTaskClick }) {
   const personal = getUserTaskStats(user.id, clientLogs, clients);
   const team     = getSubtreeStats(user.id, allUsers, clientLogs, clients);
   const reports  = getDirectReports(user.id, allUsers);
   const hasTeam  = reports.length > 0;
   const [showTaskSheet, setShowTaskSheet] = useState(false);
+  const [taskFilter, setTaskFilter] = useState(null); // 'pending' | 'today' | 'overdue' | null
+  const [showAllTasks, setShowAllTasks] = useState(false);
+
+  const toggleFilter = (f) => setTaskFilter(v => v === f ? null : f);
+
+  const filteredTasks = taskFilter === 'pending'
+    ? personal.pendingTasks
+    : taskFilter === 'today'
+    ? personal.todayTasks
+    : taskFilter === 'overdue'
+    ? personal.overdueTasks
+    : null;
+
+  const otherTasks = personal.allTasks.filter(t =>
+    !personal.todayTasks.includes(t) &&
+    !personal.overdueTasks.includes(t) &&
+    !personal.pendingTasks.includes(t)
+  );
 
   return (
     <>
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        {/* Header row */}
         <button
           className="w-full px-4 py-4 flex items-center gap-3 text-left active:bg-slate-50 transition-colors"
           onClick={() => hasTeam ? onDrillIn(user) : setShowTaskSheet(true)}
@@ -150,59 +197,51 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
               </span>
             )}
           </div>
-          <div className="flex items-center gap-3 flex-shrink-0">
-            <button
-              onClick={e => { e.stopPropagation(); setShowTaskSheet(true); }}
-              className="flex gap-2 hover:opacity-80"
-            >
-              <RollupBadge label="Pending" value={personal.pending} />
-              <RollupBadge label="Today"  value={personal.today}  />
-              <RollupBadge label="Overdue" value={personal.overdue} red />
-            </button>
+          <div className="flex items-center gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
+            <FilterBadge label="Pending" value={personal.pending} active={taskFilter === 'pending'} onClick={() => toggleFilter('pending')} />
+            <FilterBadge label="Today"   value={personal.today}   active={taskFilter === 'today'}   onClick={() => toggleFilter('today')} />
+            {personal.overdue > 0 && <FilterBadge label="Overdue" value={personal.overdue} red active={taskFilter === 'overdue'} onClick={() => toggleFilter('overdue')} />}
             {hasTeam && (
-              <div className="flex flex-col items-end gap-0.5">
+              <button onClick={() => onDrillIn(user)} className="flex flex-col items-center ml-1">
+                <ChevronRight size={16} className="text-slate-300" />
                 <span className="text-[9px] text-slate-400 uppercase tracking-wide">Team</span>
-                <div className="flex gap-2">
-                  <RollupBadge label="Pending" value={team.pending} />
-                  <RollupBadge label="Today"   value={team.today}   />
-                  <RollupBadge label="Overdue" value={team.overdue} red />
-                </div>
-              </div>
+              </button>
             )}
-            {hasTeam && <ChevronRight size={16} className="text-slate-300 ml-1" />}
           </div>
         </button>
 
+        {/* Filtered task list */}
+        {filteredTasks && filteredTasks.length > 0 && (
+          <div className="border-t border-slate-100 px-3 py-2.5 space-y-1.5">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 mb-1">
+              {taskFilter === 'pending' ? 'Pending Tasks' : taskFilter === 'today' ? 'Due Today' : 'Overdue Tasks'}
+            </p>
+            {filteredTasks.map(t => <TaskRow key={`${t._clientId}-${t.id}`} task={t} onTaskClick={onTaskClick} />)}
+          </div>
+        )}
+        {filteredTasks && filteredTasks.length === 0 && (
+          <div className="border-t border-slate-100 px-4 py-3 text-center">
+            <p className="text-xs text-slate-400">No {taskFilter} tasks</p>
+          </div>
+        )}
+
+        {/* All Tasks collapsible */}
         {personal.allTasks.length > 0 && (
-          <div className="border-t border-slate-100 px-4 py-2 flex flex-wrap gap-2">
-            {personal.todayTasks.slice(0, 3).map(t => (
-              <button
-                key={`${t._clientId}-${t.id}`}
-                onClick={() => onTaskClick(t)}
-                className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 font-medium max-w-[180px] hover:bg-indigo-50 hover:text-indigo-700 transition-colors"
-              >
-                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${t.status === 'Done' ? 'bg-emerald-500' : t.status === 'WIP' ? 'bg-blue-500' : 'bg-amber-400'}`} />
-                <span className="truncate">{t.name || t.comment}</span>
-                {t._clientName && <span className="text-slate-400 flex-shrink-0">· {t._clientName}</span>}
-              </button>
-            ))}
-            {personal.overdueTasks.slice(0, 2).map(t => (
-              <button
-                key={`ov-${t._clientId}-${t.id}`}
-                onClick={() => onTaskClick(t)}
-                className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full bg-red-50 text-red-600 font-medium max-w-[180px] hover:bg-red-100 transition-colors"
-              >
-                <AlertTriangle size={9} className="flex-shrink-0" />
-                <span className="truncate">{t.name || t.comment}</span>
-              </button>
-            ))}
-            {personal.allTasks.length > 5 && (
-              <button
-                onClick={() => setShowTaskSheet(true)}
-                className="text-[11px] px-2 py-1 rounded-full bg-slate-100 text-slate-400 hover:text-indigo-600 transition-colors"
-              >
-                +{personal.allTasks.length - 5} more
-              </button>
+          <div className={`${filteredTasks !== null ? 'border-t border-slate-100' : 'border-t border-slate-100'}`}>
+            <button
+              onClick={() => setShowAllTasks(v => !v)}
+              className="w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-slate-50 transition-colors"
+            >
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">All Tasks</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">{personal.allTasks.length}</span>
+                {showAllTasks ? <ChevronUp size={13} className="text-slate-400" /> : <ChevronDown size={13} className="text-slate-400" />}
+              </div>
+            </button>
+            {showAllTasks && (
+              <div className="px-3 pb-3 space-y-1.5">
+                {personal.allTasks.map(t => <TaskRow key={`all-${t._clientId}-${t.id}`} task={t} onTaskClick={onTaskClick} />)}
+              </div>
             )}
           </div>
         )}
