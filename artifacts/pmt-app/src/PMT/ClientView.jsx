@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Search, ChevronLeft, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, AlertTriangle, Calendar, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus, Hourglass, Archive, ArchiveRestore } from 'lucide-react';
+import { Search, ChevronLeft, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, AlertTriangle, Calendar, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus, Hourglass, Archive, ArchiveRestore, LayoutGrid, LayoutList } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import DatePicker from "react-datepicker";
 import { format, subDays, parse } from 'date-fns';
@@ -117,6 +117,7 @@ const ClientView = ({
   const [activePicker, setActivePicker] = useState(null); // 'addLeadership'|'addTeam'|'qcReviewer'
   const [pickerSearch, setPickerSearch] = useState("");
   const [clientViewFilter, setClientViewFilter] = useState('mine'); // 'mine' | 'available'
+  const [clientDisplayMode, setClientDisplayMode] = useState(() => localStorage.getItem('clientDisplayMode') || 'cards');
   const [showArchived, setShowArchived] = useState(false);
 
   // Ethinos internal client filters (Super Admin only)
@@ -3085,21 +3086,35 @@ const ClientView = ({
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
           <input type="text" placeholder="Filter Clients..." className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-xs font-medium outline-none focus:ring-2 ring-blue-500/20 shadow-sm text-slate-700" value={clientSearch} onChange={(e) => setClientSearch(e.target.value)} />
         </div>
-        <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
-          <button
-            onClick={() => setClientViewFilter('mine')}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${clientViewFilter === 'mine' ? 'bg-white text-blue-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
-          >My Clients <span className="ml-1 text-[10px] font-bold text-blue-500">{myClients.length}</span></button>
-          {pendingClients.length > 0 && (
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
             <button
-              onClick={() => setClientViewFilter('pending')}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${clientViewFilter === 'pending' ? 'bg-white text-amber-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
-            >Waiting for Approval <span className="ml-1 text-[10px] font-bold text-amber-500">{pendingClients.length}</span></button>
-          )}
-          <button
-            onClick={() => setClientViewFilter('available')}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${clientViewFilter === 'available' ? 'bg-white text-violet-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
-          >Available <span className="ml-1 text-[10px] font-bold text-violet-500">{availableClients.length}</span></button>
+              onClick={() => setClientViewFilter('mine')}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${clientViewFilter === 'mine' ? 'bg-white text-blue-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+            >My Clients <span className="ml-1 text-[10px] font-bold text-blue-500">{myClients.length}</span></button>
+            {pendingClients.length > 0 && (
+              <button
+                onClick={() => setClientViewFilter('pending')}
+                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${clientViewFilter === 'pending' ? 'bg-white text-amber-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+              >Waiting for Approval <span className="ml-1 text-[10px] font-bold text-amber-500">{pendingClients.length}</span></button>
+            )}
+            <button
+              onClick={() => setClientViewFilter('available')}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${clientViewFilter === 'available' ? 'bg-white text-violet-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+            >Available <span className="ml-1 text-[10px] font-bold text-violet-500">{availableClients.length}</span></button>
+          </div>
+          <div className="flex gap-0.5 bg-slate-100 rounded-lg p-1">
+            <button
+              onClick={() => { setClientDisplayMode('cards'); localStorage.setItem('clientDisplayMode', 'cards'); }}
+              title="Card view"
+              className={`p-1.5 rounded-md transition-all ${clientDisplayMode === 'cards' ? 'bg-white text-blue-600 shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
+            ><LayoutGrid size={14} /></button>
+            <button
+              onClick={() => { setClientDisplayMode('list'); localStorage.setItem('clientDisplayMode', 'list'); }}
+              title="List view"
+              className={`p-1.5 rounded-md transition-all ${clientDisplayMode === 'list' ? 'bg-white text-blue-600 shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
+            ><LayoutList size={14} /></button>
+          </div>
         </div>
       </div>
 
@@ -3112,187 +3127,344 @@ const ClientView = ({
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {/* Always show Ethinos internal client in My Clients */}
-        {clientViewFilter === 'mine' && (() => {
-          const ethinos = syntheticClients.find(c => c.isEthinos);
-          if (!ethinos) return null;
-          if (clientSearch && !'ethinos'.includes(clientSearch.toLowerCase())) return null;
-          const myEthinosTasks = (clientLogs['__ethinos__'] || []).filter(t => String(t.assigneeId) === String(currentUser?.id));
-          const eOpen = myEthinosTasks.filter(t => t.status === 'Pending' && !t.archived).length;
-          const eWip = myEthinosTasks.filter(t => t.status === 'WIP' && !t.archived).length;
-          const eDone = myEthinosTasks.filter(t => t.status === 'Done' && !t.archived).length;
-          return (
-            <div
-              key="__ethinos__"
-              onClick={() => setSelectedClient(ethinos)}
-              className="group bg-gradient-to-br from-indigo-50 to-white border-2 border-indigo-200 hover:border-indigo-400 hover:shadow-lg rounded-2xl p-4 shadow-sm transition-all cursor-pointer"
-            >
-              <div className="mb-3 flex items-start justify-between gap-2">
-                <div>
-                  <h3 className="text-base font-bold uppercase tracking-tight text-indigo-900 group-hover:text-indigo-700 transition-all">Ethinos Internal</h3>
-                  <p className="text-[10px] text-indigo-500 font-medium mt-0.5">Your internal tasks only</p>
+      {clientDisplayMode === 'cards' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {/* Always show Ethinos internal client in My Clients — card */}
+          {clientViewFilter === 'mine' && (() => {
+            const ethinos = syntheticClients.find(c => c.isEthinos);
+            if (!ethinos) return null;
+            if (clientSearch && !'ethinos'.includes(clientSearch.toLowerCase())) return null;
+            const myEthinosTasks = (clientLogs['__ethinos__'] || []).filter(t => String(t.assigneeId) === String(currentUser?.id));
+            const eOpen = myEthinosTasks.filter(t => t.status === 'Pending' && !t.archived).length;
+            const eWip = myEthinosTasks.filter(t => t.status === 'WIP' && !t.archived).length;
+            const eDone = myEthinosTasks.filter(t => t.status === 'Done' && !t.archived).length;
+            return (
+              <div
+                key="__ethinos__"
+                onClick={() => setSelectedClient(ethinos)}
+                className="group bg-gradient-to-br from-indigo-50 to-white border-2 border-indigo-200 hover:border-indigo-400 hover:shadow-lg rounded-2xl p-4 shadow-sm transition-all cursor-pointer"
+              >
+                <div className="mb-3 flex items-start justify-between gap-2">
+                  <div>
+                    <h3 className="text-base font-bold uppercase tracking-tight text-indigo-900 group-hover:text-indigo-700 transition-all">Ethinos Internal</h3>
+                    <p className="text-[10px] text-indigo-500 font-medium mt-0.5">Your internal tasks only</p>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200 flex-shrink-0">Internal</span>
                 </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200 flex-shrink-0">Internal</span>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <div className="bg-orange-50 px-2 py-2 rounded-xl border border-orange-200 text-center">
+                    <Clock size={14} className="text-orange-500 mx-auto mb-0.5" />
+                    <p className="text-xs font-bold text-orange-600">{eOpen}</p>
+                    <p className="text-[9px] text-orange-500 font-medium">Pending</p>
+                  </div>
+                  <div className="bg-blue-50 px-2 py-2 rounded-xl border border-blue-200 text-center">
+                    <Activity size={14} className="text-blue-500 mx-auto mb-0.5" />
+                    <p className="text-xs font-bold text-blue-600">{eWip}</p>
+                    <p className="text-[9px] text-blue-500 font-medium">WIP</p>
+                  </div>
+                  <div className="bg-emerald-50 px-2 py-2 rounded-xl border border-emerald-200 text-center">
+                    <CheckCircle size={14} className="text-emerald-500 mx-auto mb-0.5" />
+                    <p className="text-xs font-bold text-emerald-600">{eDone}</p>
+                    <p className="text-[9px] text-emerald-500 font-medium">Done</p>
+                  </div>
+                </div>
               </div>
-              <div className="grid grid-cols-3 gap-1.5">
-                <div className="bg-orange-50 px-2 py-2 rounded-xl border border-orange-200 text-center">
-                  <Clock size={14} className="text-orange-500 mx-auto mb-0.5" />
-                  <p className="text-xs font-bold text-orange-600">{eOpen}</p>
-                  <p className="text-[9px] text-orange-500 font-medium">Pending</p>
-                </div>
-                <div className="bg-blue-50 px-2 py-2 rounded-xl border border-blue-200 text-center">
-                  <Activity size={14} className="text-blue-500 mx-auto mb-0.5" />
-                  <p className="text-xs font-bold text-blue-600">{eWip}</p>
-                  <p className="text-[9px] text-blue-500 font-medium">WIP</p>
-                </div>
-                <div className="bg-emerald-50 px-2 py-2 rounded-xl border border-emerald-200 text-center">
-                  <CheckCircle size={14} className="text-emerald-500 mx-auto mb-0.5" />
-                  <p className="text-xs font-bold text-emerald-600">{eDone}</p>
-                  <p className="text-[9px] text-emerald-500 font-medium">Done</p>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
-        {filteredClients.map(c => {
-          const counts = getTaskCounts(c.id);
-          const staff = getProjectStaff(c.name);
-          const isAvailable = clientViewFilter === 'available';
-          const isPending = clientViewFilter === 'pending';
+            );
+          })()}
+          {filteredClients.map(c => {
+            const counts = getTaskCounts(c.id);
+            const staff = getProjectStaff(c.name);
+            const isAvailable = clientViewFilter === 'available';
+            const isPending = clientViewFilter === 'pending';
 
-          // Calculate average time spent per day (department-filtered) — only for my clients
-          let avgTimeStr = '—';
-          if (!isAvailable && !isPending) {
-            const projectLogs = (clientLogs[c.id] || []).filter(t => isTaskVisible(t, currentUser));
-            const dailyTotals = {};
-            projectLogs.forEach(log => {
-              if (!dailyTotals[log.date]) dailyTotals[log.date] = 0;
-              dailyTotals[log.date] += log.elapsedMs || 0;
-            });
-            const uniqueDays = Object.keys(dailyTotals).length || 1;
-            const totalMs = Object.values(dailyTotals).reduce((sum, ms) => sum + ms, 0);
-            const avgMs = totalMs / uniqueDays;
-            const avgHours = Math.floor(avgMs / 3600000);
-            const avgMinutes = Math.floor((avgMs % 3600000) / 60000);
-            avgTimeStr = avgHours > 0 ? `${avgHours}h ${avgMinutes}m` : `${avgMinutes}m`;
-          }
-          
-          return (
-            <div
-              key={c.id}
-              onClick={!isAvailable && !isPending ? () => { setTaskStatusFilter('All'); setSelectedClient(c); } : undefined}
-              className={`group bg-white border-2 rounded-2xl p-4 shadow-sm transition-all ${
-                isPending
-                  ? 'border-amber-200 bg-amber-50/30'
-                  : isAvailable
-                    ? 'border-slate-200 hover:border-violet-300 hover:shadow-md'
-                    : 'border-slate-200 hover:shadow-lg hover:border-blue-400 cursor-pointer'
-              }`}
-            >
-              {/* Header */}
-              <div className="mb-3 flex items-start justify-between gap-2">
-                <h3 className={`text-base font-bold uppercase tracking-tight transition-all ${isAvailable || isPending ? 'text-slate-700' : 'text-slate-900 group-hover:text-blue-600'}`}>{c.name}</h3>
+            let avgTimeStr = '—';
+            if (!isAvailable && !isPending) {
+              const projectLogs = (clientLogs[c.id] || []).filter(t => isTaskVisible(t, currentUser));
+              const dailyTotals = {};
+              projectLogs.forEach(log => {
+                if (!dailyTotals[log.date]) dailyTotals[log.date] = 0;
+                dailyTotals[log.date] += log.elapsedMs || 0;
+              });
+              const uniqueDays = Object.keys(dailyTotals).length || 1;
+              const totalMs = Object.values(dailyTotals).reduce((sum, ms) => sum + ms, 0);
+              const avgMs = totalMs / uniqueDays;
+              const avgHours = Math.floor(avgMs / 3600000);
+              const avgMinutes = Math.floor((avgMs % 3600000) / 60000);
+              avgTimeStr = avgHours > 0 ? `${avgHours}h ${avgMinutes}m` : `${avgMinutes}m`;
+            }
+
+            return (
+              <div
+                key={c.id}
+                onClick={!isAvailable && !isPending ? () => { setTaskStatusFilter('All'); setSelectedClient(c); } : undefined}
+                className={`group bg-white border-2 rounded-2xl p-4 shadow-sm transition-all ${
+                  isPending
+                    ? 'border-amber-200 bg-amber-50/30'
+                    : isAvailable
+                      ? 'border-slate-200 hover:border-violet-300 hover:shadow-md'
+                      : 'border-slate-200 hover:shadow-lg hover:border-blue-400 cursor-pointer'
+                }`}
+              >
+                <div className="mb-3 flex items-start justify-between gap-2">
+                  <h3 className={`text-base font-bold uppercase tracking-tight transition-all ${isAvailable || isPending ? 'text-slate-700' : 'text-slate-900 group-hover:text-blue-600'}`}>{c.name}</h3>
+                  {!isAvailable && !isPending && (
+                    <div className="bg-purple-50 px-1.5 py-0.5 rounded-md border border-purple-200 flex-shrink-0">
+                      <p className="text-[8px] font-semibold text-purple-600">AVG</p>
+                      <p className="text-xs font-bold text-purple-700">{avgTimeStr}</p>
+                    </div>
+                  )}
+                  {isAvailable && (
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-violet-50 text-violet-600 border border-violet-200">Unassigned</span>
+                  )}
+                  {isPending && (
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-300 flex items-center gap-1">
+                      <Hourglass size={9} /> Pending
+                    </span>
+                  )}
+                </div>
+                {staff.admins.length > 0 && (
+                  <div className="mb-3 pb-3 border-b border-slate-100">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1.5">Leadership</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {staff.admins.map(admin => (
+                        <div key={admin.id} className="flex items-center gap-1 bg-blue-100 px-2 py-0.5 rounded-full border border-blue-300">
+                          <Crown size={10} className="text-blue-600 fill-blue-600" />
+                          <span className="text-xs font-semibold text-blue-700">{admin.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {staff.employees.length > 0 && (
+                  <div className="mb-3 pb-3 border-b border-slate-100">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1.5">Team</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {staff.employees.map(emp => (
+                        <div key={emp.id} className="px-2 py-0.5 rounded-full border border-slate-200 bg-slate-50 shadow-sm">
+                          <span className="text-xs font-semibold text-slate-600">{emp.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {!isAvailable && !isPending && (
-                  <div className="bg-purple-50 px-1.5 py-0.5 rounded-md border border-purple-200 flex-shrink-0">
-                    <p className="text-[8px] font-semibold text-purple-600">AVG</p>
-                    <p className="text-xs font-bold text-purple-700">{avgTimeStr}</p>
+                  <div className="grid grid-cols-3 gap-1.5 mb-3">
+                    {[
+                      { label: 'Pending',  value: counts.open,          filter: 'Pending', icon: <Clock size={13} className="text-orange-500 mx-auto mb-0.5"/>,   bg: 'bg-orange-50',  border: 'border-orange-200',  text: 'text-orange-600',  subtext: 'text-orange-400' },
+                      { label: 'WIP',      value: counts.wip,           filter: 'WIP',     icon: <Activity size={13} className="text-blue-500 mx-auto mb-0.5"/>,    bg: 'bg-blue-50',    border: 'border-blue-200',    text: 'text-blue-600',    subtext: 'text-blue-400' },
+                      { label: 'Done',     value: counts.done,          filter: 'Done',    icon: <CheckCircle size={13} className="text-emerald-500 mx-auto mb-0.5"/>, bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-600', subtext: 'text-emerald-400' },
+                      { label: 'Today',    value: counts.dueToday,      filter: 'Today',   icon: <Calendar size={13} className="text-amber-500 mx-auto mb-0.5"/>,    bg: counts.dueToday > 0 ? 'bg-amber-50' : 'bg-slate-50',  border: counts.dueToday > 0 ? 'border-amber-300' : 'border-slate-200', text: counts.dueToday > 0 ? 'text-amber-600' : 'text-slate-400',  subtext: counts.dueToday > 0 ? 'text-amber-400' : 'text-slate-300' },
+                      { label: 'Overdue',  value: counts.overdue,       filter: 'Overdue', icon: <AlertTriangle size={13} className={`${counts.overdue > 0 ? 'text-red-500' : 'text-slate-400'} mx-auto mb-0.5`}/>, bg: counts.overdue > 0 ? 'bg-red-50' : 'bg-slate-50', border: counts.overdue > 0 ? 'border-red-300' : 'border-slate-200', text: counts.overdue > 0 ? 'text-red-600' : 'text-slate-400', subtext: counts.overdue > 0 ? 'text-red-400' : 'text-slate-300' },
+                      { label: '48H+',     value: counts.recentPending, filter: '48H+',    icon: <Hourglass size={13} className={`${counts.recentPending > 0 ? 'text-rose-500' : 'text-slate-400'} mx-auto mb-0.5`}/>, bg: counts.recentPending > 0 ? 'bg-rose-50' : 'bg-slate-50', border: counts.recentPending > 0 ? 'border-rose-300' : 'border-slate-200', text: counts.recentPending > 0 ? 'text-rose-600' : 'text-slate-400', subtext: counts.recentPending > 0 ? 'text-rose-400' : 'text-slate-300' },
+                    ].map(({ label, value, filter, icon, bg, border, text, subtext }) => (
+                      <button
+                        key={label}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTaskStatusFilter(filter);
+                          setSelectedClient(c);
+                        }}
+                        className={`${bg} px-2 py-1.5 rounded-xl border ${border} text-center transition-all hover:opacity-80 hover:scale-[1.03] active:scale-95 cursor-pointer`}
+                      >
+                        {icon}
+                        <p className={`text-xs font-bold ${text}`}>{value}</p>
+                        <p className={`text-[9px] font-medium ${subtext}`}>{label}</p>
+                      </button>
+                    ))}
                   </div>
                 )}
-                {isAvailable && (
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-violet-50 text-violet-600 border border-violet-200">Unassigned</span>
-                )}
-                {isPending && (
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-300 flex items-center gap-1">
-                    <Hourglass size={9} /> Pending
-                  </span>
+                {isPending ? (
+                  <button disabled className="w-full py-2.5 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 bg-amber-50 text-amber-600 border border-amber-300 cursor-default">
+                    <Hourglass size={14} /> Waiting for Approval
+                  </button>
+                ) : isAvailable ? (
+                  <button
+                    onClick={() => handleRequestClientAssignment(c)}
+                    className="w-full py-2.5 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 transition-all shadow-sm bg-gradient-to-r from-violet-600 to-violet-500 text-white hover:from-violet-700 hover:to-violet-600 shadow-md"
+                  >
+                    <UserPlus size={14} /> Request to Join
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setSelectedClient(c)}
+                    className="w-full bg-gradient-to-r from-blue-600 to-blue-500 text-white py-2.5 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 hover:from-blue-700 hover:to-blue-600 transition-all shadow-md group-hover:shadow-lg"
+                  >
+                    <Eye size={15} /> View Tasks
+                  </button>
                 )}
               </div>
-
-              {/* Leadership Section */}
-              {staff.admins.length > 0 && (
-                <div className="mb-3 pb-3 border-b border-slate-100">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1.5">Leadership</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {staff.admins.map(admin => (
-                      <div key={admin.id} className="flex items-center gap-1 bg-blue-100 px-2 py-0.5 rounded-full border border-blue-300">
-                        <Crown size={10} className="text-blue-600 fill-blue-600" />
-                        <span className="text-xs font-semibold text-blue-700">{admin.name}</span>
-                      </div>
-                    ))}
-                  </div>
+            );
+          })}
+        </div>
+      ) : (
+        /* ── LIST VIEW ── */
+        <div className="flex flex-col divide-y divide-slate-100 bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+          {/* Ethinos internal — list row */}
+          {clientViewFilter === 'mine' && (() => {
+            const ethinos = syntheticClients.find(c => c.isEthinos);
+            if (!ethinos) return null;
+            if (clientSearch && !'ethinos'.includes(clientSearch.toLowerCase())) return null;
+            const myEthinosTasks = (clientLogs['__ethinos__'] || []).filter(t => String(t.assigneeId) === String(currentUser?.id));
+            const eOpen = myEthinosTasks.filter(t => t.status === 'Pending' && !t.archived).length;
+            const eWip = myEthinosTasks.filter(t => t.status === 'WIP' && !t.archived).length;
+            const eDone = myEthinosTasks.filter(t => t.status === 'Done' && !t.archived).length;
+            return (
+              <div
+                key="__ethinos__"
+                onClick={() => setSelectedClient(ethinos)}
+                className="group flex items-center gap-3 px-4 py-3 hover:bg-indigo-50/60 cursor-pointer transition-all"
+              >
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-bold uppercase tracking-tight text-indigo-900 group-hover:text-indigo-700 transition-all">Ethinos Internal</span>
+                  <span className="ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600 border border-indigo-200">Internal</span>
                 </div>
-              )}
-
-              {/* Team Section */}
-              {staff.employees.length > 0 && (
-                <div className="mb-3 pb-3 border-b border-slate-100">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1.5">Team</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {staff.employees.map(emp => (
-                      <div key={emp.id} className="px-2 py-0.5 rounded-full border border-slate-200 bg-slate-50 shadow-sm">
-                        <span className="text-xs font-semibold text-slate-600">{emp.name}</span>
-                      </div>
-                    ))}
-                  </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-orange-50 text-orange-600 border border-orange-200">
+                    <Clock size={10}/> {eOpen}
+                  </span>
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-600 border border-blue-200">
+                    <Activity size={10}/> {eWip}
+                  </span>
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200">
+                    <CheckCircle size={10}/> {eDone}
+                  </span>
                 </div>
-              )}
+                <button
+                  onClick={() => setSelectedClient(ethinos)}
+                  className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-700 transition-all shadow-sm"
+                >
+                  <Eye size={12}/> View
+                </button>
+              </div>
+            );
+          })()}
+          {filteredClients.length === 0 && !syntheticClients.find(c => c.isEthinos) && (
+            <div className="py-10 text-center text-slate-400 text-sm">No clients found.</div>
+          )}
+          {filteredClients.map(c => {
+            const counts = getTaskCounts(c.id);
+            const staff = getProjectStaff(c.name);
+            const isAvailable = clientViewFilter === 'available';
+            const isPending = clientViewFilter === 'pending';
 
-              {/* Status Cards — only for assigned clients */}
-              {!isAvailable && !isPending && (
-                <div className="grid grid-cols-3 gap-1.5 mb-3">
-                  {[
-                    { label: 'Pending',  value: counts.open,          filter: 'Pending', icon: <Clock size={13} className="text-orange-500 mx-auto mb-0.5"/>,   bg: 'bg-orange-50',  border: 'border-orange-200',  text: 'text-orange-600',  subtext: 'text-orange-400' },
-                    { label: 'WIP',      value: counts.wip,           filter: 'WIP',     icon: <Activity size={13} className="text-blue-500 mx-auto mb-0.5"/>,    bg: 'bg-blue-50',    border: 'border-blue-200',    text: 'text-blue-600',    subtext: 'text-blue-400' },
-                    { label: 'Done',     value: counts.done,          filter: 'Done',    icon: <CheckCircle size={13} className="text-emerald-500 mx-auto mb-0.5"/>, bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-600', subtext: 'text-emerald-400' },
-                    { label: 'Today',    value: counts.dueToday,      filter: 'Today',   icon: <Calendar size={13} className="text-amber-500 mx-auto mb-0.5"/>,    bg: counts.dueToday > 0 ? 'bg-amber-50' : 'bg-slate-50',  border: counts.dueToday > 0 ? 'border-amber-300' : 'border-slate-200', text: counts.dueToday > 0 ? 'text-amber-600' : 'text-slate-400',  subtext: counts.dueToday > 0 ? 'text-amber-400' : 'text-slate-300' },
-                    { label: 'Overdue',  value: counts.overdue,       filter: 'Overdue', icon: <AlertTriangle size={13} className={`${counts.overdue > 0 ? 'text-red-500' : 'text-slate-400'} mx-auto mb-0.5`}/>, bg: counts.overdue > 0 ? 'bg-red-50' : 'bg-slate-50', border: counts.overdue > 0 ? 'border-red-300' : 'border-slate-200', text: counts.overdue > 0 ? 'text-red-600' : 'text-slate-400', subtext: counts.overdue > 0 ? 'text-red-400' : 'text-slate-300' },
-                    { label: '48H+',     value: counts.recentPending, filter: '48H+',    icon: <Hourglass size={13} className={`${counts.recentPending > 0 ? 'text-rose-500' : 'text-slate-400'} mx-auto mb-0.5`}/>, bg: counts.recentPending > 0 ? 'bg-rose-50' : 'bg-slate-50', border: counts.recentPending > 0 ? 'border-rose-300' : 'border-slate-200', text: counts.recentPending > 0 ? 'text-rose-600' : 'text-slate-400', subtext: counts.recentPending > 0 ? 'text-rose-400' : 'text-slate-300' },
-                  ].map(({ label, value, filter, icon, bg, border, text, subtext }) => (
-                    <button
-                      key={label}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setTaskStatusFilter(filter);
-                        setSelectedClient(c);
-                      }}
-                      className={`${bg} px-2 py-1.5 rounded-xl border ${border} text-center transition-all hover:opacity-80 hover:scale-[1.03] active:scale-95 cursor-pointer`}
-                    >
-                      {icon}
-                      <p className={`text-xs font-bold ${text}`}>{value}</p>
-                      <p className={`text-[9px] font-medium ${subtext}`}>{label}</p>
+            let avgTimeStr = null;
+            if (!isAvailable && !isPending) {
+              const projectLogs = (clientLogs[c.id] || []).filter(t => isTaskVisible(t, currentUser));
+              const dailyTotals = {};
+              projectLogs.forEach(log => {
+                if (!dailyTotals[log.date]) dailyTotals[log.date] = 0;
+                dailyTotals[log.date] += log.elapsedMs || 0;
+              });
+              const uniqueDays = Object.keys(dailyTotals).length || 1;
+              const totalMs = Object.values(dailyTotals).reduce((sum, ms) => sum + ms, 0);
+              const avgMs = totalMs / uniqueDays;
+              const avgHours = Math.floor(avgMs / 3600000);
+              const avgMinutes = Math.floor((avgMs % 3600000) / 60000);
+              avgTimeStr = avgHours > 0 ? `${avgHours}h ${avgMinutes}m` : `${avgMinutes}m`;
+            }
+
+            const leaderNames = staff.admins.slice(0, 2).map(a => a.name);
+            const extraLeaders = staff.admins.length > 2 ? staff.admins.length - 2 : 0;
+
+            return (
+              <div
+                key={c.id}
+                onClick={!isAvailable && !isPending ? () => { setTaskStatusFilter('All'); setSelectedClient(c); } : undefined}
+                className={`group flex items-center gap-3 px-4 py-3 transition-all ${
+                  isPending
+                    ? 'bg-amber-50/40'
+                    : isAvailable
+                      ? 'hover:bg-slate-50'
+                      : 'hover:bg-blue-50/40 cursor-pointer'
+                }`}
+              >
+                {/* Name + leadership */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-sm font-bold uppercase tracking-tight truncate transition-all ${isAvailable || isPending ? 'text-slate-700' : 'text-slate-900 group-hover:text-blue-700'}`}>
+                      {c.name}
+                    </span>
+                    {isPending && (
+                      <span className="flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-300 flex-shrink-0">
+                        <Hourglass size={8}/> Pending
+                      </span>
+                    )}
+                    {isAvailable && (
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-600 border border-violet-200 flex-shrink-0">Unassigned</span>
+                    )}
+                  </div>
+                  {leaderNames.length > 0 && (
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <Crown size={9} className="text-blue-400 flex-shrink-0"/>
+                      <span className="text-[11px] text-slate-400 truncate">
+                        {leaderNames.join(', ')}{extraLeaders > 0 ? ` +${extraLeaders}` : ''}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Status pills — only for assigned clients */}
+                {!isAvailable && !isPending && (
+                  <div className="hidden sm:flex items-center gap-1.5 flex-shrink-0">
+                    <button onClick={(e) => { e.stopPropagation(); setTaskStatusFilter('Pending'); setSelectedClient(c); }} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-orange-50 text-orange-600 border border-orange-200 hover:bg-orange-100 transition-all">
+                      <Clock size={10}/> {counts.open}
                     </button>
-                  ))}
-                </div>
-              )}
+                    <button onClick={(e) => { e.stopPropagation(); setTaskStatusFilter('WIP'); setSelectedClient(c); }} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 transition-all">
+                      <Activity size={10}/> {counts.wip}
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); setTaskStatusFilter('Done'); setSelectedClient(c); }} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100 transition-all">
+                      <CheckCircle size={10}/> {counts.done}
+                    </button>
+                    {counts.dueToday > 0 && (
+                      <button onClick={(e) => { e.stopPropagation(); setTaskStatusFilter('Today'); setSelectedClient(c); }} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-600 border border-amber-300 hover:bg-amber-100 transition-all">
+                        <Calendar size={10}/> {counts.dueToday}
+                      </button>
+                    )}
+                    {counts.overdue > 0 && (
+                      <button onClick={(e) => { e.stopPropagation(); setTaskStatusFilter('Overdue'); setSelectedClient(c); }} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-red-50 text-red-600 border border-red-300 hover:bg-red-100 transition-all">
+                        <AlertTriangle size={10}/> {counts.overdue}
+                      </button>
+                    )}
+                    {counts.recentPending > 0 && (
+                      <button onClick={(e) => { e.stopPropagation(); setTaskStatusFilter('48H+'); setSelectedClient(c); }} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-600 border border-rose-300 hover:bg-rose-100 transition-all">
+                        <Hourglass size={10}/> {counts.recentPending}
+                      </button>
+                    )}
+                    {avgTimeStr && (
+                      <span className="ml-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-purple-50 text-purple-600 border border-purple-200 flex-shrink-0">
+                        {avgTimeStr} avg
+                      </span>
+                    )}
+                  </div>
+                )}
 
-              {/* Action Button */}
-              {isPending ? (
-                <button
-                  disabled
-                  className="w-full py-2.5 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 bg-amber-50 text-amber-600 border border-amber-300 cursor-default"
-                >
-                  <Hourglass size={14} /> Waiting for Approval
-                </button>
-              ) : isAvailable ? (
-                <button
-                  onClick={() => handleRequestClientAssignment(c)}
-                  className="w-full py-2.5 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 transition-all shadow-sm bg-gradient-to-r from-violet-600 to-violet-500 text-white hover:from-violet-700 hover:to-violet-600 shadow-md"
-                >
-                  <UserPlus size={14} /> Request to Join
-                </button>
-              ) : (
-                <button
-                  onClick={() => setSelectedClient(c)}
-                  className="w-full bg-gradient-to-r from-blue-600 to-blue-500 text-white py-2.5 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 hover:from-blue-700 hover:to-blue-600 transition-all shadow-md group-hover:shadow-lg"
-                >
-                  <Eye size={15} /> View Tasks
-                </button>
-              )}
-            </div>
-          );
-        })}
-      </div>
+                {/* Action */}
+                <div className="flex-shrink-0">
+                  {isPending ? (
+                    <span className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-300 rounded-lg cursor-default">
+                      <Hourglass size={11}/> Pending
+                    </span>
+                  ) : isAvailable ? (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleRequestClientAssignment(c); }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white rounded-lg text-xs font-semibold hover:bg-violet-700 transition-all shadow-sm"
+                    >
+                      <UserPlus size={12}/> Request
+                    </button>
+                  ) : (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setTaskStatusFilter('All'); setSelectedClient(c); }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-all shadow-sm"
+                    >
+                      <Eye size={12}/> View
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* QC Reviewer Picker (single-select, management only) */}
       {activePicker === 'qcReviewer' && selectedClient && (() => {
