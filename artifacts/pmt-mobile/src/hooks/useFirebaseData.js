@@ -22,13 +22,11 @@ function todayMidnight() {
 }
 
 function bucketTask(task) {
+  if (task.status === 'Done') return 'done';
   const today = todayMidnight();
   const due = parseDueDate(task.dueDate);
   if (!due) return 'upcoming';
-  if (due < today) {
-    // Past date: overdue only if not Done; Done tasks with old dates go to upcoming
-    return task.status !== 'Done' ? 'overdue' : 'upcoming';
-  }
+  if (due < today) return 'overdue';
   const todayEnd = new Date(today);
   todayEnd.setHours(23,59,59,999);
   if (due <= todayEnd) return 'today';
@@ -160,7 +158,7 @@ export function useAppData(isAuthed) {
 }
 
 export function useMyTasks(currentUser, clientLogs, clients) {
-  if (!currentUser) return { today: [], upcoming: [], overdue: [] };
+  if (!currentUser) return { today: [], upcoming: [], overdue: [], done: [] };
 
   const allTasks = [];
   Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
@@ -172,15 +170,16 @@ export function useMyTasks(currentUser, clientLogs, clients) {
     });
   });
 
-  const today = [], upcoming = [], overdue = [];
+  const today = [], upcoming = [], overdue = [], done = [];
   allTasks.forEach(t => {
     const b = bucketTask(t);
     if (b === 'today') today.push(t);
     else if (b === 'overdue') overdue.push(t);
+    else if (b === 'done') done.push(t);
     else upcoming.push(t);
   });
 
-  return { today, upcoming, overdue };
+  return { today, upcoming, overdue, done };
 }
 
 export function usePendingApprovals(currentUser, clientLogs, clients) {

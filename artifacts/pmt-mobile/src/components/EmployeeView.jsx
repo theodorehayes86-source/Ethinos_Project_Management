@@ -93,8 +93,8 @@ function Section({ title, tasks, onTaskClick, icon, defaultOpen = true }) {
 export default function EmployeeView({ myTasks, clientLogs, currentUser, clients, categories, users }) {
   const [selectedTask, setSelectedTask] = useState(null);
   const [showAddTask, setShowAddTask] = useState(false);
-  const { today = [], upcoming = [], overdue = [] } = myTasks;
-  const allEmpty = today.length === 0 && upcoming.length === 0 && overdue.length === 0;
+  const { today = [], upcoming = [], overdue = [], done = [] } = myTasks;
+  const allEmpty = today.length === 0 && upcoming.length === 0 && overdue.length === 0 && done.length === 0;
 
   return (
     <div className="flex-1 overflow-y-auto relative">
@@ -119,6 +119,9 @@ export default function EmployeeView({ myTasks, clientLogs, currentUser, clients
         <Section title="Upcoming" tasks={upcoming} onTaskClick={setSelectedTask}
           icon={<Calendar size={13} className="text-slate-400" />}
           defaultOpen={true} />
+        <Section title="Done" tasks={done} onTaskClick={setSelectedTask}
+          icon={<CheckCircle size={13} className="text-emerald-400" />}
+          defaultOpen={false} />
       </div>
 
       <button
