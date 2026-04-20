@@ -9,6 +9,7 @@ import {
   getUserTaskStats,
   getSubtreeStats,
 } from '../hooks/useFirebaseData.js';
+import { isTaskOverdue } from '../utils/taskUtils.js';
 
 const STATUS_COLORS = {
   Pending: 'bg-amber-100 text-amber-700',
@@ -85,25 +86,35 @@ function PersonTaskSheet({ user, tasks, onClose, onTaskClick }) {
                 <span className="ml-auto text-xs font-bold text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">{items.length}</span>
               </div>
               <div className="space-y-2">
-                {items.map(t => (
-                  <button
-                    key={`${t._clientId}-${t.id}`}
-                    onClick={() => { onTaskClick(t); onClose(); }}
-                    className="w-full flex items-start gap-3 px-3 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-indigo-200 text-left transition-colors"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-slate-800 truncate">{t.name || t.comment}</p>
-                      {t._clientName && (
-                        <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
-                          <Tag size={9} /> {t._clientName}
-                        </p>
-                      )}
-                    </div>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 mt-0.5 ${TASK_STATUS_COLORS[t.status] || 'bg-slate-100 text-slate-500'}`}>
-                      {t.status || 'Pending'}
-                    </span>
-                  </button>
-                ))}
+                {items.map(t => {
+                  const taskOverdue = isTaskOverdue(t);
+                  return (
+                    <button
+                      key={`${t._clientId}-${t.id}`}
+                      onClick={() => { onTaskClick(t); onClose(); }}
+                      className={`w-full flex items-start gap-3 px-3 py-2.5 rounded-xl border bg-white hover:border-indigo-200 text-left transition-colors ${taskOverdue ? 'border-red-200' : 'border-slate-200'}`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-slate-800 truncate">{t.name || t.comment}</p>
+                        {t._clientName && (
+                          <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
+                            <Tag size={9} /> {t._clientName}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex flex-col items-end gap-1 flex-shrink-0 mt-0.5">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${TASK_STATUS_COLORS[t.status] || 'bg-slate-100 text-slate-500'}`}>
+                          {t.status || 'Pending'}
+                        </span>
+                        {taskOverdue && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-600 flex items-center gap-0.5">
+                            <AlertTriangle size={9} /> Overdue
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           ))}
@@ -370,18 +381,25 @@ export default function ManagerDashboard({
                 </div>
                 {drillPersonalStats.allTasks.length > 0 ? (
                   <div className="space-y-1.5">
-                    {[...drillPersonalStats.todayTasks, ...drillPersonalStats.overdueTasks].slice(0, 4).map(t => (
-                      <button
-                        key={`${t._clientId}-${t.id}`}
-                        onClick={() => setSelectedTask(t)}
-                        className="w-full flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-indigo-100 text-left hover:border-indigo-300 transition-colors"
-                      >
-                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${t.status === 'Done' ? 'bg-emerald-500' : t.status === 'WIP' ? 'bg-blue-500' : 'bg-amber-400'}`} />
-                        <span className="text-sm text-slate-700 font-medium flex-1 truncate">{t.name || t.comment}</span>
-                        {drillPersonalStats.overdueTasks.includes(t) && <AlertTriangle size={12} className="text-red-400 flex-shrink-0" />}
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold flex-shrink-0 ${STATUS_COLORS[t.status] || 'bg-slate-100 text-slate-500'}`}>{t.status}</span>
-                      </button>
-                    ))}
+                    {[...drillPersonalStats.todayTasks, ...drillPersonalStats.overdueTasks].slice(0, 4).map(t => {
+                      const taskOverdue = isTaskOverdue(t);
+                      return (
+                        <button
+                          key={`${t._clientId}-${t.id}`}
+                          onClick={() => setSelectedTask(t)}
+                          className={`w-full flex items-center gap-2 px-3 py-2 bg-white rounded-xl border text-left hover:border-indigo-300 transition-colors ${taskOverdue ? 'border-red-200' : 'border-indigo-100'}`}
+                        >
+                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${t.status === 'Done' ? 'bg-emerald-500' : t.status === 'WIP' ? 'bg-blue-500' : 'bg-amber-400'}`} />
+                          <span className="text-sm text-slate-700 font-medium flex-1 truncate">{t.name || t.comment}</span>
+                          {taskOverdue && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 flex items-center gap-0.5 flex-shrink-0">
+                              <AlertTriangle size={9} /> Overdue
+                            </span>
+                          )}
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold flex-shrink-0 ${STATUS_COLORS[t.status] || 'bg-slate-100 text-slate-500'}`}>{t.status}</span>
+                        </button>
+                      );
+                    })}
                     {drillPersonalStats.allTasks.length > 4 && (
                       <p className="text-xs text-indigo-400 text-center pt-1">+{drillPersonalStats.allTasks.length - 4} more tasks</p>
                     )}
