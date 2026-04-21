@@ -237,6 +237,33 @@ function buildQcSubmittedHtml(d: {
   return brandedWrapper("#4f46e5", "QC Review Requested", `"${d.taskName}" needs your review`, body);
 }
 
+/* ─── QC Returned HTML builder ─── */
+
+function buildQcReturnedHtml(d: {
+  assigneeName?: string;
+  reviewerName?: string;
+  taskName: string;
+  clientName?: string;
+  feedbackText: string;
+}): string {
+  const tableBody = [
+    row("Task", d.taskName),
+    row("Client", d.clientName || ""),
+    row("Returned by", d.reviewerName || ""),
+  ].join("");
+  const body = `
+    <p style="margin:0 0 16px;font-size:14px;color:#475569;">Hi${d.assigneeName ? ` ${d.assigneeName}` : ""},</p>
+    <p style="margin:0 0 20px;font-size:14px;color:#475569;"><strong>${d.reviewerName || "Your reviewer"}</strong> has returned this task for revision. Please review the feedback below, make the necessary changes, and resubmit for QC.</p>
+    <div style="background:#fef2f2;border-left:3px solid #ef4444;padding:12px 16px;margin-bottom:20px;border-radius:0 4px 4px 0;">
+      <p style="margin:0 0 4px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#b91c1c;">Feedback</p>
+      <p style="margin:0;font-size:14px;color:#1e293b;line-height:1.6;">${d.feedbackText}</p>
+    </div>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">${tableBody}</table>
+    <a href="https://pmt.ethinos.com" style="display:inline-block;background:#dc2626;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View Task</a>
+  `;
+  return brandedWrapper("#dc2626", "QC Returned", `"${d.taskName}" needs revision`, body);
+}
+
 /* ─── Route ─── */
 
 router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) => {
@@ -321,6 +348,29 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
           bodyHtml: buildMentionHtml({ mentionedName: recipientName, mentionerName, taskName, clientName, messageText }),
         });
         logger.info({ to, original: recipientEmail, taskName, testMode }, "[Notify] mention email sent");
+        break;
+      }
+
+      case "qc-returned": {
+        const { assigneeEmail, assigneeName, reviewerName, taskName, clientName, feedbackText, bccEmails } = data as Record<string, unknown>;
+        if (!assigneeEmail) return res.json({ sent: false, reason: "no_email" });
+        const to = resolveRecipient(assigneeEmail as string);
+        const bccList = Array.isArray(bccEmails)
+          ? (bccEmails as string[]).filter((e) => e && e !== assigneeEmail)
+          : [];
+        await sendEmail({
+          to,
+          subject: testSubjectPrefix(`[PMT] QC returned for revision: "${taskName}"`),
+          bodyHtml: buildQcReturnedHtml({
+            assigneeName: assigneeName as string,
+            reviewerName: reviewerName as string,
+            taskName: taskName as string,
+            clientName: clientName as string | undefined,
+            feedbackText: (feedbackText as string) || "",
+          }),
+          bcc: testMode ? [] : bccList,
+        });
+        logger.info({ to, original: assigneeEmail, taskName, bccCount: bccList.length, testMode }, "[Notify] qc-returned email sent");
         break;
       }
 

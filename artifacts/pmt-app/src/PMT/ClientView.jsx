@@ -2457,6 +2457,25 @@ const ClientView = ({
               };
             });
             setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
+            if (qcReviewDecision === 'rejected' && feedbackText) {
+              const taskAssignee = reviewingTask.assigneeId
+                ? (users || []).find(u => String(u.id) === String(reviewingTask.assigneeId))
+                : null;
+              if (taskAssignee?.email) {
+                const superAdminEmails = (users || [])
+                  .filter(u => u.role === 'Super Admin' && u.email)
+                  .map(u => u.email);
+                sendNotification('qc-returned', {
+                  assigneeEmail: taskAssignee.email,
+                  assigneeName: taskAssignee.name,
+                  reviewerName: currentUser?.name,
+                  taskName: reviewingTask.name || reviewingTask.comment,
+                  clientName: selectedClient?.name,
+                  feedbackText,
+                  bccEmails: superAdminEmails,
+                });
+              }
+            }
             setQcReviewingTaskId(null);
             setQcReviewRating('');
             setQcReviewFeedback('');

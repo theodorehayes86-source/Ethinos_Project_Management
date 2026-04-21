@@ -62,25 +62,34 @@ export async function sendEmail(params: {
   to: string;
   subject: string;
   bodyHtml: string;
+  bcc?: string[];
 }): Promise<void> {
   const { senderEmail } = getAzureConfig();
   const token = await getAccessToken();
 
-  const message = {
-    message: {
-      subject: params.subject,
-      body: {
-        contentType: "HTML",
-        content: params.bodyHtml,
-      },
-      toRecipients: [
-        {
-          emailAddress: {
-            address: params.to,
-          },
-        },
-      ],
+  const messageBody: Record<string, unknown> = {
+    subject: params.subject,
+    body: {
+      contentType: "HTML",
+      content: params.bodyHtml,
     },
+    toRecipients: [
+      {
+        emailAddress: {
+          address: params.to,
+        },
+      },
+    ],
+  };
+
+  if (params.bcc && params.bcc.length > 0) {
+    messageBody.bccRecipients = params.bcc.map((addr) => ({
+      emailAddress: { address: addr },
+    }));
+  }
+
+  const message = {
+    message: messageBody,
     saveToSentItems: false,
   };
 
