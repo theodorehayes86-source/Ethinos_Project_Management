@@ -215,6 +215,28 @@ function buildMentionHtml(d: {
   return brandedWrapper("#7c3aed", "You were mentioned", `${d.mentionerName || "Someone"} mentioned you`, body);
 }
 
+/* ─── QC Submitted HTML builder ─── */
+
+function buildQcSubmittedHtml(d: {
+  reviewerName?: string;
+  submitterName?: string;
+  taskName: string;
+  clientName?: string;
+}): string {
+  const tableBody = [
+    row("Task", d.taskName),
+    row("Client", d.clientName || ""),
+    row("Submitted by", d.submitterName || ""),
+  ].join("");
+  const body = `
+    <p style="margin:0 0 16px;font-size:14px;color:#475569;">Hi${d.reviewerName ? ` ${d.reviewerName}` : ""},</p>
+    <p style="margin:0 0 20px;font-size:14px;color:#475569;"><strong>${d.submitterName || "A team member"}</strong> has submitted the following task for your QC review. Please log in to approve or return it.</p>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">${tableBody}</table>
+    <a href="https://pmt.ethinos.com" style="display:inline-block;background:#4f46e5;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">Review in PMT</a>
+  `;
+  return brandedWrapper("#4f46e5", "QC Review Requested", `"${d.taskName}" needs your review`, body);
+}
+
 /* ─── Route ─── */
 
 router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) => {
@@ -299,6 +321,19 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
           bodyHtml: buildMentionHtml({ mentionedName: recipientName, mentionerName, taskName, clientName, messageText }),
         });
         logger.info({ to, original: recipientEmail, taskName, testMode }, "[Notify] mention email sent");
+        break;
+      }
+
+      case "qc-submitted": {
+        const { reviewerEmail, reviewerName, submitterName, taskName, clientName } = data as Record<string, string>;
+        if (!reviewerEmail) return res.json({ sent: false, reason: "no_email" });
+        const to = resolveRecipient(reviewerEmail);
+        await sendEmail({
+          to,
+          subject: testSubjectPrefix(`[PMT] QC review needed: "${taskName}"`),
+          bodyHtml: buildQcSubmittedHtml({ reviewerName, submitterName, taskName, clientName }),
+        });
+        logger.info({ to, original: reviewerEmail, taskName, testMode }, "[Notify] qc-submitted email sent");
         break;
       }
 

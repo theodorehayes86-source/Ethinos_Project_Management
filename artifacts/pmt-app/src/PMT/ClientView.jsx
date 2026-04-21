@@ -1334,6 +1334,16 @@ const ClientView = ({
                                   l.id === log.id ? { ...l, qcStatus: 'sent' } : l
                                 );
                                 setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
+                                const qcReviewer = log.qcAssigneeId ? (users || []).find(u => String(u.id) === String(log.qcAssigneeId)) : null;
+                                if (qcReviewer?.email) {
+                                  sendNotification('qc-submitted', {
+                                    reviewerEmail: qcReviewer.email,
+                                    reviewerName: qcReviewer.name,
+                                    submitterName: currentUser?.name,
+                                    taskName: log.name || log.comment,
+                                    clientName: selectedClient?.name,
+                                  });
+                                }
                               }}
                               className="flex items-center gap-0.5 text-[9px] font-semibold bg-indigo-50 text-indigo-600 border border-indigo-200 rounded px-1 py-0.5 hover:bg-indigo-100 transition-all whitespace-nowrap"
                               title="Send for Quality Check"

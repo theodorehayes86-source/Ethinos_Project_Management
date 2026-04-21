@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { X, ChevronRight, ChevronLeft, Check, User, Briefcase, FileText, Calendar, Tag, Loader2, Search, Plus, Trash2 } from 'lucide-react';
 import { createTaskInFirebase, getSubtreeIds } from '../hooks/useFirebaseData.js';
+import { sendNotification } from '../utils/notify.js';
 
 const PINNED_CLIENT_NAMES = ['Personal', 'Ethinos Internal'];
 
@@ -316,6 +317,18 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
         await set(ref(db, `clientLogs/${String(client.id)}`), [...existing, ...newTasks]);
       } else {
         await createTaskInFirebase(String(client.id), baseTask, clientLogs);
+      }
+      if (!personalMode && assignee?.email && String(assignee.id) !== String(currentUser?.id)) {
+        sendNotification('task-assigned', {
+          assigneeEmail: assignee.email,
+          assigneeName: assignee.name,
+          taskName: name.trim(),
+          taskDescription: description.trim(),
+          clientName: client?.name || '',
+          dueDate: formatDate(dueDate) || null,
+          creatorName: currentUser?.name,
+          steps: steps.length > 0 ? steps : [],
+        });
       }
       onCreated?.();
       onClose();
