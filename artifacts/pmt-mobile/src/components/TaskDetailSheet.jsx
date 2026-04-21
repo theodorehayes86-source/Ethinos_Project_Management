@@ -2,6 +2,10 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { X, Star, CheckCircle, XCircle, Clock, Tag, Calendar, Loader2, Send, MessageCircle, ListChecks, Check, AlertTriangle, CornerUpLeft, Pencil, Trash2, Smile, Archive } from 'lucide-react';
 import { updateTaskInFirebase } from '../hooks/useFirebaseData.js';
 import { isTaskOverdue } from '../utils/taskUtils.js';
+import { sendNotification } from '../utils/notify.js';
+
+const parseMentions = (text, userList = []) =>
+  userList.filter(u => u.name && text.includes(`@${u.name}`));
 
 const STATUS_OPTIONS = ['Pending', 'WIP', 'Done'];
 const STATUS_COLORS = {
@@ -161,6 +165,22 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
     setReplyingTo(null);
     setShowEmojiPicker(false);
     await persistUpdate({ messages: updated });
+
+    // Send email notifications for @mentioned users
+    const mentionedUsers = parseMentions(text, users).filter(u => String(u.id) !== String(currentUser.id));
+    mentionedUsers.forEach(mentioned => {
+      const recipientEmail = mentioned.email || mentioned.emailAddress;
+      if (recipientEmail) {
+        sendNotification('mention', {
+          recipientEmail,
+          recipientName: mentioned.name,
+          mentionerName: currentUser.name,
+          taskName: task.name || task.comment || 'Task',
+          clientName: task._clientName || '',
+          messageText: text,
+        });
+      }
+    });
   };
 
   const handleEditSave = async (msgId) => {
