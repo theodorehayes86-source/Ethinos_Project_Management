@@ -37,6 +37,7 @@ const CC_TABS = [
   { id: 'conditions', label: 'Access Control' },
   { id: 'hierarchy', label: 'Hierarchy' },
   { id: 'templates', label: 'Templates' },
+  { id: 'notifications', label: 'Notifications' },
   { id: 'feedback', label: 'Feedback' },
 ];
 
@@ -1048,25 +1049,6 @@ const MasterDataView = ({
             </div>
           </div>
 
-          {onDigestGlobalToggle && (
-            <div className={`flex items-center justify-between rounded-lg border px-3 py-2.5 ${digestGlobalEnabled ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-slate-50'}`}>
-              <div>
-                <p className="text-xs font-semibold text-slate-700">Global Weekly Digest</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">Send automated Monday hour-summary emails to opted-in users</p>
-              </div>
-              <button
-                onClick={() => onDigestGlobalToggle(!digestGlobalEnabled)}
-                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
-                  digestGlobalEnabled ? 'bg-emerald-500' : 'bg-slate-300'
-                }`}
-              >
-                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${
-                  digestGlobalEnabled ? 'translate-x-5' : 'translate-x-0'
-                }`}/>
-              </button>
-            </div>
-          )}
-
           {filteredUsers.length === 0 ? (
             <p className="text-center text-sm text-slate-400 py-8">No users found.</p>
           ) : (
@@ -1084,11 +1066,11 @@ const MasterDataView = ({
                         <span>Weekly Digest</span>
                         <div className="flex gap-1 mt-0.5">
                           <button
-                            onClick={() => setUsers((users || []).map(u => ({ ...u, weeklyDigestEnabled: true })))}
+                            onClick={() => { const next = (users || []).map(u => ({ ...u, weeklyDigestEnabled: true })); setUsers(next); }}
                             className="text-[9px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 hover:bg-emerald-100 transition-all"
                           >All on</button>
                           <button
-                            onClick={() => setUsers((users || []).map(u => ({ ...u, weeklyDigestEnabled: false })))}
+                            onClick={() => { const next = (users || []).map(u => ({ ...u, weeklyDigestEnabled: false })); setUsers(next); }}
                             className="text-[9px] font-semibold text-slate-500 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 hover:bg-slate-100 transition-all"
                           >All off</button>
                         </div>
@@ -1143,9 +1125,12 @@ const MasterDataView = ({
                       </td>
                       <td className="px-3 py-2.5 text-center">
                         <button
-                          onClick={() => setUsers((users || []).map(u =>
-                            u.id === user.id ? { ...u, weeklyDigestEnabled: !u.weeklyDigestEnabled } : u
-                          ))}
+                          onClick={() => {
+                            const next = (users || []).map(u =>
+                              u.id === user.id ? { ...u, weeklyDigestEnabled: !u.weeklyDigestEnabled } : u
+                            );
+                            setUsers(next);
+                          }}
                           title={user.weeklyDigestEnabled ? 'Disable weekly digest' : 'Enable weekly digest'}
                           className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
                             user.weeklyDigestEnabled ? 'bg-emerald-500' : 'bg-slate-200'
@@ -1702,6 +1687,44 @@ const MasterDataView = ({
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* ─── NOTIFICATIONS TAB ─── */}
+      {activeTab === 'notifications' && (
+        <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
+          <div>
+            <p className="text-xs font-semibold text-slate-700 mb-0.5">Email Notifications</p>
+            <p className="text-[11px] text-slate-500">Control automated email alerts sent by the Ethinos PMT system.</p>
+          </div>
+
+          {/* Weekly Digest card */}
+          <div className={`flex items-center gap-4 rounded-lg border p-4 ${digestGlobalEnabled ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-slate-50'}`}>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-slate-800">Weekly Hours Digest</p>
+              <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                Sends each opted-in user a Monday morning email summarising their hours logged for the previous week,
+                broken down by project. Individual opt-in is controlled per user in the Users tab.
+              </p>
+              <p className="text-[10px] text-slate-400 mt-1">Fires every Monday at 08:00 London time</p>
+            </div>
+            <button
+              onClick={() => onDigestGlobalToggle && onDigestGlobalToggle(!digestGlobalEnabled)}
+              disabled={!onDigestGlobalToggle}
+              title={digestGlobalEnabled ? 'Disable globally' : 'Enable globally'}
+              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:opacity-50 ${
+                digestGlobalEnabled ? 'bg-emerald-500' : 'bg-slate-300'
+              }`}
+            >
+              <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${
+                digestGlobalEnabled ? 'translate-x-5' : 'translate-x-0'
+              }`}/>
+            </button>
+          </div>
+
+          <p className="text-[11px] text-slate-400 italic">
+            More notification controls will appear here as they are configured (Task #50 — Notification Control Centre).
+          </p>
         </div>
       )}
 
