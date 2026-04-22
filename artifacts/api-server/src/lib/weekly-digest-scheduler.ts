@@ -3,9 +3,12 @@ import {
   parse, isValid, startOfISOWeek, endOfISOWeek, subWeeks,
   addDays, format, getISOWeek, isWithinInterval, startOfDay,
 } from "date-fns";
+import { toZonedTime } from "date-fns-tz";
 import { readFirebasePath } from "./firebase-admin";
 import { sendEmail, isEmailConfigured } from "./microsoft-graph";
 import { logger } from "./logger";
+
+const LONDON_TZ = "Europe/London";
 
 interface User {
   id: string | number;
@@ -24,7 +27,6 @@ interface TaskLog {
   date?: string;
   assigneeId?: string | number;
   elapsedMs?: number;
-  archived?: boolean;
 }
 
 function parseTaskDate(raw: string): Date | null {
@@ -181,13 +183,14 @@ export async function runWeeklyDigest(): Promise<void> {
       clientNameMap[String(c.id)] = c.name || String(c.id);
     }
 
-    const now = new Date();
-    const prevMonday = startOfISOWeek(subWeeks(now, 1));
-    const prevSunday = endOfISOWeek(subWeeks(now, 1));
-    const days = [0, 1, 2, 3, 4].map(i => addDays(prevMonday, i));
+    // Compute previous ISO week boundaries in London time so the digest is
+    // always correct regardless of the server's host timezone.
+    const nowLondon = toZonedTime(new Date(), LONDON_TZ);
+    const prevMonday = startOfISOWeek(subWeeks(nowLondon, 1));
+    const prevSunday = endOfISOWeek(subWeeks(nowLondon, 1));
+    const days = [0, 1, 2, 3, 4].map(i => addDays(prevMonday, i)); // Mon–Fri
     const weekNumber = getISOWeek(prevMonday);
     const weekLabel = `${format(prevMonday, "d MMM yyyy")} – ${format(days[4], "d MMM yyyy")}`;
-
     const dayKeys = days.map(d => format(d, "yyyy-MM-dd"));
 
     const allTasks: Array<TaskLog & { clientId: string }> = [];
@@ -196,10 +199,9 @@ export async function runWeeklyDigest(): Promise<void> {
         const logs: TaskLog[] = Array.isArray(logsRaw)
           ? (logsRaw as TaskLog[])
           : Object.values(logsRaw as Record<string, TaskLog>);
+        // Include all tasks regardless of archived status — hours already worked count
         for (const task of logs) {
-          if (task && !task.archived) {
-            allTasks.push({ ...task, clientId });
-          }
+          if (task) allTasks.push({ ...task, clientId });
         }
       }
     }
@@ -271,11 +273,16 @@ export async function runWeeklyDigest(): Promise<void> {
 }
 
 export function startWeeklyDigestScheduler(): void {
-  cron.schedule("0 8 * * 1", () => {
-    runWeeklyDigest().catch(err =>
-      logger.error({ err }, "[WeeklyDigest] Unhandled error")
-    );
-  });
+  // Fire every Monday at 08:00 London time (Europe/London handles BST/GMT automatically)
+  cron.schedule(
+    "0 8 * * 1",
+    () => {
+      runWeeklyDigest().catch(err =>
+        logger.error({ err }, "[WeeklyDigest] Unhandled error")
+      );
+    },
+    { timezone: "Europe/London" }
+  );
 
-  logger.info("[WeeklyDigest] Scheduler started — runs Mondays at 08:00");
+  logger.info("[WeeklyDigest] Scheduler started — runs Mondays at 08:00 Europe/London");
 }

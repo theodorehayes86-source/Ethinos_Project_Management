@@ -82,6 +82,8 @@ const MasterDataView = ({
   onSendPasswordReset = null,
   hierarchyOrder = [],
   setHierarchyOrder,
+  digestGlobalEnabled = true,
+  onDigestGlobalToggle = null,
 }) => {
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
@@ -1045,6 +1047,25 @@ const MasterDataView = ({
               </button>
             </div>
           </div>
+
+          {onDigestGlobalToggle && (
+            <div className={`flex items-center justify-between rounded-lg border px-3 py-2.5 ${digestGlobalEnabled ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-slate-50'}`}>
+              <div>
+                <p className="text-xs font-semibold text-slate-700">Global Weekly Digest</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">Send automated Monday hour-summary emails to opted-in users</p>
+              </div>
+              <button
+                onClick={() => onDigestGlobalToggle(!digestGlobalEnabled)}
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                  digestGlobalEnabled ? 'bg-emerald-500' : 'bg-slate-300'
+                }`}
+              >
+                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${
+                  digestGlobalEnabled ? 'translate-x-5' : 'translate-x-0'
+                }`}/>
+              </button>
+            </div>
+          )}
 
           {filteredUsers.length === 0 ? (
             <p className="text-center text-sm text-slate-400 py-8">No users found.</p>

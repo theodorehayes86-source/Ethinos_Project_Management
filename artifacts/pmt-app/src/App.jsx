@@ -1039,6 +1039,7 @@ const App = () => {
   const [clientLogs, setClientLogs] = useState({});
   const [taskTemplates, setTaskTemplates] = useState(DEFAULT_TASK_TEMPLATES);
   const [feedbackItems, setFeedbackItems] = useState([]);
+  const [digestGlobalEnabled, setDigestGlobalEnabled] = useState(true);
   const DEFAULT_HIERARCHY_ORDER = ['Director', 'Snr Manager', 'Manager', 'Asst Manager', 'Snr Executive', 'Executive', 'Employee', 'Intern'];
   const [hierarchyOrder, setHierarchyOrder] = useState(DEFAULT_HIERARCHY_ORDER);
   const [notifications, setNotifications] = useState([
@@ -1195,6 +1196,9 @@ const App = () => {
       syncRef('reportsAllDataRoles', (val) => setReportsAllDataRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
       syncRef('feedbackItems', (val) => setFeedbackItems(val && typeof val === 'object' ? (Array.isArray(val) ? val : Object.values(val)) : [])),
       syncRef('settings/hierarchyOrder', (val) => { if (Array.isArray(val) && val.length > 0) setHierarchyOrder(val); }),
+      syncRef('settings/notifications/weekly-digest', (val) => {
+        if (val && typeof val.enabled === 'boolean') setDigestGlobalEnabled(val.enabled);
+      }),
     ];
 
     return () => unsubs.forEach(u => u());
@@ -1235,6 +1239,10 @@ const App = () => {
     } else {
       console.warn('[PMT] persistTaskTemplates called without firebaseUser — Firebase write skipped');
     }
+  };
+  const persistDigestGlobal = (enabled) => {
+    setDigestGlobalEnabled(enabled);
+    if (firebaseUser) set(ref(db, 'settings/notifications/weekly-digest'), { enabled });
   };
   const persistDepartments = (val, prevVal) => {
     setDepartments(val);
@@ -1978,6 +1986,8 @@ const App = () => {
               setUsers={persistUsers}
               clientLogs={clientLogs}
               setClientLogs={persistClientLogs}
+              digestGlobalEnabled={digestGlobalEnabled}
+              onDigestGlobalToggle={persistDigestGlobal}
               createFirebaseUser={async (email, name) => {
                 const apiBase = import.meta.env.VITE_API_BASE_URL || '/api';
                 const idToken = firebaseUser ? await firebaseUser.getIdToken() : null;
