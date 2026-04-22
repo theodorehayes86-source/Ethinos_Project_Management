@@ -1,5 +1,6 @@
 import cron from "node-cron";
 import { parse, isValid, startOfDay, addDays, differenceInCalendarDays } from "date-fns";
+import { toZonedTime } from "date-fns-tz";
 import { readFirebasePath, writeFirebasePath } from "./firebase-admin";
 import { sendEmail, isEmailConfigured } from "./microsoft-graph";
 import { logger } from "./logger";
@@ -432,23 +433,62 @@ export async function runOverdueDueSoonCheck(): Promise<void> {
   }
 }
 
-export function startReminderScheduler(): void {
-  cron.schedule("0 7 * * *", () => {
-    runReminderCheck().catch((err) =>
-      logger.error({ err }, "[Reminders] Unhandled scheduler error")
+/**
+ * Read the configured timezone + hour from Firebase, then run both checks
+ * only if the current local time matches. Called every hour by the cron.
+ */
+async function runScheduledChecks(): Promise<void> {
+  try {
+    const schedRaw = await readFirebasePath<{
+      scheduleTimezone?: string;
+      scheduleHour?: number;
+    }>("settings/notifications/reminders-schedule");
+
+    const tz = schedRaw?.scheduleTimezone || "Europe/London";
+    const targetHour =
+      typeof schedRaw?.scheduleHour === "number" ? schedRaw.scheduleHour : 7;
+
+    const nowInTz = toZonedTime(new Date(), tz);
+    const currentHour = nowInTz.getHours();
+
+    if (currentHour !== targetHour) {
+      logger.debug(
+        { currentHour, targetHour, tz },
+        "[Reminders] Hourly tick — not the configured send hour, skipping"
+      );
+      return;
+    }
+
+    logger.info(
+      { targetHour, tz },
+      "[Reminders] Hourly tick matches configured send time — running checks"
     );
-    runOverdueDueSoonCheck().catch((err) =>
-      logger.error({ err }, "[Overdue/DueSoon] Unhandled scheduler error")
+
+    await runReminderCheck();
+    await runOverdueDueSoonCheck();
+  } catch (err) {
+    logger.error({ err }, "[Reminders] Error reading schedule config");
+  }
+}
+
+export function startReminderScheduler(): void {
+  // Run every hour. Timezone + hour gate is applied inside runScheduledChecks()
+  // by reading settings/notifications/reminders-schedule from Firebase.
+  cron.schedule("0 * * * *", () => {
+    runScheduledChecks().catch((err) =>
+      logger.error({ err }, "[Reminders] Unhandled scheduler error")
     );
   });
 
+  // Startup checks run immediately (cooldowns prevent duplicate sends)
   runReminderCheck().catch((err) =>
     logger.error({ err }, "[Reminders] Error on startup check")
   );
-
   runOverdueDueSoonCheck().catch((err) =>
     logger.error({ err }, "[Overdue/DueSoon] Error on startup check")
   );
 
-  logger.info("[Reminders] Scheduler started — runs daily at 07:00");
+  logger.info(
+    "[Reminders] Scheduler started — checks every hour (timezone & hour read from Firebase settings)"
+  );
 }

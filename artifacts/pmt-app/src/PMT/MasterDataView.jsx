@@ -223,8 +223,8 @@ const MasterDataView = ({
     { id: 'assignment-accepted', label: 'Assignment Accepted', description: 'Sent to the requester when their task assignment request is approved.', when: 'On assignment approval', defaultOn: true },
     { id: 'mention', label: 'Mention', description: 'Sent to a user when they are @mentioned in a task message.', when: 'On @mention in task message', defaultOn: true },
     { id: 'feedback-response', label: 'Feedback Response', description: 'Sent to users when their PMT feedback receives an admin reply.', when: 'On feedback reply', defaultOn: true },
-    { id: 'task-overdue', label: 'Task Overdue', description: 'Daily check — sent to the assignee when a task is past its due date and not complete. Deduplicated daily.', when: 'Daily (07:00)', defaultOn: false },
-    { id: 'task-due-soon', label: 'Task Due Soon', description: 'Daily check — sent to the assignee when a task is exactly 2 days from its due date.', when: 'Daily (07:00), 2 days before due date', defaultOn: false },
+    { id: 'task-overdue', label: 'Task Overdue', description: 'Daily check — sent to the assignee when a task is past its due date and not complete. Deduplicated daily.', when: 'Daily (configurable time)', defaultOn: false },
+    { id: 'task-due-soon', label: 'Task Due Soon', description: 'Daily check — sent to the assignee when a task is exactly 2 days from its due date.', when: 'Daily (configurable time), 2 days before due date', defaultOn: false },
     { id: 'task-status-changed', label: 'Task Status Changed', description: 'Sent to the assignee when another user changes their task status to WIP or Done.', when: 'On status change to WIP or Done', defaultOn: false },
   ];
 
@@ -1908,6 +1908,82 @@ const MasterDataView = ({
                 </>
               )}
             </div>
+
+            {/* Daily Reminders Schedule card */}
+            {(() => {
+              const reminderSched = notificationSettings['reminders-schedule'] || {};
+              const reminderTz = reminderSched.scheduleTimezone || 'Europe/London';
+              const reminderHour = typeof reminderSched.scheduleHour === 'number' ? reminderSched.scheduleHour : 7;
+              const reminderTzLabel = DIGEST_TIMEZONES.find(t => t.value === reminderTz)?.label || reminderTz;
+              const isReminderExpanded = !!expandedEvents['reminders-schedule'];
+              const overdueEnabled = !!(notificationSettings['task-overdue']?.enabled);
+              const dueSoonEnabled = !!(notificationSettings['task-due-soon']?.enabled);
+              const anyReminderEnabled = overdueEnabled || dueSoonEnabled;
+              return (
+                <div className="bg-white border border-slate-200 rounded-xl p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Daily Reminders Schedule</p>
+                  </div>
+                  <div className={`rounded-lg border ${anyReminderEnabled ? 'border-blue-200 bg-white' : 'border-slate-200 bg-slate-50'}`}>
+                    <div className="flex items-start gap-3 p-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-semibold text-slate-800">Task Overdue &amp; Due Soon</p>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-slate-100 text-slate-500">
+                            Daily, {String(reminderHour).padStart(2,'0')}:00 — {reminderTzLabel}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                          Controls when the daily overdue and due-soon checks run. Both notifications share this schedule — configure individual on/off toggles in the event cards above.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setExpandedEvents(prev => ({ ...prev, 'reminders-schedule': !prev['reminders-schedule'] }))}
+                        className="text-[11px] text-slate-400 hover:text-slate-600 px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 transition-all flex-shrink-0"
+                        title="Customise schedule"
+                      >
+                        <Edit2 size={11} />
+                      </button>
+                    </div>
+
+                    {isReminderExpanded && (
+                      <div className="border-t border-slate-100 p-3 space-y-3 bg-slate-50 rounded-b-lg">
+                        <div>
+                          <label className="text-[11px] font-semibold text-slate-600 block mb-1">Send time</label>
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={reminderHour}
+                              onChange={e => onUpdateNotificationSetting && onUpdateNotificationSetting('reminders-schedule', { scheduleHour: Number(e.target.value) })}
+                              className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white outline-none focus:ring-2 ring-blue-500/20"
+                            >
+                              {DIGEST_HOURS.map(h => (
+                                <option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>
+                              ))}
+                            </select>
+                            <span className="text-xs text-slate-400">every day</span>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-[11px] font-semibold text-slate-600 block mb-1">Timezone</label>
+                          <select
+                            value={reminderTz}
+                            onChange={e => onUpdateNotificationSetting && onUpdateNotificationSetting('reminders-schedule', { scheduleTimezone: e.target.value })}
+                            className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white outline-none focus:ring-2 ring-blue-500/20"
+                          >
+                            {DIGEST_TIMEZONES.map(tz => (
+                              <option key={tz.value} value={tz.value}>{tz.label}</option>
+                            ))}
+                          </select>
+                          <p className="text-[10px] text-slate-400 mt-1">
+                            Overdue and due-soon emails are sent once per day at {String(reminderHour).padStart(2,'0')}:00 local time in the selected timezone. Changes take effect from the next hourly check.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Weekly Digest card */}
             {(() => {
