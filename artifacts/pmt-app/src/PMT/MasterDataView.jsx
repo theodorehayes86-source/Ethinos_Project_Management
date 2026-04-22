@@ -1058,6 +1058,21 @@ const MasterDataView = ({
                     <th className="px-3 py-2">Department</th>
                     <th className="px-3 py-2">Region</th>
                     <th className="px-3 py-2">Clients</th>
+                    <th className="px-3 py-2 text-center whitespace-nowrap">
+                      <div className="flex flex-col items-center gap-0.5">
+                        <span>Weekly Digest</span>
+                        <div className="flex gap-1 mt-0.5">
+                          <button
+                            onClick={() => setUsers((users || []).map(u => ({ ...u, weeklyDigestEnabled: true })))}
+                            className="text-[9px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 hover:bg-emerald-100 transition-all"
+                          >All on</button>
+                          <button
+                            onClick={() => setUsers((users || []).map(u => ({ ...u, weeklyDigestEnabled: false })))}
+                            className="text-[9px] font-semibold text-slate-500 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 hover:bg-slate-100 transition-all"
+                          >All off</button>
+                        </div>
+                      </div>
+                    </th>
                     <th className="px-3 py-2 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -1104,6 +1119,21 @@ const MasterDataView = ({
                               <span key={p} className="text-[10px] font-medium border border-blue-200 px-2 py-0.5 rounded-full text-blue-700 bg-blue-50">{p}</span>
                             ))}
                         </div>
+                      </td>
+                      <td className="px-3 py-2.5 text-center">
+                        <button
+                          onClick={() => setUsers((users || []).map(u =>
+                            u.id === user.id ? { ...u, weeklyDigestEnabled: !u.weeklyDigestEnabled } : u
+                          ))}
+                          title={user.weeklyDigestEnabled ? 'Disable weekly digest' : 'Enable weekly digest'}
+                          className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                            user.weeklyDigestEnabled ? 'bg-emerald-500' : 'bg-slate-200'
+                          }`}
+                        >
+                          <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ${
+                            user.weeklyDigestEnabled ? 'translate-x-4' : 'translate-x-0'
+                          }`}/>
+                        </button>
                       </td>
                       <td className="px-3 py-2.5 text-right">
                         <div className="flex items-center justify-end gap-1">
