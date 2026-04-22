@@ -85,12 +85,15 @@ const MasterDataView = ({
   setHierarchyOrder,
   digestGlobalEnabled = true,
   onDigestGlobalToggle = null,
+  notificationSettings = {},
+  onUpdateNotificationSetting = null,
 }) => {
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
 
   const [activeTab, setActiveTab] = useState(() => {
     const accessible = CC_TABS.filter(tab => {
+      if (tab.id === 'notifications') return currentUser?.role === 'Super Admin';
       if (currentUser?.role === 'Super Admin') return true;
       if (tab.id === 'conditions') return false;
       if (tab.id === 'feedback') return true;
@@ -175,6 +178,44 @@ const MasterDataView = ({
   const [editingFbEntryId, setEditingFbEntryId] = useState(null);
   const [editFbEntryText, setEditFbEntryText] = useState('');
   const [fbUserFilter, setFbUserFilter] = useState('All');
+
+  // --- NOTIFICATION SETTINGS STATE ---
+  const [emailStatus, setEmailStatus] = useState(null);
+  const [emailStatusLoading, setEmailStatusLoading] = useState(false);
+  const [bccInputs, setBccInputs] = useState({});
+  const [expandedEvents, setExpandedEvents] = useState({});
+
+  const NOTIFICATION_EVENTS = [
+    { id: 'task-assigned', label: 'Task Assigned', description: 'Sent to the assignee when a task is created and assigned to them.', when: 'On task creation / assignment', defaultOn: true },
+    { id: 'approval-required', label: 'Approval Required', description: 'Sent to managers when someone requests to be assigned a task.', when: 'On assignment request', defaultOn: true },
+    { id: 'qc-submitted', label: 'QC Submitted', description: 'Sent to the QC reviewer when a task is submitted for quality check.', when: 'On QC submission', defaultOn: true },
+    { id: 'qc-returned', label: 'QC Returned', description: 'Sent to the assignee when a QC reviewer returns a task for revision. BCC addresses receive a copy.', when: 'On QC rejection', defaultOn: true },
+    { id: 'qc-approved', label: 'QC Approved', description: 'Sent to the assignee when a QC reviewer approves their work.', when: 'On QC approval (desktop only)', defaultOn: false },
+    { id: 'client-added', label: 'Client Access Granted', description: 'Sent to a user when they are added to a client project.', when: 'On client assignment approval', defaultOn: true },
+    { id: 'assignment-accepted', label: 'Assignment Accepted', description: 'Sent to the requester when their task assignment request is approved.', when: 'On assignment approval', defaultOn: true },
+    { id: 'mention', label: 'Mention', description: 'Sent to a user when they are @mentioned in a task message.', when: 'On @mention in task message', defaultOn: true },
+    { id: 'feedback-response', label: 'Feedback Response', description: 'Sent to users when their PMT feedback receives an admin reply.', when: 'On feedback reply', defaultOn: true },
+    { id: 'task-overdue', label: 'Task Overdue', description: 'Daily check — sent to the assignee when a task is past its due date and not complete. Deduplicated daily.', when: 'Daily (07:00)', defaultOn: false },
+    { id: 'task-due-soon', label: 'Task Due Soon', description: 'Daily check — sent to the assignee when a task is exactly 2 days from its due date.', when: 'Daily (07:00), 2 days before due date', defaultOn: false },
+    { id: 'task-status-changed', label: 'Task Status Changed', description: 'Sent to the assignee when another user changes their task status to WIP or Done.', when: 'On status change to WIP or Done', defaultOn: false },
+  ];
+
+  const getEventEnabled = (eventId) => {
+    const setting = notificationSettings[eventId];
+    if (setting && typeof setting.enabled === 'boolean') return setting.enabled;
+    return NOTIFICATION_EVENTS.find(e => e.id === eventId)?.defaultOn ?? true;
+  };
+
+  useEffect(() => {
+    if (activeTab !== 'notifications') return;
+    setEmailStatusLoading(true);
+    const apiBase = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) || '/api';
+    fetch(`${apiBase}/email-status`)
+      .then(r => r.json())
+      .then(d => setEmailStatus(d))
+      .catch(() => setEmailStatus(null))
+      .finally(() => setEmailStatusLoading(false));
+  }, [activeTab]);
 
   const buildFbThread = (item) => {
     const thread = Array.isArray(item.thread) ? [...item.thread] : [];
@@ -999,6 +1040,7 @@ const MasterDataView = ({
     <div className="min-h-full p-4 space-y-4 text-left">
       <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center gap-2 flex-wrap">
         {CC_TABS.filter(tab => {
+          if (tab.id === 'notifications') return currentUser?.role === 'Super Admin';
           if (currentUser?.role === 'Super Admin') return true;
           if (tab.id === 'conditions') return false;
           if (tab.id === 'hierarchy') return false;
@@ -1691,42 +1733,204 @@ const MasterDataView = ({
       )}
 
       {/* ─── NOTIFICATIONS TAB ─── */}
-      {activeTab === 'notifications' && (
-        <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
-          <div>
-            <p className="text-xs font-semibold text-slate-700 mb-0.5">Email Notifications</p>
-            <p className="text-[11px] text-slate-500">Control automated email alerts sent by the Ethinos PMT system.</p>
-          </div>
+      {activeTab === 'notifications' && (() => {
+        const activeEvents = NOTIFICATION_EVENTS.filter(e => getEventEnabled(e.id));
+        const inactiveEvents = NOTIFICATION_EVENTS.filter(e => !getEventEnabled(e.id));
 
-          {/* Weekly Digest card */}
-          <div className={`flex items-center gap-4 rounded-lg border p-4 ${digestGlobalEnabled ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-slate-50'}`}>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-slate-800">Weekly Hours Digest</p>
-              <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-                Sends each opted-in user a Monday morning email summarising their hours logged for the previous week,
-                broken down by project. Individual opt-in is controlled per user in the Users tab.
-              </p>
-              <p className="text-[10px] text-slate-400 mt-1">Fires every Monday at 08:00 London time</p>
+        const renderEventCard = (event) => {
+          const isEnabled = getEventEnabled(event.id);
+          const setting = notificationSettings[event.id] || {};
+          const bccList = Array.isArray(setting.bccEmails) ? setting.bccEmails : [];
+          const isExpanded = !!expandedEvents[event.id];
+          const bccInput = bccInputs[event.id] || '';
+
+          return (
+            <div key={event.id} className={`rounded-lg border ${isEnabled ? 'border-emerald-200 bg-white' : 'border-slate-200 bg-slate-50'}`}>
+              <div className="flex items-start gap-3 p-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-semibold text-slate-800">{event.label}</p>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-slate-100 text-slate-500">{event.when}</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">{event.description}</p>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    onClick={() => setExpandedEvents(prev => ({ ...prev, [event.id]: !prev[event.id] }))}
+                    className="text-[11px] text-slate-400 hover:text-slate-600 px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 transition-all"
+                    title="Customise"
+                  >
+                    <Edit2 size={11} />
+                  </button>
+                  <button
+                    onClick={() => onUpdateNotificationSetting && onUpdateNotificationSetting(event.id, { enabled: !isEnabled })}
+                    disabled={!onUpdateNotificationSetting}
+                    title={isEnabled ? 'Disable' : 'Enable'}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:opacity-50 ${isEnabled ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                  >
+                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${isEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+              </div>
+
+              {isExpanded && (
+                <div className="border-t border-slate-100 p-3 space-y-3 bg-slate-50 rounded-b-lg">
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-600 block mb-1">Subject prefix</label>
+                    <input
+                      type="text"
+                      placeholder="Optional — prepended to the email subject"
+                      defaultValue={setting.customSubject || ''}
+                      onBlur={e => onUpdateNotificationSetting && onUpdateNotificationSetting(event.id, { customSubject: e.target.value.trim() || null })}
+                      className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white outline-none focus:ring-2 ring-blue-500/20"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-600 block mb-1">Intro text override</label>
+                    <textarea
+                      placeholder="Optional — inserted at the top of the email body"
+                      defaultValue={setting.customIntroText || ''}
+                      onBlur={e => onUpdateNotificationSetting && onUpdateNotificationSetting(event.id, { customIntroText: e.target.value.trim() || null })}
+                      rows={2}
+                      className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white outline-none focus:ring-2 ring-blue-500/20 resize-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-600 block mb-1">BCC addresses</label>
+                    <div className="flex gap-1.5 mb-1.5">
+                      <input
+                        type="email"
+                        placeholder="name@example.com"
+                        value={bccInput}
+                        onChange={e => setBccInputs(prev => ({ ...prev, [event.id]: e.target.value }))}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            const val = bccInput.trim().toLowerCase();
+                            if (val && !bccList.includes(val)) {
+                              const next = [...bccList, val];
+                              onUpdateNotificationSetting && onUpdateNotificationSetting(event.id, { bccEmails: next });
+                            }
+                            setBccInputs(prev => ({ ...prev, [event.id]: '' }));
+                          }
+                        }}
+                        className="flex-1 text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white outline-none focus:ring-2 ring-blue-500/20"
+                      />
+                      <button
+                        onClick={() => {
+                          const val = bccInput.trim().toLowerCase();
+                          if (val && !bccList.includes(val)) {
+                            const next = [...bccList, val];
+                            onUpdateNotificationSetting && onUpdateNotificationSetting(event.id, { bccEmails: next });
+                          }
+                          setBccInputs(prev => ({ ...prev, [event.id]: '' }));
+                        }}
+                        className="text-xs px-2.5 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all font-semibold"
+                      >Add</button>
+                    </div>
+                    {bccList.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {bccList.map(addr => (
+                          <span key={addr} className="inline-flex items-center gap-1 text-[11px] bg-slate-100 border border-slate-200 text-slate-700 rounded-full px-2 py-0.5">
+                            {addr}
+                            <button
+                              onClick={() => {
+                                const next = bccList.filter(a => a !== addr);
+                                onUpdateNotificationSetting && onUpdateNotificationSetting(event.id, { bccEmails: next });
+                              }}
+                              className="text-slate-400 hover:text-red-500 transition-colors"
+                            ><X size={10} /></button>
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-slate-400 italic">No BCC addresses — only the primary recipient receives this email.</p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
-            <button
-              onClick={() => onDigestGlobalToggle && onDigestGlobalToggle(!digestGlobalEnabled)}
-              disabled={!onDigestGlobalToggle}
-              title={digestGlobalEnabled ? 'Disable globally' : 'Enable globally'}
-              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:opacity-50 ${
-                digestGlobalEnabled ? 'bg-emerald-500' : 'bg-slate-300'
-              }`}
-            >
-              <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${
-                digestGlobalEnabled ? 'translate-x-5' : 'translate-x-0'
-              }`}/>
-            </button>
-          </div>
+          );
+        };
 
-          <p className="text-[11px] text-slate-400 italic">
-            More notification controls will appear here as they are configured (Task #50 — Notification Control Centre).
-          </p>
-        </div>
-      )}
+        return (
+          <div className="space-y-4">
+            {/* Email status banner */}
+            <div className={`rounded-xl border p-3 flex items-center gap-3 ${
+              emailStatusLoading ? 'bg-slate-50 border-slate-200' :
+              emailStatus?.configured ? 'bg-emerald-50 border-emerald-200' :
+              'bg-red-50 border-red-200'
+            }`}>
+              {emailStatusLoading ? (
+                <p className="text-xs text-slate-500">Checking email service…</p>
+              ) : emailStatus?.configured ? (
+                <>
+                  <CheckCircle2 size={14} className="text-emerald-600 flex-shrink-0" />
+                  <p className="text-xs font-semibold text-emerald-700">Email service ready — all notifications will be delivered.</p>
+                </>
+              ) : emailStatus ? (
+                <>
+                  <AlertCircle size={14} className="text-red-500 flex-shrink-0" />
+                  <p className="text-xs font-semibold text-red-700">Email not configured — missing: {(emailStatus.missing || []).join(', ')}. Set these in the Secrets panel.</p>
+                </>
+              ) : (
+                <>
+                  <AlertCircle size={14} className="text-slate-400 flex-shrink-0" />
+                  <p className="text-xs text-slate-500">Unable to check email service status.</p>
+                </>
+              )}
+            </div>
+
+            {/* Weekly Digest card */}
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Other</p>
+              </div>
+              <div className={`flex items-center gap-4 rounded-lg border p-3 ${digestGlobalEnabled ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-slate-50'}`}>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-semibold text-slate-800">Weekly Hours Digest</p>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-slate-100 text-slate-500">Every Monday, 08:00 London time</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                    Sends each opted-in user a Monday morning email summarising their hours logged for the previous week, broken down by project. Individual opt-in is controlled per user in the Users tab.
+                  </p>
+                </div>
+                <button
+                  onClick={() => onDigestGlobalToggle && onDigestGlobalToggle(!digestGlobalEnabled)}
+                  disabled={!onDigestGlobalToggle}
+                  title={digestGlobalEnabled ? 'Disable globally' : 'Enable globally'}
+                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:opacity-50 ${digestGlobalEnabled ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                >
+                  <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${digestGlobalEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                </button>
+              </div>
+            </div>
+
+            {/* Active events */}
+            {activeEvents.length > 0 && (
+              <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Active</p>
+                  <span className="text-[11px] bg-emerald-100 text-emerald-700 font-semibold px-2 py-0.5 rounded-full">{activeEvents.length}</span>
+                </div>
+                {activeEvents.map(renderEventCard)}
+              </div>
+            )}
+
+            {/* Inactive events */}
+            {inactiveEvents.length > 0 && (
+              <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Available</p>
+                  <span className="text-[11px] bg-slate-100 text-slate-500 font-semibold px-2 py-0.5 rounded-full">{inactiveEvents.length}</span>
+                </div>
+                {inactiveEvents.map(renderEventCard)}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ─── FEEDBACK TAB ─── */}
       {activeTab === 'feedback' && (() => {

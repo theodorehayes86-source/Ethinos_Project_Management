@@ -1314,6 +1314,21 @@ const ClientView = ({
                                   };
                                 });
                                 setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
+                                if ((newStatus === 'WIP' || newStatus === 'Done') && newStatus !== log.status) {
+                                  const assignee = log.assigneeId
+                                    ? (users || []).find(u => String(u.id) === String(log.assigneeId))
+                                    : null;
+                                  if (assignee?.email && String(assignee.id) !== String(currentUser?.id)) {
+                                    sendNotification('task-status-changed', {
+                                      assigneeEmail: assignee.email,
+                                      assigneeName: assignee.name,
+                                      taskName: log.name || log.comment,
+                                      clientName: selectedClient?.name,
+                                      newStatus,
+                                      changerName: currentUser?.name,
+                                    });
+                                  }
+                                }
                               }}
                             >
                               <option value="Pending">Pending</option>
@@ -2457,14 +2472,11 @@ const ClientView = ({
               };
             });
             setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
+            const taskAssignee = reviewingTask.assigneeId
+              ? (users || []).find(u => String(u.id) === String(reviewingTask.assigneeId))
+              : null;
             if (qcReviewDecision === 'rejected' && feedbackText) {
-              const taskAssignee = reviewingTask.assigneeId
-                ? (users || []).find(u => String(u.id) === String(reviewingTask.assigneeId))
-                : null;
               if (taskAssignee?.email) {
-                const superAdminEmails = (users || [])
-                  .filter(u => u.role === 'Super Admin' && u.email)
-                  .map(u => u.email);
                 sendNotification('qc-returned', {
                   assigneeEmail: taskAssignee.email,
                   assigneeName: taskAssignee.name,
@@ -2472,7 +2484,18 @@ const ClientView = ({
                   taskName: reviewingTask.name || reviewingTask.comment,
                   clientName: selectedClient?.name,
                   feedbackText,
-                  bccEmails: superAdminEmails,
+                });
+              }
+            }
+            if (qcReviewDecision === 'approved') {
+              if (taskAssignee?.email) {
+                sendNotification('qc-approved', {
+                  assigneeEmail: taskAssignee.email,
+                  assigneeName: taskAssignee.name,
+                  reviewerName: currentUser?.name,
+                  taskName: reviewingTask.name || reviewingTask.comment,
+                  clientName: selectedClient?.name,
+                  rating: validRating,
                 });
               }
             }

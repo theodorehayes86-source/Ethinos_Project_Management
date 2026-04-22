@@ -1,5 +1,5 @@
 import cron from "node-cron";
-import { parse, isValid, startOfDay, addDays } from "date-fns";
+import { parse, isValid, startOfDay, addDays, differenceInCalendarDays } from "date-fns";
 import { readFirebasePath, writeFirebasePath } from "./firebase-admin";
 import { sendEmail, isEmailConfigured } from "./microsoft-graph";
 import { logger } from "./logger";
@@ -19,6 +19,8 @@ interface TaskLog {
   qcEnabled?: boolean;
   reminderOffsets?: string[];
   archived?: boolean;
+  lastOverdueNotifiedAt?: string | null;
+  lastDueSoonNotifiedAt?: string | null;
 }
 
 interface User {
@@ -235,15 +237,217 @@ export async function runReminderCheck(): Promise<void> {
   }
 }
 
+/* ─── Task overdue / due-soon checks ─── */
+
+function buildOverdueHtml(task: TaskLog): string {
+  const taskName = task.name || "Untitled Task";
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8" /></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f1f5f9;margin:0;padding:32px 16px;">
+  <div style="max-width:580px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+    <div style="background:#d97706;padding:28px 32px;">
+      <p style="margin:0 0 6px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.7);">Overdue Task</p>
+      <h1 style="margin:0;font-size:22px;font-weight:700;color:#ffffff;">${taskName}</h1>
+    </div>
+    <div style="padding:32px;">
+      <p style="margin:0 0 20px;font-size:14px;color:#475569;">Hi${task.assigneeName ? ` ${task.assigneeName}` : ""},</p>
+      <p style="margin:0 0 20px;font-size:14px;color:#475569;">The following task is <strong>overdue</strong>. Please log in to the PMT to update its status or reach out to your manager if you need assistance.</p>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">
+        <tr><td style="padding:8px 0;font-size:13px;color:#94a3b8;width:130px;border-bottom:1px solid #f1f5f9;">Task</td><td style="padding:8px 0;font-size:13px;color:#1e293b;font-weight:600;border-bottom:1px solid #f1f5f9;">${taskName}</td></tr>
+        <tr><td style="padding:8px 0;font-size:13px;color:#94a3b8;border-bottom:1px solid #f1f5f9;">Due date</td><td style="padding:8px 0;font-size:13px;color:#dc2626;font-weight:600;border-bottom:1px solid #f1f5f9;">${task.dueDate || "—"}</td></tr>
+        <tr><td style="padding:8px 0;font-size:13px;color:#94a3b8;">Status</td><td style="padding:8px 0;font-size:13px;color:#1e293b;font-weight:600;">${task.status || "Pending"}</td></tr>
+      </table>
+      <a href="https://pmt.ethinos.com" style="display:inline-block;background:#d97706;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View Task</a>
+    </div>
+    <div style="background:#f8fafc;padding:16px 32px;border-top:1px solid #e2e8f0;text-align:center;">
+      <p style="margin:0;font-size:12px;color:#94a3b8;">Ethinos PMT &middot; Automated Notification</p>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+function buildDueSoonHtml(task: TaskLog): string {
+  const taskName = task.name || "Untitled Task";
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8" /></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f1f5f9;margin:0;padding:32px 16px;">
+  <div style="max-width:580px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+    <div style="background:#f59e0b;padding:28px 32px;">
+      <p style="margin:0 0 6px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.7);">Due Soon</p>
+      <h1 style="margin:0;font-size:22px;font-weight:700;color:#ffffff;">${taskName}</h1>
+    </div>
+    <div style="padding:32px;">
+      <p style="margin:0 0 20px;font-size:14px;color:#475569;">Hi${task.assigneeName ? ` ${task.assigneeName}` : ""},</p>
+      <p style="margin:0 0 20px;font-size:14px;color:#475569;">This is a reminder that the following task is <strong>due in 2 days</strong>. Please ensure it's on track.</p>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">
+        <tr><td style="padding:8px 0;font-size:13px;color:#94a3b8;width:130px;border-bottom:1px solid #f1f5f9;">Task</td><td style="padding:8px 0;font-size:13px;color:#1e293b;font-weight:600;border-bottom:1px solid #f1f5f9;">${taskName}</td></tr>
+        <tr><td style="padding:8px 0;font-size:13px;color:#94a3b8;border-bottom:1px solid #f1f5f9;">Due date</td><td style="padding:8px 0;font-size:13px;color:#d97706;font-weight:600;border-bottom:1px solid #f1f5f9;">${task.dueDate || "—"}</td></tr>
+        <tr><td style="padding:8px 0;font-size:13px;color:#94a3b8;">Status</td><td style="padding:8px 0;font-size:13px;color:#1e293b;font-weight:600;">${task.status || "Pending"}</td></tr>
+      </table>
+      <a href="https://pmt.ethinos.com" style="display:inline-block;background:#d97706;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View Task</a>
+    </div>
+    <div style="background:#f8fafc;padding:16px 32px;border-top:1px solid #e2e8f0;text-align:center;">
+      <p style="margin:0;font-size:12px;color:#94a3b8;">Ethinos PMT &middot; Automated Notification</p>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+interface SchedulerNotifSetting {
+  enabled?: boolean;
+  customSubject?: string;
+  customIntroText?: string;
+  bccEmails?: string[];
+}
+
+function applyCustomSubjectScheduler(subject: string, customSubject?: string): string {
+  if (!customSubject?.trim()) return subject;
+  return `${customSubject.trim()} — ${subject}`;
+}
+
+function applyCustomIntroTextScheduler(html: string, customIntroText?: string): string {
+  if (!customIntroText?.trim()) return html;
+  const introBlock = `<div style="background:#eff6ff;border-left:3px solid #2563eb;padding:12px 16px;margin-bottom:20px;border-radius:0 4px 4px 0;"><p style="margin:0;font-size:14px;color:#1e293b;line-height:1.6;">${customIntroText.trim()}</p></div>`;
+  const marker = '<div style="padding:32px;">';
+  const idx = html.indexOf(marker);
+  if (idx === -1) return html;
+  return html.slice(0, idx + marker.length) + introBlock + html.slice(idx + marker.length);
+}
+
+export async function runOverdueDueSoonCheck(): Promise<void> {
+  logger.info("[Overdue/DueSoon] Running check");
+
+  try {
+    const [notifSettingsRaw, clientLogsRaw, usersRaw, cooldownsRaw] = await Promise.all([
+      readFirebasePath<Record<string, SchedulerNotifSetting | null>>("settings/notifications"),
+      readFirebasePath<Record<string, unknown>>("clientLogs"),
+      readFirebasePath<unknown>("users"),
+      readFirebasePath<Record<string, { lastOverdueNotifiedAt?: string; lastDueSoonNotifiedAt?: string }>>("notificationCooldowns"),
+    ]);
+
+    const overdueSetting: SchedulerNotifSetting = notifSettingsRaw?.["task-overdue"] || {};
+    const dueSoonSetting: SchedulerNotifSetting = notifSettingsRaw?.["task-due-soon"] || {};
+
+    const overdueEnabled = overdueSetting.enabled === true;
+    const dueSoonEnabled = dueSoonSetting.enabled === true;
+
+    if (!overdueEnabled && !dueSoonEnabled) {
+      logger.info("[Overdue/DueSoon] Both events disabled — skipping");
+      return;
+    }
+
+    if (!clientLogsRaw) {
+      logger.info("[Overdue/DueSoon] No clientLogs — nothing to check");
+      return;
+    }
+
+    const users: User[] = usersRaw
+      ? (Array.isArray(usersRaw) ? (usersRaw as User[]) : Object.values(usersRaw as Record<string, User>)).filter(Boolean)
+      : [];
+
+    const cooldowns: Record<string, { lastOverdueNotifiedAt?: string; lastDueSoonNotifiedAt?: string }> = cooldownsRaw || {};
+    const today = startOfDay(new Date());
+    const todayStr = today.toISOString().slice(0, 10);
+    const emailConfigured = isEmailConfigured();
+
+    for (const [, logsRaw] of Object.entries(clientLogsRaw)) {
+      const logs: TaskLog[] = Array.isArray(logsRaw)
+        ? (logsRaw as TaskLog[])
+        : Object.values(logsRaw as Record<string, TaskLog>);
+
+      for (const task of logs) {
+        if (!task?.id || !task.dueDate || task.status === "Done" || task.archived) continue;
+
+        const dueDate = parseDueDate(task.dueDate);
+        if (!dueDate) continue;
+
+        const taskId = String(task.id);
+        const cooldown = cooldowns[taskId] || {};
+        const dueDateStart = startOfDay(dueDate);
+        const diffDays = differenceInCalendarDays(dueDateStart, today);
+
+        const assigneeEmail =
+          task.assigneeEmail ||
+          users.find((u) => String(u.id) === String(task.assigneeId))?.email;
+
+        if (!assigneeEmail) continue;
+
+        if (overdueEnabled && diffDays < 0) {
+          if (cooldown.lastOverdueNotifiedAt === todayStr) continue;
+          try {
+            if (emailConfigured) {
+              const subject = applyCustomSubjectScheduler(
+                `[PMT] Overdue: "${task.name}"`,
+                overdueSetting.customSubject
+              );
+              let html = buildOverdueHtml(task);
+              html = applyCustomIntroTextScheduler(html, overdueSetting.customIntroText);
+              const bcc = Array.isArray(overdueSetting.bccEmails)
+                ? overdueSetting.bccEmails.filter(Boolean)
+                : [];
+              await sendEmail({ to: assigneeEmail, subject, bodyHtml: html, bcc });
+              await writeFirebasePath(`notificationCooldowns/${taskId}/lastOverdueNotifiedAt`, todayStr);
+              logger.info({ taskId, assigneeEmail }, "[Overdue/DueSoon] Sent overdue notification");
+            } else {
+              logger.info({ taskId, assigneeEmail }, "[Overdue/DueSoon] (dry-run) Would send overdue notification");
+            }
+          } catch (err) {
+            logger.error({ err, taskId }, "[Overdue/DueSoon] Failed to send overdue email");
+          }
+        }
+
+        if (dueSoonEnabled && diffDays === 2) {
+          if (cooldown.lastDueSoonNotifiedAt === todayStr) continue;
+          try {
+            if (emailConfigured) {
+              const subject = applyCustomSubjectScheduler(
+                `[PMT] Due in 2 days: "${task.name}"`,
+                dueSoonSetting.customSubject
+              );
+              let html = buildDueSoonHtml(task);
+              html = applyCustomIntroTextScheduler(html, dueSoonSetting.customIntroText);
+              const bcc = Array.isArray(dueSoonSetting.bccEmails)
+                ? dueSoonSetting.bccEmails.filter(Boolean)
+                : [];
+              await sendEmail({ to: assigneeEmail, subject, bodyHtml: html, bcc });
+              await writeFirebasePath(`notificationCooldowns/${taskId}/lastDueSoonNotifiedAt`, todayStr);
+              logger.info({ taskId, assigneeEmail }, "[Overdue/DueSoon] Sent due-soon notification");
+            } else {
+              logger.info({ taskId, assigneeEmail }, "[Overdue/DueSoon] (dry-run) Would send due-soon notification");
+            }
+          } catch (err) {
+            logger.error({ err, taskId }, "[Overdue/DueSoon] Failed to send due-soon email");
+          }
+        }
+      }
+    }
+
+    logger.info("[Overdue/DueSoon] Check complete");
+  } catch (err) {
+    logger.error({ err }, "[Overdue/DueSoon] Error during check");
+  }
+}
+
 export function startReminderScheduler(): void {
   cron.schedule("0 7 * * *", () => {
     runReminderCheck().catch((err) =>
       logger.error({ err }, "[Reminders] Unhandled scheduler error")
     );
+    runOverdueDueSoonCheck().catch((err) =>
+      logger.error({ err }, "[Overdue/DueSoon] Unhandled scheduler error")
+    );
   });
 
   runReminderCheck().catch((err) =>
     logger.error({ err }, "[Reminders] Error on startup check")
+  );
+
+  runOverdueDueSoonCheck().catch((err) =>
+    logger.error({ err }, "[Overdue/DueSoon] Error on startup check")
   );
 
   logger.info("[Reminders] Scheduler started — runs daily at 07:00");

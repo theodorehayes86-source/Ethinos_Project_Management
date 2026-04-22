@@ -1,6 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import admin from "firebase-admin";
 import { sendEmail, isEmailConfigured } from "../lib/microsoft-graph";
+import { readFirebasePath } from "../lib/firebase-admin";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -19,6 +20,52 @@ async function requireFirebaseAuth(req: Request, res: Response, next: NextFuncti
     logger.warn({ err }, "[Notify] Invalid Firebase ID token");
     res.status(401).json({ error: "Invalid or expired auth token" });
   }
+}
+
+/* ─── Notification settings ─── */
+
+const DEFAULT_OFF_EVENTS = new Set([
+  "qc-approved",
+  "task-overdue",
+  "task-due-soon",
+  "task-status-changed",
+]);
+
+interface NotificationSetting {
+  enabled?: boolean;
+  customSubject?: string;
+  customIntroText?: string;
+  bccEmails?: string[];
+}
+
+async function getNotificationSetting(type: string): Promise<NotificationSetting> {
+  try {
+    const setting = await readFirebasePath<NotificationSetting | null>(
+      `settings/notifications/${type}`
+    );
+    return setting || {};
+  } catch {
+    return {};
+  }
+}
+
+function isEventEnabled(setting: NotificationSetting, type: string): boolean {
+  if (typeof setting.enabled === "boolean") return setting.enabled;
+  return !DEFAULT_OFF_EVENTS.has(type);
+}
+
+function applyCustomSubject(subject: string, customSubject?: string): string {
+  if (!customSubject?.trim()) return subject;
+  return `${customSubject.trim()} — ${subject}`;
+}
+
+function applyCustomIntroText(html: string, customIntroText?: string): string {
+  if (!customIntroText?.trim()) return html;
+  const introBlock = `<div style="background:#eff6ff;border-left:3px solid #2563eb;padding:12px 16px;margin-bottom:20px;border-radius:0 4px 4px 0;"><p style="margin:0;font-size:14px;color:#1e293b;line-height:1.6;">${customIntroText.trim()}</p></div>`;
+  const paddingIdx = html.indexOf('<div style="padding:32px;">');
+  if (paddingIdx === -1) return html;
+  const insertAt = paddingIdx + '<div style="padding:32px;">'.length;
+  return html.slice(0, insertAt) + introBlock + html.slice(insertAt);
 }
 
 /* ─── HTML builders ─── */
@@ -136,18 +183,6 @@ function buildFeedbackResponseHtml(d: {
   return brandedWrapper("#2563eb", "Feedback Response", "Your feedback has a new response", body);
 }
 
-/* ─── Test-mode redirect helper ─── */
-
-function resolveRecipient(email: string): string {
-  return process.env.NOTIFY_TEST_EMAIL || email;
-}
-
-function testSubjectPrefix(subject: string): string {
-  return process.env.NOTIFY_TEST_EMAIL ? `[TEST] ${subject}` : subject;
-}
-
-/* ─── Client-added HTML builder ─── */
-
 function buildClientAddedHtml(d: {
   recipientName?: string;
   clientName: string;
@@ -165,8 +200,6 @@ function buildClientAddedHtml(d: {
   `;
   return brandedWrapper("#059669", "Client Access Granted", `You've been added to "${d.clientName}"`, body);
 }
-
-/* ─── Assignment-accepted HTML builder ─── */
 
 function buildAssignmentAcceptedHtml(d: {
   recipientName?: string;
@@ -187,8 +220,6 @@ function buildAssignmentAcceptedHtml(d: {
   `;
   return brandedWrapper("#2563eb", "Assignment Approved", `You've been assigned to "${d.taskName}"`, body);
 }
-
-/* ─── Mention HTML builder ─── */
 
 function buildMentionHtml(d: {
   mentionedName?: string;
@@ -215,8 +246,6 @@ function buildMentionHtml(d: {
   return brandedWrapper("#7c3aed", "You were mentioned", `${d.mentionerName || "Someone"} mentioned you`, body);
 }
 
-/* ─── QC Submitted HTML builder ─── */
-
 function buildQcSubmittedHtml(d: {
   reviewerName?: string;
   submitterName?: string;
@@ -236,8 +265,6 @@ function buildQcSubmittedHtml(d: {
   `;
   return brandedWrapper("#4f46e5", "QC Review Requested", `"${d.taskName}" needs your review`, body);
 }
-
-/* ─── QC Returned HTML builder ─── */
 
 function buildQcReturnedHtml(d: {
   assigneeName?: string;
@@ -264,7 +291,116 @@ function buildQcReturnedHtml(d: {
   return brandedWrapper("#dc2626", "QC Returned", `"${d.taskName}" needs revision`, body);
 }
 
-/* ─── Route ─── */
+function buildQcApprovedHtml(d: {
+  assigneeName?: string;
+  reviewerName?: string;
+  taskName: string;
+  clientName?: string;
+  rating?: number | null;
+}): string {
+  const ratingRow = d.rating ? row("QC Rating", `${d.rating}/10`) : "";
+  const tableBody = [
+    row("Task", d.taskName),
+    row("Client", d.clientName || ""),
+    row("Approved by", d.reviewerName || ""),
+    ratingRow,
+  ].join("");
+  const body = `
+    <p style="margin:0 0 16px;font-size:14px;color:#475569;">Hi${d.assigneeName ? ` ${d.assigneeName}` : ""},</p>
+    <p style="margin:0 0 20px;font-size:14px;color:#475569;">Great work! <strong>${d.reviewerName || "Your reviewer"}</strong> has approved the quality check for your task.</p>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">${tableBody}</table>
+    <a href="https://pmt.ethinos.com" style="display:inline-block;background:#059669;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View in PMT</a>
+  `;
+  return brandedWrapper("#059669", "QC Approved", `"${d.taskName}" passed quality check`, body);
+}
+
+function buildTaskOverdueHtml(d: {
+  assigneeName?: string;
+  taskName: string;
+  clientName?: string;
+  dueDate?: string;
+}): string {
+  const tableBody = [
+    row("Task", d.taskName),
+    row("Client", d.clientName || ""),
+    row("Due date", d.dueDate || ""),
+    row("Assigned to", d.assigneeName || ""),
+  ].join("");
+  const body = `
+    <p style="margin:0 0 16px;font-size:14px;color:#475569;">Hi${d.assigneeName ? ` ${d.assigneeName}` : ""},</p>
+    <p style="margin:0 0 20px;font-size:14px;color:#475569;">The following task is <strong>overdue</strong>. Please log in to the PMT to update its status or reach out to your manager if you need assistance.</p>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">${tableBody}</table>
+    <a href="https://pmt.ethinos.com" style="display:inline-block;background:#d97706;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View Task</a>
+  `;
+  return brandedWrapper("#d97706", "Overdue Task", `"${d.taskName}" is overdue`, body);
+}
+
+function buildTaskDueSoonHtml(d: {
+  assigneeName?: string;
+  taskName: string;
+  clientName?: string;
+  dueDate?: string;
+}): string {
+  const tableBody = [
+    row("Task", d.taskName),
+    row("Client", d.clientName || ""),
+    row("Due date", d.dueDate || ""),
+    row("Assigned to", d.assigneeName || ""),
+  ].join("");
+  const body = `
+    <p style="margin:0 0 16px;font-size:14px;color:#475569;">Hi${d.assigneeName ? ` ${d.assigneeName}` : ""},</p>
+    <p style="margin:0 0 20px;font-size:14px;color:#475569;">This is a reminder that the following task is <strong>due in 2 days</strong>. Please ensure it's on track.</p>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">${tableBody}</table>
+    <a href="https://pmt.ethinos.com" style="display:inline-block;background:#d97706;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View Task</a>
+  `;
+  return brandedWrapper("#d97706", "Task Due Soon", `"${d.taskName}" is due in 2 days`, body);
+}
+
+function buildTaskStatusChangedHtml(d: {
+  assigneeName?: string;
+  changerName?: string;
+  taskName: string;
+  clientName?: string;
+  newStatus: string;
+}): string {
+  const statusColor = d.newStatus === "Done" ? "#059669" : "#2563eb";
+  const tableBody = [
+    row("Task", d.taskName),
+    row("Client", d.clientName || ""),
+    row("New Status", d.newStatus),
+    row("Changed by", d.changerName || ""),
+  ].join("");
+  const body = `
+    <p style="margin:0 0 16px;font-size:14px;color:#475569;">Hi${d.assigneeName ? ` ${d.assigneeName}` : ""},</p>
+    <p style="margin:0 0 20px;font-size:14px;color:#475569;">The status of your task has been updated to <strong style="color:${statusColor};">${d.newStatus}</strong> by <strong>${d.changerName || "a team member"}</strong>.</p>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">${tableBody}</table>
+    <a href="https://pmt.ethinos.com" style="display:inline-block;background:#475569;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View Task</a>
+  `;
+  return brandedWrapper("#475569", "Task Status Updated", `"${d.taskName}" → ${d.newStatus}`, body);
+}
+
+/* ─── Test-mode redirect helper ─── */
+
+function resolveRecipient(email: string): string {
+  return process.env.NOTIFY_TEST_EMAIL || email;
+}
+
+function testSubjectPrefix(subject: string): string {
+  return process.env.NOTIFY_TEST_EMAIL ? `[TEST] ${subject}` : subject;
+}
+
+/* ─── Email status endpoint (no auth) ─── */
+
+router.get("/email-status", (_req: Request, res: Response) => {
+  const missing: string[] = [];
+  if (!process.env.AZURE_TENANT_ID && !process.env.VITE_AZURE_TENANT_ID) missing.push("AZURE_TENANT_ID");
+  if (!process.env.AZURE_CLIENT_ID && !process.env.VITE_AZURE_CLIENT_ID) missing.push("AZURE_CLIENT_ID");
+  if (!process.env.AZURE_CLIENT_SECRET) missing.push("AZURE_CLIENT_SECRET");
+  if (!process.env.MS_SENDER_EMAIL) missing.push("MS_SENDER_EMAIL");
+  res.json({ configured: missing.length === 0, missing });
+});
+
+/* ─── Notify route ─── */
 
 router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) => {
   if (!isEmailConfigured()) {
@@ -280,6 +416,16 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
 
   const testMode = !!process.env.NOTIFY_TEST_EMAIL;
 
+  const setting = await getNotificationSetting(type);
+  if (!isEventEnabled(setting, type)) {
+    logger.info({ type }, "[Notify] Notification event disabled — skipping");
+    return res.json({ sent: false, reason: "disabled" });
+  }
+
+  const firebaseBcc: string[] = Array.isArray(setting.bccEmails)
+    ? (setting.bccEmails as string[]).filter(Boolean)
+    : [];
+
   try {
     switch (type) {
       case "task-assigned": {
@@ -289,19 +435,21 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
         const stepList = Array.isArray(steps)
           ? (steps as Array<{ label: string; checked?: boolean }>)
           : [];
-        await sendEmail({
-          to,
-          subject: testSubjectPrefix(`[PMT] New task assigned: "${taskName}"`),
-          bodyHtml: buildTaskAssignedHtml({
-            assigneeName: assigneeName as string,
-            taskName: taskName as string,
-            taskDescription: taskDescription as string | undefined,
-            clientName: clientName as string | undefined,
-            dueDate: dueDate as string | null | undefined,
-            creatorName: creatorName as string | undefined,
-            steps: stepList,
-          }),
+        const subject = applyCustomSubject(
+          testSubjectPrefix(`[PMT] New task assigned: "${taskName}"`),
+          setting.customSubject
+        );
+        let html = buildTaskAssignedHtml({
+          assigneeName: assigneeName as string,
+          taskName: taskName as string,
+          taskDescription: taskDescription as string | undefined,
+          clientName: clientName as string | undefined,
+          dueDate: dueDate as string | null | undefined,
+          creatorName: creatorName as string | undefined,
+          steps: stepList,
         });
+        html = applyCustomIntroText(html, setting.customIntroText);
+        await sendEmail({ to, subject, bodyHtml: html, bcc: testMode ? [] : firebaseBcc });
         logger.info({ to, original: assigneeEmail, taskName, testMode }, "[Notify] task-assigned email sent");
         break;
       }
@@ -312,13 +460,15 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
         const dedupedTo = testMode
           ? [resolveRecipient(recipientEmails[0])]
           : recipientEmails;
+        const subject = applyCustomSubject(
+          testSubjectPrefix(`[PMT] Assignment request: ${requesterName} → "${taskName}"`),
+          setting.customSubject
+        );
+        let html = buildApprovalRequiredHtml({ requesterName, taskName, clientName });
+        html = applyCustomIntroText(html, setting.customIntroText);
         await Promise.allSettled(
           dedupedTo.map((email) =>
-            sendEmail({
-              to: email,
-              subject: testSubjectPrefix(`[PMT] Assignment request: ${requesterName} → "${taskName}"`),
-              bodyHtml: buildApprovalRequiredHtml({ requesterName, taskName, clientName }),
-            })
+            sendEmail({ to: email, subject, bodyHtml: html, bcc: testMode ? [] : firebaseBcc })
           )
         );
         logger.info({ recipients: dedupedTo.length, taskName, testMode }, "[Notify] approval-required emails sent");
@@ -329,11 +479,13 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
         const { recipientEmail, recipientName, feedbackText, replyText, adminName } = data as Record<string, string>;
         if (!recipientEmail) return res.json({ sent: false, reason: "no_email" });
         const to = resolveRecipient(recipientEmail);
-        await sendEmail({
-          to,
-          subject: testSubjectPrefix("[PMT] Your feedback has received a response"),
-          bodyHtml: buildFeedbackResponseHtml({ recipientName, feedbackText, replyText, adminName }),
-        });
+        const subject = applyCustomSubject(
+          testSubjectPrefix("[PMT] Your feedback has received a response"),
+          setting.customSubject
+        );
+        let html = buildFeedbackResponseHtml({ recipientName, feedbackText, replyText, adminName });
+        html = applyCustomIntroText(html, setting.customIntroText);
+        await sendEmail({ to, subject, bodyHtml: html, bcc: testMode ? [] : firebaseBcc });
         logger.info({ to, original: recipientEmail, testMode }, "[Notify] feedback-response email sent");
         break;
       }
@@ -342,34 +494,35 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
         const { recipientEmail, recipientName, mentionerName, taskName, clientName, messageText } = data as Record<string, string>;
         if (!recipientEmail) return res.json({ sent: false, reason: "no_email" });
         const to = resolveRecipient(recipientEmail);
-        await sendEmail({
-          to,
-          subject: testSubjectPrefix(`[PMT] ${mentionerName || "Someone"} mentioned you in "${taskName}"`),
-          bodyHtml: buildMentionHtml({ mentionedName: recipientName, mentionerName, taskName, clientName, messageText }),
-        });
+        const subject = applyCustomSubject(
+          testSubjectPrefix(`[PMT] ${mentionerName || "Someone"} mentioned you in "${taskName}"`),
+          setting.customSubject
+        );
+        let html = buildMentionHtml({ mentionedName: recipientName, mentionerName, taskName, clientName, messageText });
+        html = applyCustomIntroText(html, setting.customIntroText);
+        await sendEmail({ to, subject, bodyHtml: html, bcc: testMode ? [] : firebaseBcc });
         logger.info({ to, original: recipientEmail, taskName, testMode }, "[Notify] mention email sent");
         break;
       }
 
       case "qc-returned": {
-        const { assigneeEmail, assigneeName, reviewerName, taskName, clientName, feedbackText, bccEmails } = data as Record<string, unknown>;
+        const { assigneeEmail, assigneeName, reviewerName, taskName, clientName, feedbackText } = data as Record<string, unknown>;
         if (!assigneeEmail) return res.json({ sent: false, reason: "no_email" });
         const to = resolveRecipient(assigneeEmail as string);
-        const bccList = Array.isArray(bccEmails)
-          ? (bccEmails as string[]).filter((e) => e && e !== assigneeEmail)
-          : [];
-        await sendEmail({
-          to,
-          subject: testSubjectPrefix(`[PMT] QC returned for revision: "${taskName}"`),
-          bodyHtml: buildQcReturnedHtml({
-            assigneeName: assigneeName as string,
-            reviewerName: reviewerName as string,
-            taskName: taskName as string,
-            clientName: clientName as string | undefined,
-            feedbackText: (feedbackText as string) || "",
-          }),
-          bcc: testMode ? [] : bccList,
+        const subject = applyCustomSubject(
+          testSubjectPrefix(`[PMT] QC returned for revision: "${taskName}"`),
+          setting.customSubject
+        );
+        let html = buildQcReturnedHtml({
+          assigneeName: assigneeName as string,
+          reviewerName: reviewerName as string,
+          taskName: taskName as string,
+          clientName: clientName as string | undefined,
+          feedbackText: (feedbackText as string) || "",
         });
+        html = applyCustomIntroText(html, setting.customIntroText);
+        const bccList = testMode ? [] : firebaseBcc.filter((e) => e !== assigneeEmail);
+        await sendEmail({ to, subject, bodyHtml: html, bcc: bccList });
         logger.info({ to, original: assigneeEmail, taskName, bccCount: bccList.length, testMode }, "[Notify] qc-returned email sent");
         break;
       }
@@ -378,11 +531,13 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
         const { reviewerEmail, reviewerName, submitterName, taskName, clientName } = data as Record<string, string>;
         if (!reviewerEmail) return res.json({ sent: false, reason: "no_email" });
         const to = resolveRecipient(reviewerEmail);
-        await sendEmail({
-          to,
-          subject: testSubjectPrefix(`[PMT] QC review needed: "${taskName}"`),
-          bodyHtml: buildQcSubmittedHtml({ reviewerName, submitterName, taskName, clientName }),
-        });
+        const subject = applyCustomSubject(
+          testSubjectPrefix(`[PMT] QC review needed: "${taskName}"`),
+          setting.customSubject
+        );
+        let html = buildQcSubmittedHtml({ reviewerName, submitterName, taskName, clientName });
+        html = applyCustomIntroText(html, setting.customIntroText);
+        await sendEmail({ to, subject, bodyHtml: html, bcc: testMode ? [] : firebaseBcc });
         logger.info({ to, original: reviewerEmail, taskName, testMode }, "[Notify] qc-submitted email sent");
         break;
       }
@@ -391,11 +546,13 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
         const { recipientEmail, recipientName, clientName, approverName } = data as Record<string, string>;
         if (!recipientEmail) return res.json({ sent: false, reason: "no_email" });
         const to = resolveRecipient(recipientEmail);
-        await sendEmail({
-          to,
-          subject: testSubjectPrefix(`[PMT] You've been added to "${clientName}"`),
-          bodyHtml: buildClientAddedHtml({ recipientName, clientName, approverName }),
-        });
+        const subject = applyCustomSubject(
+          testSubjectPrefix(`[PMT] You've been added to "${clientName}"`),
+          setting.customSubject
+        );
+        let html = buildClientAddedHtml({ recipientName, clientName, approverName });
+        html = applyCustomIntroText(html, setting.customIntroText);
+        await sendEmail({ to, subject, bodyHtml: html, bcc: testMode ? [] : firebaseBcc });
         logger.info({ to, original: recipientEmail, clientName, testMode }, "[Notify] client-added email sent");
         break;
       }
@@ -404,12 +561,80 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
         const { recipientEmail, recipientName, taskName, clientName, approverName } = data as Record<string, string>;
         if (!recipientEmail) return res.json({ sent: false, reason: "no_email" });
         const to = resolveRecipient(recipientEmail);
-        await sendEmail({
-          to,
-          subject: testSubjectPrefix(`[PMT] Your assignment request was approved: "${taskName}"`),
-          bodyHtml: buildAssignmentAcceptedHtml({ recipientName, taskName, clientName, approverName }),
-        });
+        const subject = applyCustomSubject(
+          testSubjectPrefix(`[PMT] Your assignment request was approved: "${taskName}"`),
+          setting.customSubject
+        );
+        let html = buildAssignmentAcceptedHtml({ recipientName, taskName, clientName, approverName });
+        html = applyCustomIntroText(html, setting.customIntroText);
+        await sendEmail({ to, subject, bodyHtml: html, bcc: testMode ? [] : firebaseBcc });
         logger.info({ to, original: recipientEmail, taskName, testMode }, "[Notify] assignment-accepted email sent");
+        break;
+      }
+
+      case "qc-approved": {
+        const { assigneeEmail, assigneeName, reviewerName, taskName, clientName, rating } = data as Record<string, unknown>;
+        if (!assigneeEmail) return res.json({ sent: false, reason: "no_email" });
+        const to = resolveRecipient(assigneeEmail as string);
+        const subject = applyCustomSubject(
+          testSubjectPrefix(`[PMT] QC approved: "${taskName}"`),
+          setting.customSubject
+        );
+        let html = buildQcApprovedHtml({
+          assigneeName: assigneeName as string,
+          reviewerName: reviewerName as string,
+          taskName: taskName as string,
+          clientName: clientName as string | undefined,
+          rating: typeof rating === "number" ? rating : null,
+        });
+        html = applyCustomIntroText(html, setting.customIntroText);
+        await sendEmail({ to, subject, bodyHtml: html, bcc: testMode ? [] : firebaseBcc });
+        logger.info({ to, original: assigneeEmail, taskName, testMode }, "[Notify] qc-approved email sent");
+        break;
+      }
+
+      case "task-overdue": {
+        const { assigneeEmail, assigneeName, taskName, clientName, dueDate } = data as Record<string, string>;
+        if (!assigneeEmail) return res.json({ sent: false, reason: "no_email" });
+        const to = resolveRecipient(assigneeEmail);
+        const subject = applyCustomSubject(
+          testSubjectPrefix(`[PMT] Overdue: "${taskName}"`),
+          setting.customSubject
+        );
+        let html = buildTaskOverdueHtml({ assigneeName, taskName, clientName, dueDate });
+        html = applyCustomIntroText(html, setting.customIntroText);
+        await sendEmail({ to, subject, bodyHtml: html, bcc: testMode ? [] : firebaseBcc });
+        logger.info({ to, original: assigneeEmail, taskName, testMode }, "[Notify] task-overdue email sent");
+        break;
+      }
+
+      case "task-due-soon": {
+        const { assigneeEmail, assigneeName, taskName, clientName, dueDate } = data as Record<string, string>;
+        if (!assigneeEmail) return res.json({ sent: false, reason: "no_email" });
+        const to = resolveRecipient(assigneeEmail);
+        const subject = applyCustomSubject(
+          testSubjectPrefix(`[PMT] Due in 2 days: "${taskName}"`),
+          setting.customSubject
+        );
+        let html = buildTaskDueSoonHtml({ assigneeName, taskName, clientName, dueDate });
+        html = applyCustomIntroText(html, setting.customIntroText);
+        await sendEmail({ to, subject, bodyHtml: html, bcc: testMode ? [] : firebaseBcc });
+        logger.info({ to, original: assigneeEmail, taskName, testMode }, "[Notify] task-due-soon email sent");
+        break;
+      }
+
+      case "task-status-changed": {
+        const { assigneeEmail, assigneeName, taskName, clientName, newStatus, changerName } = data as Record<string, string>;
+        if (!assigneeEmail) return res.json({ sent: false, reason: "no_email" });
+        const to = resolveRecipient(assigneeEmail);
+        const subject = applyCustomSubject(
+          testSubjectPrefix(`[PMT] Task status updated: "${taskName}" → ${newStatus}`),
+          setting.customSubject
+        );
+        let html = buildTaskStatusChangedHtml({ assigneeName, taskName, clientName, newStatus, changerName });
+        html = applyCustomIntroText(html, setting.customIntroText);
+        await sendEmail({ to, subject, bodyHtml: html, bcc: testMode ? [] : firebaseBcc });
+        logger.info({ to, original: assigneeEmail, taskName, newStatus, testMode }, "[Notify] task-status-changed email sent");
         break;
       }
 
