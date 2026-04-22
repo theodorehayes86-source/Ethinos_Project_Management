@@ -3,6 +3,7 @@ import admin from "firebase-admin";
 import { sendEmail, isEmailConfigured } from "../lib/microsoft-graph";
 import { readFirebasePath } from "../lib/firebase-admin";
 import { logger } from "../lib/logger";
+import { runWeeklyDigest } from "../lib/weekly-digest-scheduler";
 
 const router = Router();
 
@@ -646,6 +647,38 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
   } catch (err) {
     logger.error({ err, type }, "[Notify] Failed to send notification email");
     return res.status(500).json({ error: "Failed to send email" });
+  }
+});
+
+/* ─── Admin: manual digest trigger ─── */
+
+router.post("/admin/trigger-digest", async (req: Request, res: Response) => {
+  const apiKey = req.headers["x-api-key"] || req.query["apiKey"];
+  const expected = process.env.PMT_EXPORT_API_KEY;
+
+  if (!expected) {
+    return res.status(503).json({ error: "PMT_EXPORT_API_KEY not configured" });
+  }
+  if (!apiKey || apiKey !== expected) {
+    return res.status(401).json({ error: "Invalid or missing API key. Pass it as the x-api-key header." });
+  }
+
+  const toEmail = (req.body?.toEmail as string | undefined) || process.env.NOTIFY_TEST_EMAIL || null;
+
+  if (!toEmail) {
+    return res.status(400).json({
+      error: "toEmail is required in the request body (or set NOTIFY_TEST_EMAIL env var)",
+    });
+  }
+
+  logger.info({ toEmail }, "[Admin] Manual digest trigger received");
+
+  try {
+    await runWeeklyDigest({ force: true, toEmail });
+    return res.json({ ok: true, message: `Digest sent to ${toEmail}` });
+  } catch (err) {
+    logger.error({ err }, "[Admin] Manual digest trigger failed");
+    return res.status(500).json({ error: "Digest run failed — check server logs" });
   }
 });
 

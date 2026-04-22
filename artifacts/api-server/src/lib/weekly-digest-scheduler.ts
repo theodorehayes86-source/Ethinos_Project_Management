@@ -148,8 +148,10 @@ interface DigestSetting {
   lastSentIsoWeek?: string;
 }
 
-export async function runWeeklyDigest(): Promise<void> {
-  logger.info("[WeeklyDigest] Running weekly hours digest check");
+export async function runWeeklyDigest(opts?: { force?: boolean; toEmail?: string }): Promise<void> {
+  const force = opts?.force ?? false;
+  const overrideEmail = opts?.toEmail ?? null;
+  logger.info({ force, overrideEmail: overrideEmail ?? undefined }, "[WeeklyDigest] Running weekly hours digest check");
 
   try {
     // Read digest settings first to check timezone / hour / cooldown
@@ -157,7 +159,7 @@ export async function runWeeklyDigest(): Promise<void> {
       "settings/notifications/weekly-digest"
     );
 
-    if (digestSetting && digestSetting.enabled === false) {
+    if (!force && digestSetting && digestSetting.enabled === false) {
       logger.info("[WeeklyDigest] Globally disabled — skipping");
       return;
     }
@@ -172,19 +174,21 @@ export async function runWeeklyDigest(): Promise<void> {
     const localHour = nowInTz.getHours();
     const localDow = nowInTz.getDay(); // 0 = Sunday, 1 = Monday
 
-    // Only proceed if it's Monday and the right hour in the configured timezone
-    if (localDow !== 1) {
-      logger.debug({ localDow, configuredTz }, "[WeeklyDigest] Not Monday in configured timezone — skipping");
-      return;
-    }
-    if (localHour !== configuredHour) {
-      logger.debug({ localHour, configuredHour, configuredTz }, "[WeeklyDigest] Not send hour — skipping");
-      return;
+    if (!force) {
+      // Only proceed if it's Monday and the right hour in the configured timezone
+      if (localDow !== 1) {
+        logger.debug({ localDow, configuredTz }, "[WeeklyDigest] Not Monday in configured timezone — skipping");
+        return;
+      }
+      if (localHour !== configuredHour) {
+        logger.debug({ localHour, configuredHour, configuredTz }, "[WeeklyDigest] Not send hour — skipping");
+        return;
+      }
     }
 
-    // Cooldown: skip if already sent this ISO week
+    // Cooldown: skip if already sent this ISO week (bypassed when force=true)
     const isoWeekKey = `${format(nowInTz, "yyyy")}-W${String(getISOWeek(nowInTz)).padStart(2, "0")}`;
-    if (digestSetting?.lastSentIsoWeek === isoWeekKey) {
+    if (!force && digestSetting?.lastSentIsoWeek === isoWeekKey) {
       logger.info({ isoWeekKey }, "[WeeklyDigest] Already sent this ISO week — skipping");
       return;
     }
@@ -294,14 +298,16 @@ export async function runWeeklyDigest(): Promise<void> {
         projects,
       });
 
-      const subject = `[Ethinos PMT] Week ${weekNumber} hours summary — ${format(prevMonday, "d MMM")}–${format(days[4], "d MMM yyyy")}`;
+      const sendTo = overrideEmail ?? user.email;
+      const subjectBase = `[Ethinos PMT] Week ${weekNumber} hours summary — ${format(prevMonday, "d MMM")}–${format(days[4], "d MMM yyyy")}`;
+      const subject = overrideEmail ? `[PREVIEW → ${user.name || user.email}] ${subjectBase}` : subjectBase;
 
       try {
-        await sendEmail({ to: user.email, subject, bodyHtml });
+        await sendEmail({ to: sendTo, subject, bodyHtml });
         emailsSent++;
-        logger.info({ to: user.email, user: user.name, weekNumber }, "[WeeklyDigest] Sent");
+        logger.info({ to: sendTo, user: user.name, weekNumber }, "[WeeklyDigest] Sent");
       } catch (err) {
-        logger.error({ err, to: user.email }, "[WeeklyDigest] Failed to send");
+        logger.error({ err, to: sendTo }, "[WeeklyDigest] Failed to send");
       }
     }
 
