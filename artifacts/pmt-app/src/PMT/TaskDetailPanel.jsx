@@ -312,9 +312,40 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
                 <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{task.comment}</p>
               )}
               <div className="flex items-center gap-2 mt-2 flex-wrap">
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusColors[task.status] || 'bg-slate-100 text-slate-600'}`}>
-                  {task.status}
-                </span>
+                {canEdit ? (
+                  <select
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border-none outline-none cursor-pointer appearance-none ${statusColors[task.status] || 'bg-slate-100 text-slate-600'}`}
+                    value={task.status || 'Pending'}
+                    onChange={(e) => {
+                      const newStatus = e.target.value;
+                      if (newStatus === task.status) return;
+                      saveUpdate({ ...task, steps, messages, links, status: newStatus });
+                      if (newStatus === 'WIP' || newStatus === 'Done') {
+                        const assignee = task.assigneeId
+                          ? (users || []).find(u => String(u.id) === String(task.assigneeId))
+                          : null;
+                        if (assignee?.email && String(assignee.id) !== String(currentUser?.id)) {
+                          sendNotification('task-status-changed', {
+                            assigneeEmail: assignee.email,
+                            assigneeName: assignee.name,
+                            taskName: task.name || task.comment,
+                            clientName: task.clientName || task.cName || task.cid || '',
+                            newStatus,
+                            changerName: currentUser?.name,
+                          });
+                        }
+                      }
+                    }}
+                  >
+                    <option value="Pending">Pending</option>
+                    <option value="WIP">WIP</option>
+                    <option value="Done">Done</option>
+                  </select>
+                ) : (
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusColors[task.status] || 'bg-slate-100 text-slate-600'}`}>
+                    {task.status}
+                  </span>
+                )}
                 {task.assigneeName && (
                   <span className="text-[10px] font-medium text-slate-500">
                     Assigned to <span className="text-slate-700 font-semibold">{task.assigneeName}</span>

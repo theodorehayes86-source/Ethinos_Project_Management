@@ -514,7 +514,22 @@ const HomeView = ({
 
   const startTaskTimer = useCallback((task) => {
     handleUpdateTask(task, { status: 'WIP', timerState: 'running', timerStartedAt: Date.now() });
-  }, [clientLogs]);
+    if (task.status !== 'WIP') {
+      const assignee = task.assigneeId
+        ? (users || []).find(u => String(u.id) === String(task.assigneeId))
+        : null;
+      if (assignee?.email && String(assignee.id) !== String(currentUser?.id)) {
+        sendNotification('task-status-changed', {
+          assigneeEmail: assignee.email,
+          assigneeName: assignee.name,
+          taskName: task.name || task.comment,
+          clientName: task.cName || task.cid || '',
+          newStatus: 'WIP',
+          changerName: currentUser?.name,
+        });
+      }
+    }
+  }, [clientLogs, users, currentUser]);
 
   const pauseTaskTimer = useCallback((task) => {
     if (task.timerState !== 'running' || !task.timerStartedAt) return;
@@ -540,6 +555,21 @@ const HomeView = ({
     const qcReset = newStatus !== 'Done' && task.qcStatus === 'sent' ? { qcStatus: null } : {};
     handleUpdateTask(task, { status: newStatus, ...timerUpdate, ...qcReset });
     setDetailTask(prev => prev?.id === task.id ? { ...prev, status: newStatus, ...timerUpdate, ...qcReset } : prev);
+    if ((newStatus === 'WIP' || newStatus === 'Done') && newStatus !== task.status) {
+      const assignee = task.assigneeId
+        ? (users || []).find(u => String(u.id) === String(task.assigneeId))
+        : null;
+      if (assignee?.email && String(assignee.id) !== String(currentUser?.id)) {
+        sendNotification('task-status-changed', {
+          assigneeEmail: assignee.email,
+          assigneeName: assignee.name,
+          taskName: task.name || task.comment,
+          clientName: task.cName || task.cid || '',
+          newStatus,
+          changerName: currentUser?.name,
+        });
+      }
+    }
   };
 
   // Group tasks by client
