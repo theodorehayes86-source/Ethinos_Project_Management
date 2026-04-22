@@ -32,7 +32,7 @@ function renderMentions(text) {
   );
 }
 
-export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser, readOnly, users = [], clients = [] }) {
+export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser, readOnly, isManager = false, users = [], clients = [] }) {
   const [status, setStatus] = useState(task.status || 'Pending');
   const [steps, setSteps] = useState(() => Array.isArray(task.steps) ? task.steps : []);
   const [messages, setMessages] = useState(() => Array.isArray(task.messages) ? task.messages : []);
@@ -56,6 +56,7 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
   const [archiving, setArchiving] = useState(false);
 
   const canEdit = !readOnly && currentUser && String(task.assigneeId) === String(currentUser.id);
+  const canChangeStatus = canEdit || (!readOnly && !!currentUser && isManager);
   const canChat = !!currentUser;
   const isOverdue = isTaskOverdue(task, status);
 
@@ -98,8 +99,24 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
   };
 
   const handleStatusChange = async (newStatus) => {
+    if (newStatus === status) return;
     setStatus(newStatus);
     await persistUpdate({ status: newStatus });
+    if (newStatus === 'WIP' || newStatus === 'Done') {
+      const assignee = task.assigneeId
+        ? (users || []).find(u => String(u.id) === String(task.assigneeId))
+        : null;
+      if (assignee?.email && String(assignee.id) !== String(currentUser?.id)) {
+        sendNotification('task-status-changed', {
+          assigneeEmail: assignee.email,
+          assigneeName: assignee.name,
+          taskName: task.name || task.comment,
+          clientName: task._clientName || '',
+          newStatus,
+          changerName: currentUser?.name,
+        });
+      }
+    }
   };
 
   const handleToggleStep = async (stepId) => {
@@ -294,7 +311,7 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
                 )}
               </div>
 
-              {canEdit && (
+              {canChangeStatus && (
                 <div>
                   <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Update Status</p>
                   <div className="flex gap-2">

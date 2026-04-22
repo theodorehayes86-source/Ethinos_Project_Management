@@ -526,6 +526,7 @@ export default function ManagerDashboard({
           onClose={() => setSelectedTask(null)}
           clientLogs={clientLogs}
           currentUser={currentUser}
+          isManager={true}
           users={users}
           clients={clients}
         />
