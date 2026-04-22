@@ -185,6 +185,34 @@ const MasterDataView = ({
   const [bccInputs, setBccInputs] = useState({});
   const [expandedEvents, setExpandedEvents] = useState({});
 
+  const DIGEST_TIMEZONES = [
+    { value: 'Europe/London',      label: 'London (GMT / BST)' },
+    { value: 'Europe/Dublin',      label: 'Dublin (GMT / IST)' },
+    { value: 'Europe/Paris',       label: 'Paris / Berlin (CET / CEST)' },
+    { value: 'Europe/Athens',      label: 'Athens / Helsinki (EET / EEST)' },
+    { value: 'Europe/Moscow',      label: 'Moscow (MSK)' },
+    { value: 'Europe/Istanbul',    label: 'Istanbul (TRT)' },
+    { value: 'Asia/Dubai',         label: 'Dubai (GST, UTC+4)' },
+    { value: 'Asia/Karachi',       label: 'Karachi (PKT, UTC+5)' },
+    { value: 'Asia/Colombo',       label: 'Colombo (SLST, UTC+5:30)' },
+    { value: 'Asia/Kolkata',       label: 'Kolkata / Mumbai (IST, UTC+5:30)' },
+    { value: 'Asia/Dhaka',         label: 'Dhaka (BST, UTC+6)' },
+    { value: 'Asia/Bangkok',       label: 'Bangkok (ICT, UTC+7)' },
+    { value: 'Asia/Singapore',     label: 'Singapore (SGT, UTC+8)' },
+    { value: 'Asia/Shanghai',      label: 'Beijing / Shanghai (CST, UTC+8)' },
+    { value: 'Asia/Tokyo',         label: 'Tokyo (JST, UTC+9)' },
+    { value: 'Australia/Sydney',   label: 'Sydney (AEST / AEDT)' },
+    { value: 'Pacific/Auckland',   label: 'Auckland (NZST / NZDT)' },
+    { value: 'America/New_York',   label: 'New York (EST / EDT)' },
+    { value: 'America/Chicago',    label: 'Chicago (CST / CDT)' },
+    { value: 'America/Denver',     label: 'Denver (MST / MDT)' },
+    { value: 'America/Los_Angeles',label: 'Los Angeles (PST / PDT)' },
+    { value: 'America/Sao_Paulo',  label: 'São Paulo (BRT)' },
+    { value: 'UTC',                label: 'UTC (no DST)' },
+  ];
+
+  const DIGEST_HOURS = [5,6,7,8,9,10,11,12];
+
   const NOTIFICATION_EVENTS = [
     { id: 'task-assigned', label: 'Task Assigned', description: 'Sent to the assignee when a task is created and assigned to them.', when: 'On task creation / assignment', defaultOn: true },
     { id: 'approval-required', label: 'Approval Required', description: 'Sent to managers when someone requests to be assigned a task.', when: 'On assignment request', defaultOn: true },
@@ -1882,30 +1910,87 @@ const MasterDataView = ({
             </div>
 
             {/* Weekly Digest card */}
-            <div className="bg-white border border-slate-200 rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Other</p>
-              </div>
-              <div className={`flex items-center gap-4 rounded-lg border p-3 ${digestGlobalEnabled ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-slate-50'}`}>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-sm font-semibold text-slate-800">Weekly Hours Digest</p>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-slate-100 text-slate-500">Every Monday, 08:00 London time</span>
+            {(() => {
+              const digestSetting = notificationSettings['weekly-digest'] || {};
+              const digestTz = digestSetting.scheduleTimezone || 'Europe/London';
+              const digestHour = typeof digestSetting.scheduleHour === 'number' ? digestSetting.scheduleHour : 8;
+              const tzLabel = DIGEST_TIMEZONES.find(t => t.value === digestTz)?.label || digestTz;
+              const isDigestExpanded = !!expandedEvents['weekly-digest'];
+              return (
+                <div className="bg-white border border-slate-200 rounded-xl p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Other</p>
                   </div>
-                  <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-                    Sends each opted-in user a Monday morning email summarising their hours logged for the previous week, broken down by project. Individual opt-in is controlled per user in the Users tab.
-                  </p>
+                  <div className={`rounded-lg border ${digestGlobalEnabled ? 'border-emerald-200 bg-white' : 'border-slate-200 bg-slate-50'}`}>
+                    <div className="flex items-start gap-3 p-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-semibold text-slate-800">Weekly Hours Digest</p>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-slate-100 text-slate-500">
+                            Every Monday, {String(digestHour).padStart(2,'0')}:00 — {tzLabel}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                          Sends each opted-in user a Monday morning email summarising their hours logged for the previous week, broken down by project. Individual opt-in is controlled per user in the Users tab.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                          onClick={() => setExpandedEvents(prev => ({ ...prev, 'weekly-digest': !prev['weekly-digest'] }))}
+                          className="text-[11px] text-slate-400 hover:text-slate-600 px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 transition-all"
+                          title="Customise schedule"
+                        >
+                          <Edit2 size={11} />
+                        </button>
+                        <button
+                          onClick={() => onDigestGlobalToggle && onDigestGlobalToggle(!digestGlobalEnabled)}
+                          disabled={!onDigestGlobalToggle}
+                          title={digestGlobalEnabled ? 'Disable globally' : 'Enable globally'}
+                          className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:opacity-50 ${digestGlobalEnabled ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                        >
+                          <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${digestGlobalEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {isDigestExpanded && (
+                      <div className="border-t border-slate-100 p-3 space-y-3 bg-slate-50 rounded-b-lg">
+                        <div>
+                          <label className="text-[11px] font-semibold text-slate-600 block mb-1">Send time</label>
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={digestHour}
+                              onChange={e => onUpdateNotificationSetting && onUpdateNotificationSetting('weekly-digest', { scheduleHour: Number(e.target.value) })}
+                              className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white outline-none focus:ring-2 ring-blue-500/20"
+                            >
+                              {DIGEST_HOURS.map(h => (
+                                <option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>
+                              ))}
+                            </select>
+                            <span className="text-xs text-slate-400">on Mondays</span>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-[11px] font-semibold text-slate-600 block mb-1">Timezone</label>
+                          <select
+                            value={digestTz}
+                            onChange={e => onUpdateNotificationSetting && onUpdateNotificationSetting('weekly-digest', { scheduleTimezone: e.target.value })}
+                            className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white outline-none focus:ring-2 ring-blue-500/20"
+                          >
+                            {DIGEST_TIMEZONES.map(tz => (
+                              <option key={tz.value} value={tz.value}>{tz.label}</option>
+                            ))}
+                          </select>
+                          <p className="text-[10px] text-slate-400 mt-1">
+                            The digest runs at {String(digestHour).padStart(2,'0')}:00 local time in the selected timezone. Changes take effect from the next Monday check.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <button
-                  onClick={() => onDigestGlobalToggle && onDigestGlobalToggle(!digestGlobalEnabled)}
-                  disabled={!onDigestGlobalToggle}
-                  title={digestGlobalEnabled ? 'Disable globally' : 'Enable globally'}
-                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:opacity-50 ${digestGlobalEnabled ? 'bg-emerald-500' : 'bg-slate-300'}`}
-                >
-                  <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${digestGlobalEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
-                </button>
-              </div>
-            </div>
+              );
+            })()}
 
             {/* Active events */}
             {activeEvents.length > 0 && (

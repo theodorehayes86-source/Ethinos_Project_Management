@@ -1248,7 +1248,12 @@ const App = () => {
   };
   const persistDigestGlobal = (enabled) => {
     setDigestGlobalEnabled(enabled);
-    if (firebaseUser) set(ref(db, 'settings/notifications/weekly-digest'), { enabled });
+    // Use persistNotificationSetting pattern to merge — avoids wiping scheduleTimezone/scheduleHour
+    setNotificationSettings(prev => {
+      const updated = { ...(prev['weekly-digest'] || {}), enabled };
+      if (firebaseUser) set(ref(db, 'settings/notifications/weekly-digest'), sanitizeForFirebase(updated));
+      return { ...prev, 'weekly-digest': updated };
+    });
   };
   const persistNotificationSetting = (eventType, patch) => {
     setNotificationSettings(prev => {

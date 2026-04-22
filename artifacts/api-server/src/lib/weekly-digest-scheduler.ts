@@ -4,11 +4,12 @@ import {
   addDays, format, getISOWeek, isWithinInterval, startOfDay,
 } from "date-fns";
 import { toZonedTime } from "date-fns-tz";
-import { readFirebasePath } from "./firebase-admin";
+import { readFirebasePath, writeFirebasePath } from "./firebase-admin";
 import { sendEmail, isEmailConfigured } from "./microsoft-graph";
 import { logger } from "./logger";
 
-const LONDON_TZ = "Europe/London";
+const DEFAULT_TZ = "Europe/London";
+const DEFAULT_HOUR = 8;
 
 interface User {
   id: string | number;
@@ -140,19 +141,51 @@ function buildWeeklyDigestHtml(data: {
 </html>`;
 }
 
+interface DigestSetting {
+  enabled?: boolean;
+  scheduleTimezone?: string;
+  scheduleHour?: number;
+  lastSentIsoWeek?: string;
+}
+
 export async function runWeeklyDigest(): Promise<void> {
-  logger.info("[WeeklyDigest] Running weekly hours digest");
+  logger.info("[WeeklyDigest] Running weekly hours digest check");
 
   try {
-    const [clientLogsRaw, usersRaw, clientsRaw, globalSetting] = await Promise.all([
-      readFirebasePath<Record<string, unknown>>("clientLogs"),
-      readFirebasePath<unknown>("users"),
-      readFirebasePath<unknown>("clients"),
-      readFirebasePath<{ enabled?: boolean } | null>("settings/notifications/weekly-digest"),
-    ]);
+    // Read digest settings first to check timezone / hour / cooldown
+    const digestSetting = await readFirebasePath<DigestSetting | null>(
+      "settings/notifications/weekly-digest"
+    );
 
-    if (globalSetting && globalSetting.enabled === false) {
-      logger.info("[WeeklyDigest] Globally disabled in notification settings — skipping");
+    if (digestSetting && digestSetting.enabled === false) {
+      logger.info("[WeeklyDigest] Globally disabled — skipping");
+      return;
+    }
+
+    const configuredTz = digestSetting?.scheduleTimezone || DEFAULT_TZ;
+    const configuredHour = typeof digestSetting?.scheduleHour === "number"
+      ? digestSetting.scheduleHour
+      : DEFAULT_HOUR;
+
+    // Evaluate the current moment in the configured timezone
+    const nowInTz = toZonedTime(new Date(), configuredTz);
+    const localHour = nowInTz.getHours();
+    const localDow = nowInTz.getDay(); // 0 = Sunday, 1 = Monday
+
+    // Only proceed if it's Monday and the right hour in the configured timezone
+    if (localDow !== 1) {
+      logger.debug({ localDow, configuredTz }, "[WeeklyDigest] Not Monday in configured timezone — skipping");
+      return;
+    }
+    if (localHour !== configuredHour) {
+      logger.debug({ localHour, configuredHour, configuredTz }, "[WeeklyDigest] Not send hour — skipping");
+      return;
+    }
+
+    // Cooldown: skip if already sent this ISO week
+    const isoWeekKey = `${format(nowInTz, "yyyy")}-W${String(getISOWeek(nowInTz)).padStart(2, "0")}`;
+    if (digestSetting?.lastSentIsoWeek === isoWeekKey) {
+      logger.info({ isoWeekKey }, "[WeeklyDigest] Already sent this ISO week — skipping");
       return;
     }
 
@@ -160,6 +193,14 @@ export async function runWeeklyDigest(): Promise<void> {
       logger.warn("[WeeklyDigest] Email not configured — skipping");
       return;
     }
+
+    logger.info({ configuredTz, configuredHour, isoWeekKey }, "[WeeklyDigest] Conditions met — sending digest");
+
+    const [clientLogsRaw, usersRaw, clientsRaw] = await Promise.all([
+      readFirebasePath<Record<string, unknown>>("clientLogs"),
+      readFirebasePath<unknown>("users"),
+      readFirebasePath<unknown>("clients"),
+    ]);
 
     const users: User[] = usersRaw
       ? (Array.isArray(usersRaw)
@@ -183,11 +224,9 @@ export async function runWeeklyDigest(): Promise<void> {
       clientNameMap[String(c.id)] = c.name || String(c.id);
     }
 
-    // Compute previous ISO week boundaries in London time so the digest is
-    // always correct regardless of the server's host timezone.
-    const nowLondon = toZonedTime(new Date(), LONDON_TZ);
-    const prevMonday = startOfISOWeek(subWeeks(nowLondon, 1));
-    const prevSunday = endOfISOWeek(subWeeks(nowLondon, 1));
+    // Compute previous ISO week boundaries in the configured timezone
+    const prevMonday = startOfISOWeek(subWeeks(nowInTz, 1));
+    const prevSunday = endOfISOWeek(subWeeks(nowInTz, 1));
     const days = [0, 1, 2, 3, 4].map(i => addDays(prevMonday, i)); // Mon–Fri
     const weekNumber = getISOWeek(prevMonday);
     const weekLabel = `${format(prevMonday, "d MMM yyyy")} – ${format(days[4], "d MMM yyyy")}`;
@@ -267,22 +306,33 @@ export async function runWeeklyDigest(): Promise<void> {
     }
 
     logger.info({ emailsSent, emailsSkipped }, "[WeeklyDigest] Complete");
+
+    // Write cooldown so subsequent hourly ticks skip this week
+    if (emailsSent > 0 || emailsSkipped > 0) {
+      try {
+        await writeFirebasePath(
+          "settings/notifications/weekly-digest/lastSentIsoWeek",
+          isoWeekKey
+        );
+        logger.info({ isoWeekKey }, "[WeeklyDigest] Cooldown written");
+      } catch (err) {
+        logger.warn({ err }, "[WeeklyDigest] Failed to write cooldown — may re-send next tick");
+      }
+    }
   } catch (err) {
     logger.error({ err }, "[WeeklyDigest] Error during digest run");
   }
 }
 
 export function startWeeklyDigestScheduler(): void {
-  // Fire every Monday at 08:00 London time (Europe/London handles BST/GMT automatically)
-  cron.schedule(
-    "0 8 * * 1",
-    () => {
-      runWeeklyDigest().catch(err =>
-        logger.error({ err }, "[WeeklyDigest] Unhandled error")
-      );
-    },
-    { timezone: "Europe/London" }
-  );
+  // Run every hour on Mondays (UTC). Timezone + hour gate is applied inside
+  // runWeeklyDigest() by reading the configured scheduleTimezone/scheduleHour
+  // from Firebase so the digest fires at the right local time for any timezone.
+  cron.schedule("0 * * * 1", () => {
+    runWeeklyDigest().catch(err =>
+      logger.error({ err }, "[WeeklyDigest] Unhandled error")
+    );
+  });
 
-  logger.info("[WeeklyDigest] Scheduler started — runs Mondays at 08:00 Europe/London");
+  logger.info("[WeeklyDigest] Scheduler started — checks every hour on Mondays (timezone read from Firebase settings)");
 }
