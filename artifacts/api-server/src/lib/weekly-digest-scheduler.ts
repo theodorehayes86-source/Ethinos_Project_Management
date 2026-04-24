@@ -253,7 +253,12 @@ export async function runWeeklyDigest(opts?: { force?: boolean; toEmail?: string
     let emailsSkipped = 0;
 
     for (const user of users) {
-      if (!user.weeklyDigestEnabled || !user.email) {
+      // In force/preview mode, include all users with an email address regardless of opt-in
+      if (!user.email) {
+        emailsSkipped++;
+        continue;
+      }
+      if (!force && !user.weeklyDigestEnabled) {
         emailsSkipped++;
         continue;
       }
