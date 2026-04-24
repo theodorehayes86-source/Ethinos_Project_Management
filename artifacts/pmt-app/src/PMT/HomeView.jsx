@@ -2,9 +2,10 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { format, parse, isBefore, addDays, differenceInCalendarDays } from 'date-fns';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
-import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, CheckCircle, Tag, Calendar, Archive, ArchiveRestore, LayoutTemplate, ChevronDown, Play, Square, Pause, Send, ThumbsUp, ThumbsDown, RotateCcw, Pencil } from 'lucide-react';
+import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, CheckCircle, XCircle, MinusCircle, Tag, Calendar, Archive, ArchiveRestore, LayoutTemplate, ChevronDown, Play, Square, Pause, Send, ThumbsUp, ThumbsDown, RotateCcw, Pencil, ClipboardList } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import TaskDetailPanel from './TaskDetailPanel';
+import ChecklistGroupDetailPanel from './ChecklistGroupDetailPanel';
 import { sendNotification } from '../utils/notify';
 import { ReminderPills } from './ReminderPills';
 import DueDateInput from './DueDateInput';
@@ -26,6 +27,27 @@ const ROLE_RANK = {
   'Intern':          20,
 };
 const roleRank = (role) => ROLE_RANK[role] ?? 10;
+
+function parseDateStr(raw) {
+  if (!raw) return null;
+  const fmts = ['do MMM yyyy', 'd MMM yyyy', 'dd MMM yyyy', 'yyyy-MM-dd'];
+  for (const fmt of fmts) {
+    try {
+      const d = parse(raw, fmt, new Date());
+      if (d instanceof Date && !isNaN(d.getTime())) return d;
+    } catch { /* continue */ }
+  }
+  return null;
+}
+
+function compareByDate(a, b) {
+  const da = parseDateStr(a._sortKey);
+  const db = parseDateStr(b._sortKey);
+  if (!da && !db) return 0;
+  if (!da) return 1;
+  if (!db) return -1;
+  return da - db;
+}
 
 const canFullyEditTaskFor = (task, currentUser) => {
   if (!currentUser || !task) return false;
@@ -50,6 +72,9 @@ const HomeView = ({
   onNavigateToClients,
   setNotifications = () => {},
   taskTemplates = [],
+  checklistTemplates = [],
+  taskGroups = [],
+  setTaskGroups = () => {},
 }) => {
   const isManagement = managementRoles.includes(currentUser?.role);
   const allClientOptions = useMemo(
@@ -95,6 +120,20 @@ const HomeView = ({
   const [taskReminders, setTaskReminders] = useState([]);
   const [showArchived, setShowArchived] = useState(false);
   const [detailTask, setDetailTask] = useState(null);
+
+  // --- Checklist Group state ---
+  const [showNewChecklistModal, setShowNewChecklistModal] = useState(false);
+  const [clSelectedTemplateId, setClSelectedTemplateId] = useState('');
+  const [clSelectedClientId, setClSelectedClientId] = useState('');
+  const [clSelectedDate, setClSelectedDate] = useState(new Date());
+  const [clRepeatFreq, setClRepeatFreq] = useState('Once');
+  const [clRepeatEnd, setClRepeatEnd] = useState(null);
+  const [clAssigneeId, setClAssigneeId] = useState('');
+  const [clAssigneeName, setClAssigneeName] = useState('');
+  const [clAssigneeQuery, setClAssigneeQuery] = useState('');
+  const [clShowAssigneeMenu, setClShowAssigneeMenu] = useState(false);
+  const [clError, setClError] = useState('');
+  const [detailGroup, setDetailGroup] = useState(null);
 
   // --- Edit task modal state ---
   const [editingTask, setEditingTask] = useState(null);
@@ -230,6 +269,140 @@ const HomeView = ({
 
   const openAddTaskModal = () => { resetModal(); setShowAddTaskModal(true); };
   const closeModal = () => { setShowAddTaskModal(false); resetModal(); };
+
+  // --- Checklist group creation ---
+  const resetClModal = () => {
+    setClSelectedTemplateId('');
+    setClSelectedClientId(isManagement ? (accessibleClients[0]?.id || '__personal__') : '__personal__');
+    setClSelectedDate(new Date());
+    setClRepeatFreq('Once');
+    setClRepeatEnd(null);
+    setClAssigneeId(isManagement ? '' : (currentUser?.id || ''));
+    setClAssigneeName(isManagement ? '' : (currentUser?.name || ''));
+    setClAssigneeQuery(isManagement ? '' : (currentUser?.name || ''));
+    setClShowAssigneeMenu(false);
+    setClError('');
+  };
+
+  const openNewChecklistModal = () => { resetClModal(); setShowNewChecklistModal(true); };
+  const closeNewChecklistModal = () => { setShowNewChecklistModal(false); resetClModal(); };
+
+  const handleCreateChecklistGroup = () => {
+    if (!clSelectedTemplateId) { setClError('Please select a checklist template.'); return; }
+    if (!clSelectedClientId) { setClError('Please select a client.'); return; }
+    const effectiveAssigneeId = isManagement ? clAssigneeId : (currentUser?.id || '');
+    const effectiveAssigneeName = isManagement ? clAssigneeName : (currentUser?.name || '');
+    if (!effectiveAssigneeId) { setClError('Please select an assignee.'); return; }
+
+    const template = checklistTemplates.find(t => t.id === clSelectedTemplateId);
+    if (!template) { setClError('Template not found.'); return; }
+
+    const clientOpt = allClientOptions.find(c => c.id === clSelectedClientId);
+    const formattedDate = format(clSelectedDate, 'do MMM yyyy');
+    const groupId = `tg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const repeatGroupId = clRepeatFreq !== 'Once' ? `rg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}` : undefined;
+
+    const newGroup = {
+      id: groupId,
+      name: template.name,
+      templateId: template.id,
+      templateName: template.name,
+      questions: (template.questions || []).map(q => ({
+        id: q.id,
+        text: q.text,
+        requiresInput: q.requiresInput || false,
+        inputLabel: q.inputLabel || '',
+        order: q.order ?? 0,
+      })),
+      clientId: clSelectedClientId,
+      clientName: clientOpt?.name || '',
+      date: formattedDate,
+      dueDate: null,
+      repeatFrequency: clRepeatFreq,
+      repeatEnd: clRepeatFreq !== 'Once' ? (clRepeatEnd ? format(clRepeatEnd, 'do MMM yyyy') : null) : null,
+      assigneeId: effectiveAssigneeId,
+      assigneeName: effectiveAssigneeName,
+      creatorId: currentUser?.id || null,
+      creatorName: currentUser?.name || '',
+      creatorRole: currentUser?.role || '',
+      status: 'Pending',
+      archived: false,
+      ...(repeatGroupId ? { repeatGroupId } : {}),
+    };
+
+    const childTasks = (template.questions || []).map((q, i) => ({
+      id: `${groupId}-q${i}-${Date.now() + i}`,
+      taskGroupId: groupId,
+      taskType: 'checklist',
+      questionText: q.text,
+      requiresInput: q.requiresInput || false,
+      inputLabel: q.inputLabel || '',
+      name: q.text,
+      comment: '',
+      date: formattedDate,
+      status: 'Pending',
+      assigneeId: effectiveAssigneeId,
+      assigneeName: effectiveAssigneeName,
+      creatorId: currentUser?.id || null,
+      creatorName: currentUser?.name || '',
+      creatorRole: currentUser?.role || '',
+      category: 'Checklist',
+      repeatFrequency: 'Once',
+      checklistAnswer: null,
+      checklistNote: null,
+      timerState: 'idle',
+      timerStartedAt: null,
+      elapsedMs: 0,
+      billable: false,
+      departments: currentUser?.department ? [currentUser.department] : [],
+    }));
+
+    const nextLogs = {
+      ...clientLogs,
+      [clSelectedClientId]: [...childTasks, ...(clientLogs[clSelectedClientId] || [])],
+    };
+    setClientLogs(nextLogs);
+    setTaskGroups([newGroup, ...taskGroups]);
+
+    closeNewChecklistModal();
+  };
+
+  const handleUpdateGroupChildTask = (updatedTask) => {
+    const cid = updatedTask.taskGroupId
+      ? (taskGroups.find(g => g.id === updatedTask.taskGroupId)?.clientId)
+      : updatedTask.cid;
+    if (!cid) return;
+    const updated = (clientLogs[cid] || []).map(t =>
+      t.id === updatedTask.id ? { ...t, ...updatedTask } : t
+    );
+    setClientLogs({ ...clientLogs, [cid]: updated });
+  };
+
+  const handleUpdateGroup = (updatedGroup) => {
+    setTaskGroups(taskGroups.map(g => g.id === updatedGroup.id ? updatedGroup : g));
+  };
+
+  // Centralized group auto-complete watcher: whenever child tasks change from any source,
+  // mark any fully-answered groups as done. This covers cases where updates come from
+  // outside the ChecklistGroupDetailPanel (e.g., direct Firebase writes, scheduler spawns).
+  const groupsNeedingCompletion = useMemo(() => {
+    return taskGroups.filter(group => {
+      if (group.status === 'done' || group.archived) return false;
+      const children = (clientLogs[group.clientId] || []).filter(t => t.taskGroupId === group.id);
+      if (children.length === 0) return false;
+      const ci = children.filter(t => t.taskType === 'checklist');
+      const si = children.filter(t => t.taskType !== 'checklist');
+      return ci.length > 0 &&
+             ci.every(t => t.checklistAnswer != null) &&
+             (si.length === 0 || si.every(t => t.status === 'Done'));
+    });
+  }, [taskGroups, clientLogs]);
+
+  useEffect(() => {
+    if (groupsNeedingCompletion.length === 0) return;
+    const ids = new Set(groupsNeedingCompletion.map(g => g.id));
+    setTaskGroups(taskGroups.map(g => ids.has(g.id) ? { ...g, status: 'done' } : g));
+  }, [groupsNeedingCompletion]);
 
   // ── Recurrence helpers ─────────────────────────────────────────────────────
   const HV_WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
@@ -382,8 +555,23 @@ const HomeView = ({
 
   // --- Personal task data ---
   const myTasks = useMemo(() => {
-    return allTasks.filter(t => String(t.assigneeId) === String(currentUser?.id) && !t.archived);
+    return allTasks.filter(t =>
+      String(t.assigneeId) === String(currentUser?.id) && !t.archived && !t.taskGroupId
+    );
   }, [allTasks, currentUser]);
+
+  // --- Task groups assigned to current user ---
+  const myTaskGroups = useMemo(() => {
+    return taskGroups.filter(g =>
+      String(g.assigneeId) === String(currentUser?.id) && !g.archived
+    );
+  }, [taskGroups, currentUser]);
+
+  // --- Get child tasks for a group ---
+  const getGroupChildren = useCallback((group) => {
+    const logs = clientLogs[group.clientId] || [];
+    return logs.filter(t => t.taskGroupId === group.id);
+  }, [clientLogs]);
 
   const myArchivedTasks = useMemo(() => {
     return allTasks.filter(t => String(t.assigneeId) === String(currentUser?.id) && t.archived);
@@ -572,16 +760,28 @@ const HomeView = ({
     }
   };
 
-  // Group tasks by client
+  // Group tasks and task groups by client
   const tasksByClient = useMemo(() => {
     const groups = {};
     filteredMyTasks.forEach(task => {
       const key = task.cid || 'unknown';
-      if (!groups[key]) groups[key] = { clientName: task.cName || 'Unknown Client', clientId: task.cid, tasks: [] };
+      if (!groups[key]) groups[key] = { clientName: task.cName || 'Unknown Client', clientId: task.cid, tasks: [], taskGroups: [] };
       groups[key].tasks.push(task);
     });
+    // Add task groups into the client groupings (shown in 'all' and 'done' filters only)
+    const filteredGroups = showArchived ? [] : (statusFilter === 'done'
+      ? myTaskGroups.filter(g => g.status === 'done')
+      : statusFilter === 'all'
+        ? myTaskGroups.filter(g => g.status !== 'done')
+        : []);
+    filteredGroups.forEach(group => {
+      const key = group.clientId || 'unknown';
+      const clientName = group.clientName || allClientOptions.find(c => c.id === group.clientId)?.name || 'Unknown Client';
+      if (!groups[key]) groups[key] = { clientName, clientId: group.clientId, tasks: [], taskGroups: [] };
+      groups[key].taskGroups.push(group);
+    });
     return Object.values(groups);
-  }, [filteredMyTasks]);
+  }, [filteredMyTasks, myTaskGroups, showArchived, statusFilter, allClientOptions]);
 
   const statusColor = (status) => {
     if (status === 'Done') return 'bg-emerald-100 text-emerald-700';
@@ -732,6 +932,14 @@ const HomeView = ({
               <LayoutTemplate size={12} /> Use Template
             </button>
           )}
+          {checklistTemplates.length > 0 && (
+            <button
+              onClick={openNewChecklistModal}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 transition-all"
+            >
+              <ClipboardList size={12} /> New Checklist
+            </button>
+          )}
           <button
             onClick={openAddTaskModal}
             className="bg-slate-900 text-white px-3 py-1.5 rounded-lg font-semibold text-xs hover:bg-slate-800 transition-all flex items-center gap-1.5 shadow-sm"
@@ -742,7 +950,7 @@ const HomeView = ({
       </div>
 
       {/* TASK LIST */}
-      {filteredMyTasks.length === 0 ? (
+      {filteredMyTasks.length === 0 && tasksByClient.every(g => (g.taskGroups || []).length === 0) ? (
         <div className="flex flex-col items-center justify-center py-20 text-center bg-white/60 rounded-2xl border border-slate-100">
           <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
             <CheckCircle size={24} className="text-slate-300" />
@@ -756,7 +964,7 @@ const HomeView = ({
         </div>
       ) : (
         <div className="space-y-6">
-          {tasksByClient.map(({ clientName, clientId, tasks }) => {
+          {tasksByClient.map(({ clientName, clientId, tasks, taskGroups: clientGroups = [] }) => {
             const client = accessibleClients.find(c => c.id === clientId);
             return (
               <div key={clientId}>
@@ -769,7 +977,7 @@ const HomeView = ({
                       </span>
                     </div>
                     <span className="text-sm font-bold text-slate-800">{clientName}</span>
-                    <span className="text-xs text-slate-400">({tasks.length})</span>
+                    <span className="text-xs text-slate-400">({tasks.length + clientGroups.length})</span>
                   </div>
                   {client && (
                     <button
@@ -781,9 +989,67 @@ const HomeView = ({
                   )}
                 </div>
 
-                {/* Task rows — same functionality as client view */}
+                {/* Interleaved sorted list — groups and tasks ordered by due date */}
                 <div className="space-y-2 pl-9">
-                  {tasks.map(task => {
+                  {[
+                    ...clientGroups.map(g => ({ _type: 'group', item: g, _sortKey: g.dueDate || g.date || '' })),
+                    ...tasks.map(t => ({ _type: 'task', item: t, _sortKey: t.dueDate || t.date || '' })),
+                  ].sort(compareByDate).map(({ _type, item }) => {
+                    if (_type === 'group') {
+                      const group = item;
+                      const children = getGroupChildren(group);
+                      const checklistChildren = children.filter(t => t.taskType === 'checklist');
+                      const answeredCount = checklistChildren.filter(t => t.checklistAnswer != null).length;
+                      const totalCount = checklistChildren.length;
+                      const isDone = group.status === 'done';
+                      const progressPct = totalCount > 0 ? Math.round((answeredCount / totalCount) * 100) : 0;
+                      const GRP_CADENCE_COLORS = { Daily: 'bg-emerald-100 text-emerald-700', Weekly: 'bg-blue-100 text-blue-700', Monthly: 'bg-purple-100 text-purple-700' };
+                      return (
+                        <div
+                          key={group.id}
+                          onClick={() => setDetailGroup(group)}
+                          className={`bg-white rounded-xl border shadow-sm px-4 py-3 cursor-pointer transition-all hover:shadow-md hover:border-teal-300 border-l-4 ${
+                            isDone ? 'border-l-emerald-400 opacity-75' : 'border-l-teal-400'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="flex-shrink-0 w-7 h-7 rounded-lg bg-teal-100 flex items-center justify-center">
+                              <ClipboardList size={14} className="text-teal-600" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-semibold text-slate-800 truncate">{group.name}</p>
+                                {isDone && (
+                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 flex-shrink-0">Done</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                {group.repeatFrequency && group.repeatFrequency !== 'Once' && (
+                                  <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${GRP_CADENCE_COLORS[group.repeatFrequency] || 'bg-slate-100 text-slate-600'}`}>
+                                    {group.repeatFrequency}
+                                  </span>
+                                )}
+                                {group.date && (
+                                  <span className="flex items-center gap-0.5 text-[10px] text-slate-400">
+                                    <Calendar size={9} /> {group.date}
+                                  </span>
+                                )}
+                              </div>
+                              {totalCount > 0 && (
+                                <div className="mt-1.5 flex items-center gap-2">
+                                  <div className="flex-1 h-1 rounded-full bg-slate-100 overflow-hidden">
+                                    <div className="h-full rounded-full bg-teal-400 transition-all duration-300" style={{ width: `${progressPct}%` }} />
+                                  </div>
+                                  <span className="text-[10px] font-semibold text-slate-500 flex-shrink-0">{answeredCount} / {totalCount}</span>
+                                </div>
+                              )}
+                            </div>
+                            <ChevronRight size={14} className="text-slate-400 flex-shrink-0" />
+                          </div>
+                        </div>
+                      );
+                    }
+                    const task = item;
                     const elapsed = getElapsedMs(task);
                     const isRunning = task.timerState === 'running';
                     const isPaused = task.timerState === 'paused';
@@ -1821,6 +2087,184 @@ const HomeView = ({
             setDetailTask(updatedTask);
           }}
         />
+      )}
+
+      {/* CHECKLIST GROUP DETAIL PANEL */}
+      {detailGroup && (
+        <ChecklistGroupDetailPanel
+          group={detailGroup}
+          childTasks={getGroupChildren(detailGroup)}
+          currentUser={currentUser}
+          users={users}
+          onClose={() => setDetailGroup(null)}
+          onUpdateChildTask={handleUpdateGroupChildTask}
+          onUpdateGroup={(updatedGroup) => {
+            handleUpdateGroup(updatedGroup);
+            setDetailGroup(updatedGroup);
+          }}
+          onOpenTask={(task) => {
+            setDetailGroup(null);
+            setDetailTask(task);
+          }}
+        />
+      )}
+
+      {/* NEW CHECKLIST MODAL */}
+      {showNewChecklistModal && (
+        <div className="fixed inset-0 z-[700] flex items-center justify-center bg-slate-900/10 backdrop-blur-md p-4">
+          <div className="bg-white w-full max-w-lg border border-slate-200 shadow-xl rounded-2xl animate-in zoom-in-95 flex flex-col" style={{ maxHeight: '90vh' }}>
+            <div className="flex-shrink-0 flex justify-between items-center px-6 pt-6 pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-teal-100 flex items-center justify-center">
+                  <ClipboardList size={16} className="text-teal-600" />
+                </div>
+                <h4 className="text-base font-bold text-slate-900">New Checklist Group</h4>
+              </div>
+              <button onClick={closeNewChecklistModal} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+              {/* Template */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Checklist Template <span className="text-red-500">*</span></label>
+                <select
+                  value={clSelectedTemplateId}
+                  onChange={e => { setClSelectedTemplateId(e.target.value); if (clError) setClError(''); }}
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                >
+                  <option value="">— Select template —</option>
+                  {checklistTemplates.map(tpl => (
+                    <option key={tpl.id} value={tpl.id}>{tpl.name} ({tpl.departmentId || tpl.cadence})</option>
+                  ))}
+                </select>
+                {clSelectedTemplateId && (() => {
+                  const tpl = checklistTemplates.find(t => t.id === clSelectedTemplateId);
+                  return tpl ? (
+                    <p className="text-[11px] text-slate-500">{(tpl.questions || []).length} question{(tpl.questions || []).length !== 1 ? 's' : ''} · {tpl.cadence}</p>
+                  ) : null;
+                })()}
+              </div>
+
+              {/* Client */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Client <span className="text-red-500">*</span></label>
+                <select
+                  value={clSelectedClientId}
+                  onChange={e => { setClSelectedClientId(e.target.value); if (clError) setClError(''); }}
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                >
+                  <option value="">— Select client —</option>
+                  {allClientOptions.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.isPersonal ? 'Personal (My Tasks)' : c.isEthinos ? 'Ethinos (Internal)' : c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Assignee */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Assign To <span className="text-red-500">*</span></label>
+                {!isManagement ? (
+                  <div className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 flex items-center gap-2 select-none">
+                    <Users size={14} className="text-slate-400 flex-shrink-0" />
+                    <span className="flex-1">{currentUser?.name || 'You'}</span>
+                    <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">Self only</span>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search assignee"
+                      className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                      value={clAssigneeQuery}
+                      onFocus={() => setClShowAssigneeMenu(true)}
+                      onChange={e => { setClAssigneeQuery(e.target.value); setClAssigneeId(''); setClShowAssigneeMenu(true); if (clError) setClError(''); }}
+                    />
+                    {clShowAssigneeMenu && (
+                      <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-44 overflow-y-auto">
+                        {users.filter(u => !clAssigneeQuery.trim() || (u.name || '').toLowerCase().includes(clAssigneeQuery.toLowerCase())).length
+                          ? users.filter(u => !clAssigneeQuery.trim() || (u.name || '').toLowerCase().includes(clAssigneeQuery.toLowerCase())).map(u => (
+                            <button key={u.id} type="button"
+                              onClick={() => { setClAssigneeId(u.id); setClAssigneeName(u.name); setClAssigneeQuery(u.name); setClShowAssigneeMenu(false); if (clError) setClError(''); }}
+                              className="w-full text-left px-3 py-2 bg-white hover:bg-slate-50 transition-all"
+                            >
+                              <p className="text-sm font-semibold text-slate-700">{u.name}</p>
+                              <p className="text-xs text-slate-500">{u.email || u.role || ''}</p>
+                            </button>
+                          ))
+                          : <p className="px-3 py-2 text-sm text-slate-500">No users found</p>
+                        }
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Date */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Date</label>
+                <div className="border border-slate-200 rounded-xl p-3 bg-slate-50">
+                  <DatePicker
+                    selected={clSelectedDate}
+                    onChange={date => setClSelectedDate(date)}
+                    inline
+                  />
+                </div>
+              </div>
+
+              {/* Repeat Frequency */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Repeat Frequency</label>
+                <div className="flex flex-wrap gap-2">
+                  {['Once', 'Daily', 'Weekly', 'Monthly'].map(freq => (
+                    <label key={freq} className="flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer hover:bg-slate-50 transition-all"
+                      style={clRepeatFreq === freq ? { borderColor: '#2563eb', backgroundColor: '#eff6ff' } : { borderColor: '#e2e8f0' }}
+                    >
+                      <input type="radio" name="clRepeatFreq" value={freq} checked={clRepeatFreq === freq}
+                        onChange={e => { setClRepeatFreq(e.target.value); if (e.target.value === 'Once') setClRepeatEnd(null); }}
+                        className="w-4 h-4 accent-blue-600 cursor-pointer"
+                      />
+                      <span className="text-xs font-semibold text-slate-700">{freq}</span>
+                    </label>
+                  ))}
+                </div>
+                {clRepeatFreq !== 'Once' && (
+                  <div className="mt-2 space-y-1">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Repeat Until</label>
+                    <DatePicker
+                      selected={clRepeatEnd}
+                      onChange={date => setClRepeatEnd(date)}
+                      placeholderText="Select end date"
+                      dateFormat="do MMM yyyy"
+                      minDate={clSelectedDate || new Date()}
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {clError && (
+                <p className="text-xs font-semibold text-red-500">{clError}</p>
+              )}
+            </div>
+
+            <div className="flex-shrink-0 flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100">
+              <button onClick={closeNewChecklistModal} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-all">
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateChecklistGroup}
+                className="px-5 py-2 bg-teal-600 text-white text-sm font-semibold rounded-lg hover:bg-teal-700 transition-all shadow-sm"
+              >
+                Create Group
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

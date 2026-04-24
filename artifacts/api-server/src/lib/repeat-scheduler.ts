@@ -19,6 +19,37 @@ interface TaskLog {
   [key: string]: unknown;
 }
 
+interface GroupQuestion {
+  id: string;
+  text: string;
+  requiresInput: boolean;
+  inputLabel: string;
+  order: number;
+}
+
+interface TaskGroup {
+  id: string;
+  name?: string;
+  clientId?: string;
+  clientName?: string;
+  templateId?: string;
+  templateName?: string;
+  questions?: GroupQuestion[];
+  date?: string;
+  dueDate?: string | null;
+  repeatFrequency?: string;
+  repeatEnd?: string | null;
+  lastSpawnedDate?: string | null;
+  repeatGroupId?: string;
+  assigneeId?: string | number;
+  assigneeName?: string;
+  creatorId?: string | number;
+  creatorName?: string;
+  creatorRole?: string;
+  status?: string;
+  archived?: boolean;
+}
+
 function parseDateStr(raw: string | null | undefined): Date | null {
   if (!raw) return null;
   const formats = ["do MMM yyyy", "d MMM yyyy", "dd MMM yyyy", "yyyy-MM-dd"];
@@ -64,6 +95,33 @@ function shouldSpawn(task: TaskLog, today: Date): boolean {
   if (!task.dueDate) return false;
   const due = parseDateStr(task.dueDate);
   return due !== null && today >= due;
+}
+
+function shouldSpawnGroup(group: TaskGroup, today: Date): boolean {
+  const freq = group.repeatFrequency;
+  if (!freq || freq === "Once" || freq === "One-time") return false;
+  if (group.archived) return false;
+  // Note: completed groups (status === "done") still spawn future instances based on cadence.
+  // The status reflects whether the current instance is finished, not whether the recurrence ends.
+
+  if (group.repeatEnd) {
+    const end = parseDateStr(group.repeatEnd);
+    if (end && today > end) return false;
+  }
+
+  if (group.lastSpawnedDate) {
+    const last = parseDateStr(group.lastSpawnedDate);
+    if (!last) return false;
+    const next = getNextDate(freq, last);
+    return next !== null && today >= next;
+  }
+
+  // First spawn: trigger once today > group date (next interval from creation)
+  if (!group.date) return false;
+  const groupDate = parseDateStr(group.date);
+  if (!groupDate) return false;
+  const next = getNextDate(freq, groupDate);
+  return next !== null && today >= next;
 }
 
 function buildChild(parent: TaskLog, today: Date): TaskLog {
@@ -163,17 +221,175 @@ export async function runRepeatCheck(): Promise<void> {
   }
 }
 
+export async function runGroupRepeatCheck(): Promise<void> {
+  logger.info("[GroupRepeat] Running task-group repeat check");
+
+  try {
+    const groupsRaw = await readFirebasePath<Record<string, unknown>>("taskGroups");
+    if (!groupsRaw) {
+      logger.info("[GroupRepeat] No taskGroups in Firebase — nothing to check");
+      return;
+    }
+
+    const today = startOfDay(new Date());
+    let spawned = 0;
+
+    const groupsArr: TaskGroup[] = Array.isArray(groupsRaw)
+      ? (groupsRaw as TaskGroup[])
+      : Object.values(groupsRaw as Record<string, TaskGroup>);
+
+    const updatedGroups = [...groupsArr];
+    const newGroups: TaskGroup[] = [];
+    // checklist items to add per client (built from questions template)
+    const checklistTasksByClient: Record<string, TaskLog[]> = {};
+    // track which parent groups spawned into which new group ids, per client (for standard task replication)
+    const standardSpawnsByClient: Record<string, Array<{ parentGroupId: string; newGroupId: string }>> = {};
+
+    for (let i = 0; i < groupsArr.length; i++) {
+      const group = groupsArr[i];
+      if (!group?.id || !shouldSpawnGroup(group, today)) continue;
+
+      const newGroupId = `tg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const questions: GroupQuestion[] = Array.isArray(group.questions) ? group.questions : [];
+
+      const newGroup: TaskGroup = {
+        ...group,
+        id: newGroupId,
+        date: format(today, "do MMM yyyy"),
+        status: "Pending",
+        archived: false,
+        lastSpawnedDate: null,
+        repeatFrequency: "Once",
+        repeatEnd: null,
+        repeatGroupId: String(group.repeatGroupId || group.id),
+      };
+      newGroups.push(newGroup);
+
+      const clientId = group.clientId;
+      if (clientId) {
+        // 1. Recreate checklist items from the group's questions template
+        if (!checklistTasksByClient[clientId]) checklistTasksByClient[clientId] = [];
+        questions.forEach((q, idx) => {
+          checklistTasksByClient[clientId].push({
+            id: `${newGroupId}-q${idx}-${Date.now() + idx}`,
+            taskGroupId: newGroupId,
+            taskType: "checklist",
+            questionText: q.text,
+            requiresInput: q.requiresInput || false,
+            inputLabel: q.inputLabel || "",
+            name: q.text,
+            comment: "",
+            date: format(today, "do MMM yyyy"),
+            status: "Pending",
+            assigneeId: group.assigneeId,
+            assigneeName: group.assigneeName,
+            creatorId: group.creatorId,
+            creatorName: group.creatorName,
+            creatorRole: group.creatorRole,
+            category: "Checklist",
+            repeatFrequency: "Once",
+            checklistAnswer: null,
+            checklistNote: null,
+            timerState: "idle",
+            timerStartedAt: null,
+            elapsedMs: 0,
+            billable: false,
+          });
+        });
+
+        // 2. Track standard (non-checklist) children to replicate from existing clientLogs
+        if (!standardSpawnsByClient[clientId]) standardSpawnsByClient[clientId] = [];
+        standardSpawnsByClient[clientId].push({ parentGroupId: String(group.id), newGroupId });
+      }
+
+      // Mark the parent group as spawned (keep existing status — the parent stays in its current state
+      // so it can continue generating future instances based on cadence)
+      updatedGroups[i] = {
+        ...group,
+        lastSpawnedDate: today.toISOString().slice(0, 10),
+        repeatGroupId: String(group.repeatGroupId || group.id),
+      };
+      spawned++;
+
+      logger.info(
+        { parentGroupId: group.id, newGroupId, freq: group.repeatFrequency },
+        "[GroupRepeat] Spawned new group instance"
+      );
+    }
+
+    if (spawned > 0) {
+      await writeFirebasePath("taskGroups", [...updatedGroups, ...newGroups]);
+
+      // Collect all clients that need writes (from checklist or standard replication)
+      const allClients = new Set([
+        ...Object.keys(checklistTasksByClient),
+        ...Object.keys(standardSpawnsByClient),
+      ]);
+
+      for (const clientId of allClients) {
+        const existingRaw = await readFirebasePath<unknown>(`clientLogs/${clientId}`);
+        const existing: TaskLog[] = Array.isArray(existingRaw)
+          ? (existingRaw as TaskLog[])
+          : existingRaw ? Object.values(existingRaw as Record<string, TaskLog>) : [];
+
+        const newChecklistTasks = checklistTasksByClient[clientId] || [];
+
+        // Replicate standard (non-checklist) children from the parent group
+        const newStandardTasks: TaskLog[] = [];
+        const spawns = standardSpawnsByClient[clientId] || [];
+        for (const { parentGroupId, newGroupId } of spawns) {
+          const parentStandardChildren = existing.filter(
+            (t) => t.taskGroupId === parentGroupId && t.taskType !== "checklist"
+          );
+          parentStandardChildren.forEach((t, idx) => {
+            newStandardTasks.push({
+              ...t,
+              id: `${newGroupId}-std${idx}-${Date.now() + idx}`,
+              taskGroupId: newGroupId,
+              date: format(today, "do MMM yyyy"),
+              status: "Pending",
+              timerState: "idle",
+              timerStartedAt: null,
+              elapsedMs: 0,
+              timeTaken: null,
+              result: "",
+              checklistAnswer: null,
+              checklistNote: null,
+            });
+          });
+        }
+
+        await writeFirebasePath(`clientLogs/${clientId}`, [
+          ...newChecklistTasks,
+          ...newStandardTasks,
+          ...existing,
+        ]);
+      }
+    }
+
+    logger.info({ spawned }, "[GroupRepeat] Check complete");
+  } catch (err) {
+    logger.error({ err }, "[GroupRepeat] Error during group repeat check");
+  }
+}
+
 export function startRepeatScheduler(): void {
   // Run at 06:00 daily — one hour before the reminder check at 07:00
   cron.schedule("0 6 * * *", () => {
     runRepeatCheck().catch((err) =>
       logger.error({ err }, "[Repeat] Unhandled error")
     );
+    runGroupRepeatCheck().catch((err) =>
+      logger.error({ err }, "[GroupRepeat] Unhandled error")
+    );
   });
 
   // Also run on startup to catch any missed spawns
   runRepeatCheck().catch((err) =>
     logger.error({ err }, "[Repeat] Error on startup check")
+  );
+  runGroupRepeatCheck().catch((err) =>
+    logger.error({ err }, "[GroupRepeat] Error on startup check")
   );
 
   logger.info("[Repeat] Scheduler started — runs daily at 06:00");

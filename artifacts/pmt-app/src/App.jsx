@@ -1040,6 +1040,7 @@ const App = () => {
   const [taskTemplates, setTaskTemplates] = useState(DEFAULT_TASK_TEMPLATES);
   const [checklistTemplates, setChecklistTemplates] = useState([]);
   const [checklistAccessRoles, setChecklistAccessRoles] = useState(['Super Admin', 'Director']);
+  const [taskGroups, setTaskGroups] = useState([]);
   const [feedbackItems, setFeedbackItems] = useState([]);
   const [digestGlobalEnabled, setDigestGlobalEnabled] = useState(true);
   const [notificationSettings, setNotificationSettings] = useState({});
@@ -1220,6 +1221,7 @@ const App = () => {
       syncRef('feedbackItems', (val) => setFeedbackItems(val && typeof val === 'object' ? (Array.isArray(val) ? val : Object.values(val)) : [])),
       syncRef('checklistTemplates', (val) => { if (val && typeof val === 'object') setChecklistTemplates(Array.isArray(val) ? val : Object.values(val)); }),
       syncRef('settings/conditions/checklistAccess', (val) => { if (Array.isArray(val)) setChecklistAccessRoles(val); }),
+      syncRef('taskGroups', (val) => { if (val && typeof val === 'object') setTaskGroups(Array.isArray(val) ? val : Object.values(val)); }),
       syncRef('settings/hierarchyOrder', (val) => { if (Array.isArray(val) && val.length > 0) setHierarchyOrder(val); }),
       syncRef('settings/notifications', (val) => {
         if (val && typeof val === 'object' && !Array.isArray(val)) {
@@ -1348,6 +1350,13 @@ const App = () => {
   const persistChecklistAccessRoles = (val) => {
     setChecklistAccessRoles(val);
     if (firebaseUser) set(ref(db, 'settings/conditions/checklistAccess'), val);
+  };
+  const persistTaskGroups = (val) => {
+    setTaskGroups(val);
+    if (firebaseUser) {
+      set(ref(db, 'taskGroups'), sanitizeForFirebase(val))
+        .catch(err => console.error('[PMT] Failed to save task groups to Firebase:', err));
+    }
   };
 
   // --- MATCH FIREBASE AUTH USER → PMT USER RECORD ---
@@ -1941,6 +1950,9 @@ const App = () => {
               departments={departments}
               onNavigateToClients={() => setActiveTab('clients')}
               taskTemplates={taskTemplates}
+              checklistTemplates={checklistTemplates}
+              taskGroups={taskGroups}
+              setTaskGroups={persistTaskGroups}
             />
           )}
 
