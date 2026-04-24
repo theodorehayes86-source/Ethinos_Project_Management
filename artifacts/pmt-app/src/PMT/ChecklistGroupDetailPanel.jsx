@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, CheckCircle, XCircle, MinusCircle, ChevronDown, ChevronRight, Calendar, Tag, Clock, Play, Pause, Square } from 'lucide-react';
+import { X, CheckCircle, XCircle, MinusCircle, ChevronDown, ChevronRight, Calendar, Tag, Clock, Play, Pause, Square, PlusCircle } from 'lucide-react';
 
 const CADENCE_COLORS = {
   Daily:   'bg-emerald-100 text-emerald-700',
@@ -27,15 +27,21 @@ const ChecklistGroupDetailPanel = ({
   childTasks,
   currentUser,
   users = [],
+  taskCategories = [],
   onClose,
   onUpdateChildTask,
   onUpdateGroup,
   onOpenTask,
+  onCreateTaskFromItem,
 }) => {
   const [localChildren, setLocalChildren] = useState(childTasks || []);
   const [expandedNotes, setExpandedNotes] = useState({});
   const [noteTexts, setNoteTexts] = useState({});
   const [timerTick, setTimerTick] = useState(Date.now());
+
+  // Inline task creation state — keyed by checklist item id
+  const [createTaskOpen, setCreateTaskOpen] = useState({});
+  const [createTaskForm, setCreateTaskForm] = useState({});
 
   useEffect(() => {
     setLocalChildren(childTasks || []);
@@ -146,6 +152,40 @@ const ChecklistGroupDetailPanel = ({
     return base;
   };
 
+  const toggleCreateTask = (taskId, questionText) => {
+    setCreateTaskOpen(prev => {
+      const next = { ...prev, [taskId]: !prev[taskId] };
+      return next;
+    });
+    setCreateTaskForm(prev => {
+      if (!prev[taskId]) {
+        return { ...prev, [taskId]: { name: questionText || '', category: '', dueDate: '', comment: '' } };
+      }
+      return prev;
+    });
+  };
+
+  const handleCreateTaskSubmit = (e, task) => {
+    e.preventDefault();
+    const form = createTaskForm[task.id] || {};
+    if (!form.name?.trim()) return;
+    if (onCreateTaskFromItem) {
+      onCreateTaskFromItem({
+        questionText: task.questionText || task.name,
+        taskName: form.name.trim(),
+        category: form.category || '',
+        dueDate: form.dueDate || null,
+        comment: form.comment?.trim() || '',
+        clientId: group.clientId,
+        clientName: group.clientName || '',
+        assigneeId: group.assigneeId,
+        assigneeName: group.assigneeName,
+      });
+    }
+    setCreateTaskOpen(prev => ({ ...prev, [task.id]: false }));
+    setCreateTaskForm(prev => ({ ...prev, [task.id]: { name: '', category: '', dueDate: '', comment: '' } }));
+  };
+
   const cadenceBadge = group.repeatFrequency && group.repeatFrequency !== 'Once'
     ? CADENCE_COLORS[group.repeatFrequency] || 'bg-slate-100 text-slate-600'
     : null;
@@ -247,7 +287,7 @@ const ChecklistGroupDetailPanel = ({
                         <p className="text-[12px] font-semibold text-slate-800 leading-snug mb-2">
                           {task.questionText || task.name}
                         </p>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           {Object.entries(ANSWER_CONFIG).map(([key, cfg]) => {
                             const isSelected = currentAnswer === key;
                             const Icon = cfg.icon;
@@ -267,15 +307,31 @@ const ChecklistGroupDetailPanel = ({
                               </button>
                             );
                           })}
-                          {task.requiresInput && (
-                            <button
-                              onClick={() => setExpandedNotes(prev => ({ ...prev, [task.id]: !prev[task.id] }))}
-                              className="ml-auto flex items-center gap-0.5 text-[10px] font-semibold text-slate-400 hover:text-slate-600 transition-colors"
-                            >
-                              {isNoteExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-                              Note
-                            </button>
-                          )}
+                          <div className="ml-auto flex items-center gap-1.5">
+                            {task.requiresInput && (
+                              <button
+                                onClick={() => setExpandedNotes(prev => ({ ...prev, [task.id]: !prev[task.id] }))}
+                                className="flex items-center gap-0.5 text-[10px] font-semibold text-slate-400 hover:text-slate-600 transition-colors"
+                              >
+                                {isNoteExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                                Note
+                              </button>
+                            )}
+                            {onCreateTaskFromItem && (
+                              <button
+                                onClick={() => toggleCreateTask(task.id, task.questionText || task.name)}
+                                className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-lg border transition-all ${
+                                  createTaskOpen[task.id]
+                                    ? 'bg-indigo-600 text-white border-indigo-600'
+                                    : 'bg-white border-indigo-200 text-indigo-600 hover:bg-indigo-50'
+                                }`}
+                                title="Create task from this item"
+                              >
+                                <PlusCircle size={11} />
+                                Task
+                              </button>
+                            )}
+                          </div>
                         </div>
                         {isNoteExpanded && (
                           <div className="mt-2">
@@ -291,6 +347,61 @@ const ChecklistGroupDetailPanel = ({
                               className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs resize-none outline-none focus:ring-2 ring-blue-500/20 bg-white"
                             />
                           </div>
+                        )}
+                        {createTaskOpen[task.id] && (
+                          <form
+                            onSubmit={e => handleCreateTaskSubmit(e, task)}
+                            className="mt-3 pt-3 border-t border-slate-100 space-y-2"
+                            onClick={e => e.stopPropagation()}
+                          >
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-indigo-600">New task from this item</p>
+                            <input
+                              type="text"
+                              value={createTaskForm[task.id]?.name ?? ''}
+                              onChange={e => setCreateTaskForm(prev => ({ ...prev, [task.id]: { ...prev[task.id], name: e.target.value } }))}
+                              placeholder="Task name"
+                              required
+                              className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:ring-2 ring-indigo-500/20 bg-white"
+                            />
+                            <select
+                              value={createTaskForm[task.id]?.category ?? ''}
+                              onChange={e => setCreateTaskForm(prev => ({ ...prev, [task.id]: { ...prev[task.id], category: e.target.value } }))}
+                              className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:ring-2 ring-indigo-500/20 bg-white text-slate-600"
+                            >
+                              <option value="">Category (optional)</option>
+                              {taskCategories.map(c => (
+                                <option key={c.name || c} value={c.name || c}>{c.name || c}</option>
+                              ))}
+                            </select>
+                            <input
+                              type="date"
+                              value={createTaskForm[task.id]?.dueDate ?? ''}
+                              onChange={e => setCreateTaskForm(prev => ({ ...prev, [task.id]: { ...prev[task.id], dueDate: e.target.value } }))}
+                              className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:ring-2 ring-indigo-500/20 bg-white text-slate-600"
+                            />
+                            <textarea
+                              value={createTaskForm[task.id]?.comment ?? ''}
+                              onChange={e => setCreateTaskForm(prev => ({ ...prev, [task.id]: { ...prev[task.id], comment: e.target.value } }))}
+                              placeholder="Description (optional)"
+                              rows={2}
+                              className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs resize-none outline-none focus:ring-2 ring-indigo-500/20 bg-white"
+                            />
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="submit"
+                                className="flex-1 bg-indigo-600 text-white text-[11px] font-bold py-1.5 rounded-lg hover:bg-indigo-700 transition-all"
+                              >
+                                Create Task
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setCreateTaskOpen(prev => ({ ...prev, [task.id]: false }))}
+                                className="px-3 py-1.5 border border-slate-200 text-slate-500 text-[11px] font-semibold rounded-lg hover:bg-slate-50 transition-all"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </form>
                         )}
                       </div>
                     </div>

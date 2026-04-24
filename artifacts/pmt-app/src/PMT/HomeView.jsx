@@ -382,6 +382,48 @@ const HomeView = ({
     setTaskGroups(taskGroups.map(g => g.id === updatedGroup.id ? updatedGroup : g));
   };
 
+  const handleCreateTaskFromItem = ({ taskName, category, dueDate, comment, clientId, clientName, assigneeId, assigneeName }) => {
+    const newTask = {
+      id: Date.now(),
+      name: taskName,
+      date: format(new Date(), 'do MMM yyyy'),
+      comment: comment || '',
+      result: '',
+      status: 'Pending',
+      assigneeId: assigneeId || currentUser?.id || null,
+      assigneeName: assigneeName || currentUser?.name || null,
+      creatorId: currentUser?.id || null,
+      creatorName: currentUser?.name || 'Unassigned',
+      creatorRole: currentUser?.role || 'Employee',
+      category: category || '',
+      repeatFrequency: 'Once',
+      repeatEnd: null,
+      dueDate: dueDate || null,
+      timerState: 'idle',
+      timerStartedAt: null,
+      elapsedMs: 0,
+      timeTaken: null,
+    };
+    const targetClientId = clientId || '__personal__';
+    const nextLogs = { ...clientLogs, [targetClientId]: [newTask, ...(clientLogs[targetClientId] || [])] };
+    setClientLogs(nextLogs);
+
+    // Notify assignee if different from creator
+    const assigneeUser = users.find(u => String(u.id) === String(assigneeId));
+    if (assigneeUser?.email && String(assigneeId) !== String(currentUser?.id)) {
+      sendNotification('task-assigned', {
+        assigneeEmail: assigneeUser.email,
+        assigneeName: assigneeUser.name,
+        taskName,
+        taskDescription: comment || '',
+        clientName: clientName || '',
+        dueDate: dueDate || null,
+        creatorName: currentUser?.name,
+        steps: [],
+      });
+    }
+  };
+
   // Centralized group auto-complete watcher: whenever child tasks change from any source,
   // mark any fully-answered groups as done. This covers cases where updates come from
   // outside the ChecklistGroupDetailPanel (e.g., direct Firebase writes, scheduler spawns).
@@ -2096,6 +2138,7 @@ const HomeView = ({
           childTasks={getGroupChildren(detailGroup)}
           currentUser={currentUser}
           users={users}
+          taskCategories={taskCategories}
           onClose={() => setDetailGroup(null)}
           onUpdateChildTask={handleUpdateGroupChildTask}
           onUpdateGroup={(updatedGroup) => {
@@ -2106,6 +2149,7 @@ const HomeView = ({
             setDetailGroup(null);
             setDetailTask(task);
           }}
+          onCreateTaskFromItem={handleCreateTaskFromItem}
         />
       )}
 
