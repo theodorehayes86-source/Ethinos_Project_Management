@@ -103,8 +103,8 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
     };
     setClientLogs({ ...clientLogs, [selectedClientId]: [newTask, ...(clientLogs[selectedClientId] || [])] });
 
-    // Notify the assignee by email (fire-and-forget — never blocks the UI)
-    if (prefilledAssignee?.email) {
+    // Notify the assignee by email — skip if creator is assigning to themselves
+    if (prefilledAssignee?.email && String(prefilledAssignee.id) !== String(currentUser?.id)) {
       sendNotification('task-assigned', {
         assigneeEmail: prefilledAssignee.email,
         assigneeName: prefilledAssignee.name,

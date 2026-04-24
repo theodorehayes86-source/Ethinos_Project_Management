@@ -535,9 +535,9 @@ const HomeView = ({
     const nextLogs = { ...clientLogs, [selectedClientId]: [...logsToAdd, ...(clientLogs[selectedClientId] || [])] };
     setClientLogs(nextLogs);
 
-    // Notify the assignee by email (fire-and-forget — never blocks the UI)
+    // Notify the assignee by email — skip if the creator is assigning to themselves
     const assigneeUser = users.find(u => String(u.id) === String(effectiveAssigneeId));
-    if (assigneeUser?.email) {
+    if (assigneeUser?.email && String(effectiveAssigneeId) !== String(currentUser?.id)) {
       sendNotification('task-assigned', {
         assigneeEmail: assigneeUser.email,
         assigneeName: effectiveAssigneeName,

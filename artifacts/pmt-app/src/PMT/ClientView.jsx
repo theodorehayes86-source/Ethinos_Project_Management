@@ -640,7 +640,7 @@ const ClientView = ({
       [selectedClient.id]: [...logsToAdd, ...(clientLogs[selectedClient.id] || [])]
     });
 
-    if (selectedAssignee.email) {
+    if (selectedAssignee.email && String(selectedAssignee.id) !== String(currentUser?.id)) {
       sendNotification('task-assigned', {
         assigneeEmail: selectedAssignee.email,
         assigneeName: selectedAssignee.name,
