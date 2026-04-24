@@ -100,7 +100,7 @@ function buildWeeklyDigestHtml(data: {
           <span style="display:inline-block;background:#fde8e8;border:2px solid #f9a8a8;color:#b91c1c;font-size:15px;font-weight:700;padding:8px 22px;border-radius:6px;">${userName}</span>
         </td>
         <td style="padding:22px 24px 16px;text-align:right;vertical-align:middle;">
-          <span style="font-size:24px;font-weight:800;color:#e85d1e;letter-spacing:-0.5px;font-family:Georgia,serif;">ethinos</span>
+          <img src="https://pmt.ethinos.com/ethinos-logo.png" alt="ethinos" width="110" style="display:inline-block;height:auto;border:0;" />
         </td>
       </tr>
     </table>
