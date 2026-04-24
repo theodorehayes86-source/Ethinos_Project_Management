@@ -1027,7 +1027,7 @@ const App = () => {
   const [taskCategories, setTaskCategories] = useState(DEFAULT_TASK_CATEGORIES);
   const [departments, setDepartments] = useState([]);
   const [regions, setRegions] = useState([]);
-  const DEFAULT_CC_TAB_ACCESS = { users: ['Super Admin', 'Director'], clients: ['Super Admin', 'Director'], categories: ['Super Admin', 'Director'], departments: ['Super Admin', 'Director'], regions: ['Super Admin', 'Director'], conditions: ['Super Admin'], templates: ['Super Admin', 'Director'], feedback: ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM', 'Employee', 'Snr Executive', 'Executive', 'Intern'] };
+  const DEFAULT_CC_TAB_ACCESS = { users: ['Super Admin', 'Director'], clients: ['Super Admin', 'Director'], categories: ['Super Admin', 'Director'], departments: ['Super Admin', 'Director'], regions: ['Super Admin', 'Director'], conditions: ['Super Admin'], templates: ['Super Admin', 'Director'], checklistTemplates: ['Super Admin', 'Director'], feedback: ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM', 'Employee', 'Snr Executive', 'Executive', 'Intern'] };
   const [controlCenterTabAccess, setControlCenterTabAccess] = useState(DEFAULT_CC_TAB_ACCESS);
   const [userManagementAccessRoles, setUserManagementAccessRoles] = useState(['Super Admin', 'Director']);
   const [employeeViewAccessRoles, setEmployeeViewAccessRoles] = useState(['Super Admin', 'Director']);
@@ -1038,6 +1038,8 @@ const App = () => {
   const [reportsAllDataRoles, setReportsAllDataRoles] = useState(['Super Admin', 'Director']);
   const [clientLogs, setClientLogs] = useState({});
   const [taskTemplates, setTaskTemplates] = useState(DEFAULT_TASK_TEMPLATES);
+  const [checklistTemplates, setChecklistTemplates] = useState([]);
+  const [checklistAccessRoles, setChecklistAccessRoles] = useState(['Super Admin', 'Director']);
   const [feedbackItems, setFeedbackItems] = useState([]);
   const [digestGlobalEnabled, setDigestGlobalEnabled] = useState(true);
   const [notificationSettings, setNotificationSettings] = useState({});
@@ -1170,6 +1172,26 @@ const App = () => {
     };
     seedDepartmentsRegions();
 
+    // Seed /checklistTemplates as empty array if the path doesn't exist yet.
+    // Also seed /settings/conditions/checklistAccess with default roles if absent.
+    const seedChecklistPaths = async () => {
+      try {
+        const [ctSnap, caSnap] = await Promise.all([
+          get(ref(db, 'checklistTemplates')),
+          get(ref(db, 'settings/conditions/checklistAccess')),
+        ]);
+        if (!ctSnap.exists()) {
+          await set(ref(db, 'checklistTemplates'), []);
+        }
+        if (!caSnap.exists()) {
+          await set(ref(db, 'settings/conditions/checklistAccess'), ['Super Admin', 'Director']);
+        }
+      } catch (err) {
+        console.error('[PMT] Failed to seed checklist paths:', err);
+      }
+    };
+    seedChecklistPaths();
+
     // Only mark DB as ready after the first real users payload arrives —
     // previously setDbReady(true) ran synchronously before any data came back,
     // which caused the "Access Not Set Up" screen to flash during load.
@@ -1196,6 +1218,8 @@ const App = () => {
       syncRef('metricsAllDataRoles', (val) => setMetricsAllDataRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
       syncRef('reportsAllDataRoles', (val) => setReportsAllDataRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
       syncRef('feedbackItems', (val) => setFeedbackItems(val && typeof val === 'object' ? (Array.isArray(val) ? val : Object.values(val)) : [])),
+      syncRef('checklistTemplates', (val) => { if (val && typeof val === 'object') setChecklistTemplates(Array.isArray(val) ? val : Object.values(val)); }),
+      syncRef('settings/conditions/checklistAccess', (val) => { if (Array.isArray(val)) setChecklistAccessRoles(val); }),
       syncRef('settings/hierarchyOrder', (val) => { if (Array.isArray(val) && val.length > 0) setHierarchyOrder(val); }),
       syncRef('settings/notifications', (val) => {
         if (val && typeof val === 'object' && !Array.isArray(val)) {
@@ -1313,6 +1337,17 @@ const App = () => {
   const persistHierarchyOrder = (val) => {
     setHierarchyOrder(val);
     if (firebaseUser) set(ref(db, 'settings/hierarchyOrder'), val);
+  };
+  const persistChecklistTemplates = (val) => {
+    setChecklistTemplates(val);
+    if (firebaseUser) {
+      set(ref(db, 'checklistTemplates'), sanitizeForFirebase(val))
+        .catch(err => console.error('[PMT] Failed to save checklist templates to Firebase:', err));
+    }
+  };
+  const persistChecklistAccessRoles = (val) => {
+    setChecklistAccessRoles(val);
+    if (firebaseUser) set(ref(db, 'settings/conditions/checklistAccess'), val);
   };
 
   // --- MATCH FIREBASE AUTH USER → PMT USER RECORD ---
@@ -2032,6 +2067,10 @@ const App = () => {
               onSendPasswordReset={currentUser?.role === 'Super Admin' ? handleResetPassword : null}
               hierarchyOrder={hierarchyOrder}
               setHierarchyOrder={persistHierarchyOrder}
+              checklistTemplates={checklistTemplates}
+              setChecklistTemplates={persistChecklistTemplates}
+              checklistAccessRoles={checklistAccessRoles}
+              setChecklistAccessRoles={persistChecklistAccessRoles}
             />
           )}
         </main>

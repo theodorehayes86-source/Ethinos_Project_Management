@@ -37,6 +37,7 @@ const CC_TABS = [
   { id: 'conditions', label: 'Access Control' },
   { id: 'hierarchy', label: 'Hierarchy' },
   { id: 'templates', label: 'Templates' },
+  { id: 'checklistTemplates', label: 'Checklist Templates' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'feedback', label: 'Feedback' },
 ];
@@ -87,6 +88,10 @@ const MasterDataView = ({
   onDigestGlobalToggle = null,
   notificationSettings = {},
   onUpdateNotificationSetting = null,
+  checklistTemplates = [],
+  setChecklistTemplates,
+  checklistAccessRoles = [],
+  setChecklistAccessRoles,
 }) => {
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
@@ -178,6 +183,110 @@ const MasterDataView = ({
   const [editingFbEntryId, setEditingFbEntryId] = useState(null);
   const [editFbEntryText, setEditFbEntryText] = useState('');
   const [fbUserFilter, setFbUserFilter] = useState('All');
+
+  // --- CHECKLIST TEMPLATE STATE ---
+  const emptyQuestion = () => ({ id: `q-${Date.now()}-${Math.random()}`, text: '', requiresInput: false, inputLabel: '', order: 0 });
+  const [clShowForm, setClShowForm] = useState(false);
+  const [clEditingId, setClEditingId] = useState(null);
+  const [clName, setClName] = useState('');
+  const [clDept, setClDept] = useState('');
+  const [clCadence, setClCadence] = useState('Daily');
+  const [clQuestions, setClQuestions] = useState([emptyQuestion()]);
+  const [clFormError, setClFormError] = useState('');
+  const [clSearch, setClSearch] = useState('');
+
+  const openNewClForm = () => {
+    setClEditingId(null);
+    setClName('');
+    setClDept(departments[0] || '');
+    setClCadence('Daily');
+    setClQuestions([{ ...emptyQuestion(), order: 0 }]);
+    setClFormError('');
+    setClShowForm(true);
+  };
+
+  const openEditClForm = (tpl) => {
+    setClEditingId(tpl.id);
+    setClName(tpl.name || '');
+    setClDept(tpl.departmentId || '');
+    setClCadence(tpl.cadence || 'Daily');
+    const qs = Array.isArray(tpl.questions) && tpl.questions.length > 0
+      ? tpl.questions.map(q => ({ ...q }))
+      : [emptyQuestion()];
+    setClQuestions(qs);
+    setClFormError('');
+    setClShowForm(true);
+  };
+
+  const closeClForm = () => {
+    setClShowForm(false);
+    setClEditingId(null);
+    setClName('');
+    setClDept('');
+    setClCadence('Daily');
+    setClQuestions([emptyQuestion()]);
+    setClFormError('');
+  };
+
+  const handleSaveClTemplate = () => {
+    const trimmedName = clName.trim();
+    if (!trimmedName) { setClFormError('Template name is required.'); return; }
+    if (!clDept) { setClFormError('Please select a department.'); return; }
+    const filledQuestions = clQuestions.filter(q => q.text.trim() !== '');
+    if (filledQuestions.length === 0) { setClFormError('Add at least one question.'); return; }
+    const finalQuestions = filledQuestions.map((q, i) => ({ id: q.id, text: q.text.trim(), requiresInput: !!q.requiresInput, inputLabel: q.requiresInput ? (q.inputLabel || '').trim() : '', order: i }));
+    if (clEditingId) {
+      const updated = checklistTemplates.map(t => t.id === clEditingId ? { ...t, name: trimmedName, departmentId: clDept, cadence: clCadence, questions: finalQuestions } : t);
+      if (setChecklistTemplates) setChecklistTemplates(updated);
+    } else {
+      const newTpl = { id: `cl-${Date.now()}`, name: trimmedName, departmentId: clDept, cadence: clCadence, questions: finalQuestions, createdAt: Date.now() };
+      if (setChecklistTemplates) setChecklistTemplates([...checklistTemplates, newTpl]);
+    }
+    closeClForm();
+  };
+
+  const handleDeleteClTemplate = (id) => {
+    if (window.confirm('Delete this checklist template? This cannot be undone.')) {
+      if (setChecklistTemplates) setChecklistTemplates(checklistTemplates.filter(t => t.id !== id));
+    }
+  };
+
+  const updateClQuestion = (idx, field, value) => {
+    setClQuestions(prev => prev.map((q, i) => i === idx ? { ...q, [field]: value } : q));
+  };
+
+  const addClQuestion = () => {
+    setClQuestions(prev => [...prev, { ...emptyQuestion(), id: `q-${Date.now()}-${Math.random()}`, order: prev.length }]);
+  };
+
+  const removeClQuestion = (idx) => {
+    if (clQuestions.length <= 1) return;
+    setClQuestions(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const moveClQuestion = (idx, dir) => {
+    setClQuestions(prev => {
+      const next = [...prev];
+      const target = idx + dir;
+      if (target < 0 || target >= next.length) return prev;
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return next;
+    });
+  };
+
+  const cadenceBadgeColor = (cadence) => {
+    if (cadence === 'Daily') return 'bg-rose-100 text-rose-700';
+    if (cadence === 'Weekly') return 'bg-amber-100 text-amber-700';
+    if (cadence === 'Monthly') return 'bg-blue-100 text-blue-700';
+    return 'bg-slate-100 text-slate-600';
+  };
+
+  const toggleChecklistAccessRole = (role) => {
+    if (role === 'Super Admin') return;
+    const current = Array.isArray(checklistAccessRoles) ? checklistAccessRoles : [];
+    const next = current.includes(role) ? current.filter(r => r !== role) : [...current, role];
+    if (setChecklistAccessRoles) setChecklistAccessRoles(next);
+  };
 
   // --- NOTIFICATION SETTINGS STATE ---
   const [emailStatus, setEmailStatus] = useState(null);
@@ -1602,6 +1711,44 @@ const MasterDataView = ({
               </table>
             </div>
           </div>
+
+          <div className="mt-4 pt-4 border-t border-slate-200 space-y-3">
+            <p className="text-sm font-semibold text-slate-700">Checklist Access</p>
+            <p className="text-xs text-slate-500">Control which roles can create checklist tasks and view the checklist reporting dashboard.</p>
+            <div className="overflow-x-auto border border-slate-200 rounded-lg">
+              <table className="w-full border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-600">
+                    <th className="px-3 py-2 text-left font-semibold sticky left-0 bg-slate-100 z-10 min-w-[130px]">Role</th>
+                    <th className="px-3 py-2 text-center font-semibold whitespace-nowrap">Checklist Access</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {normalizedRoles.map(role => {
+                    const isSuperAdmin = role === 'Super Admin';
+                    const hasAccess = isSuperAdmin || (Array.isArray(checklistAccessRoles) && checklistAccessRoles.includes(role));
+                    return (
+                      <tr key={role} className={isSuperAdmin ? 'bg-blue-50' : 'hover:bg-slate-50'}>
+                        <td className="px-3 py-2 font-medium text-slate-700 sticky left-0 bg-inherit z-10 flex items-center gap-1.5">
+                          {isSuperAdmin && <Crown size={11} className="text-blue-600 flex-shrink-0" />}
+                          {role}
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <input
+                            type="checkbox"
+                            checked={hasAccess}
+                            disabled={isSuperAdmin}
+                            onChange={() => toggleChecklistAccessRole(role)}
+                            className="w-4 h-4 accent-blue-600 cursor-pointer disabled:cursor-not-allowed"
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1757,6 +1904,211 @@ const MasterDataView = ({
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* ─── CHECKLIST TEMPLATES TAB ─── */}
+      {activeTab === 'checklistTemplates' && (
+        <div className="space-y-4">
+          {/* Header */}
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+              <input
+                value={clSearch}
+                onChange={e => setClSearch(e.target.value)}
+                placeholder="Search checklist templates..."
+                className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-3 py-2 text-sm outline-none focus:ring-2 ring-blue-500/20"
+              />
+            </div>
+            <button
+              onClick={openNewClForm}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 hover:bg-blue-700 transition-all shadow-sm"
+            >
+              <Plus size={13}/> Add Template
+            </button>
+          </div>
+
+          {/* Editor panel */}
+          {clShowForm && (
+            <div className="bg-white border border-blue-200 rounded-xl p-5 shadow-sm space-y-4">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-bold text-slate-800">{clEditingId ? 'Edit Checklist Template' : 'New Checklist Template'}</p>
+                <button onClick={closeClForm} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all"><X size={14}/></button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-1">
+                  <label className="text-[11px] font-semibold text-slate-600 block mb-1">Template Name</label>
+                  <input
+                    value={clName}
+                    onChange={e => setClName(e.target.value)}
+                    placeholder="e.g. Daily CS Health Check"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 ring-blue-500/20"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 block mb-1">Department</label>
+                  <select
+                    value={clDept}
+                    onChange={e => setClDept(e.target.value)}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs bg-white outline-none focus:ring-2 ring-blue-500/20"
+                  >
+                    <option value="">— Select —</option>
+                    {departments.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 block mb-1">Cadence</label>
+                  <div className="flex gap-1">
+                    {['Daily', 'Weekly', 'Monthly'].map(c => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setClCadence(c)}
+                        className={`flex-1 py-2 rounded-lg text-xs font-semibold border transition-all ${clCadence === c ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                      >
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Question builder */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] font-bold text-slate-600 uppercase tracking-wide">Questions</p>
+                  <p className="text-[10px] text-slate-400">Answer type: Yes / No / N/A (always included)</p>
+                </div>
+                {clQuestions.map((q, idx) => (
+                  <div key={q.id} className="border border-slate-200 rounded-lg p-3 bg-slate-50 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold flex items-center justify-center flex-shrink-0">{idx + 1}</span>
+                      <input
+                        value={q.text}
+                        onChange={e => updateClQuestion(idx, 'text', e.target.value)}
+                        placeholder="Question text..."
+                        className="flex-1 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs bg-white outline-none focus:ring-2 ring-blue-500/20"
+                      />
+                      <div className="flex gap-1 flex-shrink-0">
+                        <button onClick={() => moveClQuestion(idx, -1)} disabled={idx === 0}
+                          className="w-7 h-7 flex items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-slate-600">
+                          <ChevronUp size={12}/>
+                        </button>
+                        <button onClick={() => moveClQuestion(idx, 1)} disabled={idx === clQuestions.length - 1}
+                          className="w-7 h-7 flex items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-slate-600">
+                          <ChevronDown size={12}/>
+                        </button>
+                        <button onClick={() => removeClQuestion(idx)} disabled={clQuestions.length <= 1}
+                          className="w-7 h-7 flex items-center justify-center rounded-lg border border-slate-200 hover:bg-red-50 hover:border-red-200 hover:text-red-500 transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-slate-400">
+                          <Trash2 size={12}/>
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 pl-7">
+                      <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={q.requiresInput}
+                          onChange={e => updateClQuestion(idx, 'requiresInput', e.target.checked)}
+                          className="w-3.5 h-3.5 accent-blue-600 cursor-pointer"
+                        />
+                        <span className="text-[11px] text-slate-600 font-medium">Requires text input</span>
+                      </label>
+                      {q.requiresInput && (
+                        <input
+                          value={q.inputLabel}
+                          onChange={e => updateClQuestion(idx, 'inputLabel', e.target.value)}
+                          placeholder='Input label, e.g. "Management flag"'
+                          className="flex-1 border border-slate-200 rounded-lg px-2.5 py-1 text-xs bg-white outline-none focus:ring-2 ring-blue-500/20"
+                        />
+                      )}
+                    </div>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={addClQuestion}
+                  className="w-full py-2 border border-dashed border-slate-300 rounded-lg text-xs font-semibold text-slate-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-all flex items-center justify-center gap-1.5"
+                >
+                  <Plus size={12}/> Add Question
+                </button>
+              </div>
+
+              {clFormError && <p className="text-xs text-red-500 font-medium">{clFormError}</p>}
+
+              <div className="flex justify-end gap-2 pt-1">
+                <button onClick={closeClForm} className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-all">Cancel</button>
+                <button onClick={handleSaveClTemplate} className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all">
+                  {clEditingId ? 'Save Changes' : 'Create Template'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Template list grouped by department */}
+          {(() => {
+            const filtered = clSearch.trim()
+              ? checklistTemplates.filter(t => t.name?.toLowerCase().includes(clSearch.toLowerCase()) || t.departmentId?.toLowerCase().includes(clSearch.toLowerCase()))
+              : checklistTemplates;
+
+            if (filtered.length === 0) {
+              return (
+                <div className="bg-white border border-slate-200 rounded-xl p-10 text-center text-slate-400 text-sm">
+                  {checklistTemplates.length === 0 ? 'No checklist templates yet. Create one to get started.' : 'No templates match your search.'}
+                </div>
+              );
+            }
+
+            const grouped = filtered.reduce((acc, tpl) => {
+              const dept = tpl.departmentId || 'Uncategorised';
+              if (!acc[dept]) acc[dept] = [];
+              acc[dept].push(tpl);
+              return acc;
+            }, {});
+
+            return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b)).map(([dept, templates]) => (
+              <div key={dept} className="space-y-2">
+                <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wide px-1">{dept}</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {templates.map(tpl => (
+                    <div key={tpl.id} className="bg-white border border-slate-200 rounded-xl p-4 space-y-3 flex flex-col shadow-sm">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-bold text-slate-800 truncate">{tpl.name}</p>
+                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${cadenceBadgeColor(tpl.cadence)}`}>{tpl.cadence}</span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-0.5">{tpl.departmentId}</p>
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button onClick={() => openEditClForm(tpl)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="Edit">
+                            <Edit2 size={13}/>
+                          </button>
+                          <button onClick={() => handleDeleteClTemplate(tpl.id)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all" title="Delete">
+                            <Trash2 size={13}/>
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex-1 space-y-1">
+                        {(tpl.questions || []).slice(0, 4).map((q, qi) => (
+                          <div key={q.id || qi} className="flex items-start gap-1.5 text-[11px] text-slate-600">
+                            <span className="w-4 h-4 rounded-full bg-slate-100 text-slate-500 text-[9px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{qi + 1}</span>
+                            <span className="leading-snug line-clamp-1">{q.text}</span>
+                          </div>
+                        ))}
+                        {(tpl.questions || []).length > 4 && (
+                          <p className="text-[10px] text-slate-400 pl-5">+{(tpl.questions || []).length - 4} more…</p>
+                        )}
+                      </div>
+                      <p className="text-[10px] font-medium text-slate-400">{(tpl.questions || []).length} question{(tpl.questions || []).length !== 1 ? 's' : ''}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ));
+          })()}
         </div>
       )}
 
