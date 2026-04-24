@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Home, Briefcase, Network, SlidersHorizontal, BarChart3, FileSpreadsheet, ChevronLeft, ChevronRight, ClipboardCheck, Download, Monitor, Apple, Info, X, Users, Loader2 } from 'lucide-react';
+import { Home, Briefcase, Network, SlidersHorizontal, BarChart3, FileSpreadsheet, ChevronLeft, ChevronRight, ClipboardCheck, Download, Monitor, Apple, Info, X, Users, Loader2, ClipboardList } from 'lucide-react';
 
 const REPO = 'theodorehayes86-source/Ethinos_Project_Management';
 const RELEASES_URL = `https://github.com/${REPO}/releases/latest`;
@@ -33,7 +33,7 @@ function useLatestRelease() {
   return data;
 }
 
-const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setIsMinimized, canSeeControlCenter = false, canSeeEmployeeView = true, canSeeMetrics = true, canSeeReports = true, canSeeApprovals = false, canSeeTeam = false, pendingApprovalsCount = 0 }) => {
+const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setIsMinimized, canSeeControlCenter = false, canSeeEmployeeView = true, canSeeMetrics = true, canSeeReports = true, canSeeApprovals = false, canSeeTeam = false, canSeeChecklist = false, pendingApprovalsCount = 0 }) => {
   const [logoError, setLogoError] = useState(false);
   const [showMacInfo, setShowMacInfo] = useState(false);
   const { winUrl, macUrl, linuxUrl, version, loading } = useLatestRelease();
@@ -45,11 +45,13 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
     { id: 'team', label: 'Team', icon: <Users size={18}/> },
     { id: 'metrics', label: 'Metrics', icon: <BarChart3 size={18}/> },
     { id: 'reports', label: 'Reports', icon: <FileSpreadsheet size={18}/> },
+    { id: 'checklist', label: 'Checklist', icon: <ClipboardList size={18}/> },
     { id: 'employees', label: 'Employee View', icon: <Network size={18} /> },
     { id: 'master-data', label: 'Control Center', icon: <SlidersHorizontal size={18}/> }
   ].filter(item => {
     if (item.id === 'approvals') return canSeeApprovals;
     if (item.id === 'team') return canSeeTeam;
+    if (item.id === 'checklist') return canSeeChecklist;
     if (item.id === 'master-data') return canSeeControlCenter;
     if (item.id === 'employees') return canSeeEmployeeView;
     if (item.id === 'metrics') return canSeeMetrics;

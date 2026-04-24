@@ -12,6 +12,7 @@ import UserMetricsView from './PMT/UserMetricsView';
 import ReportsView from './PMT/ReportsView';
 import ApprovalsView from './PMT/ApprovalsView';
 import TeamView from './PMT/TeamView';
+import ChecklistDashboard from './PMT/ChecklistDashboard';
 import Sidebar from './PMT/Sidebar';
 import Notifications from './PMT/Notifications';
 import ProfileDropdown from './PMT/ProfileDropdown';
@@ -1441,6 +1442,7 @@ const App = () => {
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const canSeeApprovals = managementRoles.includes(currentUser?.role);
   const canSeeTeam = teamViewAccessRoles.includes(currentUser?.role);
+  const canSeeChecklist = checklistAccessRoles.includes(currentUser?.role);
 
   const CROSS_DEPT_ROLES_APP = ['Super Admin', 'Admin', 'Director', 'Business Head'];
   const isCrossDeptApp = CROSS_DEPT_ROLES_APP.includes(currentUser?.role) || currentUser?.department === 'All';
@@ -1483,6 +1485,7 @@ const App = () => {
     team: 'Team',
     metrics: 'Metrics',
     reports: 'Reports',
+    checklist: 'Checklist Dashboard',
     employees: 'Employees',
     settings: 'Settings',
     'master-data': 'Control Center',
@@ -1789,7 +1792,8 @@ const App = () => {
     if (activeTab === 'reports' && !canSeeReports) setActiveTab('home');
     if (activeTab === 'approvals' && !canSeeApprovals) setActiveTab('home');
     if (activeTab === 'team' && !canSeeTeam) setActiveTab('home');
-  }, [activeTab, canSeeControlCenter, canSeeEmployeeView, canSeeMetrics, canSeeReports, canSeeApprovals, canSeeTeam]);
+    if (activeTab === 'checklist' && !canSeeChecklist) setActiveTab('home');
+  }, [activeTab, canSeeControlCenter, canSeeEmployeeView, canSeeMetrics, canSeeReports, canSeeApprovals, canSeeTeam, canSeeChecklist]);
 
   // This tab was the Azure redirect target.
   // While processing: show the same spinner as the normal loading state (seamless).
@@ -1901,6 +1905,7 @@ const App = () => {
         canSeeReports={canSeeReports}
         canSeeApprovals={canSeeApprovals}
         canSeeTeam={canSeeTeam}
+        canSeeChecklist={canSeeChecklist}
         pendingApprovalsCount={pendingApprovalsCount}
       />
 
@@ -2015,6 +2020,18 @@ const App = () => {
 
           {activeTab === 'reports' && !selectedClient && canSeeReports && (
             <ReportsView users={users} clients={clients} clientLogs={clientLogs} currentUser={currentUser} departments={departments} canSeeAllData={canSeeAllReportsData} />
+          )}
+
+          {activeTab === 'checklist' && !selectedClient && canSeeChecklist && (
+            <ChecklistDashboard
+              clientLogs={clientLogs}
+              taskGroups={taskGroups}
+              clients={clients}
+              accessibleClients={accessibleClients}
+              checklistTemplates={checklistTemplates}
+              departments={departments}
+              currentUser={currentUser}
+            />
           )}
 
           {activeTab === 'master-data' && !selectedClient && canSeeControlCenter && (
