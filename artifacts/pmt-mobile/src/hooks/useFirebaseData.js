@@ -229,6 +229,58 @@ export function useTeamTasks(currentUser, users, clientLogs, clients) {
   return { direct: directReports, allTeamTasks };
 }
 
+export function useChecklistDashboardData(isAuthed) {
+  const [taskGroups, setTaskGroups] = useState([]);
+  const [checklistTemplates, setChecklistTemplates] = useState([]);
+  const [checklistAccess, setChecklistAccess] = useState([]);
+
+  useEffect(() => {
+    if (!isAuthed) return;
+
+    const unsubGroups = onValue(
+      ref(db, 'taskGroups'),
+      snap => {
+        const val = snap.val();
+        if (val) {
+          const arr = Array.isArray(val) ? val : Object.values(val);
+          setTaskGroups(arr);
+        } else {
+          setTaskGroups([]);
+        }
+      },
+      () => {},
+    );
+
+    const unsubTemplates = onValue(
+      ref(db, 'checklistTemplates'),
+      snap => {
+        const val = snap.val();
+        if (val) {
+          const arr = Array.isArray(val) ? val : Object.values(val);
+          setChecklistTemplates(arr);
+        } else {
+          setChecklistTemplates([]);
+        }
+      },
+      () => {},
+    );
+
+    const unsubAccess = onValue(
+      ref(db, 'settings/conditions/checklistAccess'),
+      snap => {
+        const val = snap.val();
+        if (Array.isArray(val)) setChecklistAccess(val);
+        else setChecklistAccess([]);
+      },
+      () => {},
+    );
+
+    return () => { unsubGroups(); unsubTemplates(); unsubAccess(); };
+  }, [isAuthed]);
+
+  return { taskGroups, checklistTemplates, checklistAccess };
+}
+
 export async function updateTaskInFirebase(clientId, taskId, updates, clientLogs) {
   const currentLogs = clientLogs[clientId] || [];
   const updated = currentLogs.map(t => String(t.id) === String(taskId) ? { ...t, ...updates } : t);

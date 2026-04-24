@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, signInWithCustomToken, signOut } from 'firebase/auth';
 import { auth } from './firebase.js';
 import LoginView from './components/LoginView.jsx';
@@ -11,10 +11,14 @@ import {
   useMyTasks,
   usePendingApprovals,
   useEmployeeNotifications,
+  useChecklistDashboardData,
+  getSubtreeIds,
 } from './hooks/useFirebaseData.js';
+import ChecklistDashboardScreen from './components/ChecklistDashboardScreen.jsx';
 import { Bell, LogOut, Loader2 } from 'lucide-react';
 
 const MANAGEMENT_ROLES = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
+const GLOBAL_ROLES = ['Super Admin', 'Director', 'Business Head'];
 
 const SYNTHETIC_CLIENTS = [
   { id: '__personal__', name: 'Personal', synthetic: true, isPersonal: true },
@@ -101,6 +105,7 @@ function MainApp() {
   const [userLoading, setUserLoading] = useState(false);
 
   const { users, clients, clientLogs, categories, loading: dataLoading } = useAppData(!authLoading && !!firebaseUser);
+  const { taskGroups, checklistTemplates, checklistAccess } = useChecklistDashboardData(!authLoading && !!firebaseUser);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
@@ -161,8 +166,28 @@ function MainApp() {
   }, [firebaseUser, users]);
 
   const isManager = MANAGEMENT_ROLES.includes(currentUser?.role);
+  const hasChecklistAccess = currentUser ? checklistAccess.includes(currentUser.role) : false;
+
+  useEffect(() => {
+    if (activeTab === 'checklist' && !hasChecklistAccess) {
+      setActiveTab(isManager ? 'team' : 'my-tasks');
+    }
+  }, [hasChecklistAccess, activeTab, isManager]);
 
   const allClients = [...SYNTHETIC_CLIENTS, ...clients];
+
+  const checklistAccessibleClients = useMemo(() => {
+    if (!currentUser) return [];
+    if (GLOBAL_ROLES.includes(currentUser.role)) return allClients;
+    const subtreeIds = getSubtreeIds(currentUser.id, users);
+    const allowedClientIds = new Set();
+    Object.entries(clientLogs).forEach(([clientId, logs]) => {
+      (logs || []).forEach(task => {
+        if (subtreeIds.has(String(task.assigneeId))) allowedClientIds.add(String(clientId));
+      });
+    });
+    return allClients.filter(c => allowedClientIds.has(String(c.id)));
+  }, [currentUser, users, clientLogs, allClients]);
 
   const myTasks = useMyTasks(currentUser, clientLogs, allClients);
   const pendingApprovals = usePendingApprovals(currentUser, clientLogs, allClients);
@@ -352,6 +377,14 @@ function MainApp() {
             users={users}
           />
         )}
+        {activeTab === 'checklist' && hasChecklistAccess && (
+          <ChecklistDashboardScreen
+            clientLogs={clientLogs}
+            taskGroups={taskGroups}
+            checklistTemplates={checklistTemplates}
+            accessibleClients={checklistAccessibleClients}
+          />
+        )}
       </div>
 
       <BottomNav
@@ -359,6 +392,7 @@ function MainApp() {
         onTabChange={setActiveTab}
         isManager={isManager}
         approvalCount={pendingApprovals.length}
+        hasChecklistAccess={hasChecklistAccess}
       />
 
       {showNotifications && (
