@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Search, ChevronLeft, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, AlertTriangle, Calendar, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus, Hourglass, Archive, ArchiveRestore, LayoutGrid, LayoutList } from 'lucide-react';
+import { Search, ChevronLeft, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, AlertTriangle, Calendar, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus, Hourglass, Archive, ArchiveRestore, LayoutGrid, LayoutList, ClipboardList } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import DatePicker from "react-datepicker";
 import { format, subDays, parse, addDays, differenceInCalendarDays } from 'date-fns';
@@ -41,6 +41,7 @@ const ClientView = ({
   departments = [], regions = [], accessibleClients = [], syntheticClients = [],
   taskGroups = [],
   setTaskGroups = () => {},
+  checklistTemplates = [],
 }) => {
   const managementRoles = ['Super Admin', 'Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
@@ -176,6 +177,18 @@ const ClientView = ({
   // Estimated time for new task (hours + minutes inputs)
   const [newTaskEstimatedHrs, setNewTaskEstimatedHrs] = useState('');
   const [newTaskEstimatedMins, setNewTaskEstimatedMins] = useState('');
+
+  // --- NEW CHECKLIST MODAL STATE ---
+  const [showNewChecklistModal, setShowNewChecklistModal] = useState(false);
+  const [clSelectedTemplateId, setClSelectedTemplateId] = useState('');
+  const [clSelectedDate, setClSelectedDate] = useState(new Date());
+  const [clRepeatFreq, setClRepeatFreq] = useState('Once');
+  const [clRepeatEnd, setClRepeatEnd] = useState(null);
+  const [clAssigneeId, setClAssigneeId] = useState('');
+  const [clAssigneeName, setClAssigneeName] = useState('');
+  const [clAssigneeQuery, setClAssigneeQuery] = useState('');
+  const [clShowAssigneeMenu, setClShowAssigneeMenu] = useState(false);
+  const [clError, setClError] = useState('');
 
   // QC review state (for management reviewing a sent task)
   const [qcReviewingTaskId, setQcReviewingTaskId] = useState(null);
@@ -766,6 +779,96 @@ const ClientView = ({
     setSetAllQcAssigneeQuery('');
   };
 
+  // --- NEW CHECKLIST MODAL HELPERS ---
+  const resetClModal = () => {
+    setClSelectedTemplateId('');
+    setClSelectedDate(new Date());
+    setClRepeatFreq('Once');
+    setClRepeatEnd(null);
+    setClAssigneeId(isManagement ? '' : (currentUser?.id || ''));
+    setClAssigneeName(isManagement ? '' : (currentUser?.name || ''));
+    setClAssigneeQuery(isManagement ? '' : (currentUser?.name || ''));
+    setClShowAssigneeMenu(false);
+    setClError('');
+  };
+  const openNewChecklistModal = () => { resetClModal(); setShowNewChecklistModal(true); };
+  const closeNewChecklistModal = () => { setShowNewChecklistModal(false); resetClModal(); };
+
+  const handleCreateChecklistGroup = () => {
+    if (!clSelectedTemplateId) { setClError('Please select a checklist template.'); return; }
+    const effectiveAssigneeId   = isManagement ? clAssigneeId   : (currentUser?.id   || '');
+    const effectiveAssigneeName = isManagement ? clAssigneeName : (currentUser?.name || '');
+    if (!effectiveAssigneeId) { setClError('Please select an assignee.'); return; }
+
+    const template = checklistTemplates.find(t => t.id === clSelectedTemplateId);
+    if (!template) { setClError('Template not found.'); return; }
+    if (!template.questions || template.questions.length === 0) { setClError('This template has no questions.'); return; }
+
+    const clientId = selectedClient?.id;
+    const clientName = selectedClient?.name || '';
+    const formattedDate = format(clSelectedDate, 'do MMM yyyy');
+    const groupId = `tg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const repeatGroupId = clRepeatFreq !== 'Once' ? `rg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}` : undefined;
+
+    const newGroup = {
+      id: groupId,
+      name: template.name,
+      templateId: template.id,
+      templateName: template.name,
+      questions: (template.questions || []).map(q => ({
+        id: q.id, text: q.text, requiresInput: q.requiresInput || false, inputLabel: q.inputLabel || '', order: q.order ?? 0,
+      })),
+      clientId,
+      clientName,
+      date: formattedDate,
+      dueDate: null,
+      repeatFrequency: clRepeatFreq,
+      repeatEnd: clRepeatFreq !== 'Once' ? (clRepeatEnd ? format(clRepeatEnd, 'do MMM yyyy') : null) : null,
+      assigneeId: effectiveAssigneeId,
+      assigneeName: effectiveAssigneeName,
+      creatorId: currentUser?.id || null,
+      creatorName: currentUser?.name || '',
+      creatorRole: currentUser?.role || '',
+      status: 'Pending',
+      archived: false,
+      ...(repeatGroupId ? { repeatGroupId } : {}),
+    };
+
+    const childTasks = (template.questions || []).map((q, i) => ({
+      id: `${groupId}-q${i}-${Date.now() + i}`,
+      taskGroupId: groupId,
+      taskType: 'checklist',
+      questionText: q.text,
+      requiresInput: q.requiresInput || false,
+      inputLabel: q.inputLabel || '',
+      name: q.text,
+      comment: '',
+      date: formattedDate,
+      status: 'Pending',
+      assigneeId: effectiveAssigneeId,
+      assigneeName: effectiveAssigneeName,
+      creatorId: currentUser?.id || null,
+      creatorName: currentUser?.name || '',
+      creatorRole: currentUser?.role || '',
+      category: 'Checklist',
+      repeatFrequency: 'Once',
+      checklistAnswer: null,
+      checklistNote: null,
+      timerState: 'idle',
+      timerStartedAt: null,
+      elapsedMs: 0,
+      billable: false,
+      departments: currentUser?.department ? [currentUser.department] : [],
+    }));
+
+    setClientLogs({
+      ...clientLogs,
+      [clientId]: [...childTasks, ...(clientLogs[clientId] || [])],
+    });
+    setTaskGroups([newGroup, ...taskGroups]);
+    closeNewChecklistModal();
+  };
+
   const openTemplateModal = () => {
     setTemplateSearch('');
     setSelectedTemplateId(null);
@@ -1086,6 +1189,14 @@ const ClientView = ({
                 className="bg-white border border-slate-200 text-slate-700 px-3.5 py-2 rounded-lg font-semibold text-xs hover:bg-slate-50 transition-all flex items-center gap-1.5"
               >
                 Use Template
+              </button>
+            )}
+            {checklistTemplates.length > 0 && (
+              <button
+                onClick={openNewChecklistModal}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg font-semibold text-xs border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 transition-all"
+              >
+                <ClipboardList size={13} /> New Checklist
               </button>
             )}
             <button
@@ -3723,6 +3834,150 @@ const ClientView = ({
           />
         );
       })()}
+
+      {/* ---- NEW CHECKLIST MODAL ---- */}
+      {showNewChecklistModal && (
+        <div className="fixed inset-0 z-[700] flex items-center justify-center bg-slate-900/10 backdrop-blur-md p-4">
+          <div className="bg-white w-full max-w-lg border border-slate-200 shadow-xl rounded-2xl animate-in zoom-in-95 flex flex-col" style={{ maxHeight: '90vh' }}>
+            <div className="flex-shrink-0 flex justify-between items-center px-6 pt-6 pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-teal-100 flex items-center justify-center">
+                  <ClipboardList size={16} className="text-teal-600" />
+                </div>
+                <div>
+                  <h4 className="text-base font-bold text-slate-900">New Checklist Group</h4>
+                  <p className="text-xs text-slate-500">{selectedClient?.name || 'This client'}</p>
+                </div>
+              </div>
+              <button onClick={closeNewChecklistModal} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+              {/* Template */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Checklist Template <span className="text-red-500">*</span></label>
+                <select
+                  value={clSelectedTemplateId}
+                  onChange={e => { setClSelectedTemplateId(e.target.value); if (clError) setClError(''); }}
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                >
+                  <option value="">— Select template —</option>
+                  {checklistTemplates.map(tpl => (
+                    <option key={tpl.id} value={tpl.id}>{tpl.name} ({tpl.departmentId || tpl.cadence})</option>
+                  ))}
+                </select>
+                {clSelectedTemplateId && (() => {
+                  const tpl = checklistTemplates.find(t => t.id === clSelectedTemplateId);
+                  return tpl ? (
+                    <p className="text-[11px] text-slate-500">{(tpl.questions || []).length} question{(tpl.questions || []).length !== 1 ? 's' : ''} · {tpl.cadence}</p>
+                  ) : null;
+                })()}
+              </div>
+
+              {/* Assignee */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Assign To <span className="text-red-500">*</span></label>
+                {!isManagement ? (
+                  <div className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 flex items-center gap-2 select-none">
+                    <Users size={14} className="text-slate-400 flex-shrink-0" />
+                    <span className="flex-1">{currentUser?.name || 'You'}</span>
+                    <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">Self only</span>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search assignee"
+                      className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                      value={clAssigneeQuery}
+                      onFocus={() => setClShowAssigneeMenu(true)}
+                      onChange={e => { setClAssigneeQuery(e.target.value); setClAssigneeId(''); setClShowAssigneeMenu(true); if (clError) setClError(''); }}
+                    />
+                    {clShowAssigneeMenu && (
+                      <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-44 overflow-y-auto">
+                        {users.filter(u => !clAssigneeQuery.trim() || (u.name || '').toLowerCase().includes(clAssigneeQuery.toLowerCase())).length
+                          ? users.filter(u => !clAssigneeQuery.trim() || (u.name || '').toLowerCase().includes(clAssigneeQuery.toLowerCase())).map(u => (
+                            <button key={u.id} type="button"
+                              onClick={() => { setClAssigneeId(u.id); setClAssigneeName(u.name); setClAssigneeQuery(u.name); setClShowAssigneeMenu(false); if (clError) setClError(''); }}
+                              className="w-full text-left px-3 py-2 bg-white hover:bg-slate-50 transition-all"
+                            >
+                              <p className="text-sm font-semibold text-slate-700">{u.name}</p>
+                              <p className="text-xs text-slate-500">{u.email || u.role || ''}</p>
+                            </button>
+                          ))
+                          : <p className="px-3 py-2 text-sm text-slate-500">No users found</p>
+                        }
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Date */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Date</label>
+                <div className="border border-slate-200 rounded-xl p-3 bg-slate-50">
+                  <DatePicker
+                    selected={clSelectedDate}
+                    onChange={date => setClSelectedDate(date)}
+                    inline
+                  />
+                </div>
+              </div>
+
+              {/* Repeat Frequency */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Repeat Frequency</label>
+                <div className="flex flex-wrap gap-2">
+                  {['Once', 'Daily', 'Weekly', 'Monthly'].map(freq => (
+                    <label key={freq} className="flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer hover:bg-slate-50 transition-all"
+                      style={clRepeatFreq === freq ? { borderColor: '#2563eb', backgroundColor: '#eff6ff' } : { borderColor: '#e2e8f0' }}
+                    >
+                      <input type="radio" name="cvClRepeatFreq" value={freq} checked={clRepeatFreq === freq}
+                        onChange={e => { setClRepeatFreq(e.target.value); if (e.target.value === 'Once') setClRepeatEnd(null); }}
+                        className="w-4 h-4 accent-blue-600 cursor-pointer"
+                      />
+                      <span className="text-xs font-semibold text-slate-700">{freq}</span>
+                    </label>
+                  ))}
+                </div>
+                {clRepeatFreq !== 'Once' && (
+                  <div className="mt-2 space-y-1">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Repeat Until</label>
+                    <DatePicker
+                      selected={clRepeatEnd}
+                      onChange={date => setClRepeatEnd(date)}
+                      placeholderText="Select end date"
+                      dateFormat="do MMM yyyy"
+                      minDate={clSelectedDate || new Date()}
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {clError && (
+                <p className="text-xs font-semibold text-red-500">{clError}</p>
+              )}
+            </div>
+
+            <div className="flex-shrink-0 flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100">
+              <button onClick={closeNewChecklistModal} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-all">
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateChecklistGroup}
+                className="px-5 py-2 bg-teal-600 text-white text-sm font-semibold rounded-lg hover:bg-teal-700 transition-all shadow-sm"
+              >
+                Create Group
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
