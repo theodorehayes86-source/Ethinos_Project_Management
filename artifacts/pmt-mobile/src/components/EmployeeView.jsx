@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Tag, Calendar, ChevronRight, AlertTriangle, CheckCircle, Clock, Plus, ChevronDown, ChevronUp, ShieldCheck } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Tag, Calendar, ChevronRight, AlertTriangle, CheckCircle, Clock, Plus, ChevronDown, ChevronUp, ShieldCheck, ClipboardList, Activity } from 'lucide-react';
 import TaskDetailSheet from './TaskDetailSheet.jsx';
 import AddTaskSheet from './AddTaskSheet.jsx';
 import { isTaskOverdue } from '../utils/taskUtils.js';
@@ -90,15 +90,85 @@ function Section({ title, tasks, onTaskClick, icon, defaultOpen = true }) {
   );
 }
 
-export default function EmployeeView({ myTasks, clientLogs, currentUser, clients, categories, users }) {
+export default function EmployeeView({ myTasks, taskGroups = [], clientLogs, currentUser, clients, categories, users }) {
   const [selectedTask, setSelectedTask] = useState(null);
   const [showAddTask, setShowAddTask] = useState(false);
   const { today = [], upcoming = [], overdue = [], done = [], awaitingQC = [] } = myTasks;
   const allEmpty = today.length === 0 && upcoming.length === 0 && overdue.length === 0 && done.length === 0 && awaitingQC.length === 0;
 
+  const todayStr = useMemo(() => {
+    const d = new Date();
+    return `${d.getDate()}${['st','nd','rd'][((d.getDate()+90)%100-10)%10-1]||'th'} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]} ${d.getFullYear()}`;
+  }, []);
+
+  const myGroups = useMemo(() =>
+    taskGroups.filter(g => g.assigneeId && currentUser && String(g.assigneeId) === String(currentUser.id)),
+    [taskGroups, currentUser]
+  );
+
+  const overdueChecklists = useMemo(() =>
+    myGroups.filter(g => {
+      if (!g.dueDate || g.status === 'done') return false;
+      try {
+        const [day, mon, yr] = g.dueDate.replace(/(\d+)(st|nd|rd|th)/, '$1').split(' ');
+        const months = { Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11 };
+        return new Date(+yr, months[mon], +day) < new Date(new Date().setHours(0,0,0,0));
+      } catch { return false; }
+    }),
+    [myGroups]
+  );
+
+  const dueTodayChecklists = useMemo(() =>
+    myGroups.filter(g => g.dueDate === todayStr && g.status !== 'done'),
+    [myGroups, todayStr]
+  );
+
+  const openChecklists = useMemo(() =>
+    myGroups.filter(g => g.status !== 'done'),
+    [myGroups]
+  );
+
+  const stats = [
+    { label: 'Overdue', taskVal: overdue.length, clVal: overdueChecklists.length, color: 'rose', icon: <AlertTriangle size={14} className="text-rose-500" /> },
+    { label: 'Due Today', taskVal: today.length, clVal: dueTodayChecklists.length, color: 'amber', icon: <Clock size={14} className="text-amber-500" /> },
+    { label: 'Open', taskVal: today.length + upcoming.length, clVal: openChecklists.length, color: 'indigo', icon: <Activity size={14} className="text-indigo-500" /> },
+    { label: 'Awaiting QC', taskVal: awaitingQC.length, clVal: 0, color: 'teal', icon: <ShieldCheck size={14} className="text-teal-500" /> },
+  ];
+
+  const colorMap = {
+    rose: { bg: 'bg-rose-50', border: 'border-rose-100', val: 'text-rose-700', sub: 'text-rose-400', iconBg: 'bg-rose-100' },
+    amber: { bg: 'bg-amber-50', border: 'border-amber-100', val: 'text-amber-700', sub: 'text-amber-400', iconBg: 'bg-amber-100' },
+    indigo: { bg: 'bg-indigo-50', border: 'border-indigo-100', val: 'text-indigo-700', sub: 'text-indigo-400', iconBg: 'bg-indigo-100' },
+    teal: { bg: 'bg-teal-50', border: 'border-teal-100', val: 'text-teal-700', sub: 'text-teal-400', iconBg: 'bg-teal-100' },
+  };
+
   return (
     <div className="flex-1 overflow-y-auto relative">
       <div className="p-4 pb-6 space-y-6">
+
+        {/* STAT CARDS */}
+        <div className="grid grid-cols-2 gap-3">
+          {stats.map((s, i) => {
+            const c = colorMap[s.color];
+            const total = s.taskVal + s.clVal;
+            const hasData = total > 0;
+            return (
+              <div key={i} className={`rounded-2xl border p-3 ${hasData ? `${c.bg} ${c.border}` : 'bg-slate-50 border-slate-100'}`}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">{s.label}</span>
+                  <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${hasData ? c.iconBg : 'bg-slate-100'}`}>{s.icon}</div>
+                </div>
+                <p className={`text-2xl font-black ${hasData ? c.val : 'text-slate-300'}`}>{total}</p>
+                {s.clVal > 0 && (
+                  <p className={`text-[10px] font-semibold mt-0.5 ${c.sub}`}>
+                    {s.taskVal} task{s.taskVal !== 1 ? 's' : ''} · {s.clVal} list{s.clVal !== 1 ? 's' : ''}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
         {allEmpty && (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">

@@ -370,6 +370,7 @@ function MainApp() {
         {activeTab === 'my-tasks' && (
           <EmployeeView
             myTasks={myTasks}
+            taskGroups={taskGroups}
             clientLogs={clientLogs}
             currentUser={currentUser}
             clients={allClients}

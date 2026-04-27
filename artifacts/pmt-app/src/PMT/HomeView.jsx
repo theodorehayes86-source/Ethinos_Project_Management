@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { format, parse, isBefore, addDays, differenceInCalendarDays } from 'date-fns';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
-import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, CheckCircle, XCircle, MinusCircle, Tag, Calendar, Archive, ArchiveRestore, LayoutTemplate, ChevronDown, Play, Square, Pause, Send, ThumbsUp, ThumbsDown, RotateCcw, Pencil, ClipboardList } from 'lucide-react';
+import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, CheckCircle, XCircle, MinusCircle, Tag, Calendar, Archive, ArchiveRestore, LayoutTemplate, ChevronDown, ChevronUp, Play, Square, Pause, Send, ThumbsUp, ThumbsDown, RotateCcw, Pencil, ClipboardList } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import TaskDetailPanel from './TaskDetailPanel';
 import ChecklistGroupDetailPanel from './ChecklistGroupDetailPanel';
@@ -114,6 +114,7 @@ const HomeView = ({
   const [taskDepartments, setTaskDepartments] = useState([]);
   const [taskBillable, setTaskBillable] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
+  const [collapsedClients, setCollapsedClients] = useState(new Set());
   const taskListRef = useRef(null);
   const [estimatedHrs, setEstimatedHrs] = useState('');
   const [estimatedMins, setEstimatedMins] = useState('');
@@ -637,17 +638,29 @@ const HomeView = ({
 
   const myAwaitingQC = myTasks.filter(t => t.qcEnabled && t.qcStatus === 'sent');
 
+  // --- Checklist group stats (for dual-count cards) ---
+  const myOverdueChecklists = myTaskGroups.filter(g => {
+    if (!g.dueDate || g.status === 'done') return false;
+    try { return isBefore(parse(g.dueDate, 'do MMM yyyy', new Date()), new Date()); } catch { return false; }
+  });
+  const myDueTodayChecklists = myTaskGroups.filter(g => g.dueDate === todayStr && g.status !== 'done');
+  const myOpenChecklists = myTaskGroups.filter(g => g.status !== 'done');
+
+  const scrollToTasks = () => setTimeout(() => taskListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+
   const filteredMyTasks = useMemo(() => {
     if (showArchived) return myArchivedTasks;
     if (statusFilter === 'all') return myTasks.filter(t =>
       t.status !== 'Done' ||
-      // Keep Done tasks that still need a QC action (send or re-send after rejection)
       (t.qcEnabled && (!t.qcStatus || t.qcStatus === 'rejected'))
     );
     if (statusFilter === 'done') return myDone;
     if (statusFilter === 'overdue') return myOverdue;
+    if (statusFilter === 'dueToday') return myDueToday;
+    if (statusFilter === '48plus') return my48Plus;
+    if (statusFilter === 'awaitingQC') return myAwaitingQC;
     return myTasks.filter(t => t.status === statusFilter);
-  }, [myTasks, myDone, myArchivedTasks, myOverdue, statusFilter, showArchived]);
+  }, [myTasks, myDone, myArchivedTasks, myOverdue, myDueToday, my48Plus, myAwaitingQC, statusFilter, showArchived]);
 
   const handleArchiveTask = (task) => {
     const cid = task.cid;
@@ -812,12 +825,13 @@ const HomeView = ({
       if (!groups[key]) groups[key] = { clientName: task.cName || 'Unknown Client', clientId: task.cid, tasks: [], taskGroups: [] };
       groups[key].tasks.push(task);
     });
-    // Add task groups into the client groupings (shown in 'all' and 'done' filters only)
-    const filteredGroups = showArchived ? [] : (statusFilter === 'done'
-      ? myTaskGroups.filter(g => g.status === 'done')
-      : statusFilter === 'all'
-        ? myTaskGroups.filter(g => g.status !== 'done')
-        : []);
+    // Add task groups into the client groupings
+    const filteredGroups = showArchived ? [] : (
+      statusFilter === 'done' ? myTaskGroups.filter(g => g.status === 'done') :
+      statusFilter === 'overdue' ? myOverdueChecklists :
+      statusFilter === 'dueToday' ? myDueTodayChecklists :
+      statusFilter === 'all' ? myTaskGroups.filter(g => g.status !== 'done') :
+      []);
     filteredGroups.forEach(group => {
       const key = group.clientId || 'unknown';
       const clientName = group.clientName || allClientOptions.find(c => c.id === group.clientId)?.name || 'Unknown Client';
@@ -825,7 +839,7 @@ const HomeView = ({
       groups[key].taskGroups.push(group);
     });
     return Object.values(groups);
-  }, [filteredMyTasks, myTaskGroups, showArchived, statusFilter, allClientOptions]);
+  }, [filteredMyTasks, myTaskGroups, myOverdueChecklists, myDueTodayChecklists, showArchived, statusFilter, allClientOptions]);
 
   const statusColor = (status) => {
     if (status === 'Done') return 'bg-emerald-100 text-emerald-700';
@@ -852,82 +866,106 @@ const HomeView = ({
       {/* PERSONAL STATS */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'My Clients', value: accessibleClients.length, icon: <Briefcase size={16} className="text-blue-600"/>, bgColor: 'bg-blue-50', iconBgColor: 'bg-blue-100', border: 'border-blue-100', onClick: onNavigateToClients },
-          { label: 'Open Tasks', value: myOpenTasks.length, icon: <Clock size={16} className="text-green-600"/>, bgColor: 'bg-green-50', iconBgColor: 'bg-green-100', border: 'border-green-100' },
-          { label: 'WIP', value: myWip.length, icon: <Activity size={16} className="text-orange-500"/>, bgColor: 'bg-orange-50', iconBgColor: 'bg-orange-100', border: 'border-orange-100' },
-          { label: 'Pending', value: myPending.length, icon: <AlertTriangle size={16} className="text-red-500"/>, bgColor: 'bg-red-50', iconBgColor: 'bg-red-100', border: 'border-red-100' },
-        ].map((stat, i) => (
-          <div
-            key={i}
-            onClick={stat.onClick}
-            className={`${stat.bgColor} p-4 rounded-2xl shadow-sm border ${stat.border} flex flex-col justify-between h-24 ${stat.onClick ? 'cursor-pointer hover:shadow-md hover:scale-[1.02] transition-all' : ''}`}
-          >
-            <div className="flex justify-between items-start">
-              <span className="text-xs font-semibold text-slate-500">{stat.label}</span>
-              <div className={`p-2 ${stat.iconBgColor} rounded-lg`}>{stat.icon}</div>
+          {
+            label: 'My Clients', filterKey: null, value: accessibleClients.length,
+            icon: <Briefcase size={16} className="text-blue-600"/>, bgColor: 'bg-blue-50', iconBgColor: 'bg-blue-100', border: 'border-blue-100',
+            onClick: onNavigateToClients,
+          },
+          {
+            label: 'Open Tasks', filterKey: 'all', value: myOpenTasks.length,
+            sub: myOpenChecklists.length > 0 ? `+${myOpenChecklists.length} checklist${myOpenChecklists.length !== 1 ? 's' : ''}` : null,
+            icon: <Clock size={16} className="text-green-600"/>, bgColor: 'bg-green-50', iconBgColor: 'bg-green-100', border: 'border-green-100',
+          },
+          {
+            label: 'WIP', filterKey: 'WIP', value: myWip.length,
+            icon: <Activity size={16} className="text-orange-500"/>, bgColor: 'bg-orange-50', iconBgColor: 'bg-orange-100', border: 'border-orange-100',
+          },
+          {
+            label: 'Pending', filterKey: 'Pending', value: myPending.length,
+            icon: <AlertTriangle size={16} className="text-red-500"/>, bgColor: 'bg-red-50', iconBgColor: 'bg-red-100', border: 'border-red-100',
+          },
+        ].map((stat, i) => {
+          const isActive = stat.filterKey && statusFilter === stat.filterKey && !showArchived;
+          const handleClick = stat.onClick || (stat.filterKey ? () => { setShowArchived(false); setStatusFilter(stat.filterKey); scrollToTasks(); } : undefined);
+          return (
+            <div key={i} onClick={handleClick}
+              className={`${stat.bgColor} p-4 rounded-2xl shadow-sm border flex flex-col justify-between h-24 cursor-pointer hover:shadow-md hover:scale-[1.02] transition-all ${isActive ? 'ring-2 ring-offset-1 ring-slate-700 border-slate-300' : stat.border}`}
+            >
+              <div className="flex justify-between items-start">
+                <span className="text-xs font-semibold text-slate-500">{stat.label}</span>
+                <div className={`p-2 ${stat.iconBgColor} rounded-lg`}>{stat.icon}</div>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-slate-900">{stat.value}</p>
+                {stat.sub && <p className="text-[10px] text-slate-400 font-medium mt-0.5">{stat.sub}</p>}
+              </div>
             </div>
-            <p className="text-2xl font-bold text-slate-900">{stat.value}</p>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* ALERT STAT CARDS: Overdue / Due Today / 48+ hrs open / Awaiting QC */}
       <div className="grid grid-cols-4 gap-4">
         {[
           {
-            label: 'Overdue',
-            value: myOverdue.length,
+            label: 'Overdue', filterKey: 'overdue',
+            taskCount: myOverdue.length, clCount: myOverdueChecklists.length,
             icon: <AlertTriangle size={16} className="text-rose-600"/>,
-            bgColor: myOverdue.length > 0 ? 'bg-rose-50' : 'bg-slate-50',
-            iconBgColor: myOverdue.length > 0 ? 'bg-rose-100' : 'bg-slate-100',
-            border: myOverdue.length > 0 ? 'border-rose-200' : 'border-slate-100',
-            valueColor: myOverdue.length > 0 ? 'text-rose-700' : 'text-slate-400',
-            onClick: myOverdue.length > 0 ? () => {
-              setShowArchived(false);
-              setStatusFilter('overdue');
-              setTimeout(() => taskListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
-            } : undefined,
+            activeColor: 'bg-rose-50 border-rose-300 ring-rose-500',
+            inactiveColor: myOverdue.length > 0 || myOverdueChecklists.length > 0 ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-100',
+            valueColor: myOverdue.length > 0 || myOverdueChecklists.length > 0 ? 'text-rose-700' : 'text-slate-400',
+            iconBgColor: myOverdue.length > 0 || myOverdueChecklists.length > 0 ? 'bg-rose-100' : 'bg-slate-100',
           },
           {
-            label: 'Due Today',
-            value: myDueToday.length,
+            label: 'Due Today', filterKey: 'dueToday',
+            taskCount: myDueToday.length, clCount: myDueTodayChecklists.length,
             icon: <Calendar size={16} className="text-amber-600"/>,
-            bgColor: myDueToday.length > 0 ? 'bg-amber-50' : 'bg-slate-50',
-            iconBgColor: myDueToday.length > 0 ? 'bg-amber-100' : 'bg-slate-100',
-            border: myDueToday.length > 0 ? 'border-amber-200' : 'border-slate-100',
-            valueColor: myDueToday.length > 0 ? 'text-amber-700' : 'text-slate-400',
+            activeColor: 'bg-amber-50 border-amber-300 ring-amber-500',
+            inactiveColor: myDueToday.length > 0 || myDueTodayChecklists.length > 0 ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-100',
+            valueColor: myDueToday.length > 0 || myDueTodayChecklists.length > 0 ? 'text-amber-700' : 'text-slate-400',
+            iconBgColor: myDueToday.length > 0 || myDueTodayChecklists.length > 0 ? 'bg-amber-100' : 'bg-slate-100',
           },
           {
-            label: '48 hrs+ Open',
-            value: my48Plus.length,
+            label: '48 hrs+ Open', filterKey: '48plus',
+            taskCount: my48Plus.length, clCount: 0,
             icon: <Clock size={16} className="text-purple-600"/>,
-            bgColor: my48Plus.length > 0 ? 'bg-purple-50' : 'bg-slate-50',
-            iconBgColor: my48Plus.length > 0 ? 'bg-purple-100' : 'bg-slate-100',
-            border: my48Plus.length > 0 ? 'border-purple-200' : 'border-slate-100',
+            activeColor: 'bg-purple-50 border-purple-300 ring-purple-500',
+            inactiveColor: my48Plus.length > 0 ? 'bg-purple-50 border-purple-200' : 'bg-slate-50 border-slate-100',
             valueColor: my48Plus.length > 0 ? 'text-purple-700' : 'text-slate-400',
+            iconBgColor: my48Plus.length > 0 ? 'bg-purple-100' : 'bg-slate-100',
           },
           {
-            label: 'Awaiting QC',
-            value: myAwaitingQC.length,
+            label: 'Awaiting QC', filterKey: 'awaitingQC',
+            taskCount: myAwaitingQC.length, clCount: 0,
             icon: <ShieldCheck size={16} className="text-indigo-600"/>,
-            bgColor: myAwaitingQC.length > 0 ? 'bg-indigo-50' : 'bg-slate-50',
-            iconBgColor: myAwaitingQC.length > 0 ? 'bg-indigo-100' : 'bg-slate-100',
-            border: myAwaitingQC.length > 0 ? 'border-indigo-200' : 'border-slate-100',
+            activeColor: 'bg-indigo-50 border-indigo-300 ring-indigo-500',
+            inactiveColor: myAwaitingQC.length > 0 ? 'bg-indigo-50 border-indigo-200' : 'bg-slate-50 border-slate-100',
             valueColor: myAwaitingQC.length > 0 ? 'text-indigo-700' : 'text-slate-400',
+            iconBgColor: myAwaitingQC.length > 0 ? 'bg-indigo-100' : 'bg-slate-100',
           },
-        ].map((stat, i) => (
-          <div
-            key={i}
-            onClick={stat.onClick}
-            className={`${stat.bgColor} p-4 rounded-2xl shadow-sm border ${stat.border} flex flex-col justify-between h-20 transition-all ${stat.onClick ? 'cursor-pointer hover:shadow-md hover:scale-[1.02]' : ''}`}
-          >
-            <div className="flex justify-between items-start">
-              <span className="text-xs font-semibold text-slate-500">{stat.label}</span>
-              <div className={`p-1.5 ${stat.iconBgColor} rounded-lg`}>{stat.icon}</div>
+        ].map((stat, i) => {
+          const total = stat.taskCount + stat.clCount;
+          const isActive = statusFilter === stat.filterKey && !showArchived;
+          return (
+            <div key={i}
+              onClick={() => { setShowArchived(false); setStatusFilter(isActive ? 'all' : stat.filterKey); scrollToTasks(); }}
+              className={`p-4 rounded-2xl shadow-sm border flex flex-col justify-between h-24 cursor-pointer hover:shadow-md hover:scale-[1.02] transition-all ${isActive ? `${stat.activeColor} ring-2 ring-offset-1` : stat.inactiveColor}`}
+            >
+              <div className="flex justify-between items-start">
+                <span className="text-xs font-semibold text-slate-500">{stat.label}</span>
+                <div className={`p-1.5 ${stat.iconBgColor} rounded-lg`}>{stat.icon}</div>
+              </div>
+              <div>
+                <p className={`text-2xl font-bold ${stat.valueColor}`}>{total}</p>
+                {stat.clCount > 0 && (
+                  <p className="text-[10px] text-slate-400 font-medium mt-0.5">
+                    {stat.taskCount} task{stat.taskCount !== 1 ? 's' : ''} · {stat.clCount} checklist{stat.clCount !== 1 ? 's' : ''}
+                  </p>
+                )}
+              </div>
             </div>
-            <p className={`text-2xl font-bold ${stat.valueColor}`}>{stat.value}</p>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* TASK LIST HEADER */}
@@ -939,28 +977,33 @@ const HomeView = ({
         <div className="flex items-center gap-2">
           {/* Status filter pills */}
           {!showArchived && (
-            <div className="flex gap-1.5 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
+            <div className="flex flex-wrap gap-1 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
               {[
                 { key: 'all', label: 'Open' },
                 { key: 'WIP', label: 'WIP' },
                 { key: 'Pending', label: 'Pending' },
-                { key: 'overdue', label: 'Overdue' },
+                { key: 'dueToday', label: 'Due Today', alertCount: myDueToday.length + myDueTodayChecklists.length, show: myDueToday.length + myDueTodayChecklists.length > 0 || statusFilter === 'dueToday' },
+                { key: 'overdue', label: 'Overdue', alertCount: myOverdue.length + myOverdueChecklists.length },
+                { key: '48plus', label: '48 hrs+', alertCount: my48Plus.length, show: my48Plus.length > 0 || statusFilter === '48plus' },
+                { key: 'awaitingQC', label: 'QC', alertCount: myAwaitingQC.length, show: myAwaitingQC.length > 0 || statusFilter === 'awaitingQC' },
                 { key: 'done', label: 'Done' },
-              ].map(f => (
+              ].filter(f => f.show !== false).map(f => (
                 <button
                   key={f.key}
                   onClick={() => setStatusFilter(f.key)}
-                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
                     statusFilter === f.key
-                      ? f.key === 'overdue'
+                      ? f.key === 'overdue' || f.key === 'dueToday'
                         ? 'bg-rose-600 text-white shadow-sm'
                         : 'bg-slate-900 text-white shadow-sm'
-                      : f.key === 'overdue' && myOverdue.length > 0
-                        ? 'text-rose-600 hover:text-rose-700 hover:bg-rose-50'
-                        : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                      : (f.alertCount > 0)
+                        ? f.key === 'overdue' || f.key === 'dueToday'
+                          ? 'text-rose-600 hover:bg-rose-50'
+                          : 'text-slate-600 hover:bg-slate-50'
+                        : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'
                   }`}
                 >
-                  {f.label}{f.key === 'overdue' && myOverdue.length > 0 ? ` (${myOverdue.length})` : ''}
+                  {f.label}{f.alertCount > 0 ? ` (${f.alertCount})` : ''}
                 </button>
               ))}
             </div>
@@ -1019,23 +1062,53 @@ const HomeView = ({
         <div className="space-y-6">
           {tasksByClient.map(({ clientName, clientId, tasks, taskGroups: clientGroups = [] }) => {
             const client = accessibleClients.find(c => c.id === clientId);
+            const isCollapsed = collapsedClients.has(clientId);
+            const toggleCollapse = () => setCollapsedClients(prev => {
+              const next = new Set(prev);
+              next.has(clientId) ? next.delete(clientId) : next.add(clientId);
+              return next;
+            });
+            // Per-client summary counts
+            const clientOverdue = tasks.filter(t => {
+              if (!t.dueDate || t.status === 'Done') return false;
+              try { return isBefore(parse(t.dueDate, 'do MMM yyyy', new Date()), new Date()); } catch { return false; }
+            }).length + clientGroups.filter(g => {
+              if (!g.dueDate || g.status === 'done') return false;
+              try { return isBefore(parse(g.dueDate, 'do MMM yyyy', new Date()), new Date()); } catch { return false; }
+            }).length;
+            const clientDueToday = tasks.filter(t => t.dueDate === todayStr && t.status !== 'Done').length
+              + clientGroups.filter(g => g.dueDate === todayStr && g.status !== 'done').length;
+            const clientPending = tasks.filter(t => t.status === 'Pending').length;
+            const clientWIP = tasks.filter(t => t.status === 'WIP').length;
             return (
               <div key={clientId}>
-                {/* Client header */}
+                {/* Client header — click to collapse/expand */}
                 <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={toggleCollapse}
+                    className="flex items-center gap-2 flex-1 min-w-0 text-left group"
+                  >
                     <div className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center flex-shrink-0">
                       <span className="text-[10px] font-black text-indigo-700">
                         {(clientName || '?')[0].toUpperCase()}
                       </span>
                     </div>
-                    <span className="text-sm font-bold text-slate-800">{clientName}</span>
+                    <span className="text-sm font-bold text-slate-800 group-hover:text-indigo-700 transition-colors">{clientName}</span>
                     <span className="text-xs text-slate-400">({tasks.length + clientGroups.length})</span>
-                  </div>
+                    {/* Summary badges — visible when collapsed or always */}
+                    <div className="flex items-center gap-1 ml-1">
+                      {clientOverdue > 0 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700">{clientOverdue} overdue</span>}
+                      {clientDueToday > 0 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">{clientDueToday} today</span>}
+                      {clientWIP > 0 && !isCollapsed && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">{clientWIP} WIP</span>}
+                      {clientPending > 0 && isCollapsed && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700">{clientPending} pending</span>}
+                    </div>
+                    {isCollapsed ? <ChevronDown size={13} className="text-slate-400 ml-auto flex-shrink-0" /> : <ChevronUp size={13} className="text-slate-400 ml-auto flex-shrink-0" />}
+                  </button>
                   {client && (
                     <button
-                      onClick={() => setSelectedClient(client)}
-                      className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-blue-600 transition-colors bg-white border border-slate-200 px-2.5 py-1 rounded-lg"
+                      onClick={e => { e.stopPropagation(); setSelectedClient(client); }}
+                      className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-blue-600 transition-colors bg-white border border-slate-200 px-2.5 py-1 rounded-lg ml-2 flex-shrink-0"
                     >
                       View client <ChevronRight size={11}/>
                     </button>
@@ -1043,7 +1116,7 @@ const HomeView = ({
                 </div>
 
                 {/* Interleaved sorted list — groups and tasks ordered by due date */}
-                <div className="space-y-2 pl-9">
+                {!isCollapsed && <div className="space-y-2 pl-9">
                   {[
                     ...clientGroups.map(g => ({ _type: 'group', item: g, _sortKey: g.dueDate || g.date || '' })),
                     ...tasks.map(t => ({ _type: 'task', item: t, _sortKey: t.dueDate || t.date || '' })),
@@ -1283,7 +1356,7 @@ const HomeView = ({
                       </div>
                     );
                   })}
-                </div>
+                </div>}
               </div>
             );
           })}
