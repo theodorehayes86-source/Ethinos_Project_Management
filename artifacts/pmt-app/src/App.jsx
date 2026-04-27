@@ -1008,6 +1008,7 @@ async function generatePkce() {
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('home');
+  const [collapsedClients, setCollapsedClients] = useState(new Set());
   const [currentUserId, setCurrentUserId] = useState(null);
   const [loginError, setLoginError] = useState('');
   const [firebaseUser, setFirebaseUser] = useState(null);
@@ -1954,6 +1955,8 @@ const App = () => {
               users={users}
               departments={departments}
               onNavigateToClients={() => setActiveTab('clients')}
+              collapsedClients={collapsedClients}
+              setCollapsedClients={setCollapsedClients}
               taskTemplates={taskTemplates}
               checklistTemplates={checklistTemplates}
               taskGroups={taskGroups}

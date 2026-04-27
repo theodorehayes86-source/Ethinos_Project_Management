@@ -70,6 +70,8 @@ const HomeView = ({
   users = [],
   departments = [],
   onNavigateToClients,
+  collapsedClients = new Set(),
+  setCollapsedClients = () => {},
   setNotifications = () => {},
   taskTemplates = [],
   checklistTemplates = [],
@@ -114,7 +116,6 @@ const HomeView = ({
   const [taskDepartments, setTaskDepartments] = useState([]);
   const [taskBillable, setTaskBillable] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
-  const [collapsedClients, setCollapsedClients] = useState(new Set());
   const taskListRef = useRef(null);
   const [estimatedHrs, setEstimatedHrs] = useState('');
   const [estimatedMins, setEstimatedMins] = useState('');
@@ -957,19 +958,20 @@ const HomeView = ({
           return (
             <div key={i}
               onClick={() => { setShowArchived(false); setStatusFilter(isActive ? 'all' : stat.filterKey); scrollToTasks(); }}
-              className={`p-4 rounded-2xl shadow-sm border flex flex-col justify-between h-24 cursor-pointer hover:shadow-md hover:scale-[1.02] transition-all ${isActive ? `${stat.activeColor} ring-2 ring-offset-1` : stat.inactiveColor}`}
+              className={`p-4 rounded-2xl shadow-sm border flex flex-col justify-between min-h-[96px] cursor-pointer hover:shadow-md hover:scale-[1.02] transition-all ${isActive ? `${stat.activeColor} ring-2 ring-offset-1` : stat.inactiveColor}`}
             >
               <div className="flex justify-between items-start">
                 <span className="text-xs font-semibold text-slate-500">{stat.label}</span>
                 <div className={`p-1.5 ${stat.iconBgColor} rounded-lg`}>{stat.icon}</div>
               </div>
-              <div className="flex items-baseline gap-1.5 flex-wrap">
+              <div className="flex flex-col gap-0.5">
                 <p className={`text-2xl font-bold ${stat.valueColor}`}>{stat.taskCount}</p>
                 {stat.clCount > 0 && (
-                  <span
+                  <button
+                    type="button"
                     onClick={e => { e.stopPropagation(); setShowArchived(false); setStatusFilter(stat.filterKey); scrollToTasks(); }}
-                    className={`text-xs font-semibold px-2 py-0.5 rounded-full opacity-90 ${stat.valueColor} bg-white/70 cursor-pointer hover:opacity-100 transition-opacity`}
-                  >+{stat.clCount} Checklists</span>
+                    className={`relative z-10 self-start text-xs font-semibold px-2 py-0.5 rounded-full ${stat.valueColor} bg-white/80 ring-1 ring-current hover:bg-white hover:scale-105 transition-all cursor-pointer`}
+                  >+{stat.clCount} Checklists</button>
                 )}
               </div>
             </div>
