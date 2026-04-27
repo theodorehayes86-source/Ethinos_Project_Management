@@ -3366,6 +3366,150 @@ const ClientView = ({
           />
         );
       })()}
+
+      {/* ---- NEW CHECKLIST MODAL ---- */}
+      {showNewChecklistModal && (
+        <div className="fixed inset-0 z-[850] flex items-center justify-center bg-slate-900/10 backdrop-blur-md p-4">
+          <div className="bg-white w-full max-w-lg border border-slate-200 shadow-xl rounded-2xl animate-in zoom-in-95 flex flex-col" style={{ maxHeight: '90vh' }}>
+            <div className="flex-shrink-0 flex justify-between items-center px-6 pt-6 pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-teal-100 flex items-center justify-center">
+                  <ClipboardList size={16} className="text-teal-600" />
+                </div>
+                <div>
+                  <h4 className="text-base font-bold text-slate-900">New Checklist Group</h4>
+                  <p className="text-xs text-slate-500">{selectedClient?.name || 'This client'}</p>
+                </div>
+              </div>
+              <button onClick={closeNewChecklistModal} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+              {/* Template */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Checklist Template <span className="text-red-500">*</span></label>
+                <select
+                  value={clSelectedTemplateId}
+                  onChange={e => { setClSelectedTemplateId(e.target.value); if (clError) setClError(''); }}
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                >
+                  <option value="">— Select template —</option>
+                  {checklistTemplates.map(tpl => (
+                    <option key={tpl.id} value={tpl.id}>{tpl.name} ({tpl.departmentId || tpl.cadence})</option>
+                  ))}
+                </select>
+                {clSelectedTemplateId && (() => {
+                  const tpl = checklistTemplates.find(t => t.id === clSelectedTemplateId);
+                  return tpl ? (
+                    <p className="text-[11px] text-slate-500">{(tpl.questions || []).length} question{(tpl.questions || []).length !== 1 ? 's' : ''} · {tpl.cadence}</p>
+                  ) : null;
+                })()}
+              </div>
+
+              {/* Assignee */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Assign To <span className="text-red-500">*</span></label>
+                {!isManagement ? (
+                  <div className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 flex items-center gap-2 select-none">
+                    <Users size={14} className="text-slate-400 flex-shrink-0" />
+                    <span className="flex-1">{currentUser?.name || 'You'}</span>
+                    <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">Self only</span>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search assignee"
+                      className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                      value={clAssigneeQuery}
+                      onFocus={() => setClShowAssigneeMenu(true)}
+                      onChange={e => { setClAssigneeQuery(e.target.value); setClAssigneeId(''); setClShowAssigneeMenu(true); if (clError) setClError(''); }}
+                    />
+                    {clShowAssigneeMenu && (
+                      <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-44 overflow-y-auto">
+                        {users.filter(u => !clAssigneeQuery.trim() || (u.name || '').toLowerCase().includes(clAssigneeQuery.toLowerCase())).length
+                          ? users.filter(u => !clAssigneeQuery.trim() || (u.name || '').toLowerCase().includes(clAssigneeQuery.toLowerCase())).map(u => (
+                            <button key={u.id} type="button"
+                              onClick={() => { setClAssigneeId(u.id); setClAssigneeName(u.name); setClAssigneeQuery(u.name); setClShowAssigneeMenu(false); if (clError) setClError(''); }}
+                              className="w-full text-left px-3 py-2 bg-white hover:bg-slate-50 transition-all"
+                            >
+                              <p className="text-sm font-semibold text-slate-700">{u.name}</p>
+                              <p className="text-xs text-slate-500">{u.email || u.role || ''}</p>
+                            </button>
+                          ))
+                          : <p className="px-3 py-2 text-sm text-slate-500">No users found</p>
+                        }
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Date */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Date</label>
+                <div className="border border-slate-200 rounded-xl p-3 bg-slate-50">
+                  <DatePicker
+                    selected={clSelectedDate}
+                    onChange={date => setClSelectedDate(date)}
+                    inline
+                  />
+                </div>
+              </div>
+
+              {/* Repeat Frequency */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Repeat Frequency</label>
+                <div className="flex flex-wrap gap-2">
+                  {['Once', 'Daily', 'Weekly', 'Monthly'].map(freq => (
+                    <label key={freq} className="flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer hover:bg-slate-50 transition-all"
+                      style={clRepeatFreq === freq ? { borderColor: '#2563eb', backgroundColor: '#eff6ff' } : { borderColor: '#e2e8f0' }}
+                    >
+                      <input type="radio" name="cvClRepeatFreq" value={freq} checked={clRepeatFreq === freq}
+                        onChange={e => { setClRepeatFreq(e.target.value); if (e.target.value === 'Once') setClRepeatEnd(null); }}
+                        className="w-4 h-4 accent-blue-600 cursor-pointer"
+                      />
+                      <span className="text-xs font-semibold text-slate-700">{freq}</span>
+                    </label>
+                  ))}
+                </div>
+                {clRepeatFreq !== 'Once' && (
+                  <div className="mt-2 space-y-1">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Repeat Until</label>
+                    <DatePicker
+                      selected={clRepeatEnd}
+                      onChange={date => setClRepeatEnd(date)}
+                      placeholderText="Select end date"
+                      dateFormat="do MMM yyyy"
+                      minDate={clSelectedDate || new Date()}
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {clError && (
+                <p className="text-xs font-semibold text-red-500">{clError}</p>
+              )}
+            </div>
+
+            <div className="flex-shrink-0 flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100">
+              <button onClick={closeNewChecklistModal} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-all">
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateChecklistGroup}
+                className="px-5 py-2 bg-teal-600 text-white text-sm font-semibold rounded-lg hover:bg-teal-700 transition-all shadow-sm"
+              >
+                Create Group
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       </div>
     );
   }
@@ -3836,155 +3980,8 @@ const ClientView = ({
         );
       })()}
 
-      {/* ---- NEW CHECKLIST MODAL ---- */}
-      {showNewChecklistModal && (
-        <div className="fixed inset-0 z-[850] flex items-center justify-center bg-slate-900/10 backdrop-blur-md p-4">
-          <div className="bg-white w-full max-w-lg border border-slate-200 shadow-xl rounded-2xl animate-in zoom-in-95 flex flex-col" style={{ maxHeight: '90vh' }}>
-            <div className="flex-shrink-0 flex justify-between items-center px-6 pt-6 pb-4 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-teal-100 flex items-center justify-center">
-                  <ClipboardList size={16} className="text-teal-600" />
-                </div>
-                <div>
-                  <h4 className="text-base font-bold text-slate-900">New Checklist Group</h4>
-                  <p className="text-xs text-slate-500">{selectedClient?.name || 'This client'}</p>
-                </div>
-              </div>
-              <button onClick={closeNewChecklistModal} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all">
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-              {/* Template */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Checklist Template <span className="text-red-500">*</span></label>
-                <select
-                  value={clSelectedTemplateId}
-                  onChange={e => { setClSelectedTemplateId(e.target.value); if (clError) setClError(''); }}
-                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
-                >
-                  <option value="">— Select template —</option>
-                  {checklistTemplates.map(tpl => (
-                    <option key={tpl.id} value={tpl.id}>{tpl.name} ({tpl.departmentId || tpl.cadence})</option>
-                  ))}
-                </select>
-                {clSelectedTemplateId && (() => {
-                  const tpl = checklistTemplates.find(t => t.id === clSelectedTemplateId);
-                  return tpl ? (
-                    <p className="text-[11px] text-slate-500">{(tpl.questions || []).length} question{(tpl.questions || []).length !== 1 ? 's' : ''} · {tpl.cadence}</p>
-                  ) : null;
-                })()}
-              </div>
-
-              {/* Assignee */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Assign To <span className="text-red-500">*</span></label>
-                {!isManagement ? (
-                  <div className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 flex items-center gap-2 select-none">
-                    <Users size={14} className="text-slate-400 flex-shrink-0" />
-                    <span className="flex-1">{currentUser?.name || 'You'}</span>
-                    <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">Self only</span>
-                  </div>
-                ) : (
-                  <div className="relative">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                      type="text"
-                      placeholder="Search assignee"
-                      className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
-                      value={clAssigneeQuery}
-                      onFocus={() => setClShowAssigneeMenu(true)}
-                      onChange={e => { setClAssigneeQuery(e.target.value); setClAssigneeId(''); setClShowAssigneeMenu(true); if (clError) setClError(''); }}
-                    />
-                    {clShowAssigneeMenu && (
-                      <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-44 overflow-y-auto">
-                        {users.filter(u => !clAssigneeQuery.trim() || (u.name || '').toLowerCase().includes(clAssigneeQuery.toLowerCase())).length
-                          ? users.filter(u => !clAssigneeQuery.trim() || (u.name || '').toLowerCase().includes(clAssigneeQuery.toLowerCase())).map(u => (
-                            <button key={u.id} type="button"
-                              onClick={() => { setClAssigneeId(u.id); setClAssigneeName(u.name); setClAssigneeQuery(u.name); setClShowAssigneeMenu(false); if (clError) setClError(''); }}
-                              className="w-full text-left px-3 py-2 bg-white hover:bg-slate-50 transition-all"
-                            >
-                              <p className="text-sm font-semibold text-slate-700">{u.name}</p>
-                              <p className="text-xs text-slate-500">{u.email || u.role || ''}</p>
-                            </button>
-                          ))
-                          : <p className="px-3 py-2 text-sm text-slate-500">No users found</p>
-                        }
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Date */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Date</label>
-                <div className="border border-slate-200 rounded-xl p-3 bg-slate-50">
-                  <DatePicker
-                    selected={clSelectedDate}
-                    onChange={date => setClSelectedDate(date)}
-                    inline
-                  />
-                </div>
-              </div>
-
-              {/* Repeat Frequency */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Repeat Frequency</label>
-                <div className="flex flex-wrap gap-2">
-                  {['Once', 'Daily', 'Weekly', 'Monthly'].map(freq => (
-                    <label key={freq} className="flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer hover:bg-slate-50 transition-all"
-                      style={clRepeatFreq === freq ? { borderColor: '#2563eb', backgroundColor: '#eff6ff' } : { borderColor: '#e2e8f0' }}
-                    >
-                      <input type="radio" name="cvClRepeatFreq" value={freq} checked={clRepeatFreq === freq}
-                        onChange={e => { setClRepeatFreq(e.target.value); if (e.target.value === 'Once') setClRepeatEnd(null); }}
-                        className="w-4 h-4 accent-blue-600 cursor-pointer"
-                      />
-                      <span className="text-xs font-semibold text-slate-700">{freq}</span>
-                    </label>
-                  ))}
-                </div>
-                {clRepeatFreq !== 'Once' && (
-                  <div className="mt-2 space-y-1">
-                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Repeat Until</label>
-                    <DatePicker
-                      selected={clRepeatEnd}
-                      onChange={date => setClRepeatEnd(date)}
-                      placeholderText="Select end date"
-                      dateFormat="do MMM yyyy"
-                      minDate={clSelectedDate || new Date()}
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
-                    />
-                  </div>
-                )}
-              </div>
-
-              {clError && (
-                <p className="text-xs font-semibold text-red-500">{clError}</p>
-              )}
-            </div>
-
-            <div className="flex-shrink-0 flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100">
-              <button onClick={closeNewChecklistModal} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-all">
-                Cancel
-              </button>
-              <button
-                onClick={handleCreateChecklistGroup}
-                className="px-5 py-2 bg-teal-600 text-white text-sm font-semibold rounded-lg hover:bg-teal-700 transition-all shadow-sm"
-              >
-                Create Group
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
 
 export default ClientView;
-
-// client side is view needed here 
-
-// Add a timer view to add a task
