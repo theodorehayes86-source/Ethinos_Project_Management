@@ -62,17 +62,24 @@ const ChecklistGroupDetailPanel = ({
   const checklistItems = localChildren.filter(t => t.taskType === 'checklist');
   const standardItems = localChildren.filter(t => t.taskType !== 'checklist');
 
-  const answeredCount = checklistItems.filter(t => t.checklistAnswer != null).length;
-  const yesCount = checklistItems.filter(t => t.checklistAnswer === 'yes').length;
-  const noNaCount = checklistItems.filter(t => t.checklistAnswer === 'no' || t.checklistAnswer === 'na').length;
-  const totalQuestions = checklistItems.length;
+  // Separate yes/no/na items from text-input-only items
+  const ynItems   = checklistItems.filter(t => !t.requiresInput);
+  const textItems = checklistItems.filter(t => t.requiresInput);
+
+  const answeredCount = ynItems.filter(t => t.checklistAnswer != null).length;
+  const yesCount  = ynItems.filter(t => t.checklistAnswer === 'yes').length;
+  const noNaCount = ynItems.filter(t => t.checklistAnswer === 'no' || t.checklistAnswer === 'na').length;
+  const totalQuestions = ynItems.length;
 
   const checkAutoComplete = useCallback((updatedChildren) => {
     const ci = updatedChildren.filter(t => t.taskType === 'checklist');
     const si = updatedChildren.filter(t => t.taskType !== 'checklist');
-    const allCiAnswered = ci.length > 0 && ci.every(t => t.checklistAnswer != null);
-    const allSiDone = si.length === 0 || si.every(t => t.status === 'Done');
-    if (allCiAnswered && allSiDone && group.status !== 'done') {
+    const yn   = ci.filter(t => !t.requiresInput);
+    const text = ci.filter(t => t.requiresInput);
+    const allYnAnswered  = yn.length === 0   || yn.every(t => t.checklistAnswer != null);
+    const allTextFilled  = text.length === 0 || text.every(t => t.checklistNote?.trim());
+    const allSiDone      = si.length === 0   || si.every(t => t.status === 'Done');
+    if (allYnAnswered && allTextFilled && allSiDone && group.status !== 'done') {
       onUpdateGroup({ ...group, status: 'done' });
     }
   }, [group, onUpdateGroup]);
@@ -300,14 +307,20 @@ const ChecklistGroupDetailPanel = ({
                 const currentAnswer = task.checklistAnswer;
                 const isNoteExpanded = expandedNotes[task.id] || (task.requiresInput && currentAnswer != null);
 
+                const hasNote = !!(noteTexts[task.id] ?? task.checklistNote)?.trim();
+
                 return (
                   <div
                     key={task.id}
                     className={`rounded-xl border p-3 transition-all ${
-                      currentAnswer === 'yes' ? 'border-emerald-200 bg-emerald-50/50' :
-                      currentAnswer === 'no' ? 'border-red-200 bg-red-50/50' :
-                      currentAnswer === 'na' ? 'border-slate-200 bg-slate-50/50' :
-                      'border-slate-200 bg-white'
+                      task.requiresInput
+                        ? hasNote
+                          ? 'border-indigo-200 bg-indigo-50/40'
+                          : 'border-amber-200 bg-amber-50/30'
+                        : currentAnswer === 'yes' ? 'border-emerald-200 bg-emerald-50/50' :
+                          currentAnswer === 'no'  ? 'border-red-200 bg-red-50/50' :
+                          currentAnswer === 'na'  ? 'border-slate-200 bg-slate-50/50' :
+                          'border-slate-200 bg-white'
                     }`}
                   >
                     <div className="flex items-start gap-2.5">
@@ -318,65 +331,60 @@ const ChecklistGroupDetailPanel = ({
                         <p className="text-[12px] font-semibold text-slate-800 leading-snug mb-2">
                           {task.questionText || task.name}
                         </p>
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {Object.entries(ANSWER_CONFIG).map(([key, cfg]) => {
-                            const isSelected = currentAnswer === key;
-                            const Icon = cfg.icon;
-                            return (
-                              <button
-                                key={key}
-                                onClick={() => handleAnswer(task, key)}
-                                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-all ${
-                                  isSelected
-                                    ? `${cfg.bg} ${cfg.text} ${cfg.border}`
-                                    : `bg-white border-slate-200 text-slate-500 ${cfg.hover}`
-                                }`}
-                                title={cfg.label}
-                              >
-                                <Icon size={12} />
-                                {cfg.label}
-                              </button>
-                            );
-                          })}
-                          <div className="ml-auto flex items-center gap-1.5">
-                            {task.requiresInput && (
-                              <button
-                                onClick={() => setExpandedNotes(prev => ({ ...prev, [task.id]: !prev[task.id] }))}
-                                className="flex items-center gap-0.5 text-[10px] font-semibold text-slate-400 hover:text-slate-600 transition-colors"
-                              >
-                                {isNoteExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-                                Note
-                              </button>
-                            )}
-                            {onCreateTaskFromItem && (
-                              <button
-                                onClick={() => toggleCreateTask(task.id, task.questionText || task.name)}
-                                className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-lg border transition-all ${
-                                  createTaskOpen[task.id]
-                                    ? 'bg-indigo-600 text-white border-indigo-600'
-                                    : 'bg-white border-indigo-200 text-indigo-600 hover:bg-indigo-50'
-                                }`}
-                                title="Create task from this item"
-                              >
-                                <PlusCircle size={11} />
-                                Task
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                        {isNoteExpanded && (
-                          <div className="mt-2">
-                            <label className="text-[10px] font-semibold text-slate-500 block mb-1">
-                              {task.inputLabel || 'Add note'}
-                            </label>
+
+                        {task.requiresInput ? (
+                          /* ── Text-input-only question (no yes/no/na) ── */
+                          <div>
                             <textarea
                               value={noteTexts[task.id] ?? (task.checklistNote || '')}
                               onChange={e => handleNoteChange(task.id, e.target.value)}
                               onBlur={() => handleNoteBlur(task)}
-                              placeholder={task.inputLabel || 'Enter your note…'}
-                              rows={2}
-                              className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs resize-none outline-none focus:ring-2 ring-blue-500/20 bg-white"
+                              placeholder={task.inputLabel || 'Write your note for management…'}
+                              rows={3}
+                              className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs resize-none outline-none focus:ring-2 ring-indigo-500/20 bg-white"
                             />
+                            {!hasNote && (
+                              <p className="text-[10px] font-semibold text-amber-600 mt-1">Required — please fill this in</p>
+                            )}
+                          </div>
+                        ) : (
+                          /* ── Yes / No / NA question ── */
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {Object.entries(ANSWER_CONFIG).map(([key, cfg]) => {
+                              const isSelected = currentAnswer === key;
+                              const Icon = cfg.icon;
+                              return (
+                                <button
+                                  key={key}
+                                  onClick={() => handleAnswer(task, key)}
+                                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-all ${
+                                    isSelected
+                                      ? `${cfg.bg} ${cfg.text} ${cfg.border}`
+                                      : `bg-white border-slate-200 text-slate-500 ${cfg.hover}`
+                                  }`}
+                                  title={cfg.label}
+                                >
+                                  <Icon size={12} />
+                                  {cfg.label}
+                                </button>
+                              );
+                            })}
+                            <div className="ml-auto flex items-center gap-1.5">
+                              {onCreateTaskFromItem && (
+                                <button
+                                  onClick={() => toggleCreateTask(task.id, task.questionText || task.name)}
+                                  className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-lg border transition-all ${
+                                    createTaskOpen[task.id]
+                                      ? 'bg-indigo-600 text-white border-indigo-600'
+                                      : 'bg-white border-indigo-200 text-indigo-600 hover:bg-indigo-50'
+                                  }`}
+                                  title="Create task from this item"
+                                >
+                                  <PlusCircle size={11} />
+                                  Task
+                                </button>
+                              )}
+                            </div>
                           </div>
                         )}
                         {createTaskOpen[task.id] && (

@@ -227,11 +227,15 @@ const ChecklistDashboard = ({
   const enrichedGroups = useMemo(() => {
     return filteredGroups.map(group => {
       const tasks = tasksByGroupId[group.id] || [];
-      const answered = tasks.filter(t => t.checklistAnswer != null);
-      const yesCount = answered.filter(t => t.checklistAnswer === 'yes').length;
-      const noCount = answered.filter(t => t.checklistAnswer === 'no').length;
-      const naCount = answered.filter(t => t.checklistAnswer === 'na').length;
-      const yesPercent = answered.length > 0 ? Math.round((yesCount / answered.length) * 100) : null;
+      const ynTasks   = tasks.filter(t => !t.requiresInput);
+      const textTasks = tasks.filter(t => t.requiresInput);
+      const ynAnswered   = ynTasks.filter(t => t.checklistAnswer != null);
+      const textAnswered = textTasks.filter(t => t.checklistNote?.trim());
+      const answered  = [...ynAnswered, ...textAnswered];
+      const yesCount  = ynAnswered.filter(t => t.checklistAnswer === 'yes').length;
+      const noCount   = ynAnswered.filter(t => t.checklistAnswer === 'no').length;
+      const naCount   = ynAnswered.filter(t => t.checklistAnswer === 'na').length;
+      const yesPercent = ynAnswered.length > 0 ? Math.round((yesCount / ynAnswered.length) * 100) : null;
 
       const groupDate = parseTaskDate(group.date);
       const isOverdue = group.status !== 'done' && groupDate && toYMD(groupDate) < today;
@@ -560,37 +564,65 @@ const ChecklistDashboard = ({
             ) : (
               [...detailGroup._tasks]
                 .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-                .map((task, idx) => (
-                  <div key={task.id}
-                    className={`flex items-start gap-3 p-3 rounded-xl border transition-all ${
-                      task.checklistAnswer === 'no'
-                        ? 'bg-red-50/80 border-red-200'
-                        : task.checklistAnswer === 'yes'
-                          ? 'bg-emerald-50/40 border-emerald-100'
-                          : 'bg-slate-50/60 border-slate-100'
-                    }`}
-                  >
-                    <div className="text-[10px] font-black text-slate-400 mt-0.5 w-5 text-right flex-shrink-0">{idx + 1}</div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start gap-2 flex-wrap">
-                        <span className="text-xs font-semibold text-slate-700 flex-1 min-w-[200px]">
-                          {task.questionText || task.name}
-                        </span>
-                        <AnswerBadge answer={task.checklistAnswer} />
+                .map((task, idx) => {
+                  if (task.requiresInput) {
+                    // Text-input-only note — no yes/no/na badge
+                    const hasFilled = !!task.checklistNote?.trim();
+                    return (
+                      <div key={task.id}
+                        className={`flex items-start gap-3 p-3 rounded-xl border transition-all ${
+                          hasFilled ? 'bg-indigo-50/40 border-indigo-100' : 'bg-amber-50/40 border-amber-200'
+                        }`}
+                      >
+                        <div className="text-[10px] font-black text-slate-400 mt-0.5 w-5 text-right flex-shrink-0">{idx + 1}</div>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-xs font-semibold text-slate-700 block mb-1.5">
+                            {task.questionText || task.name}
+                          </span>
+                          {hasFilled ? (
+                            <div className="text-[12px] text-slate-800 font-medium bg-white/80 rounded-lg px-3 py-2 border border-indigo-100 leading-relaxed whitespace-pre-wrap">
+                              {task.checklistNote}
+                            </div>
+                          ) : (
+                            <span className="text-[10px] font-bold text-amber-600">Not filled in</span>
+                          )}
+                        </div>
                       </div>
-                      {task.checklistNote && (
-                        <div className="mt-1.5 text-[11px] text-slate-500 bg-white/70 rounded-lg px-2.5 py-1.5 border border-slate-100">
-                          {task.checklistNote}
+                    );
+                  }
+                  // Standard yes/no/na question
+                  return (
+                    <div key={task.id}
+                      className={`flex items-start gap-3 p-3 rounded-xl border transition-all ${
+                        task.checklistAnswer === 'no'
+                          ? 'bg-red-50/80 border-red-200'
+                          : task.checklistAnswer === 'yes'
+                            ? 'bg-emerald-50/40 border-emerald-100'
+                            : 'bg-slate-50/60 border-slate-100'
+                      }`}
+                    >
+                      <div className="text-[10px] font-black text-slate-400 mt-0.5 w-5 text-right flex-shrink-0">{idx + 1}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start gap-2 flex-wrap">
+                          <span className="text-xs font-semibold text-slate-700 flex-1 min-w-[200px]">
+                            {task.questionText || task.name}
+                          </span>
+                          <AnswerBadge answer={task.checklistAnswer} />
                         </div>
-                      )}
-                      {task.checklistAnswer === 'no' && (
-                        <div className="mt-1 flex items-center gap-1 text-[10px] font-bold text-red-500">
-                          <AlertTriangle size={10} /> Flagged — No answer
-                        </div>
-                      )}
+                        {task.checklistNote && (
+                          <div className="mt-1.5 text-[11px] text-slate-500 bg-white/70 rounded-lg px-2.5 py-1.5 border border-slate-100">
+                            {task.checklistNote}
+                          </div>
+                        )}
+                        {task.checklistAnswer === 'no' && (
+                          <div className="mt-1 flex items-center gap-1 text-[10px] font-bold text-red-500">
+                            <AlertTriangle size={10} /> Flagged — No answer
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
             )}
           </div>
         </div>
