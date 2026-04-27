@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, CheckCircle, XCircle, MinusCircle, ChevronDown, ChevronRight, Calendar, Tag, Clock, Play, Pause, Square, PlusCircle, Trash2 } from 'lucide-react';
+import { X, CheckCircle, XCircle, MinusCircle, Calendar, Tag, Clock, Play, Pause, Square, PlusCircle, Trash2 } from 'lucide-react';
 
 const CADENCE_COLORS = {
   Daily:   'bg-emerald-100 text-emerald-700',
@@ -36,7 +36,6 @@ const ChecklistGroupDetailPanel = ({
   onDeleteGroup,
 }) => {
   const [localChildren, setLocalChildren] = useState(childTasks || []);
-  const [expandedNotes, setExpandedNotes] = useState({});
   const [noteTexts, setNoteTexts] = useState({});
   const [timerTick, setTimerTick] = useState(Date.now());
 
@@ -91,9 +90,6 @@ const ChecklistGroupDetailPanel = ({
     setLocalChildren(updated);
     onUpdateChildTask({ ...task, checklistAnswer: answer });
 
-    if (task.requiresInput && !expandedNotes[task.id]) {
-      setExpandedNotes(prev => ({ ...prev, [task.id]: true }));
-    }
     checkAutoComplete(updated);
   };
 
@@ -305,8 +301,6 @@ const ChecklistGroupDetailPanel = ({
             <div className="space-y-2">
               {checklistItems.map((task, idx) => {
                 const currentAnswer = task.checklistAnswer;
-                const isNoteExpanded = expandedNotes[task.id] || (task.requiresInput && currentAnswer != null);
-
                 const hasNote = !!(noteTexts[task.id] ?? task.checklistNote)?.trim();
 
                 return (

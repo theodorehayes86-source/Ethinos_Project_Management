@@ -1252,8 +1252,11 @@ const ClientView = ({
               <div className="divide-y divide-slate-100">
                 {displayedChecklistGroups.map(group => {
                   const children = getGroupChildren(group);
-                  const done = children.filter(t => t.checked || (t.taskType === 'checklist' && t.checklistAnswer === 'yes')).length;
-                  const total = children.filter(t => t.taskType === 'checklist').length;
+                  const clItems = children.filter(t => t.taskType === 'checklist');
+                  const done = clItems.filter(t =>
+                    t.requiresInput ? t.checklistNote?.trim() : t.checklistAnswer != null
+                  ).length;
+                  const total = clItems.length;
                   return (
                     <button
                       key={group.id}

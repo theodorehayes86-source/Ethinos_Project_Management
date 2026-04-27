@@ -446,8 +446,11 @@ const HomeView = ({
       if (children.length === 0) return false;
       const ci = children.filter(t => t.taskType === 'checklist');
       const si = children.filter(t => t.taskType !== 'checklist');
+      const yn   = ci.filter(t => !t.requiresInput);
+      const text = ci.filter(t => t.requiresInput);
       return ci.length > 0 &&
-             ci.every(t => t.checklistAnswer != null) &&
+             yn.every(t => t.checklistAnswer != null) &&
+             text.every(t => t.checklistNote?.trim()) &&
              (si.length === 0 || si.every(t => t.status === 'Done'));
     });
   }, [taskGroups, clientLogs]);
@@ -1150,7 +1153,9 @@ const HomeView = ({
                       const group = item;
                       const children = getGroupChildren(group);
                       const checklistChildren = children.filter(t => t.taskType === 'checklist');
-                      const answeredCount = checklistChildren.filter(t => t.checklistAnswer != null).length;
+                      const answeredCount = checklistChildren.filter(t =>
+                        t.requiresInput ? t.checklistNote?.trim() : t.checklistAnswer != null
+                      ).length;
                       const totalCount = checklistChildren.length;
                       const isDone = group.status === 'done';
                       const progressPct = totalCount > 0 ? Math.round((answeredCount / totalCount) * 100) : 0;
