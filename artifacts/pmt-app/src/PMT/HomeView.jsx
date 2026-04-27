@@ -872,16 +872,15 @@ const HomeView = ({
             onClick: onNavigateToClients,
           },
           {
-            label: 'Open Tasks', filterKey: 'all', value: myOpenTasks.length,
-            sub: myOpenChecklists.length > 0 ? `+${myOpenChecklists.length} checklist${myOpenChecklists.length !== 1 ? 's' : ''}` : null,
+            label: 'Open Tasks', filterKey: 'all', value: myOpenTasks.length, clCount: myOpenChecklists.length,
             icon: <Clock size={16} className="text-green-600"/>, bgColor: 'bg-green-50', iconBgColor: 'bg-green-100', border: 'border-green-100',
           },
           {
-            label: 'WIP', filterKey: 'WIP', value: myWip.length,
+            label: 'WIP', filterKey: 'WIP', value: myWip.length, clCount: 0,
             icon: <Activity size={16} className="text-orange-500"/>, bgColor: 'bg-orange-50', iconBgColor: 'bg-orange-100', border: 'border-orange-100',
           },
           {
-            label: 'Pending', filterKey: 'Pending', value: myPending.length,
+            label: 'Pending', filterKey: 'Pending', value: myPending.length, clCount: 0,
             icon: <AlertTriangle size={16} className="text-red-500"/>, bgColor: 'bg-red-50', iconBgColor: 'bg-red-100', border: 'border-red-100',
           },
         ].map((stat, i) => {
@@ -895,9 +894,11 @@ const HomeView = ({
                 <span className="text-xs font-semibold text-slate-500">{stat.label}</span>
                 <div className={`p-2 ${stat.iconBgColor} rounded-lg`}>{stat.icon}</div>
               </div>
-              <div>
+              <div className="flex items-baseline gap-1.5">
                 <p className="text-2xl font-bold text-slate-900">{stat.value}</p>
-                {stat.sub && <p className="text-[10px] text-slate-400 font-medium mt-0.5">{stat.sub}</p>}
+                {stat.clCount > 0 && (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-200/70 text-slate-500">+{stat.clCount}c</span>
+                )}
               </div>
             </div>
           );
@@ -955,12 +956,10 @@ const HomeView = ({
                 <span className="text-xs font-semibold text-slate-500">{stat.label}</span>
                 <div className={`p-1.5 ${stat.iconBgColor} rounded-lg`}>{stat.icon}</div>
               </div>
-              <div>
-                <p className={`text-2xl font-bold ${stat.valueColor}`}>{total}</p>
+              <div className="flex items-baseline gap-1.5">
+                <p className={`text-2xl font-bold ${stat.valueColor}`}>{stat.taskCount}</p>
                 {stat.clCount > 0 && (
-                  <p className="text-[10px] text-slate-400 font-medium mt-0.5">
-                    {stat.taskCount} task{stat.taskCount !== 1 ? 's' : ''} · {stat.clCount} checklist{stat.clCount !== 1 ? 's' : ''}
-                  </p>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full opacity-80 ${stat.valueColor} bg-white/50`}>+{stat.clCount}c</span>
                 )}
               </div>
             </div>

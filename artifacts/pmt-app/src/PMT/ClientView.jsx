@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Search, ChevronLeft, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, AlertTriangle, Calendar, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus, Hourglass, Archive, ArchiveRestore, LayoutGrid, LayoutList, ClipboardList } from 'lucide-react';
+import { Search, ChevronLeft, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, AlertTriangle, Calendar, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus, Hourglass, Archive, ArchiveRestore, LayoutGrid, LayoutList } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import DatePicker from "react-datepicker";
 import { format, subDays, parse, addDays, differenceInCalendarDays } from 'date-fns';
@@ -1149,12 +1149,12 @@ const ClientView = ({
               >
                 <div>
                   <p className={`text-[10px] font-semibold uppercase tracking-wider ${labelColor}`}>{label}</p>
-                  <p className={`text-base font-bold mt-0.5 ${valColor}`}>{total}</p>
-                  {clVal > 0 && (
-                    <p className="text-[9px] text-slate-400 font-medium leading-tight">
-                      {taskVal}t · {clVal}<ClipboardList size={7} className="inline ml-0.5 -mt-0.5"/>
-                    </p>
-                  )}
+                  <div className="flex items-baseline gap-1 mt-0.5">
+                    <p className={`text-base font-bold ${valColor}`}>{taskVal}</p>
+                    {clVal > 0 && (
+                      <span className="text-[9px] font-bold px-1 py-0.5 rounded-full bg-slate-100 text-slate-500">+{clVal}c</span>
+                    )}
+                  </div>
                 </div>
                 <div className={`p-1 rounded-md ${iconBg}`}>{icon}</div>
               </button>
@@ -3355,8 +3355,10 @@ const ClientView = ({
                           className={`${bg} px-2 py-1.5 rounded-xl border ${border} text-center transition-all hover:opacity-80 hover:scale-[1.03] active:scale-95 cursor-pointer`}
                         >
                           {icon}
-                          <p className={`text-xs font-bold ${text}`}>{total}</p>
-                          {clVal > 0 && <p className={`text-[8px] font-semibold ${subtext}`}>{value}t·{clVal}c</p>}
+                          <div className="flex items-baseline justify-center gap-1">
+                            <p className={`text-xs font-bold ${text}`}>{value}</p>
+                            {clVal > 0 && <span className="text-[8px] font-bold px-1 py-0.5 rounded-full bg-white/60 text-slate-500">+{clVal}c</span>}
+                          </div>
                           <p className={`text-[9px] font-medium ${subtext}`}>{label}</p>
                         </button>
                       );
