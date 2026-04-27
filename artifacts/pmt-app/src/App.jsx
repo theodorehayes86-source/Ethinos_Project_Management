@@ -2040,6 +2040,7 @@ const App = () => {
               checklistTemplates={checklistTemplates}
               departments={departments}
               currentUser={currentUser}
+              users={users}
             />
           )}
 

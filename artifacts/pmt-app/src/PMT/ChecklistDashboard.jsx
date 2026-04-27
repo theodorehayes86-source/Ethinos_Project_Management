@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { X, ChevronDown, Check, AlertTriangle, Clock, BarChart2, TrendingUp } from 'lucide-react';
+import { X, ChevronDown, Check, AlertTriangle, Clock, BarChart2, TrendingUp, Download } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid
 } from 'recharts';
@@ -137,6 +137,7 @@ const ChecklistDashboard = ({
   checklistTemplates = [],
   departments = [],
   currentUser = null,
+  users = [],
 }) => {
   const today = todayYMD();
   const isGlobal = GLOBAL_ROLES.includes(currentUser?.role);
@@ -156,8 +157,12 @@ const ChecklistDashboard = ({
   const [cadenceFilter, setCadenceFilter] = useState('All');
   const [templateFilter, setTemplateFilter] = useState('All');
   const [departmentFilter, setDepartmentFilter] = useState('All');
+  const [assigneeFilter, setAssigneeFilter] = useState('All');
   const [clientPickerOpen, setClientPickerOpen] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
+
+  // ── CSV export ────────────────────────────────────────────────────────────
+  const [csvQuestionFilter, setCsvQuestionFilter] = useState('');
 
   // ── Detail panel ─────────────────────────────────────────────────────────
   const [detailGroup, setDetailGroup] = useState(null);
@@ -222,9 +227,15 @@ const ChecklistDashboard = ({
         if (tplDeptId !== departmentFilter) return false;
       }
 
+      // Assignee filter
+      if (assigneeFilter !== 'All') {
+        const resolvedAssignee = users.find(u => u.id === group.assigneeId)?.name || group.assigneeName || '—';
+        if (resolvedAssignee !== assigneeFilter) return false;
+      }
+
       return true;
     });
-  }, [taskGroups, scopedClientIds, tasksByGroupId, selectedClientIds, cadenceFilter, templateFilter, departmentFilter, checklistTemplates]);
+  }, [taskGroups, scopedClientIds, tasksByGroupId, selectedClientIds, cadenceFilter, templateFilter, departmentFilter, assigneeFilter, checklistTemplates, users]);
 
   // Step 3: enrich groups with computed stats
   const enrichedGroups = useMemo(() => {
@@ -247,6 +258,8 @@ const ChecklistDashboard = ({
       const tpl = checklistTemplates.find(t => t.id === group.templateId);
       const cadence = tpl?.cadence || group.repeatFrequency || 'Once';
       const client = scopedClients.find(c => String(c.id) === String(group.clientId));
+      const assigneeUser = users.find(u => u.id === group.assigneeId);
+      const assigneeName = assigneeUser?.name || group.assigneeName || '—';
 
       return {
         ...group,
@@ -261,9 +274,10 @@ const ChecklistDashboard = ({
         _cadence: cadence,
         _clientName: client?.name || group.clientName || group.clientId,
         _templateName: tpl?.name || group.templateName || '—',
+        _assigneeName: assigneeName,
       };
     });
-  }, [filteredGroups, tasksByGroupId, checklistTemplates, scopedClients, today]);
+  }, [filteredGroups, tasksByGroupId, checklistTemplates, scopedClients, users, today]);
 
   // Summary metrics
   const summaryMetrics = useMemo(() => {
@@ -333,7 +347,56 @@ const ChecklistDashboard = ({
     );
   }, [scopedClients, clientSearch]);
 
-  const hasActiveFilters = selectedClientIds.length > 0 || cadenceFilter !== 'All' || templateFilter !== 'All' || departmentFilter !== 'All';
+  // Unique assignees appearing in the current filtered+enriched groups
+  const usedAssignees = useMemo(() => {
+    const names = new Set(enrichedGroups.map(g => g._assigneeName).filter(n => n && n !== '—'));
+    return [...names].sort();
+  }, [enrichedGroups]);
+
+  const hasActiveFilters = selectedClientIds.length > 0 || cadenceFilter !== 'All' || templateFilter !== 'All' || departmentFilter !== 'All' || assigneeFilter !== 'All';
+
+  // ── CSV download ─────────────────────────────────────────────────────────
+  const downloadCSV = () => {
+    const qFilter = csvQuestionFilter.trim().toLowerCase();
+    const rows = [];
+    rows.push(['Client', 'Assignee', 'Template', 'Date', 'Cadence', 'Status', 'Q#', 'Question', 'Type', 'Answer', 'Notes']);
+    [...enrichedGroups]
+      .sort((a, b) => (a._templateName || '').localeCompare(b._templateName || '') || (a._clientName || '').localeCompare(b._clientName || ''))
+      .forEach(group => {
+        const sorted = [...group._tasks].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+        sorted.forEach((task, idx) => {
+          const qText = (task.questionText || task.name || '').toLowerCase();
+          if (qFilter && !qText.includes(qFilter)) return;
+          const type = task.requiresInput ? 'Text' : 'Yes/No/NA';
+          const answer = task.requiresInput
+            ? (task.checklistNote?.trim() || '')
+            : (task.checklistAnswer || '');
+          const notes = task.requiresInput ? '' : (task.checklistNote || '');
+          const escape = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+          rows.push([
+            escape(group._clientName),
+            escape(group._assigneeName),
+            escape(group._templateName),
+            escape(group.date || ''),
+            escape(group._cadence),
+            escape(group._effectiveStatus),
+            idx + 1,
+            escape(task.questionText || task.name || ''),
+            escape(type),
+            escape(answer),
+            escape(notes),
+          ]);
+        });
+      });
+    const csv = rows.map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `checklist-responses-${toYMD(new Date())}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -454,10 +517,23 @@ const ChecklistDashboard = ({
           </div>
         )}
 
+        {/* Assignee filter */}
+        {usedAssignees.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Assignee</span>
+            <select value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 max-w-[180px]"
+            >
+              <option value="All">All Assignees</option>
+              {usedAssignees.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+        )}
+
         {/* Clear filters */}
         {hasActiveFilters && (
           <button
-            onClick={() => { setSelectedClientIds([]); setCadenceFilter('All'); setTemplateFilter('All'); setDepartmentFilter('All'); }}
+            onClick={() => { setSelectedClientIds([]); setCadenceFilter('All'); setTemplateFilter('All'); setDepartmentFilter('All'); setAssigneeFilter('All'); }}
             className="self-end flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] font-bold text-slate-500 border border-slate-200 hover:border-red-300 hover:text-red-600 hover:bg-red-50 bg-white transition-all"
           >
             <X size={11} /> Clear
@@ -479,10 +555,26 @@ const ChecklistDashboard = ({
 
       {/* ── Per-Client Breakdown Table ── */}
       <div className="bg-white/70 backdrop-blur-sm rounded-2xl border border-white/80 shadow-sm overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-slate-100 flex items-center gap-2">
+        <div className="px-5 py-3.5 border-b border-slate-100 flex flex-wrap items-center gap-2">
           <BarChart2 size={15} className="text-indigo-500" />
           <span className="text-sm font-black text-slate-800">Per-Client Breakdown</span>
-          <span className="ml-auto text-xs text-slate-400">{enrichedGroups.length} checklist{enrichedGroups.length !== 1 ? 's' : ''}</span>
+          <span className="text-xs text-slate-400">{enrichedGroups.length} checklist{enrichedGroups.length !== 1 ? 's' : ''}</span>
+          <div className="ml-auto flex items-center gap-2">
+            <input
+              type="text"
+              value={csvQuestionFilter}
+              onChange={e => setCsvQuestionFilter(e.target.value)}
+              placeholder="Filter questions in CSV…"
+              className="px-2.5 py-1 rounded-lg border border-slate-200 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 w-44"
+            />
+            <button
+              onClick={downloadCSV}
+              disabled={enrichedGroups.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm"
+            >
+              <Download size={12} /> Export CSV
+            </button>
+          </div>
         </div>
 
         {enrichedGroups.length === 0 ? (
@@ -497,6 +589,7 @@ const ChecklistDashboard = ({
               <thead>
                 <tr className="bg-slate-50/80 border-b border-slate-100">
                   <th className="text-left px-4 py-2.5 font-bold text-slate-500 uppercase tracking-widest text-[10px]">Client</th>
+                  <th className="text-left px-4 py-2.5 font-bold text-slate-500 uppercase tracking-widest text-[10px]">Assignee</th>
                   <th className="text-left px-4 py-2.5 font-bold text-slate-500 uppercase tracking-widest text-[10px]">Template</th>
                   <th className="text-left px-4 py-2.5 font-bold text-slate-500 uppercase tracking-widest text-[10px]">Date</th>
                   <th className="text-left px-4 py-2.5 font-bold text-slate-500 uppercase tracking-widest text-[10px]">Cadence</th>
@@ -510,6 +603,7 @@ const ChecklistDashboard = ({
                 {enrichedGroups.map(group => (
                   <tr key={group.id} className="hover:bg-slate-50/60 transition-colors">
                     <td className="px-4 py-3 font-semibold text-slate-800">{group._clientName}</td>
+                    <td className="px-4 py-3 text-slate-600">{group._assigneeName}</td>
                     <td className="px-4 py-3 text-slate-600">{group._templateName}</td>
                     <td className="px-4 py-3 text-slate-500">{group.date || '—'}</td>
                     <td className="px-4 py-3"><CadencePill cadence={group._cadence} /></td>
