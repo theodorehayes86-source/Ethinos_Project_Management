@@ -5,6 +5,7 @@ import DatePicker from "react-datepicker";
 import { format, subDays, parse, addDays, differenceInCalendarDays } from 'date-fns';
 import "react-datepicker/dist/react-datepicker.css";
 import TaskDetailPanel from './TaskDetailPanel';
+import ChecklistGroupDetailPanel from './ChecklistGroupDetailPanel';
 import { sendNotification } from '../utils/notify';
 import { ReminderPills } from './ReminderPills';
 import DueDateInput from './DueDateInput';
@@ -39,6 +40,7 @@ const ClientView = ({
   users = [], setUsers, currentUser, taskCategories = [], taskTemplates = [], setNotifications = () => {},
   departments = [], regions = [], accessibleClients = [], syntheticClients = [],
   taskGroups = [],
+  setTaskGroups = () => {},
 }) => {
   const managementRoles = ['Super Admin', 'Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
@@ -47,6 +49,54 @@ const ClientView = ({
   const checklistGroupsRef = useRef(null);
   const scrollToTaskTable = () => setTimeout(() => taskListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   const scrollToGroups = () => setTimeout(() => checklistGroupsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+
+  const [detailGroup, setDetailGroup] = useState(null);
+
+  const getGroupChildren = (group) => {
+    const logs = clientLogs[group.clientId] || [];
+    return logs.filter(t => t.taskGroupId === group.id);
+  };
+
+  const handleUpdateGroupChildTask = (updatedTask) => {
+    const cid = updatedTask.taskGroupId
+      ? (taskGroups.find(g => g.id === updatedTask.taskGroupId)?.clientId)
+      : updatedTask.cid;
+    if (!cid) return;
+    const updated = (clientLogs[cid] || []).map(t =>
+      t.id === updatedTask.id ? { ...t, ...updatedTask } : t
+    );
+    setClientLogs({ ...clientLogs, [cid]: updated });
+  };
+
+  const handleUpdateGroup = (updatedGroup) => {
+    setTaskGroups(taskGroups.map(g => g.id === updatedGroup.id ? updatedGroup : g));
+  };
+
+  const handleCreateTaskFromGroupItem = ({ taskName, category, dueDate, comment, clientId, clientName, assigneeId, assigneeName }) => {
+    const newTask = {
+      id: Date.now(),
+      name: taskName,
+      date: format(new Date(), 'do MMM yyyy'),
+      comment: comment || '',
+      result: '',
+      status: 'Pending',
+      assigneeId: assigneeId || currentUser?.id || null,
+      assigneeName: assigneeName || currentUser?.name || null,
+      creatorId: currentUser?.id || null,
+      creatorName: currentUser?.name || 'Unassigned',
+      creatorRole: currentUser?.role || 'Employee',
+      category: category || '',
+      repeatFrequency: 'Once',
+      repeatEnd: null,
+      dueDate: dueDate || null,
+      timerState: 'idle',
+      timerStartedAt: null,
+      elapsedMs: 0,
+      timeTaken: null,
+    };
+    const targetClientId = clientId || selectedClient.id;
+    setClientLogs({ ...clientLogs, [targetClientId]: [newTask, ...(clientLogs[targetClientId] || [])] });
+  };
 
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [newTaskName, setNewTaskName] = useState("");
@@ -1164,11 +1214,12 @@ const ClientView = ({
                   <div className="flex items-baseline gap-1 mt-0.5">
                     <p className={`text-base font-bold ${valColor}`}>{taskVal}</p>
                     {clVal > 0 && (
-                      <button
-                        type="button"
+                      <span
+                        role="button"
+                        tabIndex={0}
                         onClick={e => { e.stopPropagation(); setShowArchived(false); setTaskStatusFilter('cl-' + filterKey); scrollToGroups(); }}
                         className="relative z-10 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-white/80 text-slate-600 ring-1 ring-slate-400 hover:bg-white hover:scale-105 transition-all cursor-pointer"
-                      >+{clVal} Checklists</button>
+                      >+{clVal} Checklists</span>
                     )}
                   </div>
                 </div>
@@ -1191,18 +1242,24 @@ const ClientView = ({
             ) : (
               <div className="divide-y divide-slate-100">
                 {displayedChecklistGroups.map(group => {
-                  const done = (group.tasks || []).filter(t => t.checked).length;
-                  const total = (group.tasks || []).length;
+                  const children = getGroupChildren(group);
+                  const done = children.filter(t => t.checked || (t.taskType === 'checklist' && t.checklistAnswer === 'yes')).length;
+                  const total = children.filter(t => t.taskType === 'checklist').length;
                   return (
-                    <div key={group.id} className="px-4 py-3 flex items-center gap-4">
+                    <button
+                      key={group.id}
+                      type="button"
+                      onClick={() => setDetailGroup(group)}
+                      className="w-full px-4 py-3 flex items-center gap-4 text-left hover:bg-slate-50 transition-colors cursor-pointer"
+                    >
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-slate-800">{group.title || group.name || 'Checklist Group'}</p>
                         <p className="text-xs text-slate-400 mt-0.5">{group.date}{total > 0 ? ` · ${done}/${total} completed` : ''}</p>
                       </div>
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${group.status === 'done' ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${group.status === 'done' ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
                         {group.status || 'Pending'}
                       </span>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -2606,6 +2663,28 @@ const ClientView = ({
             </div>
           );
         })()}
+
+        {/* Checklist Group Detail Panel */}
+        {detailGroup && (
+          <ChecklistGroupDetailPanel
+            group={detailGroup}
+            childTasks={getGroupChildren(detailGroup)}
+            currentUser={currentUser}
+            users={users}
+            taskCategories={taskCategories}
+            onClose={() => setDetailGroup(null)}
+            onUpdateChildTask={handleUpdateGroupChildTask}
+            onUpdateGroup={(updatedGroup) => {
+              handleUpdateGroup(updatedGroup);
+              setDetailGroup(updatedGroup);
+            }}
+            onOpenTask={(task) => {
+              setDetailGroup(null);
+              setDetailTask(task);
+            }}
+            onCreateTaskFromItem={handleCreateTaskFromGroupItem}
+          />
+        )}
 
         {/* Task Detail Panel */}
         {detailTask && (

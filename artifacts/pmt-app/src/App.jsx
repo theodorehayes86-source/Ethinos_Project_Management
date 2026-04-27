@@ -2011,6 +2011,7 @@ const App = () => {
               regions={regions}
               syntheticClients={SYNTHETIC_CLIENTS}
               taskGroups={taskGroups}
+              setTaskGroups={persistTaskGroups}
             />
           )}
 
