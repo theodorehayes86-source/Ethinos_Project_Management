@@ -635,6 +635,8 @@ const HomeView = ({
     try { return differenceInCalendarDays(new Date(), parse(t.date, 'do MMM yyyy', new Date())) >= 2; } catch { return false; }
   });
 
+  const myAwaitingQC = myTasks.filter(t => t.qcEnabled && t.qcStatus === 'sent');
+
   const filteredMyTasks = useMemo(() => {
     if (showArchived) return myArchivedTasks;
     if (statusFilter === 'all') return myTasks.filter(t =>
@@ -869,8 +871,8 @@ const HomeView = ({
         ))}
       </div>
 
-      {/* ALERT STAT CARDS: Overdue / Due Today / 48+ hrs open */}
-      <div className="grid grid-cols-3 gap-4">
+      {/* ALERT STAT CARDS: Overdue / Due Today / 48+ hrs open / Awaiting QC */}
+      <div className="grid grid-cols-4 gap-4">
         {[
           {
             label: 'Overdue',
@@ -903,6 +905,15 @@ const HomeView = ({
             iconBgColor: my48Plus.length > 0 ? 'bg-purple-100' : 'bg-slate-100',
             border: my48Plus.length > 0 ? 'border-purple-200' : 'border-slate-100',
             valueColor: my48Plus.length > 0 ? 'text-purple-700' : 'text-slate-400',
+          },
+          {
+            label: 'Awaiting QC',
+            value: myAwaitingQC.length,
+            icon: <ShieldCheck size={16} className="text-indigo-600"/>,
+            bgColor: myAwaitingQC.length > 0 ? 'bg-indigo-50' : 'bg-slate-50',
+            iconBgColor: myAwaitingQC.length > 0 ? 'bg-indigo-100' : 'bg-slate-100',
+            border: myAwaitingQC.length > 0 ? 'border-indigo-200' : 'border-slate-100',
+            valueColor: myAwaitingQC.length > 0 ? 'text-indigo-700' : 'text-slate-400',
           },
         ].map((stat, i) => (
           <div

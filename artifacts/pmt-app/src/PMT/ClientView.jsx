@@ -546,6 +546,7 @@ const ClientView = ({
           return d.getTime() === today.getTime();
         } catch (e) { return false; }
       }).length,
+      awaitingQC: logs.filter(l => l.qcEnabled && l.qcStatus === 'sent').length,
     };
   };
 
@@ -1082,7 +1083,7 @@ const ClientView = ({
         )}
 
         {/* --- OVERALL NUMBERS ROW --- */}
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
           <div className="bg-white p-2 rounded-lg border border-slate-100 shadow-sm flex items-center justify-between min-h-[62px]">
             <div>
               <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Total Pending</p>
@@ -1124,6 +1125,13 @@ const ClientView = ({
               <p className={`text-base font-bold mt-0.5 ${stats.dueToday > 0 ? 'text-amber-700' : 'text-slate-900'}`}>{stats.dueToday}</p>
             </div>
             <div className={`p-1 rounded-md ${stats.dueToday > 0 ? 'bg-amber-50' : 'bg-slate-50'}`}><Calendar size={12} className={stats.dueToday > 0 ? 'text-amber-500' : 'text-slate-400'}/></div>
+          </div>
+          <div className={`bg-white p-2 rounded-lg border shadow-sm flex items-center justify-between min-h-[62px] ${stats.awaitingQC > 0 ? 'border-indigo-200' : 'border-slate-100'}`}>
+            <div>
+              <p className={`text-[10px] font-semibold uppercase tracking-wider ${stats.awaitingQC > 0 ? 'text-indigo-600' : 'text-slate-500'}`}>Awaiting QC</p>
+              <p className={`text-base font-bold mt-0.5 ${stats.awaitingQC > 0 ? 'text-indigo-700' : 'text-slate-900'}`}>{stats.awaitingQC}</p>
+            </div>
+            <div className={`p-1 rounded-md ${stats.awaitingQC > 0 ? 'bg-indigo-50' : 'bg-slate-50'}`}><ShieldCheck size={12} className={stats.awaitingQC > 0 ? 'text-indigo-500' : 'text-slate-400'}/></div>
           </div>
         </div>
 
