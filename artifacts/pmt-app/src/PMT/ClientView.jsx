@@ -1006,6 +1006,7 @@ const ClientView = ({
                 <option value="Today">Due Today</option>
                 <option value="Overdue">Overdue</option>
                 <option value="48H+">48H+ Not Done</option>
+                <option value="AwaitingQC">Awaiting QC</option>
               </select>
             )}
             {isManagement && (
