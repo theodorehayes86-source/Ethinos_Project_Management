@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Tag, Calendar, ChevronRight, AlertTriangle, CheckCircle, Clock, Plus, ChevronDown, ChevronUp } from 'lucide-react';
+import { Tag, Calendar, ChevronRight, AlertTriangle, CheckCircle, Clock, Plus, ChevronDown, ChevronUp, ShieldCheck } from 'lucide-react';
 import TaskDetailSheet from './TaskDetailSheet.jsx';
 import AddTaskSheet from './AddTaskSheet.jsx';
 import { isTaskOverdue } from '../utils/taskUtils.js';
@@ -93,8 +93,8 @@ function Section({ title, tasks, onTaskClick, icon, defaultOpen = true }) {
 export default function EmployeeView({ myTasks, clientLogs, currentUser, clients, categories, users }) {
   const [selectedTask, setSelectedTask] = useState(null);
   const [showAddTask, setShowAddTask] = useState(false);
-  const { today = [], upcoming = [], overdue = [], done = [] } = myTasks;
-  const allEmpty = today.length === 0 && upcoming.length === 0 && overdue.length === 0 && done.length === 0;
+  const { today = [], upcoming = [], overdue = [], done = [], awaitingQC = [] } = myTasks;
+  const allEmpty = today.length === 0 && upcoming.length === 0 && overdue.length === 0 && done.length === 0 && awaitingQC.length === 0;
 
   return (
     <div className="flex-1 overflow-y-auto relative">
@@ -107,6 +107,11 @@ export default function EmployeeView({ myTasks, clientLogs, currentUser, clients
             <p className="text-slate-500 font-semibold">No tasks assigned</p>
             <p className="text-xs text-slate-400 mt-1">Tap + to add a task for yourself</p>
           </div>
+        )}
+        {awaitingQC.length > 0 && (
+          <Section title="Awaiting QC" tasks={awaitingQC} onTaskClick={setSelectedTask}
+            icon={<ShieldCheck size={13} className="text-indigo-400" />}
+            defaultOpen={true} />
         )}
         {overdue.length > 0 && (
           <Section title="Overdue" tasks={overdue} onTaskClick={setSelectedTask}

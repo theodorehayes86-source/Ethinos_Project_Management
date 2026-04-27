@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronRight, ChevronLeft, AlertTriangle, CheckCircle, Star, Users, Plus, Tag, Calendar, Clock, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronRight, ChevronLeft, AlertTriangle, CheckCircle, Star, Users, Plus, Tag, Calendar, Clock, X, ChevronDown, ChevronUp, ShieldCheck } from 'lucide-react';
 import ApproveSheet from './ApproveSheet.jsx';
 import TaskDetailSheet from './TaskDetailSheet.jsx';
 import AddTaskSheet from './AddTaskSheet.jsx';
@@ -169,6 +169,8 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
     ? personal.todayTasks
     : taskFilter === 'overdue'
     ? personal.overdueTasks
+    : taskFilter === 'awaitingQC'
+    ? personal.pendingQCTasks
     : null;
 
   const otherTasks = personal.allTasks.filter(t =>
@@ -201,6 +203,7 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
             <FilterBadge label="Pending" value={personal.pending} active={taskFilter === 'pending'} onClick={() => toggleFilter('pending')} />
             <FilterBadge label="Today"   value={personal.today}   active={taskFilter === 'today'}   onClick={() => toggleFilter('today')} />
             {personal.overdue > 0 && <FilterBadge label="Overdue" value={personal.overdue} red active={taskFilter === 'overdue'} onClick={() => toggleFilter('overdue')} />}
+            {personal.pendingQC > 0 && <FilterBadge label="QC" value={personal.pendingQC} active={taskFilter === 'awaitingQC'} onClick={() => toggleFilter('awaitingQC')} />}
             {hasTeam && (
               <button onClick={() => onDrillIn(user)} className="flex flex-col items-center ml-1">
                 <ChevronRight size={16} className="text-slate-300" />
@@ -214,7 +217,7 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
         {filteredTasks && filteredTasks.length > 0 && (
           <div className="border-t border-slate-100 px-3 py-2.5 space-y-1.5">
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 mb-1">
-              {taskFilter === 'pending' ? 'Pending Tasks' : taskFilter === 'today' ? 'Due Today' : 'Overdue Tasks'}
+              {taskFilter === 'pending' ? 'Pending Tasks' : taskFilter === 'today' ? 'Due Today' : taskFilter === 'awaitingQC' ? 'Awaiting QC' : 'Overdue Tasks'}
             </p>
             {filteredTasks.map(t => <TaskRow key={`${t._clientId}-${t.id}`} task={t} onTaskClick={onTaskClick} />)}
           </div>
