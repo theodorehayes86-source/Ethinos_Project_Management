@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Search, ChevronLeft, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, AlertTriangle, Calendar, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus, Hourglass, Archive, ArchiveRestore, LayoutGrid, LayoutList } from 'lucide-react';
+import React, { useEffect, useState, useRef } from 'react';
+import { Search, ChevronLeft, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, AlertTriangle, Calendar, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus, Hourglass, Archive, ArchiveRestore, LayoutGrid, LayoutList, ClipboardList } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import DatePicker from "react-datepicker";
 import { format, subDays, parse, addDays, differenceInCalendarDays } from 'date-fns';
@@ -38,10 +38,14 @@ const ClientView = ({
   clientLogs = {}, setClientLogs, clientSearch = "", setClientSearch,
   users = [], setUsers, currentUser, taskCategories = [], taskTemplates = [], setNotifications = () => {},
   departments = [], regions = [], accessibleClients = [], syntheticClients = [],
+  taskGroups = [],
 }) => {
   const managementRoles = ['Super Admin', 'Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
   
+  const taskListRef = useRef(null);
+  const scrollToTaskTable = () => setTimeout(() => taskListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [newTaskName, setNewTaskName] = useState("");
 
@@ -518,6 +522,16 @@ const ClientView = ({
     const twoDaysAgo = subDays(new Date(), 2);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const clientGroups = taskGroups.filter(g => g.clientId === clientId && g.status !== 'done');
+
+    const overdueGroups = clientGroups.filter(g => {
+      if (!g.dueDate) return false;
+      try { const d = parse(g.dueDate, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0); return d < today; } catch { return false; }
+    });
+    const dueTodayGroups = clientGroups.filter(g => {
+      if (!g.dueDate) return false;
+      try { const d = parse(g.dueDate, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0); return d.getTime() === today.getTime(); } catch { return false; }
+    });
 
     return {
       open: logs.filter(l => l.status === 'Pending').length,
@@ -538,6 +552,7 @@ const ClientView = ({
           return d < today;
         } catch (e) { return false; }
       }).length,
+      overdueGroups: overdueGroups.length,
       dueToday: logs.filter(l => {
         if (l.status === 'Done' || !l.dueDate) return false;
         try {
@@ -546,6 +561,7 @@ const ClientView = ({
           return d.getTime() === today.getTime();
         } catch (e) { return false; }
       }).length,
+      dueTodayGroups: dueTodayGroups.length,
       awaitingQC: logs.filter(l => l.qcEnabled && l.qcStatus === 'sent').length,
     };
   };
@@ -927,6 +943,9 @@ const ClientView = ({
           return taskDate <= twoDaysAgo;
         } catch { return false; }
       }
+      if (taskStatusFilter === 'AwaitingQC') {
+        return log.qcEnabled && log.qcStatus === 'sent';
+      }
       return log.status === taskStatusFilter;
     });
     const selectedClientRecord = clients.find(client => client.id === selectedClient.id) || selectedClient;
@@ -1084,59 +1103,66 @@ const ClientView = ({
 
         {/* --- OVERALL NUMBERS ROW --- */}
         <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
-          <div className="bg-white p-2 rounded-lg border border-slate-100 shadow-sm flex items-center justify-between min-h-[62px]">
-            <div>
-              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Total Pending</p>
-              <p className="text-base font-bold text-slate-900 mt-0.5">{stats.open}</p>
-            </div>
-            <div className="p-1 bg-orange-50 rounded-md"><Clock size={12} className="text-orange-500"/></div>
-          </div>
-          <div className="bg-white p-2 rounded-lg border border-slate-100 shadow-sm flex items-center justify-between min-h-[62px]">
-            <div>
-              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">WIP Tasks</p>
-              <p className="text-base font-bold text-slate-900 mt-0.5">{stats.wip}</p>
-            </div>
-            <div className="p-1 bg-blue-50 rounded-md"><Activity size={12} className="text-blue-500"/></div>
-          </div>
-          <div className="bg-white p-2 rounded-lg border border-slate-100 shadow-sm flex items-center justify-between min-h-[62px]">
-            <div>
-              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Completed</p>
-              <p className="text-base font-bold text-slate-900 mt-0.5">{stats.done}</p>
-            </div>
-            <div className="p-1 bg-emerald-50 rounded-md"><CheckCircle size={12} className="text-emerald-500"/></div>
-          </div>
-          <div className="bg-white p-2 rounded-lg border border-red-100 shadow-sm flex items-center justify-between min-h-[62px]">
-            <div>
-              <p className="text-[10px] font-semibold text-red-500 uppercase tracking-wider">48H+ Not Done</p>
-              <p className="text-base font-bold text-red-600 mt-0.5">{stats.recentPending}</p>
-            </div>
-            <div className="p-1 bg-red-50 rounded-md"><AlertCircle size={12} className="text-red-500"/></div>
-          </div>
-          <div className={`bg-white p-2 rounded-lg border shadow-sm flex items-center justify-between min-h-[62px] ${stats.overdue > 0 ? 'border-red-200' : 'border-slate-100'}`}>
-            <div>
-              <p className={`text-[10px] font-semibold uppercase tracking-wider ${stats.overdue > 0 ? 'text-red-500' : 'text-slate-500'}`}>Overdue</p>
-              <p className={`text-base font-bold mt-0.5 ${stats.overdue > 0 ? 'text-red-600' : 'text-slate-900'}`}>{stats.overdue}</p>
-            </div>
-            <div className={`p-1 rounded-md ${stats.overdue > 0 ? 'bg-red-50' : 'bg-slate-50'}`}><AlertTriangle size={12} className={stats.overdue > 0 ? 'text-red-500' : 'text-slate-400'}/></div>
-          </div>
-          <div className={`bg-white p-2 rounded-lg border shadow-sm flex items-center justify-between min-h-[62px] ${stats.dueToday > 0 ? 'border-amber-200' : 'border-slate-100'}`}>
-            <div>
-              <p className={`text-[10px] font-semibold uppercase tracking-wider ${stats.dueToday > 0 ? 'text-amber-600' : 'text-slate-500'}`}>Due Today</p>
-              <p className={`text-base font-bold mt-0.5 ${stats.dueToday > 0 ? 'text-amber-700' : 'text-slate-900'}`}>{stats.dueToday}</p>
-            </div>
-            <div className={`p-1 rounded-md ${stats.dueToday > 0 ? 'bg-amber-50' : 'bg-slate-50'}`}><Calendar size={12} className={stats.dueToday > 0 ? 'text-amber-500' : 'text-slate-400'}/></div>
-          </div>
-          <div className={`bg-white p-2 rounded-lg border shadow-sm flex items-center justify-between min-h-[62px] ${stats.awaitingQC > 0 ? 'border-indigo-200' : 'border-slate-100'}`}>
-            <div>
-              <p className={`text-[10px] font-semibold uppercase tracking-wider ${stats.awaitingQC > 0 ? 'text-indigo-600' : 'text-slate-500'}`}>Awaiting QC</p>
-              <p className={`text-base font-bold mt-0.5 ${stats.awaitingQC > 0 ? 'text-indigo-700' : 'text-slate-900'}`}>{stats.awaitingQC}</p>
-            </div>
-            <div className={`p-1 rounded-md ${stats.awaitingQC > 0 ? 'bg-indigo-50' : 'bg-slate-50'}`}><ShieldCheck size={12} className={stats.awaitingQC > 0 ? 'text-indigo-500' : 'text-slate-400'}/></div>
-          </div>
+          {[
+            { label: 'Total Pending', filterKey: 'Pending', taskVal: stats.open, clVal: null, icon: <Clock size={12} className="text-orange-500"/>, iconBg: 'bg-orange-50', border: 'border-slate-100', labelColor: 'text-slate-500', valColor: 'text-slate-900' },
+            { label: 'WIP Tasks',     filterKey: 'WIP',     taskVal: stats.wip,  clVal: null, icon: <Activity size={12} className="text-blue-500"/>, iconBg: 'bg-blue-50', border: 'border-slate-100', labelColor: 'text-slate-500', valColor: 'text-slate-900' },
+            { label: 'Completed',     filterKey: 'Done',    taskVal: stats.done, clVal: null, icon: <CheckCircle size={12} className="text-emerald-500"/>, iconBg: 'bg-emerald-50', border: 'border-slate-100', labelColor: 'text-slate-500', valColor: 'text-slate-900' },
+            { label: '48H+ Not Done', filterKey: '48H+',   taskVal: stats.recentPending, clVal: null, icon: <AlertCircle size={12} className="text-red-500"/>, iconBg: 'bg-red-50', border: 'border-red-100', labelColor: 'text-red-500', valColor: 'text-red-600' },
+            {
+              label: 'Overdue', filterKey: 'Overdue',
+              taskVal: stats.overdue, clVal: stats.overdueGroups,
+              icon: <AlertTriangle size={12} className={stats.overdue + stats.overdueGroups > 0 ? 'text-red-500' : 'text-slate-400'}/>,
+              iconBg: stats.overdue + stats.overdueGroups > 0 ? 'bg-red-50' : 'bg-slate-50',
+              border: stats.overdue + stats.overdueGroups > 0 ? 'border-red-200' : 'border-slate-100',
+              labelColor: stats.overdue + stats.overdueGroups > 0 ? 'text-red-500' : 'text-slate-500',
+              valColor: stats.overdue + stats.overdueGroups > 0 ? 'text-red-600' : 'text-slate-900',
+            },
+            {
+              label: 'Due Today', filterKey: 'Today',
+              taskVal: stats.dueToday, clVal: stats.dueTodayGroups,
+              icon: <Calendar size={12} className={stats.dueToday + stats.dueTodayGroups > 0 ? 'text-amber-500' : 'text-slate-400'}/>,
+              iconBg: stats.dueToday + stats.dueTodayGroups > 0 ? 'bg-amber-50' : 'bg-slate-50',
+              border: stats.dueToday + stats.dueTodayGroups > 0 ? 'border-amber-200' : 'border-slate-100',
+              labelColor: stats.dueToday + stats.dueTodayGroups > 0 ? 'text-amber-600' : 'text-slate-500',
+              valColor: stats.dueToday + stats.dueTodayGroups > 0 ? 'text-amber-700' : 'text-slate-900',
+            },
+            {
+              label: 'Awaiting QC', filterKey: 'AwaitingQC',
+              taskVal: stats.awaitingQC, clVal: null,
+              icon: <ShieldCheck size={12} className={stats.awaitingQC > 0 ? 'text-indigo-500' : 'text-slate-400'}/>,
+              iconBg: stats.awaitingQC > 0 ? 'bg-indigo-50' : 'bg-slate-50',
+              border: stats.awaitingQC > 0 ? 'border-indigo-200' : 'border-slate-100',
+              labelColor: stats.awaitingQC > 0 ? 'text-indigo-600' : 'text-slate-500',
+              valColor: stats.awaitingQC > 0 ? 'text-indigo-700' : 'text-slate-900',
+            },
+          ].map(({ label, filterKey, taskVal, clVal, icon, iconBg, border, labelColor, valColor }) => {
+            const total = taskVal + (clVal || 0);
+            const isActive = taskStatusFilter === filterKey && !showArchived;
+            const handleClick = () => { setShowArchived(false); setTaskStatusFilter(isActive ? 'All' : filterKey); scrollToTaskTable(); };
+            return (
+              <button
+                key={label}
+                type="button"
+                onClick={handleClick}
+                className={`bg-white p-2 rounded-lg border shadow-sm flex items-center justify-between min-h-[62px] w-full text-left transition-all hover:shadow-md hover:scale-[1.02] cursor-pointer ${isActive ? 'ring-2 ring-offset-1 ring-slate-700 border-slate-300' : border}`}
+              >
+                <div>
+                  <p className={`text-[10px] font-semibold uppercase tracking-wider ${labelColor}`}>{label}</p>
+                  <p className={`text-base font-bold mt-0.5 ${valColor}`}>{total}</p>
+                  {clVal > 0 && (
+                    <p className="text-[9px] text-slate-400 font-medium leading-tight">
+                      {taskVal}t · {clVal}<ClipboardList size={7} className="inline ml-0.5 -mt-0.5"/>
+                    </p>
+                  )}
+                </div>
+                <div className={`p-1 rounded-md ${iconBg}`}>{icon}</div>
+              </button>
+            );
+          })}
         </div>
 
         {/* Task Table */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div ref={taskListRef} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="max-h-[68vh] overflow-auto">
             <table className="w-full min-w-[1100px] border-collapse table-fixed">
               <colgroup>
@@ -3309,27 +3335,31 @@ const ClientView = ({
                 {!isAvailable && !isPending && (
                   <div className="grid grid-cols-3 gap-1.5 mb-3">
                     {[
-                      { label: 'Pending',  value: counts.open,          filter: 'Pending', icon: <Clock size={13} className="text-orange-500 mx-auto mb-0.5"/>,   bg: 'bg-orange-50',  border: 'border-orange-200',  text: 'text-orange-600',  subtext: 'text-orange-400' },
-                      { label: 'WIP',      value: counts.wip,           filter: 'WIP',     icon: <Activity size={13} className="text-blue-500 mx-auto mb-0.5"/>,    bg: 'bg-blue-50',    border: 'border-blue-200',    text: 'text-blue-600',    subtext: 'text-blue-400' },
-                      { label: 'Done',     value: counts.done,          filter: 'Done',    icon: <CheckCircle size={13} className="text-emerald-500 mx-auto mb-0.5"/>, bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-600', subtext: 'text-emerald-400' },
-                      { label: 'Today',    value: counts.dueToday,      filter: 'Today',   icon: <Calendar size={13} className="text-amber-500 mx-auto mb-0.5"/>,    bg: counts.dueToday > 0 ? 'bg-amber-50' : 'bg-slate-50',  border: counts.dueToday > 0 ? 'border-amber-300' : 'border-slate-200', text: counts.dueToday > 0 ? 'text-amber-600' : 'text-slate-400',  subtext: counts.dueToday > 0 ? 'text-amber-400' : 'text-slate-300' },
-                      { label: 'Overdue',  value: counts.overdue,       filter: 'Overdue', icon: <AlertTriangle size={13} className={`${counts.overdue > 0 ? 'text-red-500' : 'text-slate-400'} mx-auto mb-0.5`}/>, bg: counts.overdue > 0 ? 'bg-red-50' : 'bg-slate-50', border: counts.overdue > 0 ? 'border-red-300' : 'border-slate-200', text: counts.overdue > 0 ? 'text-red-600' : 'text-slate-400', subtext: counts.overdue > 0 ? 'text-red-400' : 'text-slate-300' },
-                      { label: '48H+',     value: counts.recentPending, filter: '48H+',    icon: <Hourglass size={13} className={`${counts.recentPending > 0 ? 'text-rose-500' : 'text-slate-400'} mx-auto mb-0.5`}/>, bg: counts.recentPending > 0 ? 'bg-rose-50' : 'bg-slate-50', border: counts.recentPending > 0 ? 'border-rose-300' : 'border-slate-200', text: counts.recentPending > 0 ? 'text-rose-600' : 'text-slate-400', subtext: counts.recentPending > 0 ? 'text-rose-400' : 'text-slate-300' },
-                    ].map(({ label, value, filter, icon, bg, border, text, subtext }) => (
-                      <button
-                        key={label}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setTaskStatusFilter(filter);
-                          setSelectedClient(c);
-                        }}
-                        className={`${bg} px-2 py-1.5 rounded-xl border ${border} text-center transition-all hover:opacity-80 hover:scale-[1.03] active:scale-95 cursor-pointer`}
-                      >
-                        {icon}
-                        <p className={`text-xs font-bold ${text}`}>{value}</p>
-                        <p className={`text-[9px] font-medium ${subtext}`}>{label}</p>
-                      </button>
-                    ))}
+                      { label: 'Pending',  value: counts.open,          clVal: null,                filter: 'Pending', icon: <Clock size={13} className="text-orange-500 mx-auto mb-0.5"/>,   bg: 'bg-orange-50',  border: 'border-orange-200',  text: 'text-orange-600',  subtext: 'text-orange-400' },
+                      { label: 'WIP',      value: counts.wip,           clVal: null,                filter: 'WIP',     icon: <Activity size={13} className="text-blue-500 mx-auto mb-0.5"/>,    bg: 'bg-blue-50',    border: 'border-blue-200',    text: 'text-blue-600',    subtext: 'text-blue-400' },
+                      { label: 'Done',     value: counts.done,          clVal: null,                filter: 'Done',    icon: <CheckCircle size={13} className="text-emerald-500 mx-auto mb-0.5"/>, bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-600', subtext: 'text-emerald-400' },
+                      { label: 'Today',    value: counts.dueToday,      clVal: counts.dueTodayGroups, filter: 'Today', icon: <Calendar size={13} className="text-amber-500 mx-auto mb-0.5"/>,    bg: (counts.dueToday + (counts.dueTodayGroups||0)) > 0 ? 'bg-amber-50' : 'bg-slate-50',  border: (counts.dueToday + (counts.dueTodayGroups||0)) > 0 ? 'border-amber-300' : 'border-slate-200', text: (counts.dueToday + (counts.dueTodayGroups||0)) > 0 ? 'text-amber-600' : 'text-slate-400',  subtext: (counts.dueToday + (counts.dueTodayGroups||0)) > 0 ? 'text-amber-400' : 'text-slate-300' },
+                      { label: 'Overdue',  value: counts.overdue,       clVal: counts.overdueGroups,  filter: 'Overdue', icon: <AlertTriangle size={13} className={`${(counts.overdue + (counts.overdueGroups||0)) > 0 ? 'text-red-500' : 'text-slate-400'} mx-auto mb-0.5`}/>, bg: (counts.overdue + (counts.overdueGroups||0)) > 0 ? 'bg-red-50' : 'bg-slate-50', border: (counts.overdue + (counts.overdueGroups||0)) > 0 ? 'border-red-300' : 'border-slate-200', text: (counts.overdue + (counts.overdueGroups||0)) > 0 ? 'text-red-600' : 'text-slate-400', subtext: (counts.overdue + (counts.overdueGroups||0)) > 0 ? 'text-red-400' : 'text-slate-300' },
+                      { label: '48H+',     value: counts.recentPending, clVal: null,                filter: '48H+',    icon: <Hourglass size={13} className={`${counts.recentPending > 0 ? 'text-rose-500' : 'text-slate-400'} mx-auto mb-0.5`}/>, bg: counts.recentPending > 0 ? 'bg-rose-50' : 'bg-slate-50', border: counts.recentPending > 0 ? 'border-rose-300' : 'border-slate-200', text: counts.recentPending > 0 ? 'text-rose-600' : 'text-slate-400', subtext: counts.recentPending > 0 ? 'text-rose-400' : 'text-slate-300' },
+                    ].map(({ label, value, clVal, filter, icon, bg, border, text, subtext }) => {
+                      const total = value + (clVal || 0);
+                      return (
+                        <button
+                          key={label}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setTaskStatusFilter(filter);
+                            setSelectedClient(c);
+                          }}
+                          className={`${bg} px-2 py-1.5 rounded-xl border ${border} text-center transition-all hover:opacity-80 hover:scale-[1.03] active:scale-95 cursor-pointer`}
+                        >
+                          {icon}
+                          <p className={`text-xs font-bold ${text}`}>{total}</p>
+                          {clVal > 0 && <p className={`text-[8px] font-semibold ${subtext}`}>{value}t·{clVal}c</p>}
+                          <p className={`text-[9px] font-medium ${subtext}`}>{label}</p>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
                 {isPending ? (

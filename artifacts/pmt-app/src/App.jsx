@@ -2007,6 +2007,7 @@ const App = () => {
               departments={departments}
               regions={regions}
               syntheticClients={SYNTHETIC_CLIENTS}
+              taskGroups={taskGroups}
             />
           )}
 
