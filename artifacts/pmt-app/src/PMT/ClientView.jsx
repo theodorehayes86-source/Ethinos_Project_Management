@@ -792,7 +792,7 @@ const ClientView = ({
     setClShowAssigneeMenu(false);
     setClError('');
   };
-  const openNewChecklistModal = () => { resetClModal(); setShowNewChecklistModal(true); };
+  const openNewChecklistModal = () => { setDetailGroup(null); resetClModal(); setShowNewChecklistModal(true); };
   const closeNewChecklistModal = () => { setShowNewChecklistModal(false); resetClModal(); };
 
   const handleCreateChecklistGroup = () => {
@@ -1138,7 +1138,7 @@ const ClientView = ({
     return (
       <div className="min-h-full p-4 font-sans animate-in fade-in duration-500 text-left space-y-3">
         {/* Header Row */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between relative z-[850]">
           <div className="flex items-center gap-3">
             <button onClick={() => setSelectedClient(null)} className="p-2 bg-white hover:bg-slate-50 rounded-xl transition-all border border-slate-100 shadow-sm">
               <ChevronLeft size={18} className="text-slate-600"/>
@@ -3838,7 +3838,7 @@ const ClientView = ({
 
       {/* ---- NEW CHECKLIST MODAL ---- */}
       {showNewChecklistModal && (
-        <div className="fixed inset-0 z-[700] flex items-center justify-center bg-slate-900/10 backdrop-blur-md p-4">
+        <div className="fixed inset-0 z-[850] flex items-center justify-center bg-slate-900/10 backdrop-blur-md p-4">
           <div className="bg-white w-full max-w-lg border border-slate-200 shadow-xl rounded-2xl animate-in zoom-in-95 flex flex-col" style={{ maxHeight: '90vh' }}>
             <div className="flex-shrink-0 flex justify-between items-center px-6 pt-6 pb-4 border-b border-slate-100">
               <div className="flex items-center gap-2">
