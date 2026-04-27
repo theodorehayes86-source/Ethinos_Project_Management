@@ -39,6 +39,7 @@ const ClientView = ({
   users = [], setUsers, currentUser, taskCategories = [], taskTemplates = [], setNotifications = () => {},
   departments = [], regions = [], accessibleClients = [], syntheticClients = [],
   taskGroups = [],
+  onNavigateToChecklist = () => {},
 }) => {
   const managementRoles = ['Super Admin', 'Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
@@ -1149,10 +1150,13 @@ const ClientView = ({
               >
                 <div>
                   <p className={`text-[10px] font-semibold uppercase tracking-wider ${labelColor}`}>{label}</p>
-                  <div className="flex items-baseline gap-1 mt-0.5">
+                  <div className="flex items-baseline gap-1 mt-0.5 flex-wrap">
                     <p className={`text-base font-bold ${valColor}`}>{taskVal}</p>
                     {clVal > 0 && (
-                      <span className="text-[9px] font-bold px-1 py-0.5 rounded-full bg-slate-100 text-slate-500">+{clVal}c</span>
+                      <span
+                        onClick={e => { e.stopPropagation(); onNavigateToChecklist(); }}
+                        className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 cursor-pointer hover:bg-slate-200 transition-colors"
+                      >+{clVal} Checklists</span>
                     )}
                   </div>
                 </div>
@@ -3355,9 +3359,14 @@ const ClientView = ({
                           className={`${bg} px-2 py-1.5 rounded-xl border ${border} text-center transition-all hover:opacity-80 hover:scale-[1.03] active:scale-95 cursor-pointer`}
                         >
                           {icon}
-                          <div className="flex items-baseline justify-center gap-1">
+                          <div className="flex items-baseline justify-center gap-1 flex-wrap">
                             <p className={`text-xs font-bold ${text}`}>{value}</p>
-                            {clVal > 0 && <span className="text-[8px] font-bold px-1 py-0.5 rounded-full bg-white/60 text-slate-500">+{clVal}c</span>}
+                            {clVal > 0 && (
+                              <span
+                                onClick={e2 => { e2.stopPropagation(); onNavigateToChecklist(); }}
+                                className="text-[9px] font-semibold px-1 py-0.5 rounded-full bg-white/80 text-slate-600 cursor-pointer hover:bg-white transition-colors"
+                              >+{clVal} CL</span>
+                            )}
                           </div>
                           <p className={`text-[9px] font-medium ${subtext}`}>{label}</p>
                         </button>

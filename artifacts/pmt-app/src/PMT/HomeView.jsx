@@ -70,6 +70,7 @@ const HomeView = ({
   users = [],
   departments = [],
   onNavigateToClients,
+  onNavigateToChecklist = () => {},
   setNotifications = () => {},
   taskTemplates = [],
   checklistTemplates = [],
@@ -626,9 +627,10 @@ const HomeView = ({
   const myDone = myTasks.filter(t => t.status === 'Done');
 
   const todayStr = format(new Date(), 'do MMM yyyy');
+  const todayStart = (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })();
   const myOverdue = myTasks.filter(t => {
     if (!t.dueDate || t.status === 'Done') return false;
-    try { return isBefore(parse(t.dueDate, 'do MMM yyyy', new Date()), new Date()); } catch { return false; }
+    try { const d = parse(t.dueDate, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0); return d < todayStart; } catch { return false; }
   });
   const myDueToday = myTasks.filter(t => t.dueDate === todayStr && t.status !== 'Done');
   const my48Plus = myTasks.filter(t => {
@@ -641,7 +643,7 @@ const HomeView = ({
   // --- Checklist group stats (for dual-count cards) ---
   const myOverdueChecklists = myTaskGroups.filter(g => {
     if (!g.dueDate || g.status === 'done') return false;
-    try { return isBefore(parse(g.dueDate, 'do MMM yyyy', new Date()), new Date()); } catch { return false; }
+    try { const d = parse(g.dueDate, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0); return d < todayStart; } catch { return false; }
   });
   const myDueTodayChecklists = myTaskGroups.filter(g => g.dueDate === todayStr && g.status !== 'done');
   const myOpenChecklists = myTaskGroups.filter(g => g.status !== 'done');
@@ -894,10 +896,13 @@ const HomeView = ({
                 <span className="text-xs font-semibold text-slate-500">{stat.label}</span>
                 <div className={`p-2 ${stat.iconBgColor} rounded-lg`}>{stat.icon}</div>
               </div>
-              <div className="flex items-baseline gap-1.5">
+              <div className="flex items-baseline gap-1.5 flex-wrap">
                 <p className="text-2xl font-bold text-slate-900">{stat.value}</p>
                 {stat.clCount > 0 && (
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-200/70 text-slate-500">+{stat.clCount}c</span>
+                  <span
+                    onClick={e => { e.stopPropagation(); onNavigateToChecklist(); }}
+                    className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-200/80 text-slate-600 cursor-pointer hover:bg-slate-300 transition-colors"
+                  >+{stat.clCount} Checklists</span>
                 )}
               </div>
             </div>
@@ -956,10 +961,13 @@ const HomeView = ({
                 <span className="text-xs font-semibold text-slate-500">{stat.label}</span>
                 <div className={`p-1.5 ${stat.iconBgColor} rounded-lg`}>{stat.icon}</div>
               </div>
-              <div className="flex items-baseline gap-1.5">
+              <div className="flex items-baseline gap-1.5 flex-wrap">
                 <p className={`text-2xl font-bold ${stat.valueColor}`}>{stat.taskCount}</p>
                 {stat.clCount > 0 && (
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full opacity-80 ${stat.valueColor} bg-white/50`}>+{stat.clCount}c</span>
+                  <span
+                    onClick={e => { e.stopPropagation(); onNavigateToChecklist(); }}
+                    className={`text-xs font-semibold px-2 py-0.5 rounded-full opacity-90 ${stat.valueColor} bg-white/70 cursor-pointer hover:opacity-100 transition-opacity`}
+                  >+{stat.clCount} Checklists</span>
                 )}
               </div>
             </div>
@@ -1070,10 +1078,10 @@ const HomeView = ({
             // Per-client summary counts
             const clientOverdue = tasks.filter(t => {
               if (!t.dueDate || t.status === 'Done') return false;
-              try { return isBefore(parse(t.dueDate, 'do MMM yyyy', new Date()), new Date()); } catch { return false; }
+              try { const d = parse(t.dueDate, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0); return d < todayStart; } catch { return false; }
             }).length + clientGroups.filter(g => {
               if (!g.dueDate || g.status === 'done') return false;
-              try { return isBefore(parse(g.dueDate, 'do MMM yyyy', new Date()), new Date()); } catch { return false; }
+              try { const d = parse(g.dueDate, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0); return d < todayStart; } catch { return false; }
             }).length;
             const clientDueToday = tasks.filter(t => t.dueDate === todayStr && t.status !== 'Done').length
               + clientGroups.filter(g => g.dueDate === todayStr && g.status !== 'done').length;
