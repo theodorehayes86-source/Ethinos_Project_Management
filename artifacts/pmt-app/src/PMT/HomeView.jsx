@@ -385,6 +385,15 @@ const HomeView = ({
     setTaskGroups(taskGroups.map(g => g.id === updatedGroup.id ? updatedGroup : g));
   };
 
+  const handleDeleteGroup = (group) => {
+    setTaskGroups(taskGroups.filter(g => g.id !== group.id));
+    const cid = group.clientId;
+    if (cid) {
+      const remaining = (clientLogs[cid] || []).filter(t => t.taskGroupId !== group.id);
+      setClientLogs({ ...clientLogs, [cid]: remaining });
+    }
+  };
+
   const handleCreateTaskFromItem = ({ taskName, category, dueDate, comment, clientId, clientName, assigneeId, assigneeName }) => {
     const newTask = {
       id: Date.now(),
@@ -2246,6 +2255,7 @@ const HomeView = ({
             setDetailTask(task);
           }}
           onCreateTaskFromItem={handleCreateTaskFromItem}
+          onDeleteGroup={handleDeleteGroup}
         />
       )}
 

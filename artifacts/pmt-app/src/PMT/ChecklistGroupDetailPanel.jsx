@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, CheckCircle, XCircle, MinusCircle, ChevronDown, ChevronRight, Calendar, Tag, Clock, Play, Pause, Square, PlusCircle } from 'lucide-react';
+import { X, CheckCircle, XCircle, MinusCircle, ChevronDown, ChevronRight, Calendar, Tag, Clock, Play, Pause, Square, PlusCircle, Trash2 } from 'lucide-react';
 
 const CADENCE_COLORS = {
   Daily:   'bg-emerald-100 text-emerald-700',
@@ -33,6 +33,7 @@ const ChecklistGroupDetailPanel = ({
   onUpdateGroup,
   onOpenTask,
   onCreateTaskFromItem,
+  onDeleteGroup,
 }) => {
   const [localChildren, setLocalChildren] = useState(childTasks || []);
   const [expandedNotes, setExpandedNotes] = useState({});
@@ -42,6 +43,7 @@ const ChecklistGroupDetailPanel = ({
   // Inline task creation state — keyed by checklist item id
   const [createTaskOpen, setCreateTaskOpen] = useState({});
   const [createTaskForm, setCreateTaskForm] = useState({});
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     setLocalChildren(childTasks || []);
@@ -227,13 +229,42 @@ const ChecklistGroupDetailPanel = ({
                 )}
               </div>
             </div>
-            <button
-              onClick={onClose}
-              className="flex-shrink-0 p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 transition-all"
-            >
-              <X size={16} />
-            </button>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              {onDeleteGroup && !confirmDelete && (
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-all"
+                  title="Delete group"
+                >
+                  <Trash2 size={15} />
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 transition-all"
+              >
+                <X size={16} />
+              </button>
+            </div>
           </div>
+          {confirmDelete && (
+            <div className="mt-3 rounded-xl bg-red-50 border border-red-200 px-4 py-3 flex items-center gap-3">
+              <Trash2 size={14} className="text-red-500 flex-shrink-0" />
+              <p className="text-[12px] font-semibold text-red-700 flex-1">Delete this group and all its items?</p>
+              <button
+                onClick={() => { onDeleteGroup(group); onClose(); }}
+                className="text-[11px] font-bold px-3 py-1 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-all"
+              >
+                Delete
+              </button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="text-[11px] font-semibold px-3 py-1 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
 
           {/* Summary bar */}
           {totalQuestions > 0 && (
@@ -543,9 +574,18 @@ const ChecklistGroupDetailPanel = ({
           )}
 
           {localChildren.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <CheckCircle size={32} className="text-slate-200 mb-3" />
-              <p className="text-sm font-semibold text-slate-400">No items in this group</p>
+            <div className="flex flex-col items-center justify-center py-16 text-center px-4">
+              <Trash2 size={28} className="text-red-200 mb-3" />
+              <p className="text-sm font-bold text-slate-500 mb-1">This group has no items</p>
+              <p className="text-[11px] text-slate-400 mb-4">It was created from a template that had no questions at the time. You can delete it using the trash icon above.</p>
+              {onDeleteGroup && (
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  className="flex items-center gap-1.5 text-[12px] font-semibold px-4 py-2 rounded-xl bg-red-50 border border-red-200 text-red-600 hover:bg-red-100 transition-all"
+                >
+                  <Trash2 size={13} /> Delete this group
+                </button>
+              )}
             </div>
           )}
         </div>
