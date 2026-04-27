@@ -655,6 +655,7 @@ const HomeView = ({
 
   const filteredMyTasks = useMemo(() => {
     if (showArchived) return myArchivedTasks;
+    if (statusFilter.startsWith('cl-')) return []; // checklist-only view — no regular tasks
     if (statusFilter === 'all') return myTasks.filter(t =>
       t.status !== 'Done' ||
       (t.qcEnabled && (!t.qcStatus || t.qcStatus === 'rejected'))
@@ -833,9 +834,9 @@ const HomeView = ({
     // Add task groups into the client groupings
     const filteredGroups = showArchived ? [] : (
       statusFilter === 'done' ? myTaskGroups.filter(g => g.status === 'done') :
-      statusFilter === 'overdue' ? myOverdueChecklists :
-      statusFilter === 'dueToday' ? myDueTodayChecklists :
-      statusFilter === 'all' ? myTaskGroups.filter(g => g.status !== 'done') :
+      (statusFilter === 'overdue' || statusFilter === 'cl-overdue') ? myOverdueChecklists :
+      (statusFilter === 'dueToday' || statusFilter === 'cl-dueToday') ? myDueTodayChecklists :
+      (statusFilter === 'all' || statusFilter === 'cl-all') ? myTaskGroups.filter(g => g.status !== 'done') :
       []);
     filteredGroups.forEach(group => {
       const key = group.clientId || 'unknown';
@@ -889,8 +890,8 @@ const HomeView = ({
             icon: <AlertTriangle size={16} className="text-red-500"/>, bgColor: 'bg-red-50', iconBgColor: 'bg-red-100', border: 'border-red-100',
           },
         ].map((stat, i) => {
-          const isActive = stat.filterKey && statusFilter === stat.filterKey && !showArchived;
-          const handleClick = stat.onClick || (stat.filterKey ? () => { setShowArchived(false); setStatusFilter(stat.filterKey); scrollToTasks(); } : undefined);
+          const isActive = stat.filterKey && (statusFilter === stat.filterKey || statusFilter === 'cl-' + stat.filterKey) && !showArchived;
+          const handleClick = stat.onClick || (stat.filterKey ? () => { setShowArchived(false); setStatusFilter(isActive ? 'all' : stat.filterKey); scrollToTasks(); } : undefined);
           return (
             <div key={i} onClick={handleClick}
               className={`${stat.bgColor} p-4 rounded-2xl shadow-sm border flex flex-col justify-between h-24 cursor-pointer hover:shadow-md hover:scale-[1.02] transition-all ${isActive ? 'ring-2 ring-offset-1 ring-slate-700 border-slate-300' : stat.border}`}
@@ -899,13 +900,14 @@ const HomeView = ({
                 <span className="text-xs font-semibold text-slate-500">{stat.label}</span>
                 <div className={`p-2 ${stat.iconBgColor} rounded-lg`}>{stat.icon}</div>
               </div>
-              <div className="flex items-baseline gap-1.5 flex-wrap">
+              <div className="flex items-baseline gap-1.5">
                 <p className="text-2xl font-bold text-slate-900">{stat.value}</p>
                 {stat.clCount > 0 && (
-                  <span
-                    onClick={e => { e.stopPropagation(); if (stat.filterKey) { setShowArchived(false); setStatusFilter(stat.filterKey); scrollToTasks(); } }}
-                    className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-200/80 text-slate-600 cursor-pointer hover:bg-slate-300 transition-colors"
-                  >+{stat.clCount} Checklists</span>
+                  <button
+                    type="button"
+                    onClick={e => { e.stopPropagation(); if (stat.filterKey) { setShowArchived(false); setStatusFilter('cl-' + stat.filterKey); scrollToTasks(); } }}
+                    className="relative z-10 text-xs font-semibold px-2 py-0.5 rounded-full text-slate-600 bg-white/80 ring-1 ring-slate-400 hover:bg-white hover:scale-105 transition-all cursor-pointer"
+                  >+{stat.clCount} Checklists</button>
                 )}
               </div>
             </div>
@@ -953,24 +955,23 @@ const HomeView = ({
             iconBgColor: myAwaitingQC.length > 0 ? 'bg-indigo-100' : 'bg-slate-100',
           },
         ].map((stat, i) => {
-          const total = stat.taskCount + stat.clCount;
-          const isActive = statusFilter === stat.filterKey && !showArchived;
+          const isActive = (statusFilter === stat.filterKey || statusFilter === 'cl-' + stat.filterKey) && !showArchived;
           return (
             <div key={i}
               onClick={() => { setShowArchived(false); setStatusFilter(isActive ? 'all' : stat.filterKey); scrollToTasks(); }}
-              className={`p-4 rounded-2xl shadow-sm border flex flex-col justify-between min-h-[96px] cursor-pointer hover:shadow-md hover:scale-[1.02] transition-all ${isActive ? `${stat.activeColor} ring-2 ring-offset-1` : stat.inactiveColor}`}
+              className={`p-4 rounded-2xl shadow-sm border flex flex-col justify-between h-24 cursor-pointer hover:shadow-md hover:scale-[1.02] transition-all ${isActive ? `${stat.activeColor} ring-2 ring-offset-1` : stat.inactiveColor}`}
             >
               <div className="flex justify-between items-start">
                 <span className="text-xs font-semibold text-slate-500">{stat.label}</span>
                 <div className={`p-1.5 ${stat.iconBgColor} rounded-lg`}>{stat.icon}</div>
               </div>
-              <div className="flex flex-col gap-0.5">
+              <div className="flex items-baseline gap-1.5">
                 <p className={`text-2xl font-bold ${stat.valueColor}`}>{stat.taskCount}</p>
                 {stat.clCount > 0 && (
                   <button
                     type="button"
-                    onClick={e => { e.stopPropagation(); setShowArchived(false); setStatusFilter(stat.filterKey); scrollToTasks(); }}
-                    className={`relative z-10 self-start text-xs font-semibold px-2 py-0.5 rounded-full ${stat.valueColor} bg-white/80 ring-1 ring-current hover:bg-white hover:scale-105 transition-all cursor-pointer`}
+                    onClick={e => { e.stopPropagation(); setShowArchived(false); setStatusFilter('cl-' + stat.filterKey); scrollToTasks(); }}
+                    className={`relative z-10 text-xs font-semibold px-2 py-0.5 rounded-full ${stat.valueColor} bg-white/80 ring-1 ring-current hover:bg-white hover:scale-105 transition-all cursor-pointer`}
                   >+{stat.clCount} Checklists</button>
                 )}
               </div>

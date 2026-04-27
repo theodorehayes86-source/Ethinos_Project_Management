@@ -44,7 +44,9 @@ const ClientView = ({
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
   
   const taskListRef = useRef(null);
+  const checklistGroupsRef = useRef(null);
   const scrollToTaskTable = () => setTimeout(() => taskListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  const scrollToGroups = () => setTimeout(() => checklistGroupsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
 
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [newTaskName, setNewTaskName] = useState("");
@@ -918,6 +920,7 @@ const ClientView = ({
     const filteredTaskLogs = visibleTaskLogs.filter(log => {
       if (!showArchived && log.archived) return false;
       if (showArchived) return !!log.archived;
+      if (taskStatusFilter.startsWith('cl-')) return false; // checklist-only view
       if (taskStatusFilter === 'All') return true;
       if (taskStatusFilter === 'Overdue') {
         if (log.status === 'Done' || !log.dueDate) return false;
@@ -948,6 +951,15 @@ const ClientView = ({
       }
       return log.status === taskStatusFilter;
     });
+    const clToday = new Date(); clToday.setHours(0, 0, 0, 0);
+    const allClientGroups = (taskGroups || []).filter(g => g.clientId === selectedClient.id && g.status !== 'done');
+    const displayedChecklistGroups = taskStatusFilter === 'cl-Overdue'
+      ? allClientGroups.filter(g => { if (!g.date) return false; try { const d = parse(g.date, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0); return d < clToday; } catch { return false; } })
+      : taskStatusFilter === 'cl-Today'
+        ? allClientGroups.filter(g => { if (!g.date) return false; try { const d = parse(g.date, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0); return d.getTime() === clToday.getTime(); } catch { return false; } })
+        : taskStatusFilter === 'cl-All'
+          ? allClientGroups
+          : [];
     const selectedClientRecord = clients.find(client => client.id === selectedClient.id) || selectedClient;
     const dailyReportUrl = selectedClientRecord?.dailyReportUrl || '';
     const customReports = selectedClientRecord?.customReports || [];
@@ -1138,7 +1150,7 @@ const ClientView = ({
             },
           ].map(({ label, filterKey, taskVal, clVal, icon, iconBg, border, labelColor, valColor }) => {
             const total = taskVal + (clVal || 0);
-            const isActive = taskStatusFilter === filterKey && !showArchived;
+            const isActive = (taskStatusFilter === filterKey || taskStatusFilter === 'cl-' + filterKey) && !showArchived;
             const handleClick = () => { setShowArchived(false); setTaskStatusFilter(isActive ? 'All' : filterKey); scrollToTaskTable(); };
             return (
               <button
@@ -1149,13 +1161,14 @@ const ClientView = ({
               >
                 <div>
                   <p className={`text-[10px] font-semibold uppercase tracking-wider ${labelColor}`}>{label}</p>
-                  <div className="flex items-baseline gap-1 mt-0.5 flex-wrap">
+                  <div className="flex items-baseline gap-1 mt-0.5">
                     <p className={`text-base font-bold ${valColor}`}>{taskVal}</p>
                     {clVal > 0 && (
-                      <span
-                        onClick={e => { e.stopPropagation(); setShowArchived(false); setTaskStatusFilter(filterKey); scrollToTaskTable(); }}
-                        className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 cursor-pointer hover:bg-slate-200 transition-colors"
-                      >+{clVal} Checklists</span>
+                      <button
+                        type="button"
+                        onClick={e => { e.stopPropagation(); setShowArchived(false); setTaskStatusFilter('cl-' + filterKey); scrollToGroups(); }}
+                        className="relative z-10 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-white/80 text-slate-600 ring-1 ring-slate-400 hover:bg-white hover:scale-105 transition-all cursor-pointer"
+                      >+{clVal} Checklists</button>
                     )}
                   </div>
                 </div>
@@ -1165,8 +1178,40 @@ const ClientView = ({
           })}
         </div>
 
+        {/* Checklist Groups — shown only when a checklist-only filter is active */}
+        {taskStatusFilter.startsWith('cl-') && (
+          <div ref={checklistGroupsRef} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
+              <span className="text-sm font-semibold text-slate-700">Checklist Groups</span>
+              <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{displayedChecklistGroups.length}</span>
+              <button type="button" onClick={() => setTaskStatusFilter('All')} className="ml-auto text-xs text-slate-400 hover:text-slate-600 underline">Show all tasks</button>
+            </div>
+            {displayedChecklistGroups.length === 0 ? (
+              <p className="text-center text-slate-400 text-sm py-8">No checklist groups found</p>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {displayedChecklistGroups.map(group => {
+                  const done = (group.tasks || []).filter(t => t.checked).length;
+                  const total = (group.tasks || []).length;
+                  return (
+                    <div key={group.id} className="px-4 py-3 flex items-center gap-4">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-800">{group.title || group.name || 'Checklist Group'}</p>
+                        <p className="text-xs text-slate-400 mt-0.5">{group.date}{total > 0 ? ` · ${done}/${total} completed` : ''}</p>
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${group.status === 'done' ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
+                        {group.status || 'Pending'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Task Table */}
-        <div ref={taskListRef} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div ref={taskListRef} className={`bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden${taskStatusFilter.startsWith('cl-') ? ' hidden' : ''}`}>
           <div className="max-h-[68vh] overflow-auto">
             <table className="w-full min-w-[1100px] border-collapse table-fixed">
               <colgroup>
