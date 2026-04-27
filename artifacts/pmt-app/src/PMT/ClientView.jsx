@@ -1667,7 +1667,7 @@ const ClientView = ({
               <form onSubmit={addTaskEntry} className="flex-1 overflow-y-auto space-y-6 px-8 py-6">
                 <div className="grid grid-cols-1 lg:grid-cols-[320px,1fr] gap-6">
                   <div className="space-y-3">
-                    <div className="border border-slate-200 rounded-xl p-3 bg-slate-50 flex items-start gap-2">
+                    <div className="border border-slate-200 rounded-xl p-3 bg-slate-50 flex items-start gap-3">
                       <DatePicker
                         selected={selectedDate}
                         onChange={(date) => {
@@ -1702,93 +1702,94 @@ const ClientView = ({
                           );
                         })}
                       </div>
-                    </div>
 
-                    {/* Repeat Frequency */}
-                    <div className="space-y-1.5">
-                      <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 px-0.5">Repeat</p>
-                      <div className="flex gap-1.5">
-                        {['Once', 'Daily', 'Weekly', 'Monthly'].map(freq => (
-                          <button key={freq} type="button"
-                            onClick={() => { setNewTaskRepeat(freq); if (freq === 'Once') { setNewTaskRepeatEnd(null); setNewTaskRepeatDays([0,1,2,3,4]); } }}
-                            className={`flex-1 py-1.5 text-[11px] font-semibold rounded-lg border transition-all ${newTaskRepeat === freq ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-slate-200 text-slate-600 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600'}`}
-                          >{freq}</button>
-                        ))}
-                      </div>
-                      {newTaskRepeat === 'Weekly' && (
-                        <div className="space-y-1">
-                          <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Repeat on Days</p>
-                          <div className="flex gap-1 flex-wrap">
-                            {WEEKDAY_SHORT.map((d, i) => (
-                              <button key={i} type="button"
-                                onClick={() => setNewTaskRepeatDays(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i])}
-                                className={`px-2 py-1 rounded text-[11px] font-semibold border transition-all ${newTaskRepeatDays.includes(i) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'}`}
-                              >{d}</button>
+                      {/* Repeat + Due Date — fills whitespace to the right of Quick buttons */}
+                      <div className="flex-1 flex flex-col gap-3 pt-1 min-w-0">
+                        <div className="space-y-1.5">
+                          <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Repeat</p>
+                          <div className="flex gap-1">
+                            {['Once', 'Daily', 'Weekly', 'Monthly'].map(freq => (
+                              <button key={freq} type="button"
+                                onClick={() => { setNewTaskRepeat(freq); if (freq === 'Once') { setNewTaskRepeatEnd(null); setNewTaskRepeatDays([0,1,2,3,4]); } }}
+                                className={`flex-1 py-1.5 text-[11px] font-semibold rounded-lg border transition-all ${newTaskRepeat === freq ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-slate-200 text-slate-600 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600'}`}
+                              >{freq}</button>
                             ))}
                           </div>
-                          {newTaskRepeatDays.length === 0 && <p className="text-[10px] text-red-500 font-medium">Select at least one day</p>}
-                        </div>
-                      )}
-                      {newTaskRepeat === 'Monthly' && (
-                        <div className="space-y-1">
-                          <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Repeat on</p>
-                          <div className="flex gap-2">
-                            <select value={newTaskRepeatMonthlyWeek} onChange={e => setNewTaskRepeatMonthlyWeek(Number(e.target.value))}
-                              className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 bg-white">
-                              {WEEK_ORDINALS.map((w, i) => <option key={i} value={i + 1}>{w}</option>)}
-                            </select>
-                            <select value={newTaskRepeatMonthlyDay} onChange={e => setNewTaskRepeatMonthlyDay(Number(e.target.value))}
-                              className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 bg-white">
-                              {WEEKDAY_FULL.map((d, i) => <option key={i} value={i}>{d}</option>)}
-                            </select>
-                          </div>
-                          <p className="text-[10px] text-blue-600 font-medium">{WEEK_ORDINALS[newTaskRepeatMonthlyWeek - 1]} {WEEKDAY_FULL[newTaskRepeatMonthlyDay]} of each month</p>
-                        </div>
-                      )}
-                      {newTaskRepeat !== 'Once' && (
-                        <div className="space-y-1">
-                          <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Repeat Until <span className="normal-case font-normal text-slate-400">(end date)</span></p>
-                          <DatePicker
-                            selected={newTaskRepeatEnd}
-                            onChange={date => setNewTaskRepeatEnd(date)}
-                            placeholderText="No end date"
-                            dateFormat="do MMM yyyy"
-                            minDate={taskDueDate || selectedDate || new Date()}
-                            className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
-                          />
-                          {newTaskRepeatEnd && (() => {
-                            const previewDates = generateRecurringDates(selectedDate || new Date(), newTaskRepeatEnd, newTaskRepeat, newTaskRepeatDays, newTaskRepeatMonthlyWeek, newTaskRepeatMonthlyDay);
-                            return <p className="text-[10px] text-blue-600 font-medium">Will create {previewDates.length} task{previewDates.length !== 1 ? 's' : ''}</p>;
-                          })()}
-                          {newTaskRepeatEnd && (
-                            <button type="button" onClick={() => setNewTaskRepeatEnd(null)} className="text-xs font-semibold text-red-600 hover:text-red-700">Clear End Date</button>
+                          {newTaskRepeat === 'Weekly' && (
+                            <div className="space-y-1">
+                              <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Repeat on Days</p>
+                              <div className="flex gap-1 flex-wrap">
+                                {WEEKDAY_SHORT.map((d, i) => (
+                                  <button key={i} type="button"
+                                    onClick={() => setNewTaskRepeatDays(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i])}
+                                    className={`px-2 py-1 rounded text-[11px] font-semibold border transition-all ${newTaskRepeatDays.includes(i) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'}`}
+                                  >{d}</button>
+                                ))}
+                              </div>
+                              {newTaskRepeatDays.length === 0 && <p className="text-[10px] text-red-500 font-medium">Select at least one day</p>}
+                            </div>
+                          )}
+                          {newTaskRepeat === 'Monthly' && (
+                            <div className="space-y-1">
+                              <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Repeat on</p>
+                              <div className="flex gap-2">
+                                <select value={newTaskRepeatMonthlyWeek} onChange={e => setNewTaskRepeatMonthlyWeek(Number(e.target.value))}
+                                  className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 bg-white">
+                                  {WEEK_ORDINALS.map((w, i) => <option key={i} value={i + 1}>{w}</option>)}
+                                </select>
+                                <select value={newTaskRepeatMonthlyDay} onChange={e => setNewTaskRepeatMonthlyDay(Number(e.target.value))}
+                                  className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 bg-white">
+                                  {WEEKDAY_FULL.map((d, i) => <option key={i} value={i}>{d}</option>)}
+                                </select>
+                              </div>
+                              <p className="text-[10px] text-blue-600 font-medium">{WEEK_ORDINALS[newTaskRepeatMonthlyWeek - 1]} {WEEKDAY_FULL[newTaskRepeatMonthlyDay]} of each month</p>
+                            </div>
+                          )}
+                          {newTaskRepeat !== 'Once' && (
+                            <div className="space-y-1">
+                              <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Repeat Until <span className="normal-case font-normal">(end date)</span></p>
+                              <DatePicker
+                                selected={newTaskRepeatEnd}
+                                onChange={date => setNewTaskRepeatEnd(date)}
+                                placeholderText="No end date"
+                                dateFormat="do MMM yyyy"
+                                minDate={taskDueDate || selectedDate || new Date()}
+                                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                              />
+                              {newTaskRepeatEnd && (() => {
+                                const previewDates = generateRecurringDates(selectedDate || new Date(), newTaskRepeatEnd, newTaskRepeat, newTaskRepeatDays, newTaskRepeatMonthlyWeek, newTaskRepeatMonthlyDay);
+                                return <p className="text-[10px] text-blue-600 font-medium">Will create {previewDates.length} task{previewDates.length !== 1 ? 's' : ''}</p>;
+                              })()}
+                              {newTaskRepeatEnd && (
+                                <button type="button" onClick={() => setNewTaskRepeatEnd(null)} className="text-xs font-semibold text-red-600 hover:text-red-700">Clear End Date</button>
+                              )}
+                            </div>
                           )}
                         </div>
-                      )}
-                    </div>
 
-                    {/* Due Date */}
-                    <div className="space-y-1.5">
-                      <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 px-0.5">Due Date</p>
-                      <DueDateInput
-                        startDate={selectedDate || new Date()}
-                        value={taskDueDate}
-                        onChange={setTaskDueDate}
-                        minDate={selectedDate || new Date()}
-                      />
-                      {taskDueDate && (
-                        <button type="button" onClick={() => setTaskDueDate(null)} className="text-xs font-semibold text-red-600 hover:text-red-700">Clear Due Date</button>
-                      )}
-                    </div>
+                        <div className="space-y-1.5">
+                          <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Due Date</p>
+                          <DueDateInput
+                            startDate={selectedDate || new Date()}
+                            value={taskDueDate}
+                            onChange={setTaskDueDate}
+                            minDate={selectedDate || new Date()}
+                          />
+                          {taskDueDate && (
+                            <button type="button" onClick={() => setTaskDueDate(null)} className="text-xs font-semibold text-red-600 hover:text-red-700">Clear Due Date</button>
+                          )}
+                        </div>
 
-                    {taskDueDate && (
-                      <div className="space-y-1.5">
-                        <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 px-0.5">
-                          Reminders <span className="normal-case font-normal text-slate-400">— "after" go to QC too</span>
-                        </p>
-                        <ReminderPills selected={newTaskReminders} onChange={setNewTaskReminders} />
+                        {taskDueDate && (
+                          <div className="space-y-1.5">
+                            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">
+                              Reminders <span className="normal-case font-normal text-slate-400">— "after" go to QC too</span>
+                            </p>
+                            <ReminderPills selected={newTaskReminders} onChange={setNewTaskReminders} />
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </div>
                   <div className="flex-1 space-y-5">
                     <div className="space-y-1.5">
