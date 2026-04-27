@@ -298,6 +298,7 @@ const HomeView = ({
 
     const template = checklistTemplates.find(t => t.id === clSelectedTemplateId);
     if (!template) { setClError('Template not found.'); return; }
+    if (!template.questions || template.questions.length === 0) { setClError('This template has no questions. Add questions to the template before assigning it.'); return; }
 
     const clientOpt = allClientOptions.find(c => c.id === clSelectedClientId);
     const formattedDate = format(clSelectedDate, 'do MMM yyyy');
