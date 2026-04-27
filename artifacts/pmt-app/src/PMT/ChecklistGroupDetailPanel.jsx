@@ -70,18 +70,31 @@ const ChecklistGroupDetailPanel = ({
   const noNaCount = ynItems.filter(t => t.checklistAnswer === 'no' || t.checklistAnswer === 'na').length;
   const totalQuestions = ynItems.length;
 
-  const checkAutoComplete = useCallback((updatedChildren) => {
-    const ci = updatedChildren.filter(t => t.taskType === 'checklist');
-    const si = updatedChildren.filter(t => t.taskType !== 'checklist');
+  const isReadyToSubmit = useCallback((children) => {
+    const ci = children.filter(t => t.taskType === 'checklist');
+    const si = children.filter(t => t.taskType !== 'checklist');
     const yn   = ci.filter(t => !t.requiresInput);
     const text = ci.filter(t => t.requiresInput);
-    const allYnAnswered  = yn.length === 0   || yn.every(t => t.checklistAnswer != null);
-    const allTextFilled  = text.length === 0 || text.every(t => t.checklistNote?.trim());
-    const allSiDone      = si.length === 0   || si.every(t => t.status === 'Done');
-    if (allYnAnswered && allTextFilled && allSiDone && group.status !== 'done') {
-      onUpdateGroup({ ...group, status: 'done' });
-    }
-  }, [group, onUpdateGroup]);
+    const allYnAnswered = yn.length === 0 || yn.every(t => t.checklistAnswer != null);
+    const allTextFilled = text.length === 0 || text.every(t => t.checklistNote?.trim());
+    const allSiDone     = si.length === 0   || si.every(t => t.status === 'Done');
+    return allYnAnswered && allTextFilled && allSiDone;
+  }, []);
+
+  const getPendingCount = (children) => {
+    const ci = children.filter(t => t.taskType === 'checklist');
+    const si = children.filter(t => t.taskType !== 'checklist');
+    const yn   = ci.filter(t => !t.requiresInput);
+    const text = ci.filter(t => t.requiresInput);
+    return (
+      yn.filter(t => t.checklistAnswer == null).length +
+      text.filter(t => !t.checklistNote?.trim()).length +
+      si.filter(t => t.status !== 'Done').length
+    );
+  };
+
+  // No-op — kept for call sites; auto-complete is intentionally removed
+  const checkAutoComplete = useCallback(() => {}, []);
 
   const handleAnswer = (task, answer) => {
     const updated = localChildren.map(t =>
@@ -592,13 +605,49 @@ const ChecklistGroupDetailPanel = ({
           )}
         </div>
 
-        {/* Footer */}
-        {isDone && (
-          <div className="flex-shrink-0 border-t border-slate-100 px-5 py-4 bg-emerald-50">
-            <div className="flex items-center gap-2">
-              <CheckCircle size={16} className="text-emerald-600 flex-shrink-0" />
-              <p className="text-sm font-bold text-emerald-700">All items completed — group is done!</p>
-            </div>
+        {/* Footer — Submit / Done bar */}
+        {localChildren.length > 0 && (
+          <div className={`flex-shrink-0 border-t px-5 py-4 ${isDone ? 'border-emerald-100 bg-emerald-50' : 'border-slate-100 bg-white'}`}>
+            {isDone ? (
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <CheckCircle size={16} className="text-emerald-600 flex-shrink-0" />
+                  <p className="text-sm font-bold text-emerald-700">Checklist submitted — group is done!</p>
+                </div>
+                <button
+                  onClick={onClose}
+                  className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-all"
+                >
+                  Close
+                </button>
+              </div>
+            ) : (() => {
+              const ready = isReadyToSubmit(localChildren);
+              const pending = getPendingCount(localChildren);
+              return (
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs text-slate-500">
+                    {ready
+                      ? 'All items filled in — ready to submit.'
+                      : `${pending} item${pending !== 1 ? 's' : ''} still need${pending === 1 ? 's' : ''} to be answered.`}
+                  </p>
+                  <button
+                    onClick={() => {
+                      if (!ready) return;
+                      onUpdateGroup({ ...group, status: 'done' });
+                    }}
+                    disabled={!ready}
+                    className={`flex-shrink-0 px-5 py-2 text-sm font-bold rounded-xl transition-all shadow-sm ${
+                      ready
+                        ? 'bg-teal-600 text-white hover:bg-teal-700'
+                        : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                    }`}
+                  >
+                    Save & Submit
+                  </button>
+                </div>
+              );
+            })()}
           </div>
         )}
       </div>

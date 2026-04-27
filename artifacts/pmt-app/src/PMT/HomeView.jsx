@@ -437,30 +437,8 @@ const HomeView = ({
     }
   };
 
-  // Centralized group auto-complete watcher: whenever child tasks change from any source,
-  // mark any fully-answered groups as done. This covers cases where updates come from
-  // outside the ChecklistGroupDetailPanel (e.g., direct Firebase writes, scheduler spawns).
-  const groupsNeedingCompletion = useMemo(() => {
-    return taskGroups.filter(group => {
-      if (group.status === 'done' || group.archived) return false;
-      const children = (clientLogs[group.clientId] || []).filter(t => t.taskGroupId === group.id);
-      if (children.length === 0) return false;
-      const ci = children.filter(t => t.taskType === 'checklist');
-      const si = children.filter(t => t.taskType !== 'checklist');
-      const yn   = ci.filter(t => !t.requiresInput);
-      const text = ci.filter(t => t.requiresInput);
-      return ci.length > 0 &&
-             yn.every(t => t.checklistAnswer != null) &&
-             text.every(t => t.checklistNote?.trim()) &&
-             (si.length === 0 || si.every(t => t.status === 'Done'));
-    });
-  }, [taskGroups, clientLogs]);
-
-  useEffect(() => {
-    if (groupsNeedingCompletion.length === 0) return;
-    const ids = new Set(groupsNeedingCompletion.map(g => g.id));
-    setTaskGroups(taskGroups.map(g => ids.has(g.id) ? { ...g, status: 'done' } : g));
-  }, [groupsNeedingCompletion]);
+  // Auto-complete watcher removed — groups are now marked done only via the explicit
+  // "Save & Submit" button in ChecklistGroupDetailPanel.
 
   // ── Recurrence helpers ─────────────────────────────────────────────────────
   const HV_WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
