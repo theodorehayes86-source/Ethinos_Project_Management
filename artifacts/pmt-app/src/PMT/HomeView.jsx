@@ -75,6 +75,7 @@ const HomeView = ({
   setNotifications = () => {},
   taskTemplates = [],
   checklistTemplates = [],
+  canCreateChecklists = false,
   taskGroups = [],
   setTaskGroups = () => {},
 }) => {
@@ -1053,7 +1054,7 @@ const HomeView = ({
               <LayoutTemplate size={12} /> Use Template
             </button>
           )}
-          {checklistTemplates.length > 0 && (
+          {checklistTemplates.length > 0 && canCreateChecklists && (
             <button
               onClick={openNewChecklistModal}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 transition-all"

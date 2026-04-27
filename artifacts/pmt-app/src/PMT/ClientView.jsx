@@ -42,6 +42,7 @@ const ClientView = ({
   taskGroups = [],
   setTaskGroups = () => {},
   checklistTemplates = [],
+  canCreateChecklists = false,
 }) => {
   const managementRoles = ['Super Admin', 'Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
@@ -1191,7 +1192,7 @@ const ClientView = ({
                 Use Template
               </button>
             )}
-            {checklistTemplates.length > 0 && (
+            {checklistTemplates.length > 0 && canCreateChecklists && (
               <button
                 onClick={openNewChecklistModal}
                 className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg font-semibold text-xs border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 transition-all"

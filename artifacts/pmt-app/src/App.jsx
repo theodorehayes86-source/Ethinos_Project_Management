@@ -1418,6 +1418,7 @@ const App = () => {
   const canSeeAllMetricsData = metricsAllDataRoles.includes(currentUser?.role);
   const canSeeAllReportsData = reportsAllDataRoles.includes(currentUser?.role);
   const canSeeControlCenter = currentUser?.role === 'Super Admin' || Object.values(controlCenterTabAccess).some(roles => (roles || []).includes(currentUser?.role));
+  const canCreateChecklists = (controlCenterTabAccess.checklistTemplates || []).includes(currentUser?.role);
   const canSeeUserManagement = userManagementAccessRoles.includes(currentUser?.role);
   const canSeeEmployeeView = employeeViewAccessRoles.includes(currentUser?.role);
   const canSeeMetrics = metricsAccessRoles.includes(currentUser?.role);
@@ -1959,6 +1960,7 @@ const App = () => {
               setCollapsedClients={setCollapsedClients}
               taskTemplates={taskTemplates}
               checklistTemplates={checklistTemplates}
+              canCreateChecklists={canCreateChecklists}
               taskGroups={taskGroups}
               setTaskGroups={persistTaskGroups}
             />
@@ -2012,6 +2014,8 @@ const App = () => {
               syntheticClients={SYNTHETIC_CLIENTS}
               taskGroups={taskGroups}
               setTaskGroups={persistTaskGroups}
+              checklistTemplates={checklistTemplates}
+              canCreateChecklists={canCreateChecklists}
             />
           )}
 
