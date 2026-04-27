@@ -70,7 +70,6 @@ const HomeView = ({
   users = [],
   departments = [],
   onNavigateToClients,
-  onNavigateToChecklist = () => {},
   setNotifications = () => {},
   taskTemplates = [],
   checklistTemplates = [],
@@ -640,12 +639,15 @@ const HomeView = ({
 
   const myAwaitingQC = myTasks.filter(t => t.qcEnabled && t.qcStatus === 'sent');
 
-  // --- Checklist group stats (for dual-count cards) ---
+  // --- Checklist group stats — use g.date (assignment date, always set) not g.dueDate (usually null) ---
   const myOverdueChecklists = myTaskGroups.filter(g => {
-    if (!g.dueDate || g.status === 'done') return false;
-    try { const d = parse(g.dueDate, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0); return d < todayStart; } catch { return false; }
+    if (!g.date || g.status === 'done') return false;
+    try { const d = parse(g.date, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0); return d < todayStart; } catch { return false; }
   });
-  const myDueTodayChecklists = myTaskGroups.filter(g => g.dueDate === todayStr && g.status !== 'done');
+  const myDueTodayChecklists = myTaskGroups.filter(g => {
+    if (!g.date || g.status === 'done') return false;
+    try { const d = parse(g.date, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0); return d.getTime() === todayStart.getTime(); } catch { return false; }
+  });
   const myOpenChecklists = myTaskGroups.filter(g => g.status !== 'done');
 
   const scrollToTasks = () => setTimeout(() => taskListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
@@ -900,7 +902,7 @@ const HomeView = ({
                 <p className="text-2xl font-bold text-slate-900">{stat.value}</p>
                 {stat.clCount > 0 && (
                   <span
-                    onClick={e => { e.stopPropagation(); onNavigateToChecklist(); }}
+                    onClick={e => { e.stopPropagation(); if (stat.filterKey) { setShowArchived(false); setStatusFilter(stat.filterKey); scrollToTasks(); } }}
                     className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-200/80 text-slate-600 cursor-pointer hover:bg-slate-300 transition-colors"
                   >+{stat.clCount} Checklists</span>
                 )}
@@ -965,7 +967,7 @@ const HomeView = ({
                 <p className={`text-2xl font-bold ${stat.valueColor}`}>{stat.taskCount}</p>
                 {stat.clCount > 0 && (
                   <span
-                    onClick={e => { e.stopPropagation(); onNavigateToChecklist(); }}
+                    onClick={e => { e.stopPropagation(); setShowArchived(false); setStatusFilter(stat.filterKey); scrollToTasks(); }}
                     className={`text-xs font-semibold px-2 py-0.5 rounded-full opacity-90 ${stat.valueColor} bg-white/70 cursor-pointer hover:opacity-100 transition-opacity`}
                   >+{stat.clCount} Checklists</span>
                 )}
@@ -1080,11 +1082,14 @@ const HomeView = ({
               if (!t.dueDate || t.status === 'Done') return false;
               try { const d = parse(t.dueDate, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0); return d < todayStart; } catch { return false; }
             }).length + clientGroups.filter(g => {
-              if (!g.dueDate || g.status === 'done') return false;
-              try { const d = parse(g.dueDate, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0); return d < todayStart; } catch { return false; }
+              if (!g.date || g.status === 'done') return false;
+              try { const d = parse(g.date, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0); return d < todayStart; } catch { return false; }
             }).length;
             const clientDueToday = tasks.filter(t => t.dueDate === todayStr && t.status !== 'Done').length
-              + clientGroups.filter(g => g.dueDate === todayStr && g.status !== 'done').length;
+              + clientGroups.filter(g => {
+                if (!g.date || g.status === 'done') return false;
+                try { const d = parse(g.date, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0); return d.getTime() === todayStart.getTime(); } catch { return false; }
+              }).length;
             const clientPending = tasks.filter(t => t.status === 'Pending').length;
             const clientWIP = tasks.filter(t => t.status === 'WIP').length;
             return (

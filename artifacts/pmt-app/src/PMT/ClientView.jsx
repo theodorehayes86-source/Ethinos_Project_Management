@@ -39,7 +39,6 @@ const ClientView = ({
   users = [], setUsers, currentUser, taskCategories = [], taskTemplates = [], setNotifications = () => {},
   departments = [], regions = [], accessibleClients = [], syntheticClients = [],
   taskGroups = [],
-  onNavigateToChecklist = () => {},
 }) => {
   const managementRoles = ['Super Admin', 'Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
@@ -526,12 +525,12 @@ const ClientView = ({
     const clientGroups = taskGroups.filter(g => g.clientId === clientId && g.status !== 'done');
 
     const overdueGroups = clientGroups.filter(g => {
-      if (!g.dueDate) return false;
-      try { const d = parse(g.dueDate, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0); return d < today; } catch { return false; }
+      if (!g.date) return false;
+      try { const d = parse(g.date, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0); return d < today; } catch { return false; }
     });
     const dueTodayGroups = clientGroups.filter(g => {
-      if (!g.dueDate) return false;
-      try { const d = parse(g.dueDate, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0); return d.getTime() === today.getTime(); } catch { return false; }
+      if (!g.date) return false;
+      try { const d = parse(g.date, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0); return d.getTime() === today.getTime(); } catch { return false; }
     });
 
     return {
@@ -1154,7 +1153,7 @@ const ClientView = ({
                     <p className={`text-base font-bold ${valColor}`}>{taskVal}</p>
                     {clVal > 0 && (
                       <span
-                        onClick={e => { e.stopPropagation(); onNavigateToChecklist(); }}
+                        onClick={e => { e.stopPropagation(); setShowArchived(false); setTaskStatusFilter(filterKey); scrollToTaskTable(); }}
                         className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 cursor-pointer hover:bg-slate-200 transition-colors"
                       >+{clVal} Checklists</span>
                     )}
@@ -3362,10 +3361,7 @@ const ClientView = ({
                           <div className="flex items-baseline justify-center gap-1 flex-wrap">
                             <p className={`text-xs font-bold ${text}`}>{value}</p>
                             {clVal > 0 && (
-                              <span
-                                onClick={e2 => { e2.stopPropagation(); onNavigateToChecklist(); }}
-                                className="text-[9px] font-semibold px-1 py-0.5 rounded-full bg-white/80 text-slate-600 cursor-pointer hover:bg-white transition-colors"
-                              >+{clVal} CL</span>
+                              <span className="text-[9px] font-semibold px-1 py-0.5 rounded-full bg-white/80 text-slate-600">+{clVal} CL</span>
                             )}
                           </div>
                           <p className={`text-[9px] font-medium ${subtext}`}>{label}</p>

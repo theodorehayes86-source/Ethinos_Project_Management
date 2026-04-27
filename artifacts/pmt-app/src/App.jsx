@@ -1954,7 +1954,6 @@ const App = () => {
               users={users}
               departments={departments}
               onNavigateToClients={() => setActiveTab('clients')}
-              onNavigateToChecklist={() => setActiveTab('checklist')}
               taskTemplates={taskTemplates}
               checklistTemplates={checklistTemplates}
               taskGroups={taskGroups}
@@ -2009,7 +2008,6 @@ const App = () => {
               regions={regions}
               syntheticClients={SYNTHETIC_CLIENTS}
               taskGroups={taskGroups}
-              onNavigateToChecklist={() => setActiveTab('checklist')}
             />
           )}
 
