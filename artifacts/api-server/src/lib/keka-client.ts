@@ -470,14 +470,59 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
   //   1. Numeric-indexed array: users/0, users/1 ... — objects include an `id` field
   //   2. Key-based: users/{userId} — the Firebase key IS the id; `id` may be absent
   // We normalise both by falling back to the Firebase key when `id` is missing.
-  const pmtUsers: PMTUser[] = usersRaw
-    ? (Array.isArray(usersRaw)
-        ? (usersRaw as PMTUser[]).filter(Boolean)
-        : Object.entries(usersRaw as Record<string, PMTUser>)
-            .filter(([, u]) => Boolean(u))
-            .map(([key, u]) => ({ ...u, id: u.id ?? key }))
-      )
-    : [];
+  // We also track firebaseKey (the actual path segment) per user so that writes
+  // (e.g. kekaEmployeeId) land on the correct existing node rather than creating
+  // orphan entries under the user's id value.
+  const pmtUsers: PMTUser[] = [];
+  const userIdToFirebaseKey: Record<string, string> = {};
+
+  if (usersRaw) {
+    if (Array.isArray(usersRaw)) {
+      // Clean array — each index is the Firebase key
+      (usersRaw as PMTUser[]).forEach((u, idx) => {
+        if (!u) return;
+        pmtUsers.push(u);
+        const uid = u.id != null ? String(u.id) : String(idx);
+        userIdToFirebaseKey[uid] = String(idx);
+      });
+    } else {
+      const entries = Object.entries(usersRaw as Record<string, PMTUser>).filter(([, u]) => Boolean(u));
+      // Numeric keys are real array positions; string keys may be orphan entries
+      // from previous writes that used the user's id value as the path segment.
+      // Process numeric keys first so they always win for the firebaseKey mapping.
+      const numericEntries = entries.filter(([k]) => /^\d+$/.test(k));
+      const stringEntries = entries.filter(([k]) => !/^\d+$/.test(k));
+
+      numericEntries.forEach(([key, u]) => {
+        pmtUsers.push(u);
+        if (u.id != null) userIdToFirebaseKey[String(u.id)] = key;
+      });
+
+      // Only include string-key entries that don't duplicate a numeric-key user.
+      const orphanKeysToDelete: string[] = [];
+      stringEntries.forEach(([key, u]) => {
+        const normalized = { ...u, id: u.id ?? key };
+        const uid = String(normalized.id);
+        if (!userIdToFirebaseKey[uid]) {
+          // Genuinely new user stored by id-key, not an orphan
+          pmtUsers.push(normalized);
+          userIdToFirebaseKey[uid] = key;
+        } else {
+          // Already mapped by a numeric key — this is an orphan from a prior
+          // incorrect write. Schedule it for deletion.
+          orphanKeysToDelete.push(key);
+        }
+      });
+
+      // Delete orphan entries so they don't pollute future reads
+      for (const key of orphanKeysToDelete) {
+        try {
+          await writeFirebasePath(`users/${key}`, null);
+          logger.info({ key }, "[Keka] Deleted orphan user entry from Firebase");
+        } catch { /* best-effort */ }
+      }
+    }
+  }
 
   const emailToUserId: Record<string, string> = {};
   const kekaIdToUserId: Record<string, string> = {};
@@ -579,9 +624,12 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
 
       usersMatched++;
 
-      // Cache kekaEmployeeId on the PMT user for future lookups
+      // Cache kekaEmployeeId on the PMT user for future lookups.
+      // Use the Firebase array index (firebaseKey) rather than the id value
+      // so we update the existing node instead of creating an orphan entry.
       if (!kekaIdToUserId[kekaEmpId]) {
-        await writeFirebasePath(`users/${pmtUserId}/kekaEmployeeId`, kekaEmpId);
+        const firebaseKey = userIdToFirebaseKey[pmtUserId] ?? pmtUserId;
+        await writeFirebasePath(`users/${firebaseKey}/kekaEmployeeId`, kekaEmpId);
         kekaIdToUserId[kekaEmpId] = pmtUserId;
       }
 
