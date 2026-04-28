@@ -1155,12 +1155,12 @@ const HomeView = ({
       })()}
 
       {/* TASK LIST HEADER */}
-      <div ref={taskListRef} className="flex items-center justify-between">
-        <div className="flex items-center gap-2 shrink-0">
+      <div ref={taskListRef} className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2 mr-auto">
           <h2 className="text-sm font-bold text-slate-800 whitespace-nowrap">My Tasks</h2>
           <span className="text-xs text-slate-400 font-medium whitespace-nowrap">({myTasks.length} total)</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Status filter pills */}
           {!showArchived && (
             <div className="flex flex-wrap gap-1 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">

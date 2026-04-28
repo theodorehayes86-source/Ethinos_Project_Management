@@ -1419,8 +1419,8 @@ const MasterDataView = ({
                           </div>
                         </div>
                       </td>
-                      <td className="px-3 py-2.5">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ring-2 ${getRoleStyle(user.role)}`}>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ring-2 whitespace-nowrap ${getRoleStyle(user.role)}`}>
                           {user.role === 'Super Admin' ? <Crown size={10}/> : user.role === 'Director' ? <Star size={10}/> : <UserCheck size={10}/>}
                           {user.role}
                         </span>
