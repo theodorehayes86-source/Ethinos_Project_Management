@@ -126,6 +126,7 @@ const HomeView = ({
   const [showArchived, setShowArchived] = useState(false);
   const [detailTask, setDetailTask] = useState(null);
   const [leaveConflict, setLeaveConflict] = useState(null);
+  const [leaveModalOpen, setLeaveModalOpen] = useState(false);
   const acknowledgedLeaveRef = useRef(null);
   const [currentUserLeaveData, setCurrentUserLeaveData] = useState({});
   const [teamLeaveStatuses, setTeamLeaveStatuses] = useState({});
@@ -159,14 +160,18 @@ const HomeView = ({
 
   useEffect(() => {
     const id = (assigneeId || '').toString();
-    if (!id || !taskDueDate) { setLeaveConflict(null); return; }
+    if (!id || !taskDueDate) { setLeaveConflict(null); setLeaveModalOpen(false); return; }
     const dateKey = toDateKey(taskDueDate);
     if (!dateKey) return;
     const comboKey = `${id}__${dateKey}`;
-    if (acknowledgedLeaveRef.current === comboKey) return;
     let cancelled = false;
     checkLeaveConflict(id, taskDueDate).then(conflict => {
-      if (!cancelled) setLeaveConflict(conflict);
+      if (!cancelled) {
+        setLeaveConflict(conflict);
+        if (conflict && acknowledgedLeaveRef.current !== comboKey) {
+          setLeaveModalOpen(true);
+        }
+      }
     });
     return () => { cancelled = true; };
   }, [assigneeId, taskDueDate]);
@@ -331,6 +336,9 @@ const HomeView = ({
     setEstimatedHrs('');
     setEstimatedMins('');
     setTaskReminders([]);
+    setLeaveConflict(null);
+    setLeaveModalOpen(false);
+    acknowledgedLeaveRef.current = null;
   };
 
   const openAddTaskModal = () => { resetModal(); setShowAddTaskModal(true); };
@@ -1860,6 +1868,19 @@ const HomeView = ({
                             Clear Due Date
                           </button>
                         )}
+                        {leaveConflict && taskDueDate && (() => {
+                          const t = leaveConflict.type;
+                          const isHard = t === 'full-leave' || t === 'holiday';
+                          const isPending = t === 'pending-leave';
+                          const bg = isHard ? 'bg-red-50 border-red-200 text-red-700' : isPending ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-amber-50 border-amber-200 text-amber-700';
+                          const label = t === 'holiday' ? `Public holiday: ${leaveConflict.holidayName || 'Holiday'}` : t === 'full-leave' ? `${assigneeName || 'Assignee'} is on full-day leave` : t === 'half-leave' ? `${assigneeName || 'Assignee'} is on half-day leave (${leaveConflict.session})` : `${assigneeName || 'Assignee'} has a pending leave request`;
+                          return (
+                            <div className={`mt-1.5 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs font-medium ${bg}`}>
+                              <AlertTriangle size={13} className="mt-0.5 flex-shrink-0" />
+                              <span>{label}</span>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {taskDueDate && (
@@ -2575,7 +2596,7 @@ const HomeView = ({
         </div>
       )}
 
-      {leaveConflict && (
+      {leaveConflict && leaveModalOpen && (
         <LeaveConflictModal
           conflict={leaveConflict}
           userName={assigneeName || users.find(u => String(u.id) === String(assigneeId))?.name || 'Assignee'}
@@ -2583,10 +2604,11 @@ const HomeView = ({
             const id = (assigneeId || '').toString();
             const dateKey = toDateKey(taskDueDate);
             acknowledgedLeaveRef.current = `${id}__${dateKey}`;
-            setLeaveConflict(null);
+            setLeaveModalOpen(false);
           }}
           onCancel={() => {
             setLeaveConflict(null);
+            setLeaveModalOpen(false);
             setTaskDueDate(null);
           }}
         />

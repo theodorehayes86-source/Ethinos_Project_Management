@@ -162,6 +162,7 @@ const ClientView = ({
 
   // Leave conflict check state (for new task creation)
   const [leaveConflict, setLeaveConflict] = useState(null);
+  const [leaveModalOpen, setLeaveModalOpen] = useState(false);
   const acknowledgedLeaveRef = useRef(null);
 
   // Leave conflict check state (for edit task modal)
@@ -184,14 +185,18 @@ const ClientView = ({
 
   useEffect(() => {
     const id = (newTaskAssigneeId || '').toString();
-    if (!id || !taskDueDate) { setLeaveConflict(null); return; }
+    if (!id || !taskDueDate) { setLeaveConflict(null); setLeaveModalOpen(false); return; }
     const dateKey = toDateKey(taskDueDate);
     if (!dateKey) return;
     const comboKey = `${id}__${dateKey}`;
-    if (acknowledgedLeaveRef.current === comboKey) return;
     let cancelled = false;
     checkLeaveConflict(id, taskDueDate).then(conflict => {
-      if (!cancelled) setLeaveConflict(conflict);
+      if (!cancelled) {
+        setLeaveConflict(conflict);
+        if (conflict && acknowledgedLeaveRef.current !== comboKey) {
+          setLeaveModalOpen(true);
+        }
+      }
     });
     return () => { cancelled = true; };
   }, [newTaskAssigneeId, taskDueDate]);
@@ -805,6 +810,9 @@ const ClientView = ({
     setNewTaskReminders([]);
     setNewTaskEstimatedHrs('');
     setNewTaskEstimatedMins('');
+    acknowledgedLeaveRef.current = null;
+    setLeaveConflict(null);
+    setLeaveModalOpen(false);
     setShowTaskForm(false);
   };
 
@@ -1262,6 +1270,9 @@ const ClientView = ({
                 setNewTaskDepartments(currentUser?.department ? [currentUser.department] : []);
                 setNewTaskBillable(true);
                 setNewTaskReminders([]);
+                acknowledgedLeaveRef.current = null;
+                setLeaveConflict(null);
+                setLeaveModalOpen(false);
                 setShowTaskForm(true);
               }}
               className="bg-blue-600 text-white px-3.5 py-2 rounded-lg font-semibold text-xs hover:bg-blue-700 transition-all flex items-center gap-1.5 shadow-md"
@@ -2072,6 +2083,20 @@ const ClientView = ({
                           {taskDueDate && (
                             <button type="button" onClick={() => setTaskDueDate(null)} className="text-xs font-semibold text-red-600 hover:text-red-700">Clear Due Date</button>
                           )}
+                          {leaveConflict && taskDueDate && (() => {
+                            const t = leaveConflict.type;
+                            const isHard = t === 'full-leave' || t === 'holiday';
+                            const isPending = t === 'pending-leave';
+                            const bg = isHard ? 'bg-red-50 border-red-200 text-red-700' : isPending ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-amber-50 border-amber-200 text-amber-700';
+                            const uName = (users || []).find(u => String(u.id) === String(newTaskAssigneeId))?.name || 'Assignee';
+                            const label = t === 'holiday' ? `Public holiday: ${leaveConflict.holidayName || 'Holiday'}` : t === 'full-leave' ? `${uName} is on full-day leave` : t === 'half-leave' ? `${uName} is on half-day leave (${leaveConflict.session})` : `${uName} has a pending leave request`;
+                            return (
+                              <div className={`mt-1.5 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs font-medium ${bg}`}>
+                                <AlertTriangle size={13} className="mt-0.5 flex-shrink-0" />
+                                <span>{label}</span>
+                              </div>
+                            );
+                          })()}
                         </div>
 
                         {taskDueDate && (
@@ -4018,7 +4043,7 @@ const ClientView = ({
         );
       })()}
 
-      {leaveConflict && (
+      {leaveConflict && leaveModalOpen && (
         <LeaveConflictModal
           conflict={leaveConflict}
           userName={(users || []).find(u => String(u.id) === String(newTaskAssigneeId))?.name || 'Assignee'}
@@ -4026,10 +4051,11 @@ const ClientView = ({
             const id = (newTaskAssigneeId || '').toString();
             const dateKey = toDateKey(taskDueDate);
             acknowledgedLeaveRef.current = `${id}__${dateKey}`;
-            setLeaveConflict(null);
+            setLeaveModalOpen(false);
           }}
           onCancel={() => {
             setLeaveConflict(null);
+            setLeaveModalOpen(false);
             setTaskDueDate(null);
           }}
         />

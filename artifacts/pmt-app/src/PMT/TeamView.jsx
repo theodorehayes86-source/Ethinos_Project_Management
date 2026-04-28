@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Users, ChevronRight, ChevronLeft, Plus, X, Search, Star, ArrowUp, ArrowDown, Filter, CalendarClock, CalendarCheck2, CalendarX2 } from 'lucide-react';
+import { Users, ChevronRight, ChevronLeft, Plus, X, Search, Star, ArrowUp, ArrowDown, Filter, CalendarClock, CalendarCheck2, CalendarX2, AlertTriangle } from 'lucide-react';
 import { format, isBefore, isAfter, startOfWeek, endOfWeek, startOfMonth, endOfMonth, parse } from 'date-fns';
 import TaskDetailPanel from './TaskDetailPanel';
 import { sendNotification } from '../utils/notify';
@@ -71,18 +71,23 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
   const [error, setError] = useState('');
   const [clientSearch, setClientSearch] = useState('');
   const [leaveConflict, setLeaveConflict] = useState(null);
+  const [leaveModalOpen, setLeaveModalOpen] = useState(false);
   const acknowledgedLeaveRef = useRef(null);
 
   useEffect(() => {
     const id = prefilledAssignee?.id ? String(prefilledAssignee.id) : null;
-    if (!id || !taskDueDate) { setLeaveConflict(null); return; }
+    if (!id || !taskDueDate) { setLeaveConflict(null); setLeaveModalOpen(false); return; }
     const dateKey = toDateKey(taskDueDate);
     if (!dateKey) return;
     const comboKey = `${id}__${dateKey}`;
-    if (acknowledgedLeaveRef.current === comboKey) return;
     let cancelled = false;
     checkLeaveConflict(id, taskDueDate).then(conflict => {
-      if (!cancelled) setLeaveConflict(conflict);
+      if (!cancelled) {
+        setLeaveConflict(conflict);
+        if (conflict && acknowledgedLeaveRef.current !== comboKey) {
+          setLeaveModalOpen(true);
+        }
+      }
     });
     return () => { cancelled = true; };
   }, [prefilledAssignee?.id, taskDueDate]);
@@ -188,6 +193,19 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
                 Clear Due Date
               </button>
             )}
+            {leaveConflict && taskDueDate && (() => {
+              const t = leaveConflict.type;
+              const isHard = t === 'full-leave' || t === 'holiday';
+              const isPending = t === 'pending-leave';
+              const bg = isHard ? 'bg-red-50 border-red-200 text-red-700' : isPending ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-amber-50 border-amber-200 text-amber-700';
+              const label = t === 'holiday' ? `Public holiday: ${leaveConflict.holidayName || 'Holiday'}` : t === 'full-leave' ? `${prefilledAssignee?.name || 'Assignee'} is on full-day leave` : t === 'half-leave' ? `${prefilledAssignee?.name || 'Assignee'} is on half-day leave (${leaveConflict.session})` : `${prefilledAssignee?.name || 'Assignee'} has a pending leave request`;
+              return (
+                <div className={`mt-1.5 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs font-medium ${bg}`}>
+                  <AlertTriangle size={13} className="mt-0.5 flex-shrink-0" />
+                  <span>{label}</span>
+                </div>
+              );
+            })()}
           </div>
           <div className="flex gap-3">
             <div className="flex-1"><label className="text-xs font-semibold text-slate-600 mb-1 block">Est. Hours</label><input type="number" min="0" value={estimatedHrs} onChange={e => setEstimatedHrs(e.target.value)} placeholder="0" className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20"/></div>
@@ -206,7 +224,7 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
         </form>
       </div>
 
-      {leaveConflict && (
+      {leaveConflict && leaveModalOpen && (
         <LeaveConflictModal
           conflict={leaveConflict}
           userName={prefilledAssignee?.name || 'Assignee'}
@@ -214,10 +232,11 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
             const id = prefilledAssignee?.id ? String(prefilledAssignee.id) : null;
             const dateKey = toDateKey(taskDueDate);
             acknowledgedLeaveRef.current = `${id}__${dateKey}`;
-            setLeaveConflict(null);
+            setLeaveModalOpen(false);
           }}
           onCancel={() => {
             setLeaveConflict(null);
+            setLeaveModalOpen(false);
             setTaskDueDate(null);
           }}
         />

@@ -29,6 +29,9 @@ export async function checkLeaveConflict(userId, dateKey) {
     const leave = leaveSnap.val();
     const holiday = holidaySnap.val();
     if (leave) {
+      if (leave.status === 'pending') {
+        return { type: 'pending-leave', leaveType: leave.leaveType || 'Leave', session: leave.session, userId, date: dateKey };
+      }
       return leave.session === 'full'
         ? { type: 'full-leave', leaveType: leave.leaveType || 'Leave', userId, date: dateKey }
         : { type: 'half-leave', leaveType: leave.leaveType || 'Leave', session: leave.session, userId, date: dateKey };
