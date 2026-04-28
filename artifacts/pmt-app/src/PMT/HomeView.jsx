@@ -1206,14 +1206,12 @@ const HomeView = ({
             {showArchived ? <ArchiveRestore size={12}/> : <Archive size={12}/>}
             {showArchived ? 'Hide Archived' : `Archived${myArchivedTasks.length > 0 ? ` (${myArchivedTasks.length})` : ''}`}
           </button>
-          {roleHomeTemplates.length > 0 && (
-            <button
-              onClick={() => { setShowHomeTemplateModal(true); setSelectedHomeTemplateId(null); setHomeTemplateFilter('All'); setExpandedTemplateTasks({}); }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-all"
-            >
-              <LayoutTemplate size={12} /> Use Template
-            </button>
-          )}
+          <button
+            onClick={() => { setShowHomeTemplateModal(true); setSelectedHomeTemplateId(null); setHomeTemplateFilter('All'); setExpandedTemplateTasks({}); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-all"
+          >
+            <LayoutTemplate size={12} /> Use Template
+          </button>
           {checklistTemplates.length > 0 && canCreateChecklists && (
             <button
               onClick={openNewChecklistModal}
@@ -1598,8 +1596,17 @@ const HomeView = ({
               {filteredHomeTemplates.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <LayoutTemplate size={32} className="text-slate-200 mb-3" />
-                  <p className="text-sm font-semibold text-slate-500">No templates for this frequency</p>
-                  <p className="text-xs text-slate-400 mt-1">Try switching to "All" to see all available templates.</p>
+                  {roleHomeTemplates.length === 0 ? (
+                    <>
+                      <p className="text-sm font-semibold text-slate-500">No templates available</p>
+                      <p className="text-xs text-slate-400 mt-1">Ask your admin to create templates in the Control Center and assign them to your role.</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm font-semibold text-slate-500">No templates for this frequency</p>
+                      <p className="text-xs text-slate-400 mt-1">Try switching to "All" to see all available templates.</p>
+                    </>
+                  )}
                 </div>
               ) : (
                 filteredHomeTemplates.map(tpl => {
