@@ -1156,9 +1156,9 @@ const HomeView = ({
 
       {/* TASK LIST HEADER */}
       <div ref={taskListRef} className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-bold text-slate-800">My Tasks</h2>
-          <span className="text-xs text-slate-400 font-medium">({myTasks.length} total)</span>
+        <div className="flex items-center gap-2 shrink-0">
+          <h2 className="text-sm font-bold text-slate-800 whitespace-nowrap">My Tasks</h2>
+          <span className="text-xs text-slate-400 font-medium whitespace-nowrap">({myTasks.length} total)</span>
         </div>
         <div className="flex items-center gap-2">
           {/* Status filter pills */}
