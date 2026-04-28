@@ -122,7 +122,7 @@ const SettingsView = ({ users = [], setUsers, currentUser, clients = [], setClie
   }, [kekaLoaded]);
 
   useEffect(() => {
-    if (activeSection === 'keka-integration') loadKekaSettings();
+    if (activeSection === 'integrations') loadKekaSettings();
   }, [activeSection, loadKekaSettings]);
 
   const saveKekaSettings = async () => {
@@ -384,11 +384,11 @@ const SettingsView = ({ users = [], setUsers, currentUser, clients = [], setClie
           {canEditRoles && (
             <button
               type="button"
-              onClick={() => setActiveSection('keka-integration')}
-              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all border inline-flex items-center gap-1.5 ${activeSection === 'keka-integration' ? 'bg-white text-slate-900 border-slate-900' : 'bg-white text-slate-700 border-transparent hover:border-slate-300'}`}
+              onClick={() => setActiveSection('integrations')}
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all border inline-flex items-center gap-1.5 ${activeSection === 'integrations' ? 'bg-white text-slate-900 border-slate-900' : 'bg-white text-slate-700 border-transparent hover:border-slate-300'}`}
             >
               <Link2 size={12} />
-              Keka Integration
+              Integrations
             </button>
           )}
         </div>
@@ -905,8 +905,12 @@ const SettingsView = ({ users = [], setUsers, currentUser, clients = [], setClie
         </div>
       )}
 
-      {activeSection === 'keka-integration' && (
+      {activeSection === 'integrations' && (
         <div className="flex-1 flex flex-col gap-5 min-h-0 overflow-y-auto">
+          <div className="mb-1">
+            <h3 className="text-xl font-bold text-slate-900">Integrations</h3>
+            <p className="text-xs font-medium text-slate-500 mt-1">Connect external services to sync data with PMT.</p>
+          </div>
           <div className="border border-slate-200 rounded-2xl bg-white shadow-sm p-6">
             <div className="flex items-start gap-3 mb-5">
               <div className="w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center flex-shrink-0">
