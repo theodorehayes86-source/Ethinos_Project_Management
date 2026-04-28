@@ -12,6 +12,16 @@ const TEST_USERS = [
     region: 'North',
   },
   {
+    // Real Firebase user — has alternating approved leave test data written
+    id: '1776763929955',
+    name: 'testuser1',
+    email: 'test1@ethinos.com',
+    role: 'Employee',
+    assignedProjects: ['Test Client'],
+    department: 'Creative',
+    region: 'North',
+  },
+  {
     id: 'test-employee',
     name: 'Test Employee',
     email: 'test.employee@ethinos.com',
