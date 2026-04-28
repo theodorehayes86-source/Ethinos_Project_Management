@@ -10,7 +10,7 @@ import { sendNotification } from '../utils/notify';
 import { ReminderPills } from './ReminderPills';
 import DueDateInput from './DueDateInput';
 import LeaveConflictModal from './LeaveConflictModal';
-import { checkLeaveConflict, toDateKey, getUserLeaveAndHolidayData, isFullDayLeaveOrHoliday } from '../utils/leaveConflict';
+import { checkLeaveConflict, toDateKey, getUserLeaveAndHolidayData, isFullDayLeaveOrHoliday, getUserLeaveStatus } from '../utils/leaveConflict';
 
 const managementRoles = ['Super Admin', 'Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
 
@@ -128,6 +128,7 @@ const HomeView = ({
   const [leaveConflict, setLeaveConflict] = useState(null);
   const acknowledgedLeaveRef = useRef(null);
   const [currentUserLeaveData, setCurrentUserLeaveData] = useState({});
+  const [teamLeaveStatuses, setTeamLeaveStatuses] = useState({});
 
   useEffect(() => {
     if (!currentUser?.id) return;
@@ -137,6 +138,24 @@ const HomeView = ({
     });
     return () => { cancelled = true; };
   }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (!isManagement || !users.length || !currentUser?.id) return;
+    const directReports = users.filter(u => String(u.managerId) === String(currentUser.id));
+    if (!directReports.length) return;
+    let cancelled = false;
+    Promise.all(
+      directReports.map(u =>
+        getUserLeaveStatus(String(u.id)).then(s => ({ id: String(u.id), name: u.name, ...s }))
+      )
+    ).then(results => {
+      if (cancelled) return;
+      const map = {};
+      results.forEach(r => { map[r.id] = r; });
+      setTeamLeaveStatuses(map);
+    });
+    return () => { cancelled = true; };
+  }, [isManagement, users, currentUser?.id]);
 
   useEffect(() => {
     const id = (assigneeId || '').toString();
@@ -1027,6 +1046,105 @@ const HomeView = ({
           );
         })}
       </div>
+
+      {/* LEAVE OVERVIEW */}
+      {(() => {
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const todayKey = toDateKey(today);
+
+        // Collect my leave for next 30 days
+        const myApproved = [], myPending = [];
+        for (let i = 0; i <= 30; i++) {
+          const d = new Date(today); d.setDate(d.getDate() + i);
+          const dk = toDateKey(d);
+          const rec = currentUserLeaveData[dk];
+          if (!rec) continue;
+          if (rec.status === 'pending') myPending.push({ date: new Date(d), dk });
+          else myApproved.push({ date: new Date(d), dk });
+        }
+
+        // Group consecutive dates into label ranges
+        const fmtD = (d) => d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+        const groupRanges = (items) => {
+          if (!items.length) return [];
+          const groups = []; let gs = items[0], ge = items[0];
+          for (let i = 1; i < items.length; i++) {
+            if (Math.round((items[i].date - ge.date) / 86400000) === 1) { ge = items[i]; }
+            else { groups.push({ gs, ge }); gs = ge = items[i]; }
+          }
+          groups.push({ gs, ge }); return groups;
+        };
+        const rangeLabel = (gs, ge) =>
+          gs.dk === ge.dk ? fmtD(gs.date) : `${fmtD(gs.date)} – ${fmtD(ge.date)}`;
+
+        const approvedGroups = groupRanges(myApproved);
+        const pendingGroups  = groupRanges(myPending);
+
+        // Team leave entries (direct reports with any leave status)
+        const teamEntries = Object.values(teamLeaveStatuses).filter(t =>
+          t.onLeaveToday || t.onLeavePendingToday || t.upcomingLeaveDate || t.upcomingPendingDate
+        );
+
+        const hasMyLeave   = myApproved.length > 0 || myPending.length > 0;
+        const hasTeamLeave = isManagement && teamEntries.length > 0;
+        if (!hasMyLeave && !hasTeamLeave) return null;
+
+        return (
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="p-1.5 bg-sky-100 rounded-lg"><Calendar size={14} className="text-sky-600"/></div>
+              <h3 className="text-sm font-bold text-slate-700">Leave Overview</h3>
+            </div>
+            <div className={`grid gap-4 ${hasTeamLeave ? 'grid-cols-2 divide-x divide-slate-100' : 'grid-cols-1'}`}>
+
+              {/* MY LEAVE */}
+              <div className={hasTeamLeave ? 'pr-4' : ''}>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2">My Leave</p>
+                {!hasMyLeave ? (
+                  <p className="text-xs text-slate-400 italic">No upcoming leave in the next 30 days</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {approvedGroups.map(({ gs, ge }, i) => (
+                      <span key={i} className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                        {gs.dk === todayKey ? 'On Leave Today' : rangeLabel(gs, ge)}
+                      </span>
+                    ))}
+                    {pendingGroups.map(({ gs, ge }, i) => (
+                      <span key={i} className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 border border-blue-200">
+                        {gs.dk === todayKey ? 'Leave Pending Today' : `Pending: ${rangeLabel(gs, ge)}`}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* TEAM LEAVE */}
+              {hasTeamLeave && (
+                <div className="pl-4">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2">Team Leave</p>
+                  <div className="space-y-1.5">
+                    {teamEntries.map(t => {
+                      const badge = t.onLeaveToday
+                        ? { label: 'On Leave Today', cls: 'bg-amber-50 text-amber-700 border-amber-200' }
+                        : t.onLeavePendingToday
+                          ? { label: 'Pending Today', cls: 'bg-blue-50 text-blue-600 border-blue-200' }
+                          : t.upcomingLeaveDate
+                            ? { label: `Leave ${new Date(t.upcomingLeaveDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`, cls: 'bg-sky-50 text-sky-600 border-sky-200' }
+                            : { label: `Pending ${new Date(t.upcomingPendingDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`, cls: 'bg-blue-50 text-blue-500 border-blue-200' };
+                      return (
+                        <div key={t.id} className="flex items-center justify-between gap-2">
+                          <span className="text-xs text-slate-700 font-medium truncate">{t.name}</span>
+                          <span className={`flex-shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full border ${badge.cls}`}>{badge.label}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* TASK LIST HEADER */}
       <div ref={taskListRef} className="flex items-center justify-between">
