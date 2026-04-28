@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Users, ChevronRight, ChevronLeft, Plus, X, Search, Star, ArrowUp, ArrowDown, Filter } from 'lucide-react';
+import { Users, ChevronRight, ChevronLeft, Plus, X, Search, Star, ArrowUp, ArrowDown, Filter, CalendarClock, CalendarCheck2, CalendarX2 } from 'lucide-react';
 import { format, isBefore, isAfter, startOfWeek, endOfWeek, startOfMonth, endOfMonth, parse } from 'date-fns';
 import TaskDetailPanel from './TaskDetailPanel';
 import { sendNotification } from '../utils/notify';
@@ -245,6 +245,33 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
     return () => { cancelled = true; };
   }, [member?.id]);
 
+  // Group leave records into distinct requests (by leaveId), today + future only
+  const todayKey = toDateKey(new Date());
+  const leaveGroups = useMemo(() => {
+    const groups = {};
+    Object.entries(memberLeaveByDate).forEach(([dk, rec]) => {
+      if (!rec || rec.isHoliday) return;
+      if (dk < todayKey) return; // skip past leave
+      const gKey = rec.leaveId || dk;
+      if (!groups[gKey]) {
+        groups[gKey] = {
+          id: gKey,
+          startDate: rec.startDate || dk,
+          endDate: rec.endDate || dk,
+          leaveType: rec.leaveType || 'Leave',
+          status: rec.status || 'pending',
+          isToday: dk === todayKey,
+          session: rec.session,
+        };
+      }
+      // extend range in case dates span multiple keys
+      if (dk < groups[gKey].startDate) groups[gKey].startDate = dk;
+      if (dk > groups[gKey].endDate) groups[gKey].endDate = dk;
+      if (dk === todayKey) groups[gKey].isToday = true;
+    });
+    return Object.values(groups).sort((a, b) => a.startDate.localeCompare(b.startDate));
+  }, [memberLeaveByDate, todayKey]);
+
   const tasks = useMemo(() => {
     let list = allMemberTasks.filter(t => !t.archived);
     if (statusFilter !== 'all') list = list.filter(t => t.status === statusFilter);
@@ -343,6 +370,57 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
             <div className="flex-1 bg-emerald-50 border border-emerald-100 rounded-lg p-2.5 flex items-center gap-2"><ArrowDown size={14} className="text-emerald-500"/><div><p className="text-sm font-bold text-emerald-700">{stats.belowEst}</p><p className="text-[10px] text-emerald-500">Under estimate</p></div></div>
           </div>
         )}
+
+        {/* Leave Overview */}
+        {leaveGroups.length > 0 && (
+          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-2">
+              <CalendarClock size={13} className="text-indigo-500"/>
+              <h4 className="text-xs font-bold text-slate-700">Leave Overview</h4>
+            </div>
+            <div className="divide-y divide-slate-50">
+              {leaveGroups.map(lg => {
+                const isApproved = lg.status === 'approved';
+                const isToday = lg.isToday;
+                return (
+                  <div key={lg.id} className={`px-4 py-2.5 flex items-center gap-3 ${isToday ? 'bg-amber-50/60' : ''}`}>
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                      isToday
+                        ? 'bg-amber-100 text-amber-600'
+                        : isApproved
+                          ? 'bg-emerald-50 text-emerald-600'
+                          : 'bg-blue-50 text-blue-500'
+                    }`}>
+                      {isToday
+                        ? <CalendarX2 size={13}/>
+                        : isApproved
+                          ? <CalendarCheck2 size={13}/>
+                          : <CalendarClock size={13}/>
+                      }
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-slate-800 truncate">{lg.leaveType}</p>
+                      <p className="text-[10px] text-slate-500">{fmtLeaveDateRange(lg.startDate, lg.endDate)}{lg.session && lg.session !== 'full' ? ` · ${lg.session}` : ''}</p>
+                    </div>
+                    <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                      {isToday && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">Today</span>
+                      )}
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                        isApproved
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-blue-100 text-blue-600'
+                      }`}>
+                        {isApproved ? 'Approved' : 'Pending'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {clientHourSplit.length > 0 && (
           <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
             <div className="px-4 py-2.5 border-b border-slate-100"><h4 className="text-xs font-bold text-slate-700">Client Hour Split</h4></div>
@@ -412,6 +490,16 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
 
 const fmtLeaveDate = (dateStr) =>
   new Date(dateStr + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+
+const fmtLeaveDateRange = (start, end) => {
+  const s = new Date(start + 'T00:00:00');
+  const e = new Date(end + 'T00:00:00');
+  const opts = { day: 'numeric', month: 'short' };
+  if (start === end) return s.toLocaleDateString('en-IN', opts);
+  if (s.getFullYear() !== e.getFullYear())
+    return `${s.toLocaleDateString('en-IN', { ...opts, year: 'numeric' })} – ${e.toLocaleDateString('en-IN', { ...opts, year: 'numeric' })}`;
+  return `${s.toLocaleDateString('en-IN', opts)} – ${e.toLocaleDateString('en-IN', opts)}`;
+};
 
 const MemberCard = ({ member, isSelected, onClick, leaveStatus }) => {
   const ls = leaveStatus || {};
