@@ -63,6 +63,7 @@ const CC_TABS = [
   { id: 'notifications', label: 'Notifications' },
   { id: 'integrations', label: 'Integrations' },
   { id: 'feedback', label: 'Feedback' },
+  { id: 'archive', label: 'Archive' },
 ];
 
 const DEFAULT_STANDARD_TRACK = ['Director', 'Snr Manager', 'Manager', 'Asst Manager', 'Snr Executive', 'Executive', 'Employee', 'Intern'];
@@ -124,6 +125,7 @@ const MasterDataView = ({
   const [activeTab, setActiveTab] = useState(() => {
     const accessible = CC_TABS.filter(tab => {
       if (tab.id === 'notifications') return currentUser?.role === 'Super Admin';
+      if (tab.id === 'archive') return ['Super Admin', 'Director'].includes(currentUser?.role);
       if (currentUser?.role === 'Super Admin') return true;
       if (tab.id === 'integrations') return canSeeIntegrations;
       if (tab.id === 'conditions') return false;
@@ -1305,6 +1307,7 @@ const MasterDataView = ({
       <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center gap-2 flex-wrap">
         {CC_TABS.filter(tab => {
           if (tab.id === 'notifications') return currentUser?.role === 'Super Admin';
+          if (tab.id === 'archive') return ['Super Admin', 'Director'].includes(currentUser?.role);
           if (currentUser?.role === 'Super Admin') return true;
           if (tab.id === 'integrations') return canSeeIntegrations;
           if (tab.id === 'conditions') return false;
@@ -3932,6 +3935,184 @@ const MasterDataView = ({
           </div>
         </div>
       )}
+
+      {/* ─── ARCHIVE TAB ─── */}
+      {activeTab === 'archive' && (() => {
+        const archivedTasks = [];
+        Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
+          const client = (clients || []).find(c => String(c.id) === String(clientId));
+          (logs || []).forEach(task => {
+            if (task.archived) {
+              archivedTasks.push({ ...task, _clientId: clientId, _clientName: client?.name || clientId });
+            }
+          });
+        });
+        archivedTasks.sort((a, b) => (b.archivedAt || b.id || 0) - (a.archivedAt || a.id || 0));
+
+        const archivedApprovals = [];
+        Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
+          const client = (clients || []).find(c => String(c.id) === String(clientId));
+          (logs || []).forEach(task => {
+            if (task.approvalArchived) {
+              archivedApprovals.push({ ...task, _clientId: clientId, _clientName: client?.name || clientId });
+            }
+          });
+        });
+        archivedApprovals.sort((a, b) => (b.approvalArchivedAt || 0) - (a.approvalArchivedAt || 0));
+
+        const archivedFeedback = (feedbackItems || [])
+          .filter(f => f.archived)
+          .sort((a, b) => (b.archivedAt || b.timestamp || 0) - (a.archivedAt || a.timestamp || 0));
+
+        const restoreTask = (task) => {
+          if (!setClientLogs) return;
+          const cid = task._clientId;
+          const updated = { ...(clientLogs || {}) };
+          updated[cid] = (updated[cid] || []).map(t =>
+            String(t.id) === String(task.id) ? { ...t, archived: false } : t
+          );
+          setClientLogs(updated);
+        };
+
+        const restoreApproval = (task) => {
+          if (!setClientLogs) return;
+          const cid = task._clientId;
+          const updated = { ...(clientLogs || {}) };
+          updated[cid] = (updated[cid] || []).map(t =>
+            String(t.id) === String(task.id) ? { ...t, approvalArchived: false, approvalArchivedAt: null } : t
+          );
+          setClientLogs(updated);
+        };
+
+        const restoreFeedback = (id) => {
+          setFeedbackItems(feedbackItems.map(f => f.id === id ? { ...f, archived: false, archivedAt: null } : f));
+        };
+
+        const SectionHeader = ({ icon, title, count }) => (
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-7 h-7 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
+              {icon}
+            </div>
+            <h3 className="text-sm font-bold text-slate-800">{title}</h3>
+            <span className="ml-1 text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{count}</span>
+          </div>
+        );
+
+        return (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-xl font-black text-slate-900 tracking-tight">Archive</h2>
+              <p className="text-sm text-slate-500 mt-1">All archived items in one place. Restore any item to return it to its original view.</p>
+            </div>
+
+            {/* ── Archived Tasks ── */}
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <SectionHeader
+                icon={<Archive size={14} className="text-amber-600" />}
+                title="Archived Tasks"
+                count={archivedTasks.length}
+              />
+              {archivedTasks.length === 0 ? (
+                <p className="text-xs text-slate-400 italic py-4 text-center">No archived tasks.</p>
+              ) : (
+                <div className="space-y-2">
+                  {archivedTasks.map(task => (
+                    <div key={`${task._clientId}-${task.id}`} className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-slate-800 truncate">{task.name || task.comment || '(Untitled)'}</p>
+                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5 text-xs text-slate-500">
+                          {task._clientName && <span>{task._clientName}</span>}
+                          {task.assigneeName && <span>· {task.assigneeName}</span>}
+                          {task.category && <span>· {task.category}</span>}
+                          {task.date && <span>· {task.date}</span>}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => restoreTask(task)}
+                        className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-emerald-700 hover:border-emerald-300 hover:bg-emerald-50 text-xs font-semibold transition-all"
+                      >
+                        <ArchiveRestore size={12} /> Restore
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ── Archived Approvals ── */}
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <SectionHeader
+                icon={<Archive size={14} className="text-indigo-500" />}
+                title="Archived Approvals"
+                count={archivedApprovals.length}
+              />
+              {archivedApprovals.length === 0 ? (
+                <p className="text-xs text-slate-400 italic py-4 text-center">No archived approvals.</p>
+              ) : (
+                <div className="space-y-2">
+                  {archivedApprovals.map(task => (
+                    <div key={`${task._clientId}-${task.id}`} className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-slate-800 truncate">{task.name || task.comment || '(Untitled)'}</p>
+                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5 text-xs text-slate-500">
+                          {task._clientName && <span>{task._clientName}</span>}
+                          {task.assigneeName && <span>· {task.assigneeName}</span>}
+                          {task.qcRating && <span>· Rating: {task.qcRating}/10</span>}
+                          {task.qcReviewerName && <span>· Reviewer: {task.qcReviewerName}</span>}
+                          {task.qcReviewedAt && (
+                            <span>· {new Date(task.qcReviewedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => restoreApproval(task)}
+                        className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-emerald-700 hover:border-emerald-300 hover:bg-emerald-50 text-xs font-semibold transition-all"
+                      >
+                        <ArchiveRestore size={12} /> Restore
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ── Archived Feedback ── */}
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <SectionHeader
+                icon={<Archive size={14} className="text-rose-500" />}
+                title="Archived Feedback"
+                count={archivedFeedback.length}
+              />
+              {archivedFeedback.length === 0 ? (
+                <p className="text-xs text-slate-400 italic py-4 text-center">No archived feedback.</p>
+              ) : (
+                <div className="space-y-2">
+                  {archivedFeedback.map(item => (
+                    <div key={item.id} className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-slate-800 truncate">{item.title || item.description || '(No title)'}</p>
+                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5 text-xs text-slate-500">
+                          {item.userName && <span>{item.userName}</span>}
+                          {item.type && <span>· {item.type}</span>}
+                          {item.timestamp && (
+                            <span>· {new Date(item.timestamp).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => restoreFeedback(item.id)}
+                        className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-emerald-700 hover:border-emerald-300 hover:bg-emerald-50 text-xs font-semibold transition-all"
+                      >
+                        <ArchiveRestore size={12} /> Restore
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ─── DELETE USER CONFIRMATION ─── */}
       {showDeleteUserConfirm && (

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { CheckCircle, XCircle, Star, ChevronDown, ChevronUp, Clock, User, Tag, Calendar, MessageSquare, UserPlus, UserCheck, UserX, Check, X, Send, CornerDownLeft } from 'lucide-react';
+import { CheckCircle, XCircle, Star, ChevronDown, ChevronUp, Clock, User, Tag, Calendar, MessageSquare, UserPlus, UserCheck, UserX, Check, X, Send, CornerDownLeft, Archive } from 'lucide-react';
 import { sendNotification } from '../utils/notify';
 
 function formatTs(ts) {
@@ -188,7 +188,7 @@ const ReturnModal = ({ task, onConfirm, onClose }) => {
   );
 };
 
-const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed, currentUser, onAddComment }) => {
+const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed, currentUser, onAddComment, onArchive }) => {
   const [expanded, setExpanded] = useState(false);
   const [replyingToId, setReplyingToId] = useState(null);
   const [replyText, setReplyText] = useState('');
@@ -393,6 +393,19 @@ const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed, curren
                 <span className="text-sm font-bold text-slate-700">{task.qcRating}/10</span>
               </div>
             )}
+            {isReviewed && task.qcStatus === 'approved' && onArchive && (
+              <button
+                onClick={() => {
+                  if (window.confirm('Archive this approved task? It will be removed from the Reviewed list but can be restored from the Control Center Archive tab.')) {
+                    onArchive(task);
+                  }
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-500 hover:text-amber-600 hover:border-amber-300 hover:bg-amber-50 text-xs font-semibold transition-all"
+                title="Archive this reviewed task"
+              >
+                <Archive size={12} /> Archive
+              </button>
+            )}
             <button
               onClick={() => setExpanded(v => !v)}
               className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 transition-colors"
@@ -559,7 +572,7 @@ const ApprovalsView = ({ clientLogs, clients, syntheticClients = [], users, curr
     .sort((a, b) => (b.qcSubmittedAt || 0) - (a.qcSubmittedAt || 0));
 
   const reviewedTasksAll = allTasksFlat
-    .filter(t => t.qcStatus === 'approved' || t.qcStatus === 'rejected')
+    .filter(t => (t.qcStatus === 'approved' || t.qcStatus === 'rejected') && !t.approvalArchived)
     .sort((a, b) => (b.qcReviewedAt || 0) - (a.qcReviewedAt || 0));
 
   const reviewedTasks = hideDone
@@ -684,6 +697,10 @@ const ApprovalsView = ({ clientLogs, clients, syntheticClients = [], users, curr
       feedbackThread: [...existing, entry],
     });
     setReturningTask(null);
+  };
+
+  const handleArchiveApproval = (task) => {
+    updateTask(task, { approvalArchived: true, approvalArchivedAt: Date.now() });
   };
 
   const handleAddFeedbackComment = (task, text, replyToId) => {
@@ -813,6 +830,7 @@ const ApprovalsView = ({ clientLogs, clients, syntheticClients = [], users, curr
                         isReviewed={isReviewed}
                         currentUser={currentUser}
                         onAddComment={handleAddFeedbackComment}
+                        onArchive={isReviewed ? handleArchiveApproval : undefined}
                       />
                     ))}
                   </div>

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Plus, Trash2, Send, Link, Check, ExternalLink, AtSign, MessageSquare, CheckCircle, XCircle, CornerDownLeft, Pencil } from 'lucide-react';
+import { X, Plus, Trash2, Send, Link, Check, ExternalLink, AtSign, MessageSquare, CheckCircle, XCircle, CornerDownLeft, Pencil, Clock } from 'lucide-react';
 import { format, parse, isBefore } from 'date-fns';
 import { sendNotification } from '../utils/notify';
 import DueDateInput from './DueDateInput';
@@ -72,6 +72,11 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
   const [newMessage, setNewMessage] = useState('');
   const [newLinkUrl, setNewLinkUrl] = useState('');
   const [newLinkLabel, setNewLinkLabel] = useState('');
+
+  // Edit recorded time state
+  const [editingTime, setEditingTime] = useState(false);
+  const [editTimeHrs, setEditTimeHrs] = useState('');
+  const [editTimeMins, setEditTimeMins] = useState('');
 
   // @mention state
   const [mentionQuery, setMentionQuery] = useState('');
@@ -306,6 +311,38 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
 
   const checkedCount = steps.filter(s => s.checked).length;
   const progressPct = steps.length > 0 ? Math.round((checkedCount / steps.length) * 100) : 0;
+
+  const formatElapsedMs = (ms) => {
+    if (!ms) return '0m';
+    const totalSec = Math.floor(ms / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  };
+
+  const openTimeEdit = () => {
+    const ms = task.elapsedMs || 0;
+    const totalSec = Math.floor(ms / 1000);
+    setEditTimeHrs(String(Math.floor(totalSec / 3600)));
+    setEditTimeMins(String(Math.floor((totalSec % 3600) / 60)));
+    setEditingTime(true);
+  };
+
+  const saveTimeEdit = () => {
+    const h = Math.max(0, parseInt(editTimeHrs, 10) || 0);
+    const m = Math.max(0, Math.min(59, parseInt(editTimeMins, 10) || 0));
+    const newMs = (h * 3600 + m * 60) * 1000;
+    const totalSec = h * 3600 + m * 60;
+    const hStr = String(Math.floor(totalSec / 3600)).padStart(2, '0');
+    const mStr = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
+    const sStr = '00';
+    const newTimeTaken = `${hStr}:${mStr}:${sStr}`;
+    setEditingTime(false);
+    saveUpdate({ ...task, steps, messages, links, elapsedMs: newMs, timeTaken: newTimeTaken });
+  };
 
   const isOverdue = (() => {
     if (!task.dueDate || task.status === 'Done') return false;
@@ -795,6 +832,67 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
               </section>
             );
           })()}
+
+          {/* Time Recorded */}
+          {(task.elapsedMs > 0 || task.timerState === 'paused' || task.timerState === 'stopped') && (
+            <section>
+              <div className="flex items-center gap-2 mb-2">
+                <h3 className="text-xs font-bold uppercase tracking-wide text-slate-700">Time Recorded</h3>
+              </div>
+              {editingTime ? (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-3">
+                  <p className="text-xs text-slate-500">Enter the corrected time logged for this task.</p>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Hours</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={editTimeHrs}
+                        onChange={e => setEditTimeHrs(e.target.value)}
+                        className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm font-semibold text-slate-800 outline-none focus:ring-2 ring-blue-500/20 focus:border-blue-400 bg-white"
+                        autoFocus
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Minutes</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="59"
+                        value={editTimeMins}
+                        onChange={e => setEditTimeMins(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') saveTimeEdit(); if (e.key === 'Escape') setEditingTime(false); }}
+                        className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm font-semibold text-slate-800 outline-none focus:ring-2 ring-blue-500/20 focus:border-blue-400 bg-white"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={() => setEditingTime(false)} className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-all">Cancel</button>
+                    <button onClick={saveTimeEdit} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-all">
+                      <Check size={11} /> Save
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 bg-slate-50 rounded-xl px-3 py-2.5 border border-slate-100">
+                  <Clock size={13} className="text-slate-400 flex-shrink-0" />
+                  <span className="text-sm font-semibold text-slate-700 flex-1">
+                    {formatElapsedMs(task.elapsedMs)}
+                  </span>
+                  {canEdit && task.timerState !== 'running' && (
+                    <button
+                      onClick={openTimeEdit}
+                      className="p-1 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all"
+                      title="Edit recorded time"
+                    >
+                      <Pencil size={12} />
+                    </button>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
 
           {/* Links */}
           <section>
