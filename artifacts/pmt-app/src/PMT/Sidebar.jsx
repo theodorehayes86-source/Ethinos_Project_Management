@@ -228,7 +228,7 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
           <div className="px-3 py-3 bg-white/60 rounded-2xl border border-white/80 shadow-sm backdrop-blur-sm text-center">
             <p className="text-[8px] font-semibold text-slate-400 uppercase tracking-widest mb-0.5">Powered by</p>
             <p className="text-[10px] font-bold text-slate-600 leading-snug">Ethinos Digital Marketing Pvt Ltd</p>
-            <p className="text-[8px] text-slate-400 mt-1 leading-none">PMT v{__APP_VERSION__}</p>
+            <p className="text-[8px] text-slate-400 mt-1 leading-none">Flow Pro v{__APP_VERSION__}</p>
           </div>
         )}
 

@@ -142,7 +142,7 @@ const LoginView = ({ onLogin, onMicrosoftLogin, onCreateAccount, onResetPassword
               </p>
             </div>
             <div className="rounded-2xl border border-white/35 bg-white/15 p-4 backdrop-blur-sm">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-white/85">Project Management Tool</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-white/85">Ethinos Flow Pro</p>
               <p className="mt-2 text-sm text-white">
                 {mode === 'signin'
                   ? 'Sign in with your Ethinos Microsoft account to access your workspace.'
