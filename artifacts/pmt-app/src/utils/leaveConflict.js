@@ -3,7 +3,7 @@ import { db } from "../firebase.js";
 
 /**
  * @typedef {Object} LeaveConflict
- * @property {'full-leave'|'half-leave'|'holiday'} type
+ * @property {'full-leave'|'half-leave'|'holiday'|'pending-leave'} type
  * @property {string} [leaveType]
  * @property {'first-half'|'second-half'} [session]
  * @property {string} [holidayName]
@@ -12,16 +12,17 @@ import { db } from "../firebase.js";
  */
 
 /**
- * Returns true only if a leave/holiday record represents a FULL-DAY absence.
- * Half-day leave records (first-half, second-half, half-day sessions) return false.
- * Use this for overdue suppression — half-day leave is a soft warning, not a hard block.
+ * Returns true only if a leave/holiday record represents a confirmed FULL-DAY absence.
+ * Pending leaves, half-day leaves, and missing records return false.
+ * Use this for overdue suppression — only approved full-day leave is a hard block.
  *
  * @param {unknown} record - A Firebase leave or holiday record from getUserLeaveAndHolidayData
  * @returns {boolean}
  */
 export function isFullDayLeaveOrHoliday(record) {
   if (!record) return false;
-  if (record.name) return true;
+  if (record.name) return true; // holiday
+  if (record.status === 'pending') return false; // pending leave is not a hard block
   if (record.session === 'full') return true;
   return false;
 }
@@ -66,6 +67,16 @@ export async function checkLeaveConflict(userId, date, region = "All") {
     const holidayRecord = holidaySnap.val();
 
     if (leaveRecord) {
+      // Pending leave: informational warning only, not a hard block
+      if (leaveRecord.status === "pending") {
+        return {
+          type: "pending-leave",
+          leaveType: leaveRecord.leaveType || "Leave",
+          session: leaveRecord.session,
+          userId: String(userId),
+          date: dateKey,
+        };
+      }
       if (leaveRecord.session === "full") {
         return {
           type: "full-leave",

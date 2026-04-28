@@ -133,6 +133,8 @@ export interface LeaveRecord {
   endDate: string;
   leaveType: string;
   session: "full" | "first-half" | "second-half" | "half-day";
+  /** "approved" = status 1 from Keka; "pending" = status 0 (requested, not yet approved) */
+  status: "approved" | "pending";
 }
 
 export interface HolidayRecord {
@@ -462,18 +464,26 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
   }
 
   const usersRaw = await readFirebasePath<unknown>("users");
+  // PMT users are stored in two layouts:
+  //   1. Numeric-indexed array: users/0, users/1 ... — objects include an `id` field
+  //   2. Key-based: users/{userId} — the Firebase key IS the id; `id` may be absent
+  // We normalise both by falling back to the Firebase key when `id` is missing.
   const pmtUsers: PMTUser[] = usersRaw
     ? (Array.isArray(usersRaw)
-        ? (usersRaw as PMTUser[])
-        : Object.values(usersRaw as Record<string, PMTUser>)
-      ).filter(Boolean)
+        ? (usersRaw as PMTUser[]).filter(Boolean)
+        : Object.entries(usersRaw as Record<string, PMTUser>)
+            .filter(([, u]) => Boolean(u))
+            .map(([key, u]) => ({ ...u, id: u.id ?? key }))
+      )
     : [];
 
   const emailToUserId: Record<string, string> = {};
   const kekaIdToUserId: Record<string, string> = {};
   for (const u of pmtUsers) {
-    if (u.email) emailToUserId[u.email.toLowerCase()] = String(u.id);
-    if (u.kekaEmployeeId) kekaIdToUserId[u.kekaEmployeeId] = String(u.id);
+    const uid = u.id != null ? String(u.id) : undefined;
+    if (!uid || uid === "undefined") continue;
+    if (u.email) emailToUserId[u.email.toLowerCase()] = uid;
+    if (u.kekaEmployeeId) kekaIdToUserId[u.kekaEmployeeId] = uid;
   }
 
   const today = new Date();
@@ -524,8 +534,9 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
     const windowEnd = addDays(today, 180);
 
     for (const leave of leaves) {
-      // Only sync approved leaves
-      if (leave.status !== 1) continue;
+      // Sync approved (1) and pending/requested (0) leaves.
+      // Rejected (2) and cancelled (3) are excluded.
+      if (leave.status !== 1 && leave.status !== 0) continue;
 
       // Skip leaves entirely outside the sync window
       const leaveStart = parseISO((leave.fromDate ?? leave.from ?? "").slice(0, 10));
@@ -578,6 +589,7 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
           endDate,
           leaveType,
           session: dates.length > 1 ? "full" : session,
+          status: leave.status === 1 ? "approved" : "pending",
         };
         await writeFirebasePath(`leaveData/${pmtUserId}/${dateKey}`, record);
         leaveRecordsWritten++;

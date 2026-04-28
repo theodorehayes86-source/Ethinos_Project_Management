@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, Info, X } from 'lucide-react';
+import { AlertTriangle, Info, Clock, X } from 'lucide-react';
 
 /**
  * @param {{
@@ -12,7 +12,8 @@ import { AlertTriangle, Info, X } from 'lucide-react';
 const LeaveConflictModal = ({ conflict, userName, onProceed, onCancel }) => {
   if (!conflict) return null;
 
-  const isHard = conflict.type === 'full-leave' || conflict.type === 'holiday';
+  const isHard    = conflict.type === 'full-leave' || conflict.type === 'holiday';
+  const isPending = conflict.type === 'pending-leave';
   const name = userName || 'The assignee';
 
   let title = '';
@@ -27,6 +28,13 @@ const LeaveConflictModal = ({ conflict, userName, onProceed, onCancel }) => {
     title = 'Employee on Leave';
     message = `${name} is on ${conflict.leaveType || 'leave'} for the full day on this date.`;
     detail = conflict.leaveType || 'Leave';
+  } else if (conflict.type === 'pending-leave') {
+    title = 'Leave Request Pending';
+    message = `${name} has a pending leave request on this date (not yet approved).`;
+    const sessionLabel =
+      conflict.session === 'first-half'  ? ' — morning (first half)' :
+      conflict.session === 'second-half' ? ' — afternoon (second half)' : '';
+    detail = `${conflict.leaveType || 'Leave'} — pending approval${sessionLabel}`;
   } else {
     title = 'Half-Day Leave';
     message = `${name} has a half-day leave on this date.`;
@@ -39,16 +47,42 @@ const LeaveConflictModal = ({ conflict, userName, onProceed, onCancel }) => {
     detail = `${conflict.leaveType || 'Leave'} — ${sessionLabel} unavailable`;
   }
 
+  const headerCls = isHard
+    ? 'bg-red-50 border-b border-red-200'
+    : isPending
+      ? 'bg-blue-50 border-b border-blue-200'
+      : 'bg-amber-50 border-b border-amber-200';
+
+  const titleCls = isHard ? 'text-red-900' : isPending ? 'text-blue-900' : 'text-amber-900';
+  const msgCls   = isHard ? 'text-red-700'  : isPending ? 'text-blue-700'  : 'text-amber-700';
+  const badgeCls = isHard
+    ? 'bg-red-100 text-red-700'
+    : isPending
+      ? 'bg-blue-100 text-blue-700'
+      : 'bg-amber-100 text-amber-700';
+  const btnCls = isHard
+    ? 'bg-red-600 hover:bg-red-700'
+    : isPending
+      ? 'bg-blue-600 hover:bg-blue-700'
+      : 'bg-amber-500 hover:bg-amber-600';
+  const btnLabel = isHard ? 'Proceed anyway' : isPending ? 'Acknowledge & proceed' : 'Acknowledge & proceed';
+  const bodyText = isHard
+    ? 'Due to this conflict, the task may not be actionable on this date. You can proceed anyway or pick a different date or assignee.'
+    : isPending
+      ? 'This leave is not yet approved. The assignee may still be available. You can proceed or wait until the leave status is confirmed.'
+      : 'This is a soft warning. The assignee is available for part of the day. You can proceed or adjust the due date.';
+
+  const Icon = isHard ? AlertTriangle : isPending ? Clock : Info;
+  const iconCls = isHard ? 'text-red-600' : isPending ? 'text-blue-600' : 'text-amber-600';
+
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" style={{ backdropFilter: 'blur(4px)', background: 'rgba(0,0,0,0.4)' }}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-        <div className={`px-6 py-4 flex items-start gap-3 ${isHard ? 'bg-red-50 border-b border-red-200' : 'bg-amber-50 border-b border-amber-200'}`}>
-          {isHard
-            ? <AlertTriangle size={20} className="text-red-600 flex-shrink-0 mt-0.5" />
-            : <Info size={20} className="text-amber-600 flex-shrink-0 mt-0.5" />}
+        <div className={`px-6 py-4 flex items-start gap-3 ${headerCls}`}>
+          <Icon size={20} className={`${iconCls} flex-shrink-0 mt-0.5`} />
           <div className="flex-1">
-            <h3 className={`text-sm font-bold ${isHard ? 'text-red-900' : 'text-amber-900'}`}>{title}</h3>
-            <p className={`text-xs mt-0.5 ${isHard ? 'text-red-700' : 'text-amber-700'}`}>{message}</p>
+            <h3 className={`text-sm font-bold ${titleCls}`}>{title}</h3>
+            <p className={`text-xs mt-0.5 ${msgCls}`}>{message}</p>
           </div>
           <button onClick={onCancel} className="p-1 rounded-lg hover:bg-black/10 transition-colors">
             <X size={14} className="text-slate-500" />
@@ -56,14 +90,10 @@ const LeaveConflictModal = ({ conflict, userName, onProceed, onCancel }) => {
         </div>
 
         <div className="px-6 py-4">
-          <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold mb-4 ${isHard ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+          <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold mb-4 ${badgeCls}`}>
             {detail}
           </div>
-          <p className="text-sm text-slate-600 leading-relaxed">
-            {isHard
-              ? 'Due to this conflict, the task may not be actionable on this date. You can proceed anyway or pick a different date or assignee.'
-              : 'This is a soft warning. The assignee is available for part of the day. You can proceed or adjust the due date.'}
-          </p>
+          <p className="text-sm text-slate-600 leading-relaxed">{bodyText}</p>
         </div>
 
         <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
@@ -75,9 +105,9 @@ const LeaveConflictModal = ({ conflict, userName, onProceed, onCancel }) => {
           </button>
           <button
             onClick={onProceed}
-            className={`px-4 py-2 rounded-lg text-xs font-semibold text-white transition-colors ${isHard ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-500 hover:bg-amber-600'}`}
+            className={`px-4 py-2 rounded-lg text-xs font-semibold text-white transition-colors ${btnCls}`}
           >
-            {isHard ? 'Proceed anyway' : 'Acknowledge & proceed'}
+            {btnLabel}
           </button>
         </div>
       </div>

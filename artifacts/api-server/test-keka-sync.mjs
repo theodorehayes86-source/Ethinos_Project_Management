@@ -33,7 +33,12 @@ if (!leaveData) {
 
 const userIds = Object.keys(leaveData);
 const totalRecords = userIds.reduce((acc, uid) => acc + Object.keys(leaveData[uid]).length, 0);
+const allRecords = userIds.flatMap(uid => Object.values(leaveData[uid]));
+const approvedCount = allRecords.filter(r => r.status === "approved").length;
+const pendingCount  = allRecords.filter(r => r.status === "pending").length;
+const legacyCount   = allRecords.filter(r => !r.status).length;
 console.log(`✅  ${userIds.length} users with leave records, ${totalRecords} date entries total`);
+console.log(`    approved: ${approvedCount}  pending: ${pendingCount}  no-status (legacy): ${legacyCount}`);
 
 // Print a sample per user (first 10 users, first 3 dates each)
 console.log("\n--- Sample leaveData (first 10 users) ---");
