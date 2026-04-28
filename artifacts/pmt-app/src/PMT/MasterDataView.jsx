@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, Search, ShieldCheck, Edit2, X, ChevronUp, ChevronDown, Lock, Users, Crown, Check, Star, UserCheck, UserPlus, Edit3, Mail, MessageSquare, Bug, Lightbulb, AlertCircle, CheckCircle2, Clock, Filter, Eye, EyeOff, FlaskConical, Archive, ArchiveRestore, ChevronRight, CornerDownLeft, Send, Upload, Pencil, Link2, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, Search, ShieldCheck, Edit2, X, ChevronUp, ChevronDown, Lock, Users, Crown, Check, Star, UserCheck, UserPlus, Edit3, Mail, MessageSquare, Bug, Lightbulb, AlertCircle, CheckCircle2, Clock, Filter, Eye, EyeOff, FlaskConical, Archive, ArchiveRestore, ChevronRight, CornerDownLeft, Send, Upload, Pencil, Link2, RefreshCw, AlertTriangle, CalendarOff } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import CsvImportModal from './CsvImportModal';
 import { sendNotification } from '../utils/notify';
@@ -1120,6 +1120,11 @@ const MasterDataView = ({
     return rows.map(row => ({ label: row.clientName.trim(), success: true }));
   };
 
+  // PMT user IDs that are matched in Keka but had no leave this year (from last sync)
+  const noLeaveUserIds = useMemo(() => new Set(
+    (kekaSyncResult?.noLeavePmtUsers || []).map(u => String(u.id))
+  ), [kekaSyncResult]);
+
   const filteredUsers = (users || []).filter(u =>
     !userSearch.trim() ||
     (u.name || '').toLowerCase().includes(userSearch.toLowerCase()) ||
@@ -1429,7 +1434,9 @@ const MasterDataView = ({
                       {kekaCredentialsReady && (
                         <td className="px-3 py-2.5 text-center">
                           {user.kekaEmployeeId
-                            ? <span title="Matched to Keka employee" className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full"><Check size={10}/> Matched</span>
+                            ? noLeaveUserIds.has(String(user.id))
+                              ? <span title="Matched in Keka — no leave requests this year" className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-600 bg-slate-100 border border-slate-300 px-2 py-0.5 rounded-full"><CalendarOff size={10}/> No leaves</span>
+                              : <span title="Matched to Keka employee" className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full"><Check size={10}/> Matched</span>
                             : <span title="No Keka employee match found" className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full"><AlertTriangle size={10}/> No match</span>
                           }
                         </td>
@@ -3860,7 +3867,7 @@ const MasterDataView = ({
                         <span className="text-xs font-bold text-amber-800">
                           {kekaSyncResult.unmatchedPmtUsers.length} PMT user{kekaSyncResult.unmatchedPmtUsers.length !== 1 ? 's' : ''} not found in Keka
                         </span>
-                        <span className="text-[10px] text-amber-600 ml-auto">These users won't receive leave sync. Check their email matches Keka.</span>
+                        <span className="text-[10px] text-amber-600 ml-auto">Check their email matches Keka.</span>
                       </div>
                       <div className="divide-y divide-amber-100">
                         {kekaSyncResult.unmatchedPmtUsers.map(u => (
@@ -3873,6 +3880,31 @@ const MasterDataView = ({
                               <p className="text-[10px] text-slate-500 truncate">{u.email || '(no email)'}</p>
                             </div>
                             <span className="flex-shrink-0 text-[10px] font-semibold text-amber-700 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full">No Keka match</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {(kekaSyncResult.noLeavePmtUsers?.length > 0) && (
+                    <div className="mt-3 border border-slate-200 rounded-xl bg-slate-50 overflow-hidden">
+                      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-200 bg-slate-100/60">
+                        <CalendarOff size={13} className="text-slate-500 flex-shrink-0"/>
+                        <span className="text-xs font-bold text-slate-700">
+                          {kekaSyncResult.noLeavePmtUsers.length} matched user{kekaSyncResult.noLeavePmtUsers.length !== 1 ? 's' : ''} with no leave requests in {new Date().getFullYear()}
+                        </span>
+                        <span className="text-[10px] text-slate-500 ml-auto">Matched in Keka, no leave data to sync.</span>
+                      </div>
+                      <div className="divide-y divide-slate-100">
+                        {kekaSyncResult.noLeavePmtUsers.map(u => (
+                          <div key={u.id} className="px-4 py-2 flex items-center gap-3">
+                            <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-bold text-[10px] flex-shrink-0">
+                              {(u.name || '?')[0].toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold text-slate-800 truncate">{u.name || '(no name)'}</p>
+                              <p className="text-[10px] text-slate-500 truncate">{u.email || '(no email)'}</p>
+                            </div>
+                            <span className="flex-shrink-0 text-[10px] font-semibold text-slate-600 bg-slate-100 border border-slate-300 px-2 py-0.5 rounded-full inline-flex items-center gap-1"><CalendarOff size={9}/> No leaves</span>
                           </div>
                         ))}
                       </div>

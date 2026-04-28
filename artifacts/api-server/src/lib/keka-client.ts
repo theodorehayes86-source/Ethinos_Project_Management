@@ -184,6 +184,8 @@ export interface KekaSyncResult {
   usersUnmatched: number;
   /** PMT users whose email was not found in Keka's employee list */
   unmatchedPmtUsers?: Array<{ id: string; name?: string; email?: string }>;
+  /** PMT users matched in Keka by email but with no leave requests in the current calendar year */
+  noLeavePmtUsers?: Array<{ id: string; name?: string; email?: string }>;
   error?: string;
   syncedAt: string;
 }
@@ -572,11 +574,15 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
   let usersMatched = 0;
   const unmatchedKekaIds = new Set<string>();
   let unmatchedPmtUsers: Array<{ id: string; name?: string; email?: string }> = [];
+  let noLeavePmtUsers: Array<{ id: string; name?: string; email?: string }> = [];
+  // Tracks PMT user IDs that are confirmed in Keka (email match or stored kekaEmployeeId)
+  const kekaMatchedPmtIds = new Set<string>();
+  // Tracks PMT user IDs with at least one leave record in the current calendar year
+  const usersWithLeaveThisYear = new Set<string>();
+  const currentYear = today.getFullYear().toString();
 
   try {
     // Step 1: Pre-fetch employees to build Keka GUID → email map.
-    // This enables email-based matching for users who don't yet have
-    // kekaEmployeeId stored in PMT.
     // /api/v1/hris/employees returns { data: [{ id, email, ... }] }
     const kekaIdToEmail: Record<string, string> = {};
     try {
@@ -591,15 +597,49 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
       }
       logger.info({ count: employees.length }, "[Keka] Pre-fetched employee list for email matching");
 
-      // Compute PMT users whose email does not appear in Keka's employee list.
-      // These are shown in the Integration tab so admins can fix mismatches.
+      // Build reverse map: email → Keka employee ID
+      const emailToKekaId: Record<string, string> = {};
+      for (const [kekaId, email] of Object.entries(kekaIdToEmail)) {
+        emailToKekaId[email] = kekaId;
+      }
+
+      // Step 1b: Write kekaEmployeeId for ALL PMT users matched by email,
+      // even if they have no leave requests. This ensures the Users tab badge
+      // shows "Matched" for employees in Keka regardless of leave history.
+      for (const u of pmtUsers) {
+        const uid = String(u.id ?? "");
+        if (!uid || uid === "undefined" || !u.email) continue;
+
+        let kekaId: string | undefined = u.kekaEmployeeId;
+        if (!kekaId) {
+          kekaId = emailToKekaId[u.email.toLowerCase()];
+        }
+        if (!kekaId) continue;
+
+        // User is confirmed in Keka
+        kekaMatchedPmtIds.add(uid);
+        kekaIdToUserId[kekaId] = uid;
+
+        // Persist kekaEmployeeId if not already set
+        if (!u.kekaEmployeeId) {
+          const firebaseKey = userIdToFirebaseKey[uid] ?? uid;
+          await writeFirebasePath(`users/${firebaseKey}/kekaEmployeeId`, kekaId);
+          logger.info({ uid, kekaId }, "[Keka] Wrote kekaEmployeeId for email-matched user");
+        }
+      }
+
+      // Mark users who already had a stored kekaEmployeeId as matched
+      for (const u of pmtUsers) {
+        if (u.kekaEmployeeId) kekaMatchedPmtIds.add(String(u.id ?? ""));
+      }
+
+      // Compute PMT users whose email is truly not in Keka at all.
       const kekaEmailSet = new Set(Object.values(kekaIdToEmail));
       unmatchedPmtUsers = pmtUsers
         .filter(u => {
           const uid = String(u.id ?? "");
           if (!uid || uid === "undefined" || !u.email) return false;
-          // Already matched via stored kekaEmployeeId — not unmatched
-          if (u.kekaEmployeeId) return false;
+          if (kekaMatchedPmtIds.has(uid)) return false; // already confirmed in Keka
           return !kekaEmailSet.has(u.email.toLowerCase());
         })
         .map(u => ({ id: String(u.id), name: u.name, email: u.email }));
@@ -607,6 +647,10 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
       logger.info({ count: unmatchedPmtUsers.length }, "[Keka] PMT users with no Keka email match");
     } catch (empErr) {
       logger.warn({ empErr }, "[Keka] Could not pre-fetch employees — falling back to kekaEmployeeId matching only");
+      // Fall back: mark users with stored kekaEmployeeId as matched
+      for (const u of pmtUsers) {
+        if (u.kekaEmployeeId) kekaMatchedPmtIds.add(String(u.id ?? ""));
+      }
     }
 
     // Step 2: Fetch all leave requests (no date filter).
@@ -656,17 +700,13 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
 
       usersMatched++;
 
-      // Cache kekaEmployeeId on the PMT user for future lookups.
-      // Use the Firebase array index (firebaseKey) rather than the id value
-      // so we update the existing node instead of creating an orphan entry.
-      if (!kekaIdToUserId[kekaEmpId]) {
-        const firebaseKey = userIdToFirebaseKey[pmtUserId] ?? pmtUserId;
-        await writeFirebasePath(`users/${firebaseKey}/kekaEmployeeId`, kekaEmpId);
-        kekaIdToUserId[kekaEmpId] = pmtUserId;
-      }
-
       // Field names in /time/leaverequests: fromDate / toDate / selection / fromSession / toSession
       const startDate = (leave.fromDate ?? leave.from ?? "").slice(0, 10);
+
+      // Track if this user has any leave in the current calendar year (regardless of sync window)
+      if (startDate.startsWith(currentYear)) {
+        usersWithLeaveThisYear.add(pmtUserId);
+      }
       const endDate = (leave.toDate ?? leave.to ?? startDate).slice(0, 10);
       const leaveType =
         leave.selection?.[0]?.leaveTypeName ??
@@ -706,12 +746,21 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
     };
   }
 
+  // Compute matched users with no leave this year
+  noLeavePmtUsers = pmtUsers
+    .filter(u => {
+      const uid = String(u.id ?? "");
+      return uid && uid !== "undefined" && kekaMatchedPmtIds.has(uid) && !usersWithLeaveThisYear.has(uid);
+    })
+    .map(u => ({ id: String(u.id), name: u.name, email: u.email }));
+  logger.info({ count: noLeavePmtUsers.length }, "[Keka] Matched PMT users with no leave this year");
+
   try {
-    const currentYear = today.getFullYear();
-    const nextYear = currentYear + 1;
+    const thisYear = today.getFullYear();
+    const nextYear = thisYear + 1;
     const region = creds.region || "All";
 
-    for (const year of [currentYear, nextYear]) {
+    for (const year of [thisYear, nextYear]) {
       // Correct path: /api/v1/hris/publicholidays
       // (Confirmed present on Keka gateway; requires Public Holidays module access)
       const holidays = await kekaGet<KekaHolidayRecord>(
@@ -752,6 +801,7 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
     usersMatched,
     usersUnmatched: unmatchedKekaIds.size,
     unmatchedPmtUsers,
+    noLeavePmtUsers,
     syncedAt,
   };
 
