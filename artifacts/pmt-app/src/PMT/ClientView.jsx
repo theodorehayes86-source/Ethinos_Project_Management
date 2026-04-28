@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Search, ChevronLeft, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, AlertTriangle, Calendar, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus, Hourglass, Archive, ArchiveRestore, LayoutGrid, LayoutList, ClipboardList } from 'lucide-react';
+import { Search, ChevronLeft, ChevronDown, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, AlertTriangle, Calendar, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus, Hourglass, Archive, ArchiveRestore, LayoutGrid, LayoutList, ClipboardList, LayoutTemplate } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import DatePicker from "react-datepicker";
 import { format, subDays, parse, addDays, differenceInCalendarDays } from 'date-fns';
@@ -51,6 +51,8 @@ const ClientView = ({
   
   const taskListRef = useRef(null);
   const checklistGroupsRef = useRef(null);
+  const [showClientAddMenu, setShowClientAddMenu] = useState(false);
+  const clientAddMenuRef = useRef(null);
   const scrollToTaskTable = () => setTimeout(() => taskListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   const scrollToGroups = () => setTimeout(() => checklistGroupsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
 
@@ -182,6 +184,12 @@ const ClientView = ({
     });
     return () => { cancelled = true; };
   }, [editDraft?.assigneeId, editDraft?.dueDate]);
+
+  useEffect(() => {
+    const handler = (e) => { if (clientAddMenuRef.current && !clientAddMenuRef.current.contains(e.target)) setShowClientAddMenu(false); };
+    if (showClientAddMenu) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showClientAddMenu]);
 
   useEffect(() => {
     const id = (newTaskAssigneeId || '').toString();
@@ -1230,55 +1238,51 @@ const ClientView = ({
                 <option value="AwaitingQC">Awaiting QC</option>
               </select>
             )}
-            {isManagement && (
+            <div className="relative" ref={clientAddMenuRef}>
               <button
-                onClick={openTemplateModal}
-                className="bg-white border border-slate-200 text-slate-700 px-3.5 py-2 rounded-lg font-semibold text-xs hover:bg-slate-50 transition-all flex items-center gap-1.5"
+                onClick={() => setShowClientAddMenu(v => !v)}
+                className="bg-slate-900 text-white px-3.5 py-2 rounded-lg font-semibold text-xs hover:bg-slate-800 transition-all flex items-center gap-1.5 shadow-sm"
               >
-                Use Template
+                <Plus size={13} /> Add
+                <ChevronDown size={11} className={`transition-transform ${showClientAddMenu ? 'rotate-180' : ''}`} />
               </button>
-            )}
-            {checklistTemplates.length > 0 && canCreateChecklists && (
-              <button
-                onClick={openNewChecklistModal}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg font-semibold text-xs border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 transition-all"
-              >
-                <ClipboardList size={13} /> New Checklist
-              </button>
-            )}
-            <button
-              onClick={() => {
-                setNewTaskName('');
-                setSelectedDate(new Date());
-                setNewTaskComment('');
-                setNewTaskCategory('');
-                setTaskCategoryQuery('');
-                setShowCategoryMenu(false);
-                setNewTaskAssigneeId('');
-                setAssigneeQuery('');
-                setShowAssigneeMenu(false);
-                setTaskFormError('');
-                setNewTaskRepeat('Once');
-                setNewTaskRepeatEnd(null);
-                setNewTaskRepeatDays([0, 1, 2, 3, 4]);
-                setNewTaskRepeatMonthlyWeek(1);
-                setNewTaskRepeatMonthlyDay(0);
-                setTaskDueDate(null);
-                setQcEnabled(true);
-                setQcAssigneeId('');
-                setQcAssigneeName('');
-                setNewTaskDepartments(currentUser?.department ? [currentUser.department] : []);
-                setNewTaskBillable(true);
-                setNewTaskReminders([]);
-                acknowledgedLeaveRef.current = null;
-                setLeaveConflict(null);
-                setLeaveModalOpen(false);
-                setShowTaskForm(true);
-              }}
-              className="bg-blue-600 text-white px-3.5 py-2 rounded-lg font-semibold text-xs hover:bg-blue-700 transition-all flex items-center gap-1.5 shadow-md"
-            >
-              <Plus size={14}/> Add Task
-            </button>
+              {showClientAddMenu && (
+                <div className="absolute right-0 top-full mt-1.5 w-44 bg-white border border-slate-200 rounded-xl shadow-lg z-50 py-1 overflow-hidden">
+                  <button
+                    onClick={() => {
+                      setNewTaskName(''); setSelectedDate(new Date()); setNewTaskComment(''); setNewTaskCategory('');
+                      setTaskCategoryQuery(''); setShowCategoryMenu(false); setNewTaskAssigneeId(''); setAssigneeQuery('');
+                      setShowAssigneeMenu(false); setTaskFormError(''); setNewTaskRepeat('Once'); setNewTaskRepeatEnd(null);
+                      setNewTaskRepeatDays([0, 1, 2, 3, 4]); setNewTaskRepeatMonthlyWeek(1); setNewTaskRepeatMonthlyDay(0);
+                      setTaskDueDate(null); setQcEnabled(true); setQcAssigneeId(''); setQcAssigneeName('');
+                      setNewTaskDepartments(currentUser?.department ? [currentUser.department] : []);
+                      setNewTaskBillable(true); setNewTaskReminders([]); acknowledgedLeaveRef.current = null;
+                      setLeaveConflict(null); setLeaveModalOpen(false); setShowTaskForm(true);
+                      setShowClientAddMenu(false);
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-all"
+                  >
+                    <Plus size={13} className="text-slate-500" /> Add Task
+                  </button>
+                  {isManagement && (
+                    <button
+                      onClick={() => { openTemplateModal(); setShowClientAddMenu(false); }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-all"
+                    >
+                      <LayoutTemplate size={13} className="text-indigo-500" /> Use Template
+                    </button>
+                  )}
+                  {checklistTemplates.length > 0 && canCreateChecklists && (
+                    <button
+                      onClick={() => { openNewChecklistModal(); setShowClientAddMenu(false); }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-all"
+                    >
+                      <ClipboardList size={13} className="text-teal-500" /> New Checklist
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
