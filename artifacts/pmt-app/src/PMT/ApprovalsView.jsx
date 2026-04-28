@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { CheckCircle, XCircle, Star, ChevronDown, ChevronUp, Clock, User, Tag, Calendar, MessageSquare, UserPlus, UserCheck, UserX, Check, X, Send, CornerDownLeft, Archive, Pencil } from 'lucide-react';
+import { CheckCircle, XCircle, Star, ChevronDown, ChevronUp, Clock, User, Tag, Calendar, MessageSquare, UserPlus, UserCheck, UserX, Check, X, Send, CornerDownLeft, Archive, Pencil, RotateCcw } from 'lucide-react';
 import { sendNotification } from '../utils/notify';
 
 function formatTs(ts) {
@@ -195,7 +195,7 @@ const ReturnModal = ({ task, onConfirm, onClose }) => {
   );
 };
 
-const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed, currentUser, onAddComment, onArchive, onEditReview }) => {
+const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed, currentUser, onAddComment, onArchive, onEditReview, onSendBack }) => {
   const [expanded, setExpanded] = useState(false);
   const [replyingToId, setReplyingToId] = useState(null);
   const [replyText, setReplyText] = useState('');
@@ -203,6 +203,7 @@ const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed, curren
   const [editingReview, setEditingReview] = useState(false);
   const [editRating, setEditRating] = useState('');
   const [editComment, setEditComment] = useState('');
+  const [confirmSendBack, setConfirmSendBack] = useState(false);
 
   const openEditReview = () => {
     const ratings = task.qcRatings || [];
@@ -217,6 +218,7 @@ const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed, curren
     setEditingReview(false);
     setEditRating('');
     setEditComment('');
+    setConfirmSendBack(false);
   };
 
   const saveEditReview = () => {
@@ -516,20 +518,50 @@ const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed, curren
                   className="flex-1 px-3 py-2 text-xs font-medium text-slate-700 border border-slate-300 rounded-lg outline-none focus:border-indigo-400 focus:ring-2 ring-indigo-500/20 resize-none"
                 />
               </div>
-              <div className="flex justify-end gap-2">
-                <button
-                  onClick={cancelEditReview}
-                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-500 hover:bg-slate-50 transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={saveEditReview}
-                  disabled={!editRating || isNaN(Number(editRating)) || Number(editRating) < 1 || Number(editRating) > 10}
-                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <Check size={12} /> Save Changes
-                </button>
+              <div className="flex items-center justify-between gap-2">
+                {/* Send Back section (left) */}
+                {onSendBack && (
+                  confirmSendBack ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-amber-700 font-semibold">Remove QC status and send back?</span>
+                      <button
+                        onClick={() => { onSendBack(task); cancelEditReview(); }}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-bold hover:bg-amber-700 transition-all"
+                      >
+                        <RotateCcw size={11} /> Confirm
+                      </button>
+                      <button
+                        onClick={() => setConfirmSendBack(false)}
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-500 hover:bg-slate-50 transition-all"
+                      >
+                        Keep
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmSendBack(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 text-xs font-semibold hover:bg-amber-100 transition-all"
+                    >
+                      <RotateCcw size={11} /> Send Back
+                    </button>
+                  )
+                )}
+                {/* Save / Cancel (right) */}
+                <div className="flex items-center gap-2 ml-auto">
+                  <button
+                    onClick={cancelEditReview}
+                    className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-500 hover:bg-slate-50 transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={saveEditReview}
+                    disabled={!editRating || isNaN(Number(editRating)) || Number(editRating) < 1 || Number(editRating) > 10}
+                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Check size={12} /> Save Changes
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -883,6 +915,10 @@ const ApprovalsView = ({ clientLogs, clients, syntheticClients = [], users, curr
     updateTask(task, { approvalArchived: true, approvalArchivedAt: Date.now() });
   };
 
+  const handleSendBack = (task) => {
+    updateTask(task, { qcStatus: null });
+  };
+
   const handleEditReview = (task, updates) => {
     const existingRatings = task.qcRatings || [];
     if (existingRatings.length > 0) {
@@ -1027,6 +1063,7 @@ const ApprovalsView = ({ clientLogs, clients, syntheticClients = [], users, curr
                         onAddComment={handleAddFeedbackComment}
                         onArchive={isReviewed ? handleArchiveApproval : undefined}
                         onEditReview={isReviewed ? handleEditReview : undefined}
+                        onSendBack={isReviewed ? handleSendBack : undefined}
                       />
                     ))}
                   </div>
