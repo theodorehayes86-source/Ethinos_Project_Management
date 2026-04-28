@@ -3,29 +3,43 @@ import { Home, Briefcase, Network, SlidersHorizontal, BarChart3, FileSpreadsheet
 
 const REPO = 'theodorehayes86-source/Ethinos_Project_Management';
 const RELEASES_URL = `https://github.com/${REPO}/releases/latest`;
-const API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
+const LIST_API_URL = `https://api.github.com/repos/${REPO}/releases?per_page=10`;
 
 function useLatestRelease() {
-  const [data, setData] = useState({ winUrl: null, macUrl: null, linuxUrl: null, version: null, loading: true });
+  const [data, setData] = useState({ winUrl: null, macUrl: null, linuxUrl: null, winVersion: null, macVersion: null, version: null, loading: true });
 
   useEffect(() => {
     let cancelled = false;
-    fetch(API_URL, { headers: { Accept: 'application/vnd.github+json' } })
+    fetch(LIST_API_URL, { headers: { Accept: 'application/vnd.github+json' } })
       .then(r => r.json())
-      .then(release => {
+      .then(releases => {
         if (cancelled) return;
-        const assets = release.assets || [];
-        const find = (ext) => assets.find(a => a.name.endsWith(ext))?.browser_download_url || null;
+        if (!Array.isArray(releases)) {
+          setData(d => ({ ...d, loading: false }));
+          return;
+        }
+        const findInReleases = (ext) => {
+          for (const rel of releases) {
+            const asset = (rel.assets || []).find(a => a.name.endsWith(ext));
+            if (asset) return { url: asset.browser_download_url, version: rel.tag_name };
+          }
+          return null;
+        };
+        const win   = findInReleases('.exe');
+        const mac   = findInReleases('.dmg');
+        const linux = findInReleases('.AppImage');
         setData({
-          winUrl:   find('.exe'),
-          macUrl:   find('.dmg'),
-          linuxUrl: find('.AppImage'),
-          version:  release.tag_name || null,
-          loading:  false,
+          winUrl:     win?.url   || null,
+          macUrl:     mac?.url   || null,
+          linuxUrl:   linux?.url || null,
+          winVersion: win?.version  || null,
+          macVersion: mac?.version  || null,
+          version:    releases[0]?.tag_name || null,
+          loading:    false,
         });
       })
       .catch(() => {
-        if (!cancelled) setData({ winUrl: null, macUrl: null, linuxUrl: null, version: null, loading: false });
+        if (!cancelled) setData({ winUrl: null, macUrl: null, linuxUrl: null, winVersion: null, macVersion: null, version: null, loading: false });
       });
     return () => { cancelled = true; };
   }, []);
@@ -36,7 +50,7 @@ function useLatestRelease() {
 const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setIsMinimized, canSeeControlCenter = false, canSeeEmployeeView = true, canSeeMetrics = true, canSeeReports = true, canSeeApprovals = false, canSeeTeam = false, canSeeChecklist = false, pendingApprovalsCount = 0 }) => {
   const [logoError, setLogoError] = useState(false);
   const [showMacInfo, setShowMacInfo] = useState(false);
-  const { winUrl, macUrl, linuxUrl, version, loading } = useLatestRelease();
+  const { winUrl, macUrl, linuxUrl, winVersion, macVersion, version, loading } = useLatestRelease();
 
   const menuItems = [
     { id: 'home', label: 'Home', icon: <Home size={18}/> },
@@ -153,6 +167,8 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
                 <p className="text-[8px] text-slate-400 leading-none mt-0.5">
                   {loading ? (
                     <span className="flex items-center gap-0.5"><Loader2 size={7} className="animate-spin" /> checking…</span>
+                  ) : (winVersion && macVersion && winVersion !== macVersion) ? (
+                    `Mac ${macVersion} · Win ${winVersion}`
                   ) : version ? (
                     `${version} · always on top`
                   ) : (
