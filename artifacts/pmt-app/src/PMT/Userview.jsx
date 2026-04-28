@@ -145,7 +145,7 @@ const UserView = ({ users = [], setUsers, clients = [], settingsSearch = "", set
                   </div>
                 </td>
                 <td className="px-5 py-2.5">
-                  <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full font-medium text-xs ring-2 ${getRoleStyle(user.role)}`}>
+                  <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full font-medium text-xs ring-2 whitespace-nowrap ${getRoleStyle(user.role)}`}>
                     {user.role === 'Super Admin' ? <Crown size={12}/> : user.role === 'Director' ? <Star size={12}/> : <UserCheck size={12}/>}
                     {user.role}
                   </div>
