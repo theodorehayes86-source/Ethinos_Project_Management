@@ -9,6 +9,13 @@ function formatTs(ts) {
   } catch { return ''; }
 }
 
+function computeAvgRating(ratings) {
+  if (!ratings || ratings.length === 0) return null;
+  const sum = ratings.reduce((s, r) => s + (r.rating || 0), 0);
+  const avg = sum / ratings.length;
+  return ratings.length === 1 ? avg : parseFloat(avg.toFixed(1));
+}
+
 function buildThread(task) {
   const thread = Array.isArray(task.feedbackThread) ? [...task.feedbackThread] : [];
   if (thread.length === 0) {
@@ -198,7 +205,9 @@ const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed, curren
   const [editComment, setEditComment] = useState('');
 
   const openEditReview = () => {
-    setEditRating(task.qcRating ?? '');
+    const ratings = task.qcRatings || [];
+    const lastRating = ratings.length > 0 ? ratings[ratings.length - 1].rating : task.qcRating;
+    setEditRating(lastRating ?? '');
     setEditComment(task.qcStatus === 'rejected' ? (task.qcFeedback || '') : (task.qcComment || ''));
     setEditingReview(true);
     setExpanded(true);
@@ -419,6 +428,9 @@ const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed, curren
               <div className="flex items-center gap-1">
                 <Star size={13} className="text-amber-400 fill-amber-400" />
                 <span className="text-sm font-bold text-slate-700">{task.qcRating}/10</span>
+                {(task.qcRatings?.length || 0) > 1 && (
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 ml-0.5">avg</span>
+                )}
               </div>
             )}
             {isReviewed && onEditReview && !editingReview && (
@@ -545,6 +557,48 @@ const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed, curren
               </div>
             )}
           </div>
+
+          {isReviewed && (task.qcRatings?.length || 0) > 0 && (
+            <div>
+              <p className="text-slate-400 font-semibold uppercase tracking-wider text-xs mb-2 flex items-center gap-2">
+                <Star size={10} /> Rating History
+                {(task.qcRatings?.length || 0) > 1 && (
+                  <span className="text-amber-700 font-bold">Avg: {task.qcRating}/10</span>
+                )}
+              </p>
+              <div className="space-y-1.5">
+                {(task.qcRatings || []).map((entry, idx) => (
+                  <div key={entry.id || idx} className={`flex items-start gap-2 px-3 py-2 rounded-lg border text-xs ${
+                    entry.status === 'approved' ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'
+                  }`}>
+                    <div className="flex items-center gap-1 flex-shrink-0 pt-0.5">
+                      <Star size={11} className="text-amber-400 fill-amber-400" />
+                      <span className="font-bold text-slate-800">{entry.rating}/10</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                          entry.status === 'approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                        }`}>
+                          {entry.status === 'approved' ? 'Approved' : 'Returned'}
+                        </span>
+                        <span className="text-[10px] font-semibold text-slate-600">{entry.reviewerName}</span>
+                        {entry.reviewedAt && (
+                          <span className="text-[9px] text-slate-400 ml-auto">
+                            {new Date(entry.reviewedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </span>
+                        )}
+                      </div>
+                      {entry.comment && <p className="text-slate-600 leading-snug">{entry.comment}</p>}
+                    </div>
+                    {idx === (task.qcRatings?.length || 0) - 1 && (
+                      <span className="text-[8px] font-bold text-slate-400 flex-shrink-0 pt-0.5">Latest</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {(thread.length > 0 || isReviewed) && (
             <div>
@@ -769,12 +823,24 @@ const ApprovalsView = ({ clientLogs, clients, syntheticClients = [], users, curr
       type: 'approved',
       timestamp: new Date().toISOString(),
     } : null;
+    const existingRatings = approvingTask.qcRatings || [];
+    const ratingEntry = {
+      id: `qcr-${Date.now()}`,
+      rating,
+      status: 'approved',
+      comment: comment || '',
+      reviewerName: currentUser.name,
+      reviewedAt: Date.now(),
+    };
+    const newRatings = [...existingRatings, ratingEntry];
+    const avg = computeAvgRating(newRatings);
     updateTask(approvingTask, {
       qcStatus: 'approved',
-      qcRating: rating,
+      qcRating: avg,
       qcComment: comment || '',
       qcReviewerName: currentUser.name,
       qcReviewedAt: Date.now(),
+      qcRatings: newRatings,
       feedbackThread: entry ? [...existing, entry] : existing,
     });
     setApprovingTask(null);
@@ -790,12 +856,24 @@ const ApprovalsView = ({ clientLogs, clients, syntheticClients = [], users, curr
       type: 'rejected',
       timestamp: new Date().toISOString(),
     };
+    const existingRatings = returningTask.qcRatings || [];
+    const ratingEntry = {
+      id: `qcr-${Date.now()}`,
+      rating,
+      status: 'rejected',
+      comment: feedback,
+      reviewerName: currentUser.name,
+      reviewedAt: Date.now(),
+    };
+    const newRatings = [...existingRatings, ratingEntry];
+    const avg = computeAvgRating(newRatings);
     updateTask(returningTask, {
       qcStatus: 'rejected',
-      qcRating: rating,
+      qcRating: avg,
       qcFeedback: feedback,
       qcReviewerName: currentUser.name,
       qcReviewedAt: Date.now(),
+      qcRatings: newRatings,
       feedbackThread: [...existing, entry],
     });
     setReturningTask(null);
@@ -806,7 +884,18 @@ const ApprovalsView = ({ clientLogs, clients, syntheticClients = [], users, curr
   };
 
   const handleEditReview = (task, updates) => {
-    updateTask(task, updates);
+    const existingRatings = task.qcRatings || [];
+    if (existingRatings.length > 0) {
+      const newRatings = existingRatings.map((entry, idx) =>
+        idx === existingRatings.length - 1
+          ? { ...entry, rating: updates.qcRating, comment: updates.qcComment ?? updates.qcFeedback ?? entry.comment }
+          : entry
+      );
+      const avg = computeAvgRating(newRatings);
+      updateTask(task, { ...updates, qcRatings: newRatings, qcRating: avg });
+    } else {
+      updateTask(task, updates);
+    }
   };
 
   const handleAddFeedbackComment = (task, text, replyToId) => {
