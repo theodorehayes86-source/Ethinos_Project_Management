@@ -1,7 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import admin from "firebase-admin";
 import { readFirebasePath, writeFirebasePath } from "../lib/firebase-admin";
-import { syncKekaData, getKekaCredentials, readKekaApiKey, writeKekaApiKey } from "../lib/keka-client";
+import { syncKekaData, getKekaCredentials, readKekaApiKey, writeKekaApiKey, testKekaConnection } from "../lib/keka-client";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -58,6 +58,17 @@ router.post("/keka/sync", requireAdminRole, async (_req: Request, res: Response)
   }
 });
 
+router.post("/keka/test-connection", requireAdminRole, async (_req: Request, res: Response) => {
+  logger.info("[Keka] Connection test triggered via API");
+  try {
+    const result = await testKekaConnection();
+    res.json(result);
+  } catch (err) {
+    logger.error({ err }, "[Keka] Connection test failed");
+    res.status(500).json({ success: false, message: `Test failed: ${String(err)}` });
+  }
+});
+
 router.get("/keka/settings", requireAdminRole, async (_req: Request, res: Response) => {
   try {
     const config = await readFirebasePath<{ baseUrl?: string; region?: string; apiKey?: string; lastSync?: unknown } | null>(
@@ -76,10 +87,12 @@ router.get("/keka/settings", requireAdminRole, async (_req: Request, res: Respon
     }
 
     const apiKeyConfigured = !!readKekaApiKey();
+    const credentialsReady = apiKeyConfigured && !!config?.baseUrl;
     const safe = {
       baseUrl: config?.baseUrl || "",
       region: config?.region || "All",
       apiKeyConfigured,
+      credentialsReady,
       lastSync: config?.lastSync ?? null,
     };
     res.json(safe);

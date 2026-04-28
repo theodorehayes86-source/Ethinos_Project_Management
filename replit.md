@@ -61,6 +61,7 @@ Standard Firebase email+password auth. Restricted to `@ethinos.com` addresses.
 | `VITE_FIREBASE_DATABASE_URL` | Firebase Realtime DB URL (shared with frontend) |
 | `PMT_EXPORT_API_KEY` | API key protecting the CSV export endpoint |
 | `SESSION_SECRET` | Express session secret |
+| `KEKA_API_KEY` | (Optional) Keka HR API key — alternative to setting it via Settings UI |
 
 ### Frontend (pmt-app)
 | Secret / Env Var | Description |
@@ -82,6 +83,10 @@ Standard Firebase email+password auth. Restricted to `@ethinos.com` addresses.
 | `POST` | `/api/auth/create-user` | Firebase Bearer (Super Admin / Admin only) | Creates Firebase user + sends welcome email |
 | `POST` | `/api/auth/reset-password` | None (rate-limited) | Sends password-reset link via M365 email |
 | `GET` | `/api/export/...` | `PMT_EXPORT_API_KEY` header | CSV data export |
+| `GET` | `/api/keka/settings` | Firebase Bearer (Admin+) | Read Keka config (base URL, region, key status, last sync) |
+| `POST` | `/api/keka/settings` | Firebase Bearer (Admin+) | Save Keka base URL, region, and API key |
+| `POST` | `/api/keka/test-connection` | Firebase Bearer (Admin+) | Verify Keka credentials with a minimal API call |
+| `POST` | `/api/keka/sync` | Firebase Bearer (Admin+) | Trigger full leave + holiday sync from Keka |
 
 ## Key Commands
 
@@ -109,8 +114,31 @@ artifacts/pmt-app/src/PMT/Sidebar.jsx     — sidebar nav + widget download link
 artifacts/api-server/src/index.ts         — server entry, Azure secret validation
 artifacts/api-server/src/routes/auth.ts   — MS token exchange, create-user, reset-password
 artifacts/api-server/src/lib/microsoft-graph.ts — Graph API email sender
-.github/workflows/build-widget.yml        — Electron widget CI/CD
+artifacts/api-server/src/lib/keka-client.ts   — Keka API client, sync logic, connection test
+artifacts/api-server/src/lib/keka-scheduler.ts — nightly cron (02:00 UTC) for Keka sync
+artifacts/api-server/src/routes/keka.ts       — /api/keka/* routes (settings, test-connection, sync)
+artifacts/pmt-app/src/PMT/SettingsView.jsx    — Admin settings including Keka Integration panel
+artifacts/pmt-app/src/utils/leaveConflict.js  — Client-side Firebase reader for leave/holiday data
+.github/workflows/build-widget.yml            — Electron widget CI/CD
 ```
+
+## Keka HR Integration
+
+Syncs employee leave records and public holidays from Keka into Firebase Realtime Database so PMT can warn about scheduling conflicts and suppress overdue notifications for absent employees.
+
+### Setup
+1. Admin opens Settings → Keka Integration
+2. Enter Keka base URL (e.g. `https://yourcompany.keka.com`) and API key
+3. Click **Save Settings** then **Test Connection** to verify credentials
+4. Click **Sync Now** to do the first sync, or wait for the nightly 02:00 UTC cron
+
+### Firebase Data Paths
+- `leaveData/{userId}/{yyyy-MM-dd}` — leave records per user per date
+- `publicHolidays/{region}/{yyyy-MM-dd}` — public holidays by region
+- `settings/integrations/keka` — base URL, region, last sync result (API key NOT stored here)
+
+### API Key Security
+The Keka API key is stored server-side in `.secrets/keka-api-key` (mode 0o600) and never written to Firebase. Alternatively, set the `KEKA_API_KEY` env var in the Replit Secrets panel.
 
 ## Azure AD App Registration Requirements
 

@@ -7,6 +7,8 @@ import { format, addDays, parseISO, isValid } from "date-fns";
 const SECRETS_DIR = join(process.cwd(), ".secrets");
 const KEKA_KEY_FILE = join(SECRETS_DIR, "keka-api-key");
 
+const KEKA_PAGE_SIZE = 200;
+
 /**
  * Read the Keka API key from the server-side secrets file or KEKA_API_KEY env var.
  * The API key is NEVER stored in Firebase to prevent client-readable exposure.
@@ -62,6 +64,12 @@ export interface KekaSyncResult {
   syncedAt: string;
 }
 
+export interface KekaConnectionTestResult {
+  success: boolean;
+  message: string;
+  httpStatus?: number;
+}
+
 interface KekaEmployee {
   id: string;
   displayName?: string;
@@ -90,6 +98,7 @@ interface KekaApiResponse<T> {
   succeeded?: boolean;
   data?: T[];
   response?: T[];
+  pageInfo?: { pageNumber?: number; pageSize?: number; totalCount?: number };
 }
 
 interface PMTUser {
@@ -98,12 +107,19 @@ interface PMTUser {
   kekaEmployeeId?: string;
 }
 
-async function kekaGet<T>(
+/**
+ * Fetch a single page from the Keka API.
+ * Returns { items, hasMore } — hasMore is true when the page was full (signals pagination).
+ */
+async function kekaGetPage<T>(
   baseUrl: string,
   apiKey: string,
-  path: string
-): Promise<T[]> {
-  const url = `${baseUrl.replace(/\/$/, "")}${path}`;
+  path: string,
+  pageNumber: number
+): Promise<{ items: T[]; hasMore: boolean }> {
+  const separator = path.includes("?") ? "&" : "?";
+  const url = `${baseUrl.replace(/\/$/, "")}${path}${separator}pageNumber=${pageNumber}&pageSize=${KEKA_PAGE_SIZE}`;
+
   const resp = await fetch(url, {
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -113,11 +129,45 @@ async function kekaGet<T>(
   });
 
   if (!resp.ok) {
-    throw new Error(`Keka API error ${resp.status} for ${path}: ${await resp.text()}`);
+    const body = await resp.text().catch(() => "");
+    throw new Error(`Keka API error ${resp.status} for ${path}: ${body}`);
   }
 
   const body = (await resp.json()) as KekaApiResponse<T>;
-  return (body.data ?? body.response ?? []) as T[];
+  const items = (body.data ?? body.response ?? []) as T[];
+
+  const totalCount = body.pageInfo?.totalCount;
+  const hasMore =
+    totalCount !== undefined
+      ? pageNumber * KEKA_PAGE_SIZE < totalCount
+      : items.length >= KEKA_PAGE_SIZE;
+
+  return { items, hasMore };
+}
+
+/**
+ * Fetch ALL pages from a Keka API endpoint, handling pagination transparently.
+ */
+async function kekaGet<T>(
+  baseUrl: string,
+  apiKey: string,
+  path: string
+): Promise<T[]> {
+  const allItems: T[] = [];
+  let pageNumber = 1;
+
+  while (true) {
+    const { items, hasMore } = await kekaGetPage<T>(baseUrl, apiKey, path, pageNumber);
+    allItems.push(...items);
+    if (!hasMore) break;
+    pageNumber++;
+    if (pageNumber > 50) {
+      logger.warn({ path }, "[Keka] Pagination safety limit reached (50 pages)");
+      break;
+    }
+  }
+
+  return allItems;
 }
 
 function mapHalfDaySession(
@@ -127,7 +177,6 @@ function mapHalfDaySession(
   const lower = halfDayType.toLowerCase();
   if (lower.includes("first") || lower === "firsthalf") return "first-half";
   if (lower.includes("second") || lower === "secondhalf") return "second-half";
-  // Unknown half-day type → soft warning; use generic "half-day" (ambiguous session)
   return "half-day";
 }
 
@@ -158,6 +207,54 @@ export async function getKekaCredentials(): Promise<KekaCredentials | null> {
   } catch (err) {
     logger.error({ err }, "[Keka] Failed to read credentials");
     return null;
+  }
+}
+
+/**
+ * Test whether the configured Keka credentials can successfully reach the API.
+ * Makes a minimal read-only request (fetches one holiday) to verify auth + connectivity.
+ */
+export async function testKekaConnection(): Promise<KekaConnectionTestResult> {
+  const creds = await getKekaCredentials();
+  if (!creds) {
+    return {
+      success: false,
+      message: "Keka credentials are not configured. Save a Base URL and API Key first.",
+    };
+  }
+
+  const year = new Date().getFullYear();
+  const url = `${creds.baseUrl.replace(/\/$/, "")}/api/v1/time/attendance/publicholidays?year=${year}&pageNumber=1&pageSize=1`;
+
+  try {
+    const resp = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${creds.apiKey}`,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (resp.ok) {
+      return {
+        success: true,
+        message: `Connected successfully to ${creds.baseUrl} (HTTP ${resp.status}).`,
+        httpStatus: resp.status,
+      };
+    }
+
+    const body = await resp.text().catch(() => "");
+    return {
+      success: false,
+      message: `Keka API responded with HTTP ${resp.status}. ${body ? `Detail: ${body.slice(0, 200)}` : "Check your Base URL and API Key."}`,
+      httpStatus: resp.status,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      success: false,
+      message: `Could not reach ${creds.baseUrl}: ${msg}`,
+    };
   }
 }
 
@@ -292,12 +389,10 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
           date: dateKey,
           region: holidayRegion,
         };
-        // Write under specific region for fine-grained lookup
         await writeFirebasePath(
           `publicHolidays/${holidayRegion}/${dateKey}`,
           record
         );
-        // Also write under "All" so client-side default lookups always find holidays
         if (holidayRegion !== "All") {
           await writeFirebasePath(`publicHolidays/All/${dateKey}`, record);
         }

@@ -42,10 +42,13 @@ const SettingsView = ({ users = [], setUsers, currentUser, clients = [], setClie
   const [kekaApiKey, setKekaApiKey] = useState('');
   const [kekaRegion, setKekaRegion] = useState('All');
   const [kekaApiKeyPlaceholder, setKekaApiKeyPlaceholder] = useState('Enter API key');
+  const [kekaCredentialsReady, setKekaCredentialsReady] = useState(false);
   const [kekaSaving, setKekaSaving] = useState(false);
   const [kekaSaveMsg, setKekaSaveMsg] = useState(null);
   const [kekaSyncing, setKekaSyncing] = useState(false);
   const [kekaSyncResult, setKekaSyncResult] = useState(null);
+  const [kekaTesting, setKekaTesting] = useState(false);
+  const [kekaTestResult, setKekaTestResult] = useState(null);
   const [kekaLoaded, setKekaLoaded] = useState(false);
 
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
@@ -110,6 +113,7 @@ const SettingsView = ({ users = [], setUsers, currentUser, clients = [], setClie
       setKekaBaseUrl(data.baseUrl || '');
       setKekaRegion(data.region || 'All');
       if (data.apiKeyConfigured) setKekaApiKeyPlaceholder('••••••••••••••••');
+      if (data.credentialsReady) setKekaCredentialsReady(true);
       if (data.lastSync) setKekaSyncResult(data.lastSync);
     } catch {
       /* ignore — user may not be admin or API may be unavailable */
@@ -125,21 +129,48 @@ const SettingsView = ({ users = [], setUsers, currentUser, clients = [], setClie
     if (!kekaBaseUrl.trim()) return;
     setKekaSaving(true);
     setKekaSaveMsg(null);
+    const sendingKey = kekaApiKey.trim();
     try {
       await kekaAuthFetch('/keka/settings', {
         method: 'POST',
         body: JSON.stringify({
           baseUrl: kekaBaseUrl.trim(),
           region: kekaRegion.trim() || 'All',
-          ...(kekaApiKey.trim() ? { apiKey: kekaApiKey.trim() } : {}),
+          ...(sendingKey ? { apiKey: sendingKey } : {}),
         }),
       });
+      if (sendingKey) {
+        setKekaApiKey('');
+        setKekaApiKeyPlaceholder('••••••••••••••••');
+      }
+      // Re-fetch authoritative state from the server so credentialsReady reflects
+      // any pre-existing API key even when the user only updated the base URL.
+      try {
+        const fresh = await kekaAuthFetch('/keka/settings');
+        setKekaBaseUrl(fresh.baseUrl || '');
+        setKekaRegion(fresh.region || 'All');
+        if (fresh.apiKeyConfigured) setKekaApiKeyPlaceholder('••••••••••••••••');
+        setKekaCredentialsReady(!!fresh.credentialsReady);
+      } catch {
+        /* best-effort refresh — credential-ready state will update on next page load */
+      }
       setKekaSaveMsg({ type: 'success', text: 'Settings saved.' });
-      if (kekaApiKey.trim()) { setKekaApiKey(''); setKekaApiKeyPlaceholder('••••••••••••••••'); }
     } catch (e) {
       setKekaSaveMsg({ type: 'error', text: `Failed to save: ${e.message || 'Unknown error'}` });
     }
     setKekaSaving(false);
+  };
+
+  const testConnection = async () => {
+    setKekaTesting(true);
+    setKekaTestResult(null);
+    try {
+      const data = await kekaAuthFetch('/keka/test-connection', { method: 'POST' });
+      setKekaTestResult(data);
+    } catch (e) {
+      setKekaTestResult({ success: false, message: String(e) });
+    }
+    setKekaTesting(false);
   };
 
   const triggerKekaSync = async () => {
@@ -930,7 +961,7 @@ const SettingsView = ({ users = [], setUsers, currentUser, clients = [], setClie
               </div>
             )}
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center flex-wrap gap-3">
               <button
                 type="button"
                 onClick={saveKekaSettings}
@@ -941,14 +972,32 @@ const SettingsView = ({ users = [], setUsers, currentUser, clients = [], setClie
               </button>
               <button
                 type="button"
-                onClick={triggerKekaSync}
-                disabled={kekaSyncing || !kekaBaseUrl.trim()}
+                onClick={testConnection}
+                disabled={kekaTesting || !kekaCredentialsReady}
                 className="px-4 py-2 rounded-lg text-xs font-semibold bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-2"
+                title={!kekaCredentialsReady ? 'Save credentials first' : 'Test the Keka API connection'}
+              >
+                <RefreshCw size={12} className={kekaTesting ? 'animate-spin' : ''} />
+                {kekaTesting ? 'Testing…' : 'Test Connection'}
+              </button>
+              <button
+                type="button"
+                onClick={triggerKekaSync}
+                disabled={kekaSyncing || !kekaCredentialsReady}
+                className="px-4 py-2 rounded-lg text-xs font-semibold bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-2"
+                title={!kekaCredentialsReady ? 'Save credentials first' : 'Run a full leave + holiday sync now'}
               >
                 <RefreshCw size={12} className={kekaSyncing ? 'animate-spin' : ''} />
                 {kekaSyncing ? 'Syncing…' : 'Sync Now'}
               </button>
             </div>
+
+            {kekaTestResult && (
+              <div className={`flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs font-medium mt-3 ${kekaTestResult.success ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                {kekaTestResult.success ? <Check size={13} className="flex-shrink-0 mt-0.5" /> : <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />}
+                <span>{kekaTestResult.message}</span>
+              </div>
+            )}
           </div>
 
           {kekaSyncResult && (
