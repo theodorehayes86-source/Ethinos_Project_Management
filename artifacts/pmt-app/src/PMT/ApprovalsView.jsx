@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { CheckCircle, XCircle, Star, ChevronDown, ChevronUp, Clock, User, Tag, Calendar, MessageSquare, UserPlus, UserCheck, UserX, Check, X, Send, CornerDownLeft, Archive } from 'lucide-react';
+import { CheckCircle, XCircle, Star, ChevronDown, ChevronUp, Clock, User, Tag, Calendar, MessageSquare, UserPlus, UserCheck, UserX, Check, X, Send, CornerDownLeft, Archive, Pencil } from 'lucide-react';
 import { sendNotification } from '../utils/notify';
 
 function formatTs(ts) {
@@ -188,11 +188,39 @@ const ReturnModal = ({ task, onConfirm, onClose }) => {
   );
 };
 
-const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed, currentUser, onAddComment, onArchive }) => {
+const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed, currentUser, onAddComment, onArchive, onEditReview }) => {
   const [expanded, setExpanded] = useState(false);
   const [replyingToId, setReplyingToId] = useState(null);
   const [replyText, setReplyText] = useState('');
   const replyInputRef = useRef(null);
+  const [editingReview, setEditingReview] = useState(false);
+  const [editRating, setEditRating] = useState('');
+  const [editComment, setEditComment] = useState('');
+
+  const openEditReview = () => {
+    setEditRating(task.qcRating ?? '');
+    setEditComment(task.qcStatus === 'rejected' ? (task.qcFeedback || '') : (task.qcComment || ''));
+    setEditingReview(true);
+    setExpanded(true);
+  };
+
+  const cancelEditReview = () => {
+    setEditingReview(false);
+    setEditRating('');
+    setEditComment('');
+  };
+
+  const saveEditReview = () => {
+    const ratingNum = Number(editRating);
+    if (!editRating || isNaN(ratingNum) || ratingNum < 1 || ratingNum > 10) return;
+    onEditReview(task, {
+      qcRating: ratingNum,
+      ...(task.qcStatus === 'rejected'
+        ? { qcFeedback: editComment.trim() }
+        : { qcComment: editComment.trim() }),
+    });
+    setEditingReview(false);
+  };
   const assignee = users.find(u => String(u.id) === String(task.assigneeId));
   const thread = buildThread(task);
 
@@ -393,6 +421,15 @@ const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed, curren
                 <span className="text-sm font-bold text-slate-700">{task.qcRating}/10</span>
               </div>
             )}
+            {isReviewed && onEditReview && !editingReview && (
+              <button
+                onClick={openEditReview}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-500 hover:text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50 text-xs font-semibold transition-all"
+                title="Edit rating or comment"
+              >
+                <Pencil size={12} /> Edit Review
+              </button>
+            )}
             {isReviewed && task.qcStatus === 'approved' && onArchive && (
               <button
                 onClick={() => {
@@ -419,6 +456,71 @@ const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed, curren
 
       {expanded && (
         <div className="px-5 pb-4 pt-2 border-t border-slate-100 space-y-3 bg-slate-50">
+          {editingReview && (
+            <div className="bg-white border border-indigo-200 rounded-xl p-4 space-y-3 shadow-sm">
+              <p className="text-xs font-bold text-indigo-700 uppercase tracking-widest flex items-center gap-1.5">
+                <Pencil size={11} /> Edit Review
+              </p>
+              <div className="flex items-center gap-3">
+                <label className="text-xs font-semibold text-slate-600 w-16 flex-shrink-0">Rating</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={editRating}
+                    onChange={e => setEditRating(e.target.value)}
+                    className="w-16 px-2 py-1.5 text-sm font-bold text-center border border-slate-300 rounded-lg outline-none focus:border-indigo-400 focus:ring-2 ring-indigo-500/20"
+                  />
+                  <span className="text-xs text-slate-400 font-semibold">/ 10</span>
+                  {editRating && !isNaN(Number(editRating)) && (
+                    <div className="flex items-center gap-0.5">
+                      {Array.from({ length: 10 }).map((_, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => setEditRating(String(i + 1))}
+                          className="p-0 focus:outline-none"
+                        >
+                          <Star
+                            size={13}
+                            className={i < Number(editRating) ? 'text-amber-400 fill-amber-400' : 'text-slate-200 fill-slate-200'}
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <label className="text-xs font-semibold text-slate-600 w-16 flex-shrink-0 pt-1.5">
+                  {task.qcStatus === 'rejected' ? 'Feedback' : 'Comment'}
+                </label>
+                <textarea
+                  value={editComment}
+                  onChange={e => setEditComment(e.target.value)}
+                  rows={3}
+                  placeholder={task.qcStatus === 'rejected' ? 'Reason for return…' : 'Approval comment (optional)…'}
+                  className="flex-1 px-3 py-2 text-xs font-medium text-slate-700 border border-slate-300 rounded-lg outline-none focus:border-indigo-400 focus:ring-2 ring-indigo-500/20 resize-none"
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={cancelEditReview}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-500 hover:bg-slate-50 transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveEditReview}
+                  disabled={!editRating || isNaN(Number(editRating)) || Number(editRating) < 1 || Number(editRating) > 10}
+                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Check size={12} /> Save Changes
+                </button>
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3 text-xs">
             <div>
               <p className="text-slate-400 font-semibold uppercase tracking-wider mb-0.5">Client</p>
@@ -703,6 +805,10 @@ const ApprovalsView = ({ clientLogs, clients, syntheticClients = [], users, curr
     updateTask(task, { approvalArchived: true, approvalArchivedAt: Date.now() });
   };
 
+  const handleEditReview = (task, updates) => {
+    updateTask(task, updates);
+  };
+
   const handleAddFeedbackComment = (task, text, replyToId) => {
     const entry = {
       id: `fb-${Date.now()}`,
@@ -831,6 +937,7 @@ const ApprovalsView = ({ clientLogs, clients, syntheticClients = [], users, curr
                         currentUser={currentUser}
                         onAddComment={handleAddFeedbackComment}
                         onArchive={isReviewed ? handleArchiveApproval : undefined}
+                        onEditReview={isReviewed ? handleEditReview : undefined}
                       />
                     ))}
                   </div>
