@@ -340,6 +340,12 @@ const MasterDataView = ({
   const [kekaTestResult, setKekaTestResult] = useState(null);
   const [kekaLoaded, setKekaLoaded] = useState(false);
 
+  // ── Archive tab ──
+  const [archiveDateFrom, setArchiveDateFrom] = useState('');
+  const [archiveDateTo, setArchiveDateTo] = useState('');
+  const [archiveCollapsed, setArchiveCollapsed] = useState({ tasks: false, approvals: false, feedback: false });
+  const toggleArchiveSection = (key) => setArchiveCollapsed(prev => ({ ...prev, [key]: !prev[key] }));
+
   const loadKekaSettings = useCallback(async () => {
     if (kekaLoaded) return;
     try {
@@ -3938,32 +3944,43 @@ const MasterDataView = ({
 
       {/* ─── ARCHIVE TAB ─── */}
       {activeTab === 'archive' && (() => {
-        const archivedTasks = [];
+        // ── helpers ──
+        const fromTs = archiveDateFrom ? new Date(archiveDateFrom).setHours(0, 0, 0, 0) : null;
+        const toTs   = archiveDateTo   ? new Date(archiveDateTo).setHours(23, 59, 59, 999) : null;
+        const inRange = (ts) => {
+          if (!ts) return true;
+          if (fromTs && ts < fromTs) return false;
+          if (toTs   && ts > toTs)   return false;
+          return true;
+        };
+
+        // ── collect data ──
+        const allArchivedTasks = [];
         Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
           const client = (clients || []).find(c => String(c.id) === String(clientId));
           (logs || []).forEach(task => {
-            if (task.archived) {
-              archivedTasks.push({ ...task, _clientId: clientId, _clientName: client?.name || clientId });
-            }
+            if (task.archived) allArchivedTasks.push({ ...task, _clientId: clientId, _clientName: client?.name || clientId });
           });
         });
-        archivedTasks.sort((a, b) => (b.archivedAt || b.id || 0) - (a.archivedAt || a.id || 0));
+        allArchivedTasks.sort((a, b) => (b.archivedAt || b.id || 0) - (a.archivedAt || a.id || 0));
+        const archivedTasks = allArchivedTasks.filter(t => inRange(t.archivedAt));
 
-        const archivedApprovals = [];
+        const allArchivedApprovals = [];
         Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
           const client = (clients || []).find(c => String(c.id) === String(clientId));
           (logs || []).forEach(task => {
-            if (task.approvalArchived) {
-              archivedApprovals.push({ ...task, _clientId: clientId, _clientName: client?.name || clientId });
-            }
+            if (task.approvalArchived) allArchivedApprovals.push({ ...task, _clientId: clientId, _clientName: client?.name || clientId });
           });
         });
-        archivedApprovals.sort((a, b) => (b.approvalArchivedAt || 0) - (a.approvalArchivedAt || 0));
+        allArchivedApprovals.sort((a, b) => (b.approvalArchivedAt || 0) - (a.approvalArchivedAt || 0));
+        const archivedApprovals = allArchivedApprovals.filter(t => inRange(t.approvalArchivedAt));
 
-        const archivedFeedback = (feedbackItems || [])
+        const allArchivedFeedback = (feedbackItems || [])
           .filter(f => f.archived)
           .sort((a, b) => (b.archivedAt || b.timestamp || 0) - (a.archivedAt || a.timestamp || 0));
+        const archivedFeedback = allArchivedFeedback.filter(f => inRange(f.archivedAt || f.timestamp));
 
+        // ── restore helpers ──
         const restoreTask = (task) => {
           if (!setClientLogs) return;
           const cid = task._clientId;
@@ -3973,7 +3990,6 @@ const MasterDataView = ({
           );
           setClientLogs(updated);
         };
-
         const restoreApproval = (task) => {
           if (!setClientLogs) return;
           const cid = task._clientId;
@@ -3983,58 +3999,110 @@ const MasterDataView = ({
           );
           setClientLogs(updated);
         };
-
         const restoreFeedback = (id) => {
           setFeedbackItems(feedbackItems.map(f => f.id === id ? { ...f, archived: false, archivedAt: null } : f));
         };
 
-        const SectionHeader = ({ icon, title, count }) => (
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-7 h-7 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
+        // ── collapsible section header ──
+        const SectionHeader = ({ icon, title, count, totalCount, sectionKey, accentClass }) => (
+          <button
+            onClick={() => toggleArchiveSection(sectionKey)}
+            className="w-full flex items-center gap-2 text-left group"
+          >
+            <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${accentClass}`}>
               {icon}
             </div>
-            <h3 className="text-sm font-bold text-slate-800">{title}</h3>
-            <span className="ml-1 text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{count}</span>
-          </div>
+            <h3 className="text-sm font-bold text-slate-800 flex-1">{title}</h3>
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
+              {fromTs || toTs ? `${count} of ${totalCount}` : count}
+            </span>
+            {archiveCollapsed[sectionKey]
+              ? <ChevronRight size={15} className="text-slate-400 group-hover:text-slate-600 transition-colors" />
+              : <ChevronDown  size={15} className="text-slate-400 group-hover:text-slate-600 transition-colors" />
+            }
+          </button>
         );
+
+        const hasDateFilter = !!(archiveDateFrom || archiveDateTo);
 
         return (
           <div className="space-y-6">
-            <div>
-              <h2 className="text-xl font-black text-slate-900 tracking-tight">Archive</h2>
-              <p className="text-sm text-slate-500 mt-1">All archived items in one place. Restore any item to return it to its original view.</p>
+            {/* ── Page header + date filter ── */}
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-black text-slate-900 tracking-tight">Archive</h2>
+                <p className="text-sm text-slate-500 mt-1">All archived items in one place. Restore any item to return it to its original view.</p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl shadow-sm">
+                  <Filter size={13} className="text-slate-400 flex-shrink-0" />
+                  <label className="text-xs text-slate-500 font-medium">From</label>
+                  <input
+                    type="date"
+                    value={archiveDateFrom}
+                    onChange={e => setArchiveDateFrom(e.target.value)}
+                    className="text-xs text-slate-700 bg-transparent outline-none cursor-pointer"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl shadow-sm">
+                  <label className="text-xs text-slate-500 font-medium">To</label>
+                  <input
+                    type="date"
+                    value={archiveDateTo}
+                    onChange={e => setArchiveDateTo(e.target.value)}
+                    className="text-xs text-slate-700 bg-transparent outline-none cursor-pointer"
+                  />
+                </div>
+                {hasDateFilter && (
+                  <button
+                    onClick={() => { setArchiveDateFrom(''); setArchiveDateTo(''); }}
+                    className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold text-slate-500 border border-slate-200 bg-white hover:bg-slate-50 transition-all shadow-sm"
+                  >
+                    <X size={12} /> Clear
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* ── Archived Tasks ── */}
             <div className="bg-white border border-slate-200 rounded-xl p-4">
               <SectionHeader
                 icon={<Archive size={14} className="text-amber-600" />}
+                accentClass="bg-amber-50"
                 title="Archived Tasks"
                 count={archivedTasks.length}
+                totalCount={allArchivedTasks.length}
+                sectionKey="tasks"
               />
-              {archivedTasks.length === 0 ? (
-                <p className="text-xs text-slate-400 italic py-4 text-center">No archived tasks.</p>
-              ) : (
-                <div className="space-y-2">
-                  {archivedTasks.map(task => (
-                    <div key={`${task._clientId}-${task.id}`} className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-slate-800 truncate">{task.name || task.comment || '(Untitled)'}</p>
-                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5 text-xs text-slate-500">
-                          {task._clientName && <span>{task._clientName}</span>}
-                          {task.assigneeName && <span>· {task.assigneeName}</span>}
-                          {task.category && <span>· {task.category}</span>}
-                          {task.date && <span>· {task.date}</span>}
+              {!archiveCollapsed.tasks && (
+                <div className="mt-3">
+                  {archivedTasks.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic py-4 text-center">
+                      {hasDateFilter ? 'No archived tasks in this date range.' : 'No archived tasks.'}
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {archivedTasks.map(task => (
+                        <div key={`${task._clientId}-${task.id}`} className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-slate-800 truncate">{task.name || task.comment || '(Untitled)'}</p>
+                            <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5 text-xs text-slate-500">
+                              {task._clientName && <span>{task._clientName}</span>}
+                              {task.assigneeName && <span>· {task.assigneeName}</span>}
+                              {task.category && <span>· {task.category}</span>}
+                              {task.archivedAt && <span>· Archived {new Date(task.archivedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => restoreTask(task)}
+                            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-emerald-700 hover:border-emerald-300 hover:bg-emerald-50 text-xs font-semibold transition-all"
+                          >
+                            <ArchiveRestore size={12} /> Restore
+                          </button>
                         </div>
-                      </div>
-                      <button
-                        onClick={() => restoreTask(task)}
-                        className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-emerald-700 hover:border-emerald-300 hover:bg-emerald-50 text-xs font-semibold transition-all"
-                      >
-                        <ArchiveRestore size={12} /> Restore
-                      </button>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
               )}
             </div>
@@ -4043,35 +4111,44 @@ const MasterDataView = ({
             <div className="bg-white border border-slate-200 rounded-xl p-4">
               <SectionHeader
                 icon={<Archive size={14} className="text-indigo-500" />}
+                accentClass="bg-indigo-50"
                 title="Archived Approvals"
                 count={archivedApprovals.length}
+                totalCount={allArchivedApprovals.length}
+                sectionKey="approvals"
               />
-              {archivedApprovals.length === 0 ? (
-                <p className="text-xs text-slate-400 italic py-4 text-center">No archived approvals.</p>
-              ) : (
-                <div className="space-y-2">
-                  {archivedApprovals.map(task => (
-                    <div key={`${task._clientId}-${task.id}`} className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-slate-800 truncate">{task.name || task.comment || '(Untitled)'}</p>
-                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5 text-xs text-slate-500">
-                          {task._clientName && <span>{task._clientName}</span>}
-                          {task.assigneeName && <span>· {task.assigneeName}</span>}
-                          {task.qcRating && <span>· Rating: {task.qcRating}/10</span>}
-                          {task.qcReviewerName && <span>· Reviewer: {task.qcReviewerName}</span>}
-                          {task.qcReviewedAt && (
-                            <span>· {new Date(task.qcReviewedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
-                          )}
+              {!archiveCollapsed.approvals && (
+                <div className="mt-3">
+                  {archivedApprovals.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic py-4 text-center">
+                      {hasDateFilter ? 'No archived approvals in this date range.' : 'No archived approvals.'}
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {archivedApprovals.map(task => (
+                        <div key={`${task._clientId}-${task.id}`} className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-slate-800 truncate">{task.name || task.comment || '(Untitled)'}</p>
+                            <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5 text-xs text-slate-500">
+                              {task._clientName && <span>{task._clientName}</span>}
+                              {task.assigneeName && <span>· {task.assigneeName}</span>}
+                              {task.qcRating && <span>· Rating: {task.qcRating}/10</span>}
+                              {task.qcReviewerName && <span>· Reviewer: {task.qcReviewerName}</span>}
+                              {task.approvalArchivedAt && (
+                                <span>· Archived {new Date(task.approvalArchivedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => restoreApproval(task)}
+                            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-emerald-700 hover:border-emerald-300 hover:bg-emerald-50 text-xs font-semibold transition-all"
+                          >
+                            <ArchiveRestore size={12} /> Restore
+                          </button>
                         </div>
-                      </div>
-                      <button
-                        onClick={() => restoreApproval(task)}
-                        className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-emerald-700 hover:border-emerald-300 hover:bg-emerald-50 text-xs font-semibold transition-all"
-                      >
-                        <ArchiveRestore size={12} /> Restore
-                      </button>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
               )}
             </div>
@@ -4080,33 +4157,42 @@ const MasterDataView = ({
             <div className="bg-white border border-slate-200 rounded-xl p-4">
               <SectionHeader
                 icon={<Archive size={14} className="text-rose-500" />}
+                accentClass="bg-rose-50"
                 title="Archived Feedback"
                 count={archivedFeedback.length}
+                totalCount={allArchivedFeedback.length}
+                sectionKey="feedback"
               />
-              {archivedFeedback.length === 0 ? (
-                <p className="text-xs text-slate-400 italic py-4 text-center">No archived feedback.</p>
-              ) : (
-                <div className="space-y-2">
-                  {archivedFeedback.map(item => (
-                    <div key={item.id} className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-slate-800 truncate">{item.title || item.description || '(No title)'}</p>
-                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5 text-xs text-slate-500">
-                          {item.userName && <span>{item.userName}</span>}
-                          {item.type && <span>· {item.type}</span>}
-                          {item.timestamp && (
-                            <span>· {new Date(item.timestamp).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
-                          )}
+              {!archiveCollapsed.feedback && (
+                <div className="mt-3">
+                  {archivedFeedback.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic py-4 text-center">
+                      {hasDateFilter ? 'No archived feedback in this date range.' : 'No archived feedback.'}
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {archivedFeedback.map(item => (
+                        <div key={item.id} className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-slate-800 truncate">{item.title || item.description || '(No title)'}</p>
+                            <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5 text-xs text-slate-500">
+                              {item.userName && <span>{item.userName}</span>}
+                              {item.type && <span>· {item.type}</span>}
+                              {(item.archivedAt || item.timestamp) && (
+                                <span>· Archived {new Date(item.archivedAt || item.timestamp).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => restoreFeedback(item.id)}
+                            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-emerald-700 hover:border-emerald-300 hover:bg-emerald-50 text-xs font-semibold transition-all"
+                          >
+                            <ArchiveRestore size={12} /> Restore
+                          </button>
                         </div>
-                      </div>
-                      <button
-                        onClick={() => restoreFeedback(item.id)}
-                        className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-emerald-700 hover:border-emerald-300 hover:bg-emerald-50 text-xs font-semibold transition-all"
-                      >
-                        <ArchiveRestore size={12} /> Restore
-                      </button>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
               )}
             </div>
