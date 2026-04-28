@@ -151,15 +151,21 @@ export async function getUserLeaveAndHolidayData(userId, region = "All") {
 }
 
 /**
- * Get leave status for a user on today's date and within the next N days.
+ * Get leave status for a user on today's date and within the next 14 days.
+ * Distinguishes approved leaves from pending (requested, not yet approved).
  * Used for Team panel leave indicators.
  *
  * @param {string|number} userId
  * @param {string} [region]
- * @returns {Promise<{onLeaveToday: boolean, upcomingLeaveDate: string|null}>}
+ * @returns {Promise<{
+ *   onLeaveToday: boolean,
+ *   onLeavePendingToday: boolean,
+ *   upcomingLeaveDate: string|null,
+ *   upcomingPendingDate: string|null,
+ * }>}
  */
 export async function getUserLeaveStatus(userId, region = "All") {
-  if (!userId) return { onLeaveToday: false, upcomingLeaveDate: null };
+  if (!userId) return { onLeaveToday: false, onLeavePendingToday: false, upcomingLeaveDate: null, upcomingPendingDate: null };
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -169,30 +175,37 @@ export async function getUserLeaveStatus(userId, region = "All") {
     const leaveData = leaveSnap.val() || {};
 
     const todayKey = toDateKey(today);
-    const onLeaveToday = !!leaveData[todayKey];
+    const todayRecord = leaveData[todayKey];
+    const onLeaveToday        = !!todayRecord && todayRecord.status !== "pending";
+    const onLeavePendingToday = !!todayRecord && todayRecord.status === "pending";
 
-    let upcomingLeaveDate = null;
-    if (!onLeaveToday) {
-      for (let i = 1; i <= 14; i++) {
-        const d = new Date(today);
-        d.setDate(d.getDate() + i);
-        const dk = toDateKey(d);
-        if (leaveData[dk]) {
-          upcomingLeaveDate = dk;
-          break;
-        }
+    let upcomingLeaveDate   = null;
+    let upcomingPendingDate = null;
+
+    for (let i = 1; i <= 14; i++) {
+      const d = new Date(today);
+      d.setDate(d.getDate() + i);
+      const dk = toDateKey(d);
+      const rec = leaveData[dk];
+      if (!rec) continue;
+      if (rec.status === "pending") {
+        if (!upcomingPendingDate) upcomingPendingDate = dk;
+      } else {
+        if (!upcomingLeaveDate) upcomingLeaveDate = dk;
       }
+      if (upcomingLeaveDate && upcomingPendingDate) break;
     }
 
-    if (!onLeaveToday && !upcomingLeaveDate) {
+    // Check public holiday for today
+    if (!onLeaveToday && !onLeavePendingToday) {
       const holidaySnap = await get(ref(db, `publicHolidays/${region}/${todayKey}`));
       if (holidaySnap.val()) {
-        return { onLeaveToday: true, upcomingLeaveDate: null };
+        return { onLeaveToday: true, onLeavePendingToday: false, upcomingLeaveDate: null, upcomingPendingDate: null };
       }
     }
 
-    return { onLeaveToday, upcomingLeaveDate };
+    return { onLeaveToday, onLeavePendingToday, upcomingLeaveDate, upcomingPendingDate };
   } catch {
-    return { onLeaveToday: false, upcomingLeaveDate: null };
+    return { onLeaveToday: false, onLeavePendingToday: false, upcomingLeaveDate: null, upcomingPendingDate: null };
   }
 }

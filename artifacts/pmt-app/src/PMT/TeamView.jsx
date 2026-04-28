@@ -410,28 +410,54 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
   );
 };
 
-const MemberCard = ({ member, isSelected, onClick, leaveStatus }) => (
-  <button onClick={onClick}
-    className={`w-full text-left px-4 py-3 rounded-xl border transition-all ${isSelected ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white border-slate-200 hover:border-blue-200 hover:shadow-sm text-slate-700'}`}>
-    <div className="flex items-center gap-3">
-      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-[11px] flex-shrink-0 ${isSelected ? 'bg-white/20 text-white' : `${avatarColor(member.name)} text-white`}`}>{initials(member.name)}</div>
-      <div className="flex-1 min-w-0">
-        <p className={`text-xs font-bold truncate ${isSelected ? 'text-white' : 'text-slate-800'}`}>{member.name}</p>
-        {member.department && <p className={`text-[10px] truncate ${isSelected ? 'text-blue-100' : 'text-slate-500'}`}>{member.department}</p>}
+const fmtLeaveDate = (dateStr) =>
+  new Date(dateStr + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+
+const MemberCard = ({ member, isSelected, onClick, leaveStatus }) => {
+  const ls = leaveStatus || {};
+
+  // Build badge: today states take priority, then upcoming
+  // At most 2 badges: one for today, one for upcoming
+  const todayBadge = ls.onLeaveToday
+    ? { label: 'On Leave', cls: isSelected ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-700' }
+    : ls.onLeavePendingToday
+      ? { label: 'Leave Pending', cls: isSelected ? 'bg-white/20 text-blue-100' : 'bg-blue-100 text-blue-700 border border-blue-200' }
+      : null;
+
+  // Upcoming: show approved first, fall back to pending
+  const upcomingBadge = (!ls.onLeaveToday && !ls.onLeavePendingToday)
+    ? ls.upcomingLeaveDate
+      ? { label: `Leave ${fmtLeaveDate(ls.upcomingLeaveDate)}`, cls: isSelected ? 'bg-white/20 text-blue-100' : 'bg-sky-50 text-sky-600 border border-sky-200' }
+      : ls.upcomingPendingDate
+        ? { label: `Pending ${fmtLeaveDate(ls.upcomingPendingDate)}`, cls: isSelected ? 'bg-white/20 text-blue-100' : 'bg-blue-50 text-blue-500 border border-blue-200' }
+        : null
+    : null;
+
+  return (
+    <button onClick={onClick}
+      className={`w-full text-left px-4 py-3 rounded-xl border transition-all ${isSelected ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white border-slate-200 hover:border-blue-200 hover:shadow-sm text-slate-700'}`}>
+      <div className="flex items-center gap-3">
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-[11px] flex-shrink-0 ${isSelected ? 'bg-white/20 text-white' : `${avatarColor(member.name)} text-white`}`}>{initials(member.name)}</div>
+        <div className="flex-1 min-w-0">
+          <p className={`text-xs font-bold truncate ${isSelected ? 'text-white' : 'text-slate-800'}`}>{member.name}</p>
+          {member.department && <p className={`text-[10px] truncate ${isSelected ? 'text-blue-100' : 'text-slate-500'}`}>{member.department}</p>}
+        </div>
+        <div className="flex flex-col gap-0.5 items-end flex-shrink-0">
+          {todayBadge && (
+            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${todayBadge.cls}`}>
+              {todayBadge.label}
+            </span>
+          )}
+          {upcomingBadge && (
+            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${upcomingBadge.cls}`}>
+              {upcomingBadge.label}
+            </span>
+          )}
+        </div>
       </div>
-      {leaveStatus?.onLeaveToday && (
-        <span className={`flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isSelected ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-700'}`}>
-          On Leave
-        </span>
-      )}
-      {!leaveStatus?.onLeaveToday && leaveStatus?.upcomingLeaveDate && (
-        <span className={`flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isSelected ? 'bg-white/20 text-blue-100' : 'bg-sky-50 text-sky-600 border border-sky-200'}`}>
-          Leave {new Date(leaveStatus.upcomingLeaveDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-        </span>
-      )}
-    </div>
-  </button>
-);
+    </button>
+  );
+};
 
 const EmptyLevelRow = ({ role }) => (
   <div className="w-full px-4 py-2.5 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 text-[10px] text-slate-400 italic">
