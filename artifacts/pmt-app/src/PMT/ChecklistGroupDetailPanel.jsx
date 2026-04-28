@@ -177,7 +177,7 @@ const ChecklistGroupDetailPanel = ({
     });
     setCreateTaskForm(prev => {
       if (!prev[taskId]) {
-        return { ...prev, [taskId]: { name: questionText || '', category: '', dueDate: '', comment: '' } };
+        return { ...prev, [taskId]: { name: questionText || '', category: '', dueDate: new Date().toISOString().split('T')[0], comment: '' } };
       }
       return prev;
     });

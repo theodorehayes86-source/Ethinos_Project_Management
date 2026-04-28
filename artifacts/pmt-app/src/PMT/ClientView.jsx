@@ -101,7 +101,7 @@ const ClientView = ({
       category: category || '',
       repeatFrequency: 'Once',
       repeatEnd: null,
-      dueDate: dueDate || null,
+      dueDate: dueDate ? format(parse(dueDate, 'yyyy-MM-dd', new Date()), 'do MMM yyyy') : null,
       timerState: 'idle',
       timerStartedAt: null,
       elapsedMs: 0,
