@@ -164,13 +164,37 @@ interface KekaEmployee {
   email?: string;
 }
 
+/**
+ * Response shape from GET /api/v1/time/leaverequests
+ *
+ * Key fields:
+ *  - employeeIdentifier: Keka employee GUID (matches /hris/employees[*].id)
+ *  - fromDate / toDate: ISO date strings for leave span
+ *  - fromSession / toSession:
+ *      0 = first half (morning)
+ *      1 = second half (afternoon)
+ *      full-day = fromSession:0 + toSession:1
+ *      first-half only = fromSession:0 + toSession:0
+ *      second-half only = fromSession:1 + toSession:1
+ *  - status: 0=pending, 1=approved, 2=rejected, 3=cancelled
+ *  - selection[*].leaveTypeName: human-readable leave type
+ */
 interface KekaLeaveRecord {
   id: string;
+  employeeIdentifier: string;
+  employeeNumber?: string;
+  fromDate?: string;
+  toDate?: string;
+  fromSession?: number;
+  toSession?: number;
+  status?: number;
+  selection?: Array<{ leaveTypeName?: string; count?: number }>;
+  // Legacy fallbacks (used by older API shapes — kept for type safety)
   from?: string;
   to?: string;
   halfDayType?: string;
   sessionType?: string;
-  employee: KekaEmployee;
+  employee?: KekaEmployee;
   leaveType?: { name?: string };
 }
 
@@ -182,9 +206,21 @@ interface KekaHolidayRecord {
   locationName?: string;
 }
 
+/**
+ * Keka API pagination envelope.
+ * The /time/* endpoints return pagination metadata at the root level:
+ *   { data, pageNumber, pageSize, totalPages, totalRecords, succeeded, ... }
+ * The /hris/* endpoints may use pageInfo.totalCount instead.
+ */
 interface KekaApiResponse<T> {
   data?: T[];
   response?: T[];
+  pageNumber?: number;
+  pageSize?: number;
+  totalPages?: number;
+  totalRecords?: number;
+  succeeded?: boolean;
+  // Legacy HRIS envelope
   pageInfo?: { totalCount?: number };
 }
 
@@ -221,7 +257,11 @@ async function kekaGetPage<T>(
   const body = (await resp.json()) as KekaApiResponse<T>;
   const items = (body.data ?? body.response ?? []) as T[];
 
-  const totalCount = body.pageInfo?.totalCount;
+  // Support both pagination shapes:
+  //   /time/* endpoints: { totalRecords, totalPages, pageNumber, pageSize } at root
+  //   /hris/* endpoints: { pageInfo: { totalCount } }
+  const totalCount =
+    body.totalRecords ?? body.pageInfo?.totalCount;
   const hasMore =
     totalCount !== undefined
       ? pageNumber * KEKA_PAGE_SIZE < totalCount
@@ -252,14 +292,34 @@ async function kekaGet<T>(baseUrl: string, path: string): Promise<T[]> {
   return allItems;
 }
 
-function mapHalfDaySession(
-  raw?: string
+/**
+ * Map Keka leave request session values to PMT session type.
+ *
+ * Keka /time/leaverequests uses numeric fromSession / toSession:
+ *   0 = first half (morning)
+ *   1 = second half (afternoon)
+ *   full day = fromSession:0 + toSession:1
+ *
+ * Legacy string-based halfDayType is kept as a fallback.
+ */
+function mapLeaveSession(
+  fromSession?: number,
+  toSession?: number,
+  legacyType?: string
 ): "full" | "first-half" | "second-half" | "half-day" {
-  if (!raw) return "full";
-  const v = raw.toLowerCase();
-  if (v.includes("first") || v === "firsthalf") return "first-half";
-  if (v.includes("second") || v === "secondhalf") return "second-half";
-  if (v.includes("half")) return "half-day";
+  // Numeric session values from /time/leaverequests
+  if (fromSession !== undefined && toSession !== undefined) {
+    if (fromSession === 0 && toSession === 1) return "full";
+    if (fromSession === 0 && toSession === 0) return "first-half";
+    if (fromSession === 1 && toSession === 1) return "second-half";
+  }
+  // Legacy string fallback
+  if (legacyType) {
+    const v = legacyType.toLowerCase();
+    if (v.includes("first") || v === "firsthalf") return "first-half";
+    if (v.includes("second") || v === "secondhalf") return "second-half";
+    if (v.includes("half")) return "half-day";
+  }
   return "full";
 }
 
@@ -417,8 +477,6 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
   }
 
   const today = new Date();
-  const fromDate = format(today, "yyyy-MM-dd");
-  const toDate = format(addDays(today, 92), "yyyy-MM-dd");
 
   let leaveRecordsWritten = 0;
   let holidayRecordsWritten = 0;
@@ -426,46 +484,90 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
   const unmatchedKekaIds = new Set<string>();
 
   try {
-    // Correct path: /api/v1/hris/leavemanagement/leavetransactions
-    // (Confirmed present on Keka gateway; requires Leave Management module access
-    // to be enabled for this app in Keka Admin → Developer Settings)
+    // Step 1: Pre-fetch employees to build Keka GUID → email map.
+    // This enables email-based matching for users who don't yet have
+    // kekaEmployeeId stored in PMT.
+    // /api/v1/hris/employees returns { data: [{ id, email, ... }] }
+    const kekaIdToEmail: Record<string, string> = {};
+    try {
+      const employees = await kekaGet<KekaEmployee>(
+        creds.baseUrl,
+        "/api/v1/hris/employees"
+      );
+      for (const emp of employees) {
+        if (emp.id && emp.email) {
+          kekaIdToEmail[emp.id] = emp.email.toLowerCase();
+        }
+      }
+      logger.info({ count: employees.length }, "[Keka] Pre-fetched employee list for email matching");
+    } catch (empErr) {
+      logger.warn({ empErr }, "[Keka] Could not pre-fetch employees — falling back to kekaEmployeeId matching only");
+    }
+
+    // Step 2: Fetch all leave requests (no date filter).
+    // Path:   GET /api/v1/time/leaverequests
+    // Status: 1 = approved (0=pending, 2=rejected, 3=cancelled)
+    //
+    // NOTE: The Keka API's "from"/"to" query params exhibit non-standard
+    // behaviour (e.g. 12-month range returns 0, 2-month ranges return > total).
+    // We fetch all records and apply date-range logic in code instead.
     const leaves = await kekaGet<KekaLeaveRecord>(
       creds.baseUrl,
-      `/api/v1/hris/leavemanagement/leavetransactions?startDate=${fromDate}&endDate=${toDate}`
+      "/api/v1/time/leaverequests"
     );
 
-    logger.info({ count: leaves.length }, "[Keka] Fetched leave records");
+    logger.info({ count: leaves.length }, "[Keka] Fetched all leave records");
+
+    // Only keep leaves that are within a 30 days back → 180 days forward window.
+    // This covers recent/ongoing leaves as well as planning ahead.
+    const windowStart = addDays(today, -30);
+    const windowEnd = addDays(today, 180);
 
     for (const leave of leaves) {
-      if (!leave.employee) continue;
+      // Only sync approved leaves
+      if (leave.status !== 1) continue;
 
-      const kekaEmail = leave.employee.email?.toLowerCase();
-      const kekaEmpId = leave.employee.id;
+      // Skip leaves entirely outside the sync window
+      const leaveStart = parseISO((leave.fromDate ?? leave.from ?? "").slice(0, 10));
+      const leaveEnd = parseISO((leave.toDate ?? leave.to ?? (leave.fromDate ?? "")).slice(0, 10));
+      if (isValid(leaveEnd) && leaveEnd < windowStart) continue;
+      if (isValid(leaveStart) && leaveStart > windowEnd) continue;
 
-      let pmtUserId = kekaEmail ? emailToUserId[kekaEmail] : undefined;
-      if (!pmtUserId && kekaEmpId) {
-        pmtUserId = kekaIdToUserId[kekaEmpId];
+      const kekaEmpId = leave.employeeIdentifier ?? leave.employee?.id ?? "";
+      if (!kekaEmpId) continue;
+
+      // Match: kekaEmployeeId stored in PMT → or email via employee pre-fetch
+      let pmtUserId = kekaIdToUserId[kekaEmpId];
+      if (!pmtUserId) {
+        const kekaEmail = kekaIdToEmail[kekaEmpId] ?? leave.employee?.email?.toLowerCase();
+        if (kekaEmail) pmtUserId = emailToUserId[kekaEmail];
       }
 
       if (!pmtUserId) {
-        if (kekaEmpId) unmatchedKekaIds.add(kekaEmpId);
+        unmatchedKekaIds.add(kekaEmpId);
         continue;
       }
 
       usersMatched++;
 
-      if (kekaEmpId && !kekaIdToUserId[kekaEmpId]) {
-        await writeFirebasePath(
-          `users/${pmtUserId}/kekaEmployeeId`,
-          kekaEmpId
-        );
+      // Cache kekaEmployeeId on the PMT user for future lookups
+      if (!kekaIdToUserId[kekaEmpId]) {
+        await writeFirebasePath(`users/${pmtUserId}/kekaEmployeeId`, kekaEmpId);
         kekaIdToUserId[kekaEmpId] = pmtUserId;
       }
 
-      const startDate = leave.from ?? "";
-      const endDate = leave.to ?? startDate;
-      const leaveType = leave.leaveType?.name ?? "Leave";
-      const session = mapHalfDaySession(leave.halfDayType ?? leave.sessionType);
+      // Field names in /time/leaverequests: fromDate / toDate / selection / fromSession / toSession
+      const startDate = (leave.fromDate ?? leave.from ?? "").slice(0, 10);
+      const endDate = (leave.toDate ?? leave.to ?? startDate).slice(0, 10);
+      const leaveType =
+        leave.selection?.[0]?.leaveTypeName ??
+        leave.leaveType?.name ??
+        "Leave";
+      const session = mapLeaveSession(
+        leave.fromSession,
+        leave.toSession,
+        leave.halfDayType ?? leave.sessionType
+      );
       const dates = expandLeaveDates(startDate, endDate);
 
       for (const dateKey of dates) {
