@@ -216,6 +216,8 @@ const HomeView = ({
 
   // --- Home Template state ---
   const [showHomeTemplateModal, setShowHomeTemplateModal] = useState(false);
+  const [showAddMenu, setShowAddMenu] = useState(false);
+  const addMenuRef = useRef(null);
   const [homeTemplateFilter, setHomeTemplateFilter] = useState('All');
   const [selectedHomeTemplateId, setSelectedHomeTemplateId] = useState(null);
   const [expandedTemplateTasks, setExpandedTemplateTasks] = useState({});
@@ -819,6 +821,12 @@ const HomeView = ({
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    const handler = (e) => { if (addMenuRef.current && !addMenuRef.current.contains(e.target)) setShowAddMenu(false); };
+    if (showAddMenu) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showAddMenu]);
+
   const formatDuration = (ms) => {
     if (!ms) return '0:00:00';
     const total = Math.floor(ms / 1000);
@@ -1206,26 +1214,39 @@ const HomeView = ({
             {showArchived ? <ArchiveRestore size={12}/> : <Archive size={12}/>}
             {showArchived ? 'Hide Archived' : `Archived${myArchivedTasks.length > 0 ? ` (${myArchivedTasks.length})` : ''}`}
           </button>
-          <button
-            onClick={() => { setShowHomeTemplateModal(true); setSelectedHomeTemplateId(null); setHomeTemplateFilter('All'); setExpandedTemplateTasks({}); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-all"
-          >
-            <LayoutTemplate size={12} /> Use Template
-          </button>
-          {checklistTemplates.length > 0 && canCreateChecklists && (
+          <div className="relative" ref={addMenuRef}>
             <button
-              onClick={openNewChecklistModal}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 transition-all"
+              onClick={() => setShowAddMenu(v => !v)}
+              className="bg-slate-900 text-white px-3 py-1.5 rounded-lg font-semibold text-xs hover:bg-slate-800 transition-all flex items-center gap-1.5 shadow-sm"
             >
-              <ClipboardList size={12} /> New Checklist
+              <Plus size={13} /> Add
+              <ChevronDown size={11} className={`transition-transform ${showAddMenu ? 'rotate-180' : ''}`} />
             </button>
-          )}
-          <button
-            onClick={openAddTaskModal}
-            className="bg-slate-900 text-white px-3 py-1.5 rounded-lg font-semibold text-xs hover:bg-slate-800 transition-all flex items-center gap-1.5 shadow-sm"
-          >
-            <Plus size={13} /> Add Task
-          </button>
+            {showAddMenu && (
+              <div className="absolute right-0 top-full mt-1.5 w-44 bg-white border border-slate-200 rounded-xl shadow-lg z-50 py-1 overflow-hidden">
+                <button
+                  onClick={() => { openAddTaskModal(); setShowAddMenu(false); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-all"
+                >
+                  <Plus size={13} className="text-slate-500" /> Add Task
+                </button>
+                <button
+                  onClick={() => { setShowHomeTemplateModal(true); setSelectedHomeTemplateId(null); setHomeTemplateFilter('All'); setExpandedTemplateTasks({}); setShowAddMenu(false); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-all"
+                >
+                  <LayoutTemplate size={13} className="text-indigo-500" /> Use Template
+                </button>
+                {checklistTemplates.length > 0 && canCreateChecklists && (
+                  <button
+                    onClick={() => { openNewChecklistModal(); setShowAddMenu(false); }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-all"
+                  >
+                    <ClipboardList size={13} className="text-teal-500" /> New Checklist
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
