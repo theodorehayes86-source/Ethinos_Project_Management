@@ -6,6 +6,8 @@ import { format, addDays, parseISO, isValid } from "date-fns";
 
 const SECRETS_DIR = join(process.cwd(), ".secrets");
 const KEKA_KEY_FILE = join(SECRETS_DIR, "keka-api-key");
+const KEKA_CLIENT_ID_FILE = join(SECRETS_DIR, "keka-client-id");
+const KEKA_CLIENT_SECRET_FILE = join(SECRETS_DIR, "keka-client-secret");
 
 const KEKA_PAGE_SIZE = 200;
 
@@ -43,13 +45,13 @@ async function getKekaAccessToken(_baseUrl: string): Promise<string> {
     return cachedToken.token;
   }
 
-  const clientId = process.env.KEKA_CLIENT_ID?.trim();
-  const clientSecret = process.env.KEKA_CLIENT_SECRET?.trim();
+  const clientId = readKekaClientId();
+  const clientSecret = readKekaClientSecret();
   const apiKey = readKekaApiKey();
 
   if (!clientId || !clientSecret || !apiKey) {
     throw new Error(
-      "Keka credentials incomplete. Ensure KEKA_CLIENT_ID, KEKA_CLIENT_SECRET, and KEKA_API_KEY are set as Replit secrets."
+      "Keka credentials incomplete. Set Client ID, Client Secret, and API Key in Control Centre → Integrations."
     );
   }
 
@@ -116,6 +118,36 @@ export function readKekaApiKey(): string | null {
 export function writeKekaApiKey(key: string): void {
   mkdirSync(SECRETS_DIR, { recursive: true });
   writeFileSync(KEKA_KEY_FILE, key.trim(), { encoding: "utf8", mode: 0o600 });
+}
+
+export function readKekaClientId(): string | null {
+  if (process.env.KEKA_CLIENT_ID?.trim()) return process.env.KEKA_CLIENT_ID.trim();
+  try {
+    const val = readFileSync(KEKA_CLIENT_ID_FILE, "utf8").trim();
+    return val || null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeKekaClientId(value: string): void {
+  mkdirSync(SECRETS_DIR, { recursive: true });
+  writeFileSync(KEKA_CLIENT_ID_FILE, value.trim(), { encoding: "utf8", mode: 0o600 });
+}
+
+export function readKekaClientSecret(): string | null {
+  if (process.env.KEKA_CLIENT_SECRET?.trim()) return process.env.KEKA_CLIENT_SECRET.trim();
+  try {
+    const val = readFileSync(KEKA_CLIENT_SECRET_FILE, "utf8").trim();
+    return val || null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeKekaClientSecret(value: string): void {
+  mkdirSync(SECRETS_DIR, { recursive: true });
+  writeFileSync(KEKA_CLIENT_SECRET_FILE, value.trim(), { encoding: "utf8", mode: 0o600 });
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────

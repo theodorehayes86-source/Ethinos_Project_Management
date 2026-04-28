@@ -323,8 +323,12 @@ const MasterDataView = ({
   // --- INTEGRATIONS / KEKA STATE ---
   const [kekaBaseUrl, setKekaBaseUrl] = useState('');
   const [kekaApiKey, setKekaApiKey] = useState('');
+  const [kekaClientId, setKekaClientId] = useState('');
+  const [kekaClientSecret, setKekaClientSecret] = useState('');
   const [kekaRegion, setKekaRegion] = useState('All');
   const [kekaApiKeyPlaceholder, setKekaApiKeyPlaceholder] = useState('Enter API key');
+  const [kekaClientIdPlaceholder, setKekaClientIdPlaceholder] = useState('Enter client ID');
+  const [kekaClientSecretPlaceholder, setKekaClientSecretPlaceholder] = useState('Enter client secret');
   const [kekaCredentialsReady, setKekaCredentialsReady] = useState(false);
   const [kekaSaving, setKekaSaving] = useState(false);
   const [kekaSaveMsg, setKekaSaveMsg] = useState(null);
@@ -341,6 +345,8 @@ const MasterDataView = ({
       setKekaBaseUrl(data.baseUrl || '');
       setKekaRegion(data.region || 'All');
       if (data.apiKeyConfigured) setKekaApiKeyPlaceholder('••••••••••••••••');
+      if (data.clientIdConfigured) setKekaClientIdPlaceholder('••••••••••••••••');
+      if (data.clientSecretConfigured) setKekaClientSecretPlaceholder('••••••••••••••••');
       if (data.credentialsReady) setKekaCredentialsReady(true);
       if (data.lastSync) setKekaSyncResult(data.lastSync);
     } catch { /* silent — API not reachable in dev */ }
@@ -356,6 +362,8 @@ const MasterDataView = ({
     setKekaSaving(true);
     setKekaSaveMsg(null);
     const sendingKey = kekaApiKey.trim();
+    const sendingClientId = kekaClientId.trim();
+    const sendingClientSecret = kekaClientSecret.trim();
     try {
       await kekaAuthFetch('/keka/settings', {
         method: 'POST',
@@ -363,16 +371,19 @@ const MasterDataView = ({
           baseUrl: kekaBaseUrl.trim(),
           region: kekaRegion.trim() || 'All',
           ...(sendingKey ? { apiKey: sendingKey } : {}),
+          ...(sendingClientId ? { clientId: sendingClientId } : {}),
+          ...(sendingClientSecret ? { clientSecret: sendingClientSecret } : {}),
         }),
       });
-      if (sendingKey) {
-        setKekaApiKey('');
-        setKekaApiKeyPlaceholder('••••••••••••••••');
-      }
+      if (sendingKey) { setKekaApiKey(''); setKekaApiKeyPlaceholder('••••••••••••••••'); }
+      if (sendingClientId) { setKekaClientId(''); setKekaClientIdPlaceholder('••••••••••••••••'); }
+      if (sendingClientSecret) { setKekaClientSecret(''); setKekaClientSecretPlaceholder('••••••••••••••••'); }
       const fresh = await kekaAuthFetch('/keka/settings');
       setKekaBaseUrl(fresh.baseUrl || '');
       setKekaRegion(fresh.region || 'All');
       if (fresh.apiKeyConfigured) setKekaApiKeyPlaceholder('••••••••••••••••');
+      if (fresh.clientIdConfigured) setKekaClientIdPlaceholder('••••••••••••••••');
+      if (fresh.clientSecretConfigured) setKekaClientSecretPlaceholder('••••••••••••••••');
       setKekaCredentialsReady(!!fresh.credentialsReady);
       setKekaSaveMsg({ type: 'success', text: 'Settings saved.' });
     } catch (e) {
@@ -3706,8 +3717,12 @@ const MasterDataView = ({
               </div>
             </div>
 
+            <div className="mb-4 p-3 bg-violet-50 border border-violet-200 rounded-xl text-[11px] text-violet-800 leading-relaxed">
+              <span className="font-bold">Where to find these credentials:</span> Keka Admin → Settings → Integrations → Developer Settings → your API Application. You need Base URL, Client ID, Client Secret, and API Key.
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div>
+              <div className="md:col-span-2">
                 <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">Keka Base URL</label>
                 <input
                   type="url"
@@ -3716,6 +3731,31 @@ const MasterDataView = ({
                   value={kekaBaseUrl}
                   onChange={(e) => setKekaBaseUrl(e.target.value)}
                 />
+                <p className="text-[10px] text-slate-400 mt-1">Your company's Keka subdomain, e.g. <span className="font-mono">https://yourcompany.keka.com</span></p>
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">Client ID</label>
+                <input
+                  type="password"
+                  placeholder={kekaClientIdPlaceholder}
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-violet-500 font-medium"
+                  value={kekaClientId}
+                  onChange={(e) => setKekaClientId(e.target.value)}
+                  autoComplete="off"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">Leave blank to keep the existing value.</p>
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">Client Secret</label>
+                <input
+                  type="password"
+                  placeholder={kekaClientSecretPlaceholder}
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-violet-500 font-medium"
+                  value={kekaClientSecret}
+                  onChange={(e) => setKekaClientSecret(e.target.value)}
+                  autoComplete="off"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">Leave blank to keep the existing value.</p>
               </div>
               <div>
                 <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">API Key</label>

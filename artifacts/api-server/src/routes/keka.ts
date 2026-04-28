@@ -1,7 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import admin from "firebase-admin";
 import { readFirebasePath, writeFirebasePath } from "../lib/firebase-admin";
-import { syncKekaData, getKekaCredentials, readKekaApiKey, writeKekaApiKey, testKekaConnection } from "../lib/keka-client";
+import { syncKekaData, getKekaCredentials, readKekaApiKey, writeKekaApiKey, readKekaClientId, writeKekaClientId, readKekaClientSecret, writeKekaClientSecret, testKekaConnection } from "../lib/keka-client";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -87,11 +87,15 @@ router.get("/keka/settings", requireAdminRole, async (_req: Request, res: Respon
     }
 
     const apiKeyConfigured = !!readKekaApiKey();
-    const credentialsReady = apiKeyConfigured && !!config?.baseUrl;
+    const clientIdConfigured = !!readKekaClientId();
+    const clientSecretConfigured = !!readKekaClientSecret();
+    const credentialsReady = apiKeyConfigured && clientIdConfigured && clientSecretConfigured && !!config?.baseUrl;
     const safe = {
       baseUrl: config?.baseUrl || "",
       region: config?.region || "All",
       apiKeyConfigured,
+      clientIdConfigured,
+      clientSecretConfigured,
       credentialsReady,
       lastSync: config?.lastSync ?? null,
     };
@@ -103,9 +107,11 @@ router.get("/keka/settings", requireAdminRole, async (_req: Request, res: Respon
 });
 
 router.post("/keka/settings", requireAdminRole, async (req: Request, res: Response) => {
-  const { baseUrl, apiKey, region } = req.body as {
+  const { baseUrl, apiKey, clientId, clientSecret, region } = req.body as {
     baseUrl?: string;
     apiKey?: string;
+    clientId?: string;
+    clientSecret?: string;
     region?: string;
   };
 
@@ -115,12 +121,12 @@ router.post("/keka/settings", requireAdminRole, async (req: Request, res: Respon
   }
 
   try {
-    if (apiKey?.trim()) {
-      writeKekaApiKey(apiKey.trim());
-    }
+    // Credentials are stored server-side only — never in Firebase.
+    if (apiKey?.trim()) writeKekaApiKey(apiKey.trim());
+    if (clientId?.trim()) writeKekaClientId(clientId.trim());
+    if (clientSecret?.trim()) writeKekaClientSecret(clientSecret.trim());
 
     // Patch individual fields so ancillary metadata (e.g. lastSync) is preserved.
-    // The API key is never written to Firebase.
     await Promise.all([
       writeFirebasePath("settings/integrations/keka/baseUrl", baseUrl.trim()),
       writeFirebasePath("settings/integrations/keka/region", region?.trim() || "All"),
