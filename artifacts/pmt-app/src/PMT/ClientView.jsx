@@ -1184,7 +1184,7 @@ const ClientView = ({
     return (
       <div className="min-h-full p-4 font-sans animate-in fade-in duration-500 text-left space-y-3">
         {/* Header Row */}
-        <div className="flex items-center justify-between relative z-[850]">
+        <div className="flex items-center justify-between relative z-10">
           <div className="flex items-center gap-3">
             <button onClick={() => setSelectedClient(null)} className="p-2 bg-white hover:bg-slate-50 rounded-xl transition-all border border-slate-100 shadow-sm">
               <ChevronLeft size={18} className="text-slate-600"/>
