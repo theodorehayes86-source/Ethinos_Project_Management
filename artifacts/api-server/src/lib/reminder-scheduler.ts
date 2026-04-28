@@ -1,9 +1,10 @@
 import cron from "node-cron";
-import { parse, isValid, startOfDay, addDays, differenceInCalendarDays } from "date-fns";
+import { parse, isValid, startOfDay, addDays, differenceInCalendarDays, format } from "date-fns";
 import { toZonedTime } from "date-fns-tz";
 import { readFirebasePath, writeFirebasePath } from "./firebase-admin";
 import { sendEmail, isEmailConfigured } from "./microsoft-graph";
 import { logger } from "./logger";
+import { isDateLeaveOrHoliday } from "./keka-scheduler";
 
 interface TaskLog {
   id: string | number;
@@ -379,6 +380,16 @@ export async function runOverdueDueSoonCheck(): Promise<void> {
 
         if (overdueEnabled && diffDays < 0) {
           if (cooldown.lastOverdueNotifiedAt === todayStr) continue;
+
+          if (task.assigneeId) {
+            const dueDateKey = format(dueDateStart, "yyyy-MM-dd");
+            const onLeave = await isDateLeaveOrHoliday(String(task.assigneeId), dueDateKey);
+            if (onLeave) {
+              logger.info({ taskId, dueDateKey }, "[Overdue/DueSoon] Skipping overdue — due date is a leave/holiday day");
+              continue;
+            }
+          }
+
           try {
             if (emailConfigured) {
               const subject = applyCustomSubjectScheduler(

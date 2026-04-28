@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { X, ChevronDown, Check, AlertTriangle, Clock, BarChart2, TrendingUp, Download } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid
 } from 'recharts';
+import { getUserLeaveAndHolidayData, isFullDayLeaveOrHoliday } from '../utils/leaveConflict';
 
 // ─── Date Helpers ─────────────────────────────────────────────────────────────
 
@@ -160,6 +161,21 @@ const ChecklistDashboard = ({
   const [assigneeFilter, setAssigneeFilter] = useState('All');
   const [clientPickerOpen, setClientPickerOpen] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
+  const [leaveDataByUser, setLeaveDataByUser] = useState({});
+
+  useEffect(() => {
+    const assigneeIds = [...new Set(taskGroups.map(g => g.assigneeId).filter(Boolean).map(String))];
+    if (!assigneeIds.length) return;
+    let cancelled = false;
+    Promise.all(assigneeIds.map(id => getUserLeaveAndHolidayData(id).then(data => ({ id, data })))).then(results => {
+      if (cancelled) return;
+      const map = {};
+      results.forEach(({ id, data }) => { map[id] = data; });
+      setLeaveDataByUser(map);
+    });
+    return () => { cancelled = true; };
+  }, [taskGroups]);
+
 
   // ── CSV export ────────────────────────────────────────────────────────────
   const [csvQuestionFilter, setCsvQuestionFilter] = useState('');
@@ -252,7 +268,10 @@ const ChecklistDashboard = ({
       const yesPercent = ynAnswered.length > 0 ? Math.round((yesCount / ynAnswered.length) * 100) : null;
 
       const groupDate = parseTaskDate(group.date);
-      const isOverdue = group.status !== 'done' && groupDate && toYMD(groupDate) < today;
+      const groupDateYMD = groupDate ? toYMD(groupDate) : null;
+      const assigneeLeave = leaveDataByUser[String(group.assigneeId)] || {};
+      const isOnLeave = groupDateYMD && isFullDayLeaveOrHoliday(assigneeLeave[groupDateYMD]);
+      const isOverdue = group.status !== 'done' && groupDateYMD && groupDateYMD < today && !isOnLeave;
       const effectiveStatus = group.status === 'done' ? 'done' : isOverdue ? 'overdue' : 'pending';
 
       const tpl = checklistTemplates.find(t => t.id === group.templateId);
@@ -277,7 +296,7 @@ const ChecklistDashboard = ({
         _assigneeName: assigneeName,
       };
     });
-  }, [filteredGroups, tasksByGroupId, checklistTemplates, scopedClients, users, today]);
+  }, [filteredGroups, tasksByGroupId, checklistTemplates, scopedClients, users, today, leaveDataByUser]);
 
   // Summary metrics
   const summaryMetrics = useMemo(() => {

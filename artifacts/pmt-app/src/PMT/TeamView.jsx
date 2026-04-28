@@ -1,9 +1,11 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Users, ChevronRight, ChevronLeft, Plus, X, Search, Star, ArrowUp, ArrowDown, Filter } from 'lucide-react';
 import { format, isBefore, isAfter, startOfWeek, endOfWeek, startOfMonth, endOfMonth, parse } from 'date-fns';
 import TaskDetailPanel from './TaskDetailPanel';
 import { sendNotification } from '../utils/notify';
 import DueDateInput from './DueDateInput';
+import { getUserLeaveStatus, getUserLeaveData, getUserLeaveAndHolidayData, checkLeaveConflict, toDateKey, isFullDayLeaveOrHoliday } from '../utils/leaveConflict';
+import LeaveConflictModal from './LeaveConflictModal';
 
 const DEFAULT_STANDARD_TRACK = ['Director', 'Snr Manager', 'Manager', 'Asst Manager', 'Snr Executive', 'Executive', 'Employee', 'Intern'];
 const CS_REPORT_ROLES = new Set(['CSM', 'Project Manager', 'PM/CSM']);
@@ -68,6 +70,22 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
   const [estimatedMins, setEstimatedMins] = useState('');
   const [error, setError] = useState('');
   const [clientSearch, setClientSearch] = useState('');
+  const [leaveConflict, setLeaveConflict] = useState(null);
+  const acknowledgedLeaveRef = useRef(null);
+
+  useEffect(() => {
+    const id = prefilledAssignee?.id ? String(prefilledAssignee.id) : null;
+    if (!id || !taskDueDate) { setLeaveConflict(null); return; }
+    const dateKey = toDateKey(taskDueDate);
+    if (!dateKey) return;
+    const comboKey = `${id}__${dateKey}`;
+    if (acknowledgedLeaveRef.current === comboKey) return;
+    let cancelled = false;
+    checkLeaveConflict(id, taskDueDate).then(conflict => {
+      if (!cancelled) setLeaveConflict(conflict);
+    });
+    return () => { cancelled = true; };
+  }, [prefilledAssignee?.id, taskDueDate]);
 
   const filteredClients = allClients.filter(c => !clientSearch.trim() || (c.name || '').toLowerCase().includes(clientSearch.toLowerCase()));
   const selectedClient = allClients.find(c => String(c.id) === String(selectedClientId));
@@ -187,6 +205,23 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
           </div>
         </form>
       </div>
+
+      {leaveConflict && (
+        <LeaveConflictModal
+          conflict={leaveConflict}
+          userName={prefilledAssignee?.name || 'Assignee'}
+          onProceed={() => {
+            const id = prefilledAssignee?.id ? String(prefilledAssignee.id) : null;
+            const dateKey = toDateKey(taskDueDate);
+            acknowledgedLeaveRef.current = `${id}__${dateKey}`;
+            setLeaveConflict(null);
+          }}
+          onCancel={() => {
+            setLeaveConflict(null);
+            setTaskDueDate(null);
+          }}
+        />
+      )}
     </div>
   );
 };
@@ -198,7 +233,17 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
   const [taskSearch, setTaskSearch] = useState('');
   const [selectedTask, setSelectedTask] = useState(null);
   const [showAddTask, setShowAddTask] = useState(false);
+  const [memberLeaveByDate, setMemberLeaveByDate] = useState({});
   const now = Date.now();
+
+  useEffect(() => {
+    if (!member?.id) return;
+    let cancelled = false;
+    getUserLeaveAndHolidayData(String(member.id)).then(data => {
+      if (!cancelled) setMemberLeaveByDate(data);
+    });
+    return () => { cancelled = true; };
+  }, [member?.id]);
 
   const tasks = useMemo(() => {
     let list = allMemberTasks.filter(t => !t.archived);
@@ -221,7 +266,14 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
   const stats = useMemo(() => {
     const base = allMemberTasks.filter(t => !t.archived);
     const done = base.filter(t => t.status === 'Done'), wip = base.filter(t => t.status === 'WIP'), pending = base.filter(t => t.status === 'Pending');
-    const overdue = base.filter(t => { if (t.status === 'Done') return false; const d = parseDueDate(t.dueDate); return d && isBefore(d, new Date()); });
+    const overdue = base.filter(t => {
+      if (t.status === 'Done') return false;
+      const d = parseDueDate(t.dueDate);
+      if (!d || !isBefore(d, new Date())) return false;
+      const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
+      if (isFullDayLeaveOrHoliday(memberLeaveByDate[`${y}-${m}-${day}`])) return false;
+      return true;
+    });
     const rated = done.filter(t => t.qcRating);
     const avgQc = rated.length > 0 ? (rated.reduce((s, t) => s + t.qcRating, 0) / rated.length).toFixed(1) : null;
     let billableMs = 0, nonBillableMs = 0, aboveEst = 0, belowEst = 0;
@@ -231,7 +283,7 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
       if (t.estimatedMs) { if (ms > t.estimatedMs) aboveEst++; else belowEst++; }
     });
     return { total: base.length, done: done.length, wip: wip.length, pending: pending.length, overdue: overdue.length, avgQc, billableMs, nonBillableMs, aboveEst, belowEst };
-  }, [allMemberTasks, now]);
+  }, [allMemberTasks, now, memberLeaveByDate]);
 
   const clientHourSplit = useMemo(() => {
     const map = {};
@@ -358,7 +410,7 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
   );
 };
 
-const MemberCard = ({ member, isSelected, onClick }) => (
+const MemberCard = ({ member, isSelected, onClick, leaveStatus }) => (
   <button onClick={onClick}
     className={`w-full text-left px-4 py-3 rounded-xl border transition-all ${isSelected ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white border-slate-200 hover:border-blue-200 hover:shadow-sm text-slate-700'}`}>
     <div className="flex items-center gap-3">
@@ -367,6 +419,16 @@ const MemberCard = ({ member, isSelected, onClick }) => (
         <p className={`text-xs font-bold truncate ${isSelected ? 'text-white' : 'text-slate-800'}`}>{member.name}</p>
         {member.department && <p className={`text-[10px] truncate ${isSelected ? 'text-blue-100' : 'text-slate-500'}`}>{member.department}</p>}
       </div>
+      {leaveStatus?.onLeaveToday && (
+        <span className={`flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isSelected ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-700'}`}>
+          On Leave
+        </span>
+      )}
+      {!leaveStatus?.onLeaveToday && leaveStatus?.upcomingLeaveDate && (
+        <span className={`flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isSelected ? 'bg-white/20 text-blue-100' : 'bg-sky-50 text-sky-600 border border-sky-200'}`}>
+          Leave {new Date(leaveStatus.upcomingLeaveDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+        </span>
+      )}
     </div>
   </button>
 );
@@ -390,6 +452,7 @@ const TeamView = ({
   const [drillStack, setDrillStack] = useState([]);
   const [selectedMember, setSelectedMember] = useState(null);
   const [deptFilter, setDeptFilter] = useState('all');
+  const [leaveStatuses, setLeaveStatuses] = useState({});
 
   const isSuperAdmin = currentUser?.role === 'Super Admin';
   const isBH = currentUser?.role === 'Business Head';
@@ -469,6 +532,23 @@ const TeamView = ({
     return groups;
   }, [currentParent, isSuperAdmin, isBH, isCSMPM, users, currentUser, effectiveHierarchyOrder, deptFilter]);
 
+  useEffect(() => {
+    const allMembers = leftPanelGroups.flatMap(g => g.members || []);
+    if (!allMembers.length) return;
+    let cancelled = false;
+    Promise.all(
+      allMembers.map(m =>
+        getUserLeaveStatus(String(m.id)).then(status => ({ id: String(m.id), status }))
+      )
+    ).then(results => {
+      if (cancelled) return;
+      const map = {};
+      results.forEach(({ id, status }) => { map[id] = status; });
+      setLeaveStatuses(map);
+    });
+    return () => { cancelled = true; };
+  }, [leftPanelGroups]);
+
   const canDrillSelected = useMemo(() => {
     if (!selectedMember) return false;
     if (isBH || isCSMPM) return false;
@@ -543,7 +623,7 @@ const TeamView = ({
               {members.length === 0
                 ? <EmptyLevelRow role={role}/>
                 : members.map(member => (
-                    <MemberCard key={member.id} member={member} isSelected={selectedMember?.id === member.id} onClick={() => setSelectedMember(member)}/>
+                    <MemberCard key={member.id} member={member} isSelected={selectedMember?.id === member.id} onClick={() => setSelectedMember(member)} leaveStatus={leaveStatuses[String(member.id)]}/>
                   ))
               }
             </div>

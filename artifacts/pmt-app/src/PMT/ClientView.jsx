@@ -9,6 +9,8 @@ import ChecklistGroupDetailPanel from './ChecklistGroupDetailPanel';
 import { sendNotification } from '../utils/notify';
 import { ReminderPills } from './ReminderPills';
 import DueDateInput from './DueDateInput';
+import LeaveConflictModal from './LeaveConflictModal';
+import { checkLeaveConflict, toDateKey } from '../utils/leaveConflict';
 
 const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Business Head'];
 
@@ -157,6 +159,42 @@ const ClientView = ({
 
   // Task detail panel state
   const [detailTask, setDetailTask] = useState(null);
+
+  // Leave conflict check state (for new task creation)
+  const [leaveConflict, setLeaveConflict] = useState(null);
+  const acknowledgedLeaveRef = useRef(null);
+
+  // Leave conflict check state (for edit task modal)
+  const [editLeaveConflict, setEditLeaveConflict] = useState(null);
+  const editAcknowledgedLeaveRef = useRef(null);
+
+  useEffect(() => {
+    const id = String(editDraft?.assigneeId || '');
+    if (!id || !editDraft?.dueDate) { setEditLeaveConflict(null); return; }
+    const dateKey = toDateKey(editDraft.dueDate);
+    if (!dateKey) return;
+    const comboKey = `${id}__${dateKey}`;
+    if (editAcknowledgedLeaveRef.current === comboKey) return;
+    let cancelled = false;
+    checkLeaveConflict(id, editDraft.dueDate).then(conflict => {
+      if (!cancelled) setEditLeaveConflict(conflict);
+    });
+    return () => { cancelled = true; };
+  }, [editDraft?.assigneeId, editDraft?.dueDate]);
+
+  useEffect(() => {
+    const id = (newTaskAssigneeId || '').toString();
+    if (!id || !taskDueDate) { setLeaveConflict(null); return; }
+    const dateKey = toDateKey(taskDueDate);
+    if (!dateKey) return;
+    const comboKey = `${id}__${dateKey}`;
+    if (acknowledgedLeaveRef.current === comboKey) return;
+    let cancelled = false;
+    checkLeaveConflict(id, taskDueDate).then(conflict => {
+      if (!cancelled) setLeaveConflict(conflict);
+    });
+    return () => { cancelled = true; };
+  }, [newTaskAssigneeId, taskDueDate]);
 
   // QC form state (for new task creation)
   const [qcEnabled, setQcEnabled] = useState(true);
@@ -3980,6 +4018,39 @@ const ClientView = ({
         );
       })()}
 
+      {leaveConflict && (
+        <LeaveConflictModal
+          conflict={leaveConflict}
+          userName={(users || []).find(u => String(u.id) === String(newTaskAssigneeId))?.name || 'Assignee'}
+          onProceed={() => {
+            const id = (newTaskAssigneeId || '').toString();
+            const dateKey = toDateKey(taskDueDate);
+            acknowledgedLeaveRef.current = `${id}__${dateKey}`;
+            setLeaveConflict(null);
+          }}
+          onCancel={() => {
+            setLeaveConflict(null);
+            setTaskDueDate(null);
+          }}
+        />
+      )}
+
+      {editLeaveConflict && editDraft && (
+        <LeaveConflictModal
+          conflict={editLeaveConflict}
+          userName={(users || []).find(u => String(u.id) === String(editDraft.assigneeId))?.name || 'Assignee'}
+          onProceed={() => {
+            const id = String(editDraft.assigneeId || '');
+            const dateKey = toDateKey(editDraft.dueDate);
+            editAcknowledgedLeaveRef.current = `${id}__${dateKey}`;
+            setEditLeaveConflict(null);
+          }}
+          onCancel={() => {
+            setEditLeaveConflict(null);
+            setEditDraft(prev => prev ? { ...prev, dueDate: null } : prev);
+          }}
+        />
+      )}
     </div>
   );
 };

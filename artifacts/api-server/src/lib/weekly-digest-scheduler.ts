@@ -1,12 +1,13 @@
 import cron from "node-cron";
 import {
   parse, isValid, startOfISOWeek, endOfISOWeek, subWeeks,
-  addDays, format, getISOWeek, isWithinInterval, startOfDay,
+  addDays, format, getISOWeek, isWithinInterval, startOfDay, isBefore,
 } from "date-fns";
 import { toZonedTime } from "date-fns-tz";
 import { readFirebasePath, writeFirebasePath } from "./firebase-admin";
 import { sendEmail, isEmailConfigured } from "./microsoft-graph";
 import { logger } from "./logger";
+import { checkLeaveConflict } from "./keka-scheduler";
 
 const DEFAULT_TZ = "Europe/London";
 const DEFAULT_HOUR = 8;
@@ -28,6 +29,10 @@ interface TaskLog {
   date?: string;
   assigneeId?: string | number;
   elapsedMs?: number;
+  name?: string;
+  dueDate?: string | null;
+  status?: string;
+  archived?: boolean;
 }
 
 function parseTaskDate(raw: string): Date | null {
@@ -58,8 +63,10 @@ function buildWeeklyDigestHtml(data: {
   days: Date[];
   dayTotals: number[];
   projects: Array<{ name: string; dayMs: number[] }>;
+  leaveDays?: Array<{ date: string; label: string }>;
+  overdueTaskNames?: string[];
 }): string {
-  const { userName, weekNumber, weekLabel, days, dayTotals, projects } = data;
+  const { userName, weekNumber, weekLabel, days, dayTotals, projects, leaveDays, overdueTaskNames } = data;
 
   const navy = "#1e2a4a";
   const dayColStyle = `padding:10px 14px;font-size:12px;font-weight:700;color:#ffffff;text-align:center;border-left:1px solid rgba(255,255,255,0.15);white-space:nowrap;`;
@@ -129,6 +136,28 @@ function buildWeeklyDigestHtml(data: {
       </tr>
       ${projectRows}
     </table>
+
+    ${leaveDays && leaveDays.length > 0 ? `
+    <!-- Leave / Holiday annotation -->
+    <div style="height:14px;"></div>
+    <div style="padding:12px 24px;background:#fef3c7;border-top:1px solid #fde68a;border-bottom:1px solid #fde68a;">
+      <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.05em;">Leave & Holiday Days This Week</p>
+      <p style="margin:0;font-size:12px;color:#78350f;">The following days had leave or public holidays — zero hours on these days is expected.</p>
+      <ul style="margin:6px 0 0;padding-left:18px;">
+        ${leaveDays.map(ld => `<li style="font-size:12px;color:#92400e;margin-bottom:2px;">${ld.date} — ${ld.label}</li>`).join("")}
+      </ul>
+    </div>` : ""}
+
+    ${overdueTaskNames && overdueTaskNames.length > 0 ? `
+    <!-- Overdue tasks (leave/holiday days excluded) -->
+    <div style="height:14px;"></div>
+    <div style="padding:12px 24px;background:#fef2f2;border-top:1px solid #fecaca;border-bottom:1px solid #fecaca;">
+      <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:#991b1b;text-transform:uppercase;letter-spacing:0.05em;">Overdue Tasks</p>
+      <p style="margin:0;font-size:12px;color:#7f1d1d;">The following tasks are past their due date. Leave and holiday days have been excluded from this list.</p>
+      <ul style="margin:6px 0 0;padding-left:18px;">
+        ${overdueTaskNames.map(n => `<li style="font-size:12px;color:#991b1b;margin-bottom:2px;">${n}</li>`).join("")}
+      </ul>
+    </div>` : ""}
 
     <!-- Footer -->
     <div style="padding:16px 24px;background:#f8fafc;border-top:1px solid #e2e8f0;margin-top:16px;">
@@ -294,6 +323,41 @@ export async function runWeeklyDigest(opts?: { force?: boolean; toEmail?: string
         .map(([name, dayMs]) => ({ name, dayMs }))
         .sort((a, b) => b.dayMs.reduce((s, v) => s + v, 0) - a.dayMs.reduce((s, v) => s + v, 0));
 
+      const leaveDays: Array<{ date: string; label: string }> = [];
+      for (const dayKey of dayKeys) {
+        try {
+          const conflict = await checkLeaveConflict(userId, dayKey);
+          if (conflict) {
+            const label =
+              conflict.type === "holiday"
+                ? `Public Holiday — ${conflict.holidayName}`
+                : `${conflict.leaveType || "Leave"}${conflict.type === "half-leave" ? ` (${conflict.session})` : ""}`;
+            leaveDays.push({ date: dayKey, label });
+          }
+        } catch {
+          /* non-fatal — skip leave annotation for this day */
+        }
+      }
+
+      // Overdue tasks: pending tasks past due that are NOT on a leave/holiday day
+      const overdueTaskNames: string[] = [];
+      const today = startOfDay(nowInTz);
+      for (const task of allTasks) {
+        if (String(task.assigneeId) !== userId) continue;
+        if (!task.dueDate || task.status === "Done" || task.archived) continue;
+        const dueDate = parseTaskDate(task.dueDate);
+        if (!dueDate || !isBefore(startOfDay(dueDate), today)) continue;
+        const dueDateKey = format(dueDate, "yyyy-MM-dd");
+        try {
+          const conflict = await checkLeaveConflict(userId, dueDateKey);
+          if (!conflict || conflict.type === "half-leave") {
+            overdueTaskNames.push(task.name ? `${task.name} (due ${task.dueDate})` : `Task #${task.id} (due ${task.dueDate})`);
+          }
+        } catch {
+          overdueTaskNames.push(task.name ? `${task.name} (due ${task.dueDate})` : `Task #${task.id} (due ${task.dueDate})`);
+        }
+      }
+
       const bodyHtml = buildWeeklyDigestHtml({
         userName: user.name || user.email,
         weekNumber,
@@ -301,6 +365,8 @@ export async function runWeeklyDigest(opts?: { force?: boolean; toEmail?: string
         days,
         dayTotals,
         projects,
+        leaveDays: leaveDays.length > 0 ? leaveDays : undefined,
+        overdueTaskNames: overdueTaskNames.length > 0 ? overdueTaskNames : undefined,
       });
 
       const sendTo = overrideEmail ?? user.email;

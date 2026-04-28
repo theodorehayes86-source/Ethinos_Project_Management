@@ -1,7 +1,9 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X, ChevronRight, ChevronLeft, Check, User, Briefcase, FileText, Calendar, Tag, Loader2, Search, Plus, Trash2 } from 'lucide-react';
 import { createTaskInFirebase, getSubtreeIds } from '../hooks/useFirebaseData.js';
 import { sendNotification } from '../utils/notify.js';
+import { checkLeaveConflict } from '../utils/taskUtils.js';
+import LeaveConflictModal from './LeaveConflictModal.jsx';
 
 const PINNED_CLIENT_NAMES = ['Personal', 'Ethinos Internal'];
 
@@ -240,6 +242,20 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
   const [reminderOffsets, setReminderOffsets] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [leaveConflict, setLeaveConflict] = useState(null);
+  const acknowledgedLeaveRef = useRef(null);
+
+  useEffect(() => {
+    const uid = String(assignee?.id || '');
+    if (!uid || !dueDate) { setLeaveConflict(null); return; }
+    const comboKey = `${uid}__${dueDate}`;
+    if (acknowledgedLeaveRef.current === comboKey) return;
+    let cancelled = false;
+    checkLeaveConflict(uid, dueDate).then(conflict => {
+      if (!cancelled) setLeaveConflict(conflict);
+    });
+    return () => { cancelled = true; };
+  }, [assignee?.id, dueDate]);
 
   const teamIds = !personalMode ? getSubtreeIds(currentUser.id, users) : new Set();
   if (!personalMode) teamIds.delete(String(currentUser.id));
@@ -712,6 +728,21 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
           )}
         </div>
       </div>
+
+      {leaveConflict && (
+        <LeaveConflictModal
+          conflict={leaveConflict}
+          userName={assignee?.name || 'Assignee'}
+          onProceed={() => {
+            acknowledgedLeaveRef.current = `${assignee?.id}__${dueDate}`;
+            setLeaveConflict(null);
+          }}
+          onCancel={() => {
+            setLeaveConflict(null);
+            setDueDate('');
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -9,6 +9,8 @@ import ChecklistGroupDetailPanel from './ChecklistGroupDetailPanel';
 import { sendNotification } from '../utils/notify';
 import { ReminderPills } from './ReminderPills';
 import DueDateInput from './DueDateInput';
+import LeaveConflictModal from './LeaveConflictModal';
+import { checkLeaveConflict, toDateKey, getUserLeaveAndHolidayData, isFullDayLeaveOrHoliday } from '../utils/leaveConflict';
 
 const managementRoles = ['Super Admin', 'Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
 
@@ -123,6 +125,32 @@ const HomeView = ({
   const [taskReminders, setTaskReminders] = useState([]);
   const [showArchived, setShowArchived] = useState(false);
   const [detailTask, setDetailTask] = useState(null);
+  const [leaveConflict, setLeaveConflict] = useState(null);
+  const acknowledgedLeaveRef = useRef(null);
+  const [currentUserLeaveData, setCurrentUserLeaveData] = useState({});
+
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    let cancelled = false;
+    getUserLeaveAndHolidayData(String(currentUser.id)).then(data => {
+      if (!cancelled) setCurrentUserLeaveData(data);
+    });
+    return () => { cancelled = true; };
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    const id = (assigneeId || '').toString();
+    if (!id || !taskDueDate) { setLeaveConflict(null); return; }
+    const dateKey = toDateKey(taskDueDate);
+    if (!dateKey) return;
+    const comboKey = `${id}__${dateKey}`;
+    if (acknowledgedLeaveRef.current === comboKey) return;
+    let cancelled = false;
+    checkLeaveConflict(id, taskDueDate).then(conflict => {
+      if (!cancelled) setLeaveConflict(conflict);
+    });
+    return () => { cancelled = true; };
+  }, [assigneeId, taskDueDate]);
 
   // --- Checklist Group state ---
   const [showNewChecklistModal, setShowNewChecklistModal] = useState(false);
@@ -142,6 +170,22 @@ const HomeView = ({
   const [editingTask, setEditingTask] = useState(null);
   const [editDraft, setEditDraft] = useState(null);
   const [editDraftError, setEditDraftError] = useState('');
+  const [editLeaveConflict, setEditLeaveConflict] = useState(null);
+  const editAcknowledgedLeaveRef = useRef(null);
+
+  useEffect(() => {
+    const id = String(currentUser?.id || '');
+    if (!id || !editDraft?.dueDate) { setEditLeaveConflict(null); return; }
+    const dateKey = toDateKey(editDraft.dueDate);
+    if (!dateKey) return;
+    const comboKey = `${id}__${dateKey}`;
+    if (editAcknowledgedLeaveRef.current === comboKey) return;
+    let cancelled = false;
+    checkLeaveConflict(id, editDraft.dueDate).then(conflict => {
+      if (!cancelled) setEditLeaveConflict(conflict);
+    });
+    return () => { cancelled = true; };
+  }, [currentUser?.id, editDraft?.dueDate]);
   const [editScope, setEditScope] = useState('one');
   const [editDraftCategoryQuery, setEditDraftCategoryQuery] = useState('');
   const [editDraftShowCategoryMenu, setEditDraftShowCategoryMenu] = useState(false);
@@ -622,7 +666,12 @@ const HomeView = ({
   const todayStart = (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })();
   const myOverdue = myTasks.filter(t => {
     if (!t.dueDate || t.status === 'Done') return false;
-    try { const d = parse(t.dueDate, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0); return d < todayStart; } catch { return false; }
+    try {
+      const d = parse(t.dueDate, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0);
+      if (!(d < todayStart)) return false;
+      const y = d.getFullYear(), mo = String(d.getMonth()+1).padStart(2,'0'), dy = String(d.getDate()).padStart(2,'0');
+      return !isFullDayLeaveOrHoliday(currentUserLeaveData[`${y}-${mo}-${dy}`]);
+    } catch { return false; }
   });
   const myDueToday = myTasks.filter(t => t.dueDate === todayStr && t.status !== 'Done');
   const my48Plus = myTasks.filter(t => {
@@ -635,7 +684,12 @@ const HomeView = ({
   // --- Checklist group stats — use g.date (assignment date, always set) not g.dueDate (usually null) ---
   const myOverdueChecklists = myTaskGroups.filter(g => {
     if (!g.date || g.status === 'done') return false;
-    try { const d = parse(g.date, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0); return d < todayStart; } catch { return false; }
+    try {
+      const d = parse(g.date, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0);
+      if (!(d < todayStart)) return false;
+      const y = d.getFullYear(), mo = String(d.getMonth()+1).padStart(2,'0'), dy = String(d.getDate()).padStart(2,'0');
+      return !isFullDayLeaveOrHoliday(currentUserLeaveData[`${y}-${mo}-${dy}`]);
+    } catch { return false; }
   });
   const myDueTodayChecklists = myTaskGroups.filter(g => {
     if (!g.date || g.status === 'done') return false;
@@ -849,7 +903,9 @@ const HomeView = ({
     if (!task.dueDate || task.status === 'Done') return false;
     try {
       const due = parse(task.dueDate, 'do MMM yyyy', new Date());
-      return isBefore(due, new Date());
+      if (!isBefore(due, new Date())) return false;
+      const y = due.getFullYear(), mo = String(due.getMonth()+1).padStart(2,'0'), dy = String(due.getDate()).padStart(2,'0');
+      return !isFullDayLeaveOrHoliday(currentUserLeaveData[`${y}-${mo}-${dy}`]);
     } catch { return false; }
   };
 
@@ -2399,6 +2455,40 @@ const HomeView = ({
             </div>
           </div>
         </div>
+      )}
+
+      {leaveConflict && (
+        <LeaveConflictModal
+          conflict={leaveConflict}
+          userName={assigneeName || users.find(u => String(u.id) === String(assigneeId))?.name || 'Assignee'}
+          onProceed={() => {
+            const id = (assigneeId || '').toString();
+            const dateKey = toDateKey(taskDueDate);
+            acknowledgedLeaveRef.current = `${id}__${dateKey}`;
+            setLeaveConflict(null);
+          }}
+          onCancel={() => {
+            setLeaveConflict(null);
+            setTaskDueDate(null);
+          }}
+        />
+      )}
+
+      {editLeaveConflict && (
+        <LeaveConflictModal
+          conflict={editLeaveConflict}
+          userName={currentUser?.name || 'Assignee'}
+          onProceed={() => {
+            const id = String(currentUser?.id || '');
+            const dateKey = toDateKey(editDraft?.dueDate);
+            editAcknowledgedLeaveRef.current = `${id}__${dateKey}`;
+            setEditLeaveConflict(null);
+          }}
+          onCancel={() => {
+            setEditLeaveConflict(null);
+            setEditDraft(prev => prev ? { ...prev, dueDate: null } : prev);
+          }}
+        />
       )}
     </div>
   );

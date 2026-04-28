@@ -3,6 +3,8 @@ import { X, Plus, Trash2, Send, Link, Check, ExternalLink, AtSign, MessageSquare
 import { format, parse, isBefore } from 'date-fns';
 import { sendNotification } from '../utils/notify';
 import DueDateInput from './DueDateInput';
+import LeaveConflictModal from './LeaveConflictModal';
+import { checkLeaveConflict, toDateKey } from '../utils/leaveConflict';
 
 const statusColors = {
   Done: 'bg-emerald-100 text-emerald-700',
@@ -86,9 +88,28 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
     setLocalDueDate(tryParseDate(task.dueDate));
   }, [task.id, task.dueDate]);
 
+  const [tdpLeaveConflict, setTdpLeaveConflict] = useState(null);
+  const tdpAcknowledgedRef = useRef(null);
+  const [pendingDueDate, setPendingDueDate] = useState(null);
+
   const saveUpdate = (updatedTask) => onUpdate(updatedTask, seriesScope);
 
-  const handleDueDateChange = (date) => {
+  const handleDueDateChange = async (date) => {
+    const assigneeId = task.assigneeId ? String(task.assigneeId) : '';
+    if (date && assigneeId) {
+      const dateKey = toDateKey(date);
+      if (dateKey) {
+        const comboKey = `${assigneeId}__${dateKey}`;
+        if (tdpAcknowledgedRef.current !== comboKey) {
+          const conflict = await checkLeaveConflict(assigneeId, date);
+          if (conflict) {
+            setPendingDueDate(date);
+            setTdpLeaveConflict(conflict);
+            return;
+          }
+        }
+      }
+    }
     setLocalDueDate(date);
     saveUpdate({ ...task, steps, messages, links, dueDate: date ? format(date, 'do MMM yyyy') : null });
   };
@@ -840,6 +861,22 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
           </section>
         </div>
       </div>
+      {tdpLeaveConflict && (
+        <LeaveConflictModal
+          conflict={tdpLeaveConflict}
+          onProceed={() => {
+            tdpAcknowledgedRef.current = `${String(task.assigneeId)}__${toDateKey(pendingDueDate)}`;
+            setTdpLeaveConflict(null);
+            setLocalDueDate(pendingDueDate);
+            saveUpdate({ ...task, steps, messages, links, dueDate: pendingDueDate ? format(pendingDueDate, 'do MMM yyyy') : null });
+            setPendingDueDate(null);
+          }}
+          onCancel={() => {
+            setTdpLeaveConflict(null);
+            setPendingDueDate(null);
+          }}
+        />
+      )}
     </div>
   );
 };

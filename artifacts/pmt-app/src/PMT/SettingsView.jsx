@@ -1,5 +1,27 @@
-import React, { useEffect, useState } from 'react';
-import { Search, Edit2, Trash2, Crown, Users } from 'lucide-react';
+import React, { useEffect, useState, useCallback } from 'react';
+import { Search, Edit2, Trash2, Crown, Users, RefreshCw, Check, AlertTriangle, Link2 } from 'lucide-react';
+import { auth } from '../firebase.js';
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
+
+async function kekaAuthFetch(path, options = {}) {
+  const firebaseUser = auth.currentUser;
+  if (!firebaseUser) throw new Error('Not authenticated');
+  const idToken = await firebaseUser.getIdToken();
+  const resp = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${idToken}`,
+      ...(options.headers || {}),
+    },
+  });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '');
+    throw new Error(text || `HTTP ${resp.status}`);
+  }
+  return resp.json();
+}
 
 const SettingsView = ({ users = [], setUsers, currentUser, clients = [], setClients, setClientLogs }) => {
   const [settingsSearch, setSettingsSearch] = useState("");
@@ -16,6 +38,16 @@ const SettingsView = ({ users = [], setUsers, currentUser, clients = [], setClie
   const [clientEditError, setClientEditError] = useState('');
   const [draftAssignedMemberIds, setDraftAssignedMemberIds] = useState([]);
 
+  const [kekaBaseUrl, setKekaBaseUrl] = useState('');
+  const [kekaApiKey, setKekaApiKey] = useState('');
+  const [kekaRegion, setKekaRegion] = useState('All');
+  const [kekaApiKeyPlaceholder, setKekaApiKeyPlaceholder] = useState('Enter API key');
+  const [kekaSaving, setKekaSaving] = useState(false);
+  const [kekaSaveMsg, setKekaSaveMsg] = useState(null);
+  const [kekaSyncing, setKekaSyncing] = useState(false);
+  const [kekaSyncResult, setKekaSyncResult] = useState(null);
+  const [kekaLoaded, setKekaLoaded] = useState(false);
+
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
 
   const availableRoles = [
@@ -31,7 +63,7 @@ const SettingsView = ({ users = [], setUsers, currentUser, clients = [], setClie
     { id: 'Intern', label: 'Intern' }
   ];
 
-  const canEditRoles = currentUser?.role === 'Super Admin' || currentUser?.role === 'Director';
+  const canEditRoles = ['Super Admin', 'Admin', 'Director'].includes(currentUser?.role);
   const canManageClients = canEditRoles;
 
   const filteredUsers = users.filter(u => {
@@ -70,6 +102,57 @@ const SettingsView = ({ users = [], setUsers, currentUser, clients = [], setClie
     setTeamSearch('');
     setDraftAssignedMemberIds(assignedUsers.map(user => user.id));
   }, [selectedClient, users]);
+
+  const loadKekaSettings = useCallback(async () => {
+    if (kekaLoaded) return;
+    try {
+      const data = await kekaAuthFetch('/keka/settings');
+      setKekaBaseUrl(data.baseUrl || '');
+      setKekaRegion(data.region || 'All');
+      if (data.apiKeyConfigured) setKekaApiKeyPlaceholder('••••••••••••••••');
+      if (data.lastSync) setKekaSyncResult(data.lastSync);
+    } catch {
+      /* ignore — user may not be admin or API may be unavailable */
+    }
+    setKekaLoaded(true);
+  }, [kekaLoaded]);
+
+  useEffect(() => {
+    if (activeSection === 'keka-integration') loadKekaSettings();
+  }, [activeSection, loadKekaSettings]);
+
+  const saveKekaSettings = async () => {
+    if (!kekaBaseUrl.trim()) return;
+    setKekaSaving(true);
+    setKekaSaveMsg(null);
+    try {
+      await kekaAuthFetch('/keka/settings', {
+        method: 'POST',
+        body: JSON.stringify({
+          baseUrl: kekaBaseUrl.trim(),
+          region: kekaRegion.trim() || 'All',
+          ...(kekaApiKey.trim() ? { apiKey: kekaApiKey.trim() } : {}),
+        }),
+      });
+      setKekaSaveMsg({ type: 'success', text: 'Settings saved.' });
+      if (kekaApiKey.trim()) { setKekaApiKey(''); setKekaApiKeyPlaceholder('••••••••••••••••'); }
+    } catch (e) {
+      setKekaSaveMsg({ type: 'error', text: `Failed to save: ${e.message || 'Unknown error'}` });
+    }
+    setKekaSaving(false);
+  };
+
+  const triggerKekaSync = async () => {
+    setKekaSyncing(true);
+    setKekaSyncResult(null);
+    try {
+      const data = await kekaAuthFetch('/keka/sync', { method: 'POST' });
+      setKekaSyncResult(data);
+    } catch (e) {
+      setKekaSyncResult({ success: false, error: String(e) });
+    }
+    setKekaSyncing(false);
+  };
 
   const getClientAssignments = (clientName) => {
     const assignedUsers = users.filter(user => (user.assignedProjects || []).includes(clientName));
@@ -267,6 +350,16 @@ const SettingsView = ({ users = [], setUsers, currentUser, clients = [], setClie
           >
             Client Control View
           </button>
+          {canEditRoles && (
+            <button
+              type="button"
+              onClick={() => setActiveSection('keka-integration')}
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all border inline-flex items-center gap-1.5 ${activeSection === 'keka-integration' ? 'bg-white text-slate-900 border-slate-900' : 'bg-white text-slate-700 border-transparent hover:border-slate-300'}`}
+            >
+              <Link2 size={12} />
+              Keka Integration
+            </button>
+          )}
         </div>
       </div>
 
@@ -777,6 +870,129 @@ const SettingsView = ({ users = [], setUsers, currentUser, clients = [], setClie
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {activeSection === 'keka-integration' && (
+        <div className="flex-1 flex flex-col gap-5 min-h-0 overflow-y-auto">
+          <div className="border border-slate-200 rounded-2xl bg-white shadow-sm p-6">
+            <div className="flex items-start gap-3 mb-5">
+              <div className="w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center flex-shrink-0">
+                <Link2 size={18} className="text-violet-700" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Keka HR Integration</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Connect to Keka to automatically sync employee leave and public holiday data. Leave data is used to warn about scheduling conflicts and avoid false overdue alerts.</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">Keka Base URL</label>
+                <input
+                  type="url"
+                  placeholder="https://your-company.keka.com"
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-violet-500 font-medium"
+                  value={kekaBaseUrl}
+                  onChange={(e) => setKekaBaseUrl(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">API Key</label>
+                <input
+                  type="password"
+                  placeholder={kekaApiKeyPlaceholder}
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-violet-500 font-medium"
+                  value={kekaApiKey}
+                  onChange={(e) => setKekaApiKey(e.target.value)}
+                  autoComplete="off"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">Leave blank to keep the existing key.</p>
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">Holiday Region</label>
+                <input
+                  type="text"
+                  placeholder="All"
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-violet-500 font-medium"
+                  value={kekaRegion}
+                  onChange={(e) => setKekaRegion(e.target.value)}
+                />
+                <p className="text-[10px] text-slate-400 mt-1">Used to match Keka holiday location names. Use "All" for company-wide holidays.</p>
+              </div>
+            </div>
+
+            {kekaSaveMsg && (
+              <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold mb-4 ${kekaSaveMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                {kekaSaveMsg.type === 'success' ? <Check size={13} /> : <AlertTriangle size={13} />}
+                {kekaSaveMsg.text}
+              </div>
+            )}
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={saveKekaSettings}
+                disabled={kekaSaving || !kekaBaseUrl.trim()}
+                className="px-4 py-2 rounded-lg text-xs font-semibold bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {kekaSaving ? 'Saving…' : 'Save Settings'}
+              </button>
+              <button
+                type="button"
+                onClick={triggerKekaSync}
+                disabled={kekaSyncing || !kekaBaseUrl.trim()}
+                className="px-4 py-2 rounded-lg text-xs font-semibold bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-2"
+              >
+                <RefreshCw size={12} className={kekaSyncing ? 'animate-spin' : ''} />
+                {kekaSyncing ? 'Syncing…' : 'Sync Now'}
+              </button>
+            </div>
+          </div>
+
+          {kekaSyncResult && (
+            <div className={`border rounded-2xl p-5 ${kekaSyncResult.success ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+              <div className="flex items-center gap-2 mb-3">
+                {kekaSyncResult.success
+                  ? <Check size={16} className="text-emerald-600" />
+                  : <AlertTriangle size={16} className="text-red-600" />}
+                <span className={`text-sm font-bold ${kekaSyncResult.success ? 'text-emerald-800' : 'text-red-800'}`}>
+                  {kekaSyncResult.success ? 'Sync completed successfully' : 'Sync failed'}
+                </span>
+              </div>
+              {kekaSyncResult.success ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {[
+                    { label: 'Leave Records', value: kekaSyncResult.leaveRecordsWritten ?? 0 },
+                    { label: 'Holidays', value: kekaSyncResult.holidayRecordsWritten ?? 0 },
+                    { label: 'Users Matched', value: kekaSyncResult.usersMatched ?? 0 },
+                    { label: 'Unmatched', value: kekaSyncResult.usersUnmatched ?? 0 },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="bg-white rounded-xl p-3 border border-emerald-200 text-center">
+                      <div className="text-xl font-black text-slate-800">{value}</div>
+                      <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mt-0.5">{label}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-red-700">{kekaSyncResult.error || 'Unknown error'}</p>
+              )}
+              {kekaSyncResult.syncedAt && (
+                <p className="text-[10px] text-slate-500 mt-3">Last synced: {new Date(kekaSyncResult.syncedAt).toLocaleString()}</p>
+              )}
+            </div>
+          )}
+
+          <div className="border border-slate-200 rounded-2xl bg-white/50 p-5">
+            <h4 className="text-xs font-bold text-slate-700 mb-2">How it works</h4>
+            <ul className="space-y-1.5 text-xs text-slate-500 list-disc pl-4">
+              <li>Keka employee leave records are matched to PMT users by email (falls back to Employee ID).</li>
+              <li>Sync fetches leave data for the current date through the next 3 months.</li>
+              <li>A nightly automatic sync runs at 02:00 UTC to keep data fresh.</li>
+              <li>Leave data is used to warn managers when assigning tasks on leave days.</li>
+              <li>Overdue notifications and digest emails automatically respect leave days.</li>
+            </ul>
           </div>
         </div>
       )}

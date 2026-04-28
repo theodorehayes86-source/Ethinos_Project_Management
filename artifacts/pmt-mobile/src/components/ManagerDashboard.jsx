@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChevronRight, ChevronLeft, AlertTriangle, CheckCircle, Star, Users, Plus, Tag, Calendar, Clock, X, ChevronDown, ChevronUp, ShieldCheck } from 'lucide-react';
 import ApproveSheet from './ApproveSheet.jsx';
 import TaskDetailSheet from './TaskDetailSheet.jsx';
@@ -9,7 +9,7 @@ import {
   getUserTaskStats,
   getSubtreeStats,
 } from '../hooks/useFirebaseData.js';
-import { isTaskOverdue } from '../utils/taskUtils.js';
+import { isTaskOverdue, isTaskLeaveAwareOverdue, getLeaveAndHolidayData, getLeaveDataForUser, getLeaveStatus } from '../utils/taskUtils.js';
 
 const STATUS_COLORS = {
   Pending: 'bg-amber-100 text-amber-700',
@@ -158,25 +158,38 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
   const reports  = getDirectReports(user.id, allUsers);
   const hasTeam  = reports.length > 0;
   const [showTaskSheet, setShowTaskSheet] = useState(false);
-  const [taskFilter, setTaskFilter] = useState(null); // 'pending' | 'today' | 'overdue' | null
+  const [taskFilter, setTaskFilter] = useState(null);
   const [showAllTasks, setShowAllTasks] = useState(false);
+  const [leaveByDate, setLeaveByDate] = useState({});
+
+  useEffect(() => {
+    let cancelled = false;
+    getLeaveAndHolidayData(String(user.id)).then(data => { if (!cancelled) setLeaveByDate(data); });
+    return () => { cancelled = true; };
+  }, [user.id]);
+
+  const leaveAwareOverdueTasks = personal.overdueTasks.filter(t => isTaskLeaveAwareOverdue(t, undefined, leaveByDate));
+  const leaveStatusInfo = getLeaveStatus(leaveByDate);
+  const leaveStatus = leaveStatusInfo.status;
+  const leaveDate = leaveStatusInfo.date;
+  const overridePersonal = { ...personal, overdue: leaveAwareOverdueTasks.length, overdueTasks: leaveAwareOverdueTasks };
 
   const toggleFilter = (f) => setTaskFilter(v => v === f ? null : f);
 
   const filteredTasks = taskFilter === 'pending'
-    ? personal.pendingTasks
+    ? overridePersonal.pendingTasks
     : taskFilter === 'today'
-    ? personal.todayTasks
+    ? overridePersonal.todayTasks
     : taskFilter === 'overdue'
-    ? personal.overdueTasks
+    ? overridePersonal.overdueTasks
     : taskFilter === 'awaitingQC'
-    ? personal.pendingQCTasks
+    ? overridePersonal.pendingQCTasks
     : null;
 
-  const otherTasks = personal.allTasks.filter(t =>
-    !personal.todayTasks.includes(t) &&
-    !personal.overdueTasks.includes(t) &&
-    !personal.pendingTasks.includes(t)
+  const otherTasks = overridePersonal.allTasks.filter(t =>
+    !overridePersonal.todayTasks.includes(t) &&
+    !overridePersonal.overdueTasks.includes(t) &&
+    !overridePersonal.pendingTasks.includes(t)
   );
 
   return (
@@ -187,23 +200,41 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
           className="w-full px-4 py-4 flex items-center gap-3 text-left active:bg-slate-50 transition-colors"
           onClick={() => hasTeam ? onDrillIn(user) : setShowTaskSheet(true)}
         >
-          <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
+          <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0 relative">
             <span className="text-indigo-700 font-black text-sm">{initials(user.name)}</span>
+            {leaveStatus === 'on_leave' && (
+              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-orange-400 border-2 border-white" title="On Leave" />
+            )}
+            {leaveStatus === 'leave_soon' && (
+              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-amber-300 border-2 border-white" title="Leave Soon" />
+            )}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-bold text-slate-900 truncate">{user.name}</p>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <p className="text-sm font-bold text-slate-900 truncate">{user.name}</p>
+              {leaveStatus === 'on_leave' && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700">
+                  On Leave
+                </span>
+              )}
+              {leaveStatus === 'leave_soon' && leaveDate && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                  Leave {new Date(leaveDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                </span>
+              )}
+            </div>
             <p className="text-xs text-slate-400">{user.role}</p>
-            {personal.avgRating && (
+            {overridePersonal.avgRating && (
               <span className="flex items-center gap-0.5 text-[11px] text-amber-500 font-bold mt-0.5">
-                <Star size={10} className="fill-amber-400" /> {personal.avgRating.toFixed(1)}/10
+                <Star size={10} className="fill-amber-400" /> {overridePersonal.avgRating.toFixed(1)}/10
               </span>
             )}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
-            <FilterBadge label="Pending" value={personal.pending} active={taskFilter === 'pending'} onClick={() => toggleFilter('pending')} />
-            <FilterBadge label="Today"   value={personal.today}   active={taskFilter === 'today'}   onClick={() => toggleFilter('today')} />
-            {personal.overdue > 0 && <FilterBadge label="Overdue" value={personal.overdue} red active={taskFilter === 'overdue'} onClick={() => toggleFilter('overdue')} />}
-            {personal.pendingQC > 0 && <FilterBadge label="QC" value={personal.pendingQC} active={taskFilter === 'awaitingQC'} onClick={() => toggleFilter('awaitingQC')} />}
+            <FilterBadge label="Pending" value={overridePersonal.pending} active={taskFilter === 'pending'} onClick={() => toggleFilter('pending')} />
+            <FilterBadge label="Today"   value={overridePersonal.today}   active={taskFilter === 'today'}   onClick={() => toggleFilter('today')} />
+            {overridePersonal.overdue > 0 && <FilterBadge label="Overdue" value={overridePersonal.overdue} red active={taskFilter === 'overdue'} onClick={() => toggleFilter('overdue')} />}
+            {overridePersonal.pendingQC > 0 && <FilterBadge label="QC" value={overridePersonal.pendingQC} active={taskFilter === 'awaitingQC'} onClick={() => toggleFilter('awaitingQC')} />}
             {hasTeam && (
               <button onClick={() => onDrillIn(user)} className="flex flex-col items-center ml-1">
                 <ChevronRight size={16} className="text-slate-300" />
@@ -229,21 +260,21 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
         )}
 
         {/* All Tasks collapsible */}
-        {personal.allTasks.length > 0 && (
-          <div className={`${filteredTasks !== null ? 'border-t border-slate-100' : 'border-t border-slate-100'}`}>
+        {overridePersonal.allTasks.length > 0 && (
+          <div className="border-t border-slate-100">
             <button
               onClick={() => setShowAllTasks(v => !v)}
               className="w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-slate-50 transition-colors"
             >
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">All Tasks</span>
               <div className="flex items-center gap-1.5">
-                <span className="text-[10px] font-bold text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">{personal.allTasks.length}</span>
+                <span className="text-[10px] font-bold text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">{overridePersonal.allTasks.length}</span>
                 {showAllTasks ? <ChevronUp size={13} className="text-slate-400" /> : <ChevronDown size={13} className="text-slate-400" />}
               </div>
             </button>
             {showAllTasks && (
               <div className="px-3 pb-3 space-y-1.5">
-                {personal.allTasks.map(t => <TaskRow key={`all-${t._clientId}-${t.id}`} task={t} onTaskClick={onTaskClick} />)}
+                {overridePersonal.allTasks.map(t => <TaskRow key={`all-${t._clientId}-${t.id}`} task={t} onTaskClick={onTaskClick} />)}
               </div>
             )}
           </div>
@@ -253,7 +284,7 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
       {showTaskSheet && (
         <PersonTaskSheet
           user={user}
-          tasks={personal.allTasks}
+          tasks={overridePersonal.allTasks}
           onClose={() => setShowTaskSheet(false)}
           onTaskClick={onTaskClick}
         />
@@ -269,13 +300,25 @@ function MissedDeadlinesSection({ currentUser, users, clientLogs, clients, onTas
   const subtreeIds = getSubtreeIds(currentUser.id, users);
   subtreeIds.delete(String(currentUser.id));
 
+  const [leaveByUser, setLeaveByUser] = useState({});
+  useEffect(() => {
+    if (subtreeIds.size === 0) return;
+    let cancelled = false;
+    Promise.all([...subtreeIds].map(uid => getLeaveAndHolidayData(uid).then(d => [uid, d]))).then(entries => {
+      if (!cancelled) setLeaveByUser(Object.fromEntries(entries));
+    });
+    return () => { cancelled = true; };
+  }, [clientLogs]);
+
   const overdueByPerson = [];
   subtreeIds.forEach(uid => {
     const user = users.find(u => String(u.id) === uid);
     if (!user) return;
     const stats = getUserTaskStats(uid, clientLogs, clients);
-    if (stats.overdueTasks.length > 0) {
-      overdueByPerson.push({ user, tasks: stats.overdueTasks });
+    const ld = leaveByUser[uid] || {};
+    const filteredOverdue = stats.overdueTasks.filter(t => isTaskLeaveAwareOverdue(t, undefined, ld));
+    if (filteredOverdue.length > 0) {
+      overdueByPerson.push({ user, tasks: filteredOverdue });
     }
   });
 
