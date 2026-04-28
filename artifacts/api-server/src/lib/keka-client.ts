@@ -9,22 +9,85 @@ const KEKA_KEY_FILE = join(SECRETS_DIR, "keka-api-key");
 
 const KEKA_PAGE_SIZE = 200;
 
+// ─── OAuth token cache ────────────────────────────────────────────────────────
+let cachedToken: { token: string; expiresAt: number } | null = null;
+
 /**
- * Obtain the Keka Bearer token.
+ * Obtain a Keka access token via the grant_type=kekaapi OAuth2 exchange.
  *
- * Keka's HRIS API uses the API key directly as a Bearer token — no OAuth
- * token exchange is required. Priority:
- *  1. KEKA_API_KEY environment variable (set as a Replit secret)
- *  2. .secrets/keka-api-key file (written by the settings UI)
+ * Keka's HRIS API requires a short-lived Bearer token — the static API key
+ * is a credential used in the token exchange, NOT a direct Bearer value.
+ *
+ * Exchange endpoint: POST {baseUrl}/connect/token
+ * Body: grant_type=kekaapi & client_id & client_secret & api_key & scope=kekaapi
+ *
+ * NOTE: If this endpoint returns 404, the Keka HRIS Developer API has not yet
+ * been activated for this Keka account. Enable it in Keka Admin →
+ * Settings → Integrations → Developer Settings.
  */
-function getKekaAccessToken(): string {
+async function getKekaAccessToken(baseUrl: string): Promise<string> {
+  // Return in-memory cached token while still valid (60-second buffer)
+  if (cachedToken && Date.now() < cachedToken.expiresAt) {
+    return cachedToken.token;
+  }
+
+  const clientId = process.env.KEKA_CLIENT_ID?.trim();
+  const clientSecret = process.env.KEKA_CLIENT_SECRET?.trim();
   const apiKey = readKekaApiKey();
-  if (!apiKey) {
+
+  if (!clientId || !clientSecret || !apiKey) {
     throw new Error(
-      "Keka API key not configured. Set the KEKA_API_KEY secret or enter an API key in Control Center → Integrations."
+      "Keka credentials incomplete. Ensure KEKA_CLIENT_ID, KEKA_CLIENT_SECRET, and KEKA_API_KEY are set as Replit secrets."
     );
   }
-  return apiKey;
+
+  const tokenUrl = `${baseUrl.replace(/\/$/, "")}/connect/token`;
+  const body = new URLSearchParams({
+    grant_type: "kekaapi",
+    client_id: clientId,
+    client_secret: clientSecret,
+    api_key: apiKey,
+    scope: "kekaapi",
+  });
+
+  logger.debug({ tokenUrl }, "[Keka] Fetching OAuth access token");
+
+  const resp = await fetch(tokenUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+    },
+    body: body.toString(),
+  });
+
+  if (!resp.ok) {
+    const errBody = await resp.text().catch(() => "");
+    if (resp.status === 404) {
+      throw new Error(
+        `Keka HRIS API token endpoint not found (HTTP 404). ` +
+        `The Developer API may not be activated for your Keka account. ` +
+        `Go to Keka Admin → Settings → Integrations → Developer Settings to enable it.`
+      );
+    }
+    throw new Error(
+      `Keka token exchange failed (HTTP ${resp.status}): ${errBody.slice(0, 300)}`
+    );
+  }
+
+  const data = (await resp.json()) as {
+    access_token: string;
+    expires_in?: number;
+  };
+
+  const expiresIn = (data.expires_in ?? 3600) - 60;
+  cachedToken = {
+    token: data.access_token,
+    expiresAt: Date.now() + expiresIn * 1000,
+  };
+
+  logger.info({ expiresIn }, "[Keka] OAuth token acquired and cached");
+  return cachedToken.token;
 }
 
 // ─── API key helpers (legacy / fallback) ─────────────────────────────────────
@@ -134,7 +197,7 @@ async function kekaGetPage<T>(
   path: string,
   pageNumber: number
 ): Promise<{ items: T[]; hasMore: boolean }> {
-  const token = getKekaAccessToken();
+  const token = await getKekaAccessToken(baseUrl);
   const separator = path.includes("?") ? "&" : "?";
   const url = `${baseUrl.replace(/\/$/, "")}${path}${separator}pageNumber=${pageNumber}&pageSize=${KEKA_PAGE_SIZE}`;
 
@@ -245,11 +308,12 @@ export async function testKekaConnection(): Promise<KekaConnectionTestResult> {
     };
   }
 
-  const year = new Date().getFullYear();
-  const url = `${creds.baseUrl.replace(/\/$/, "")}/api/v1/time/attendance/publicholidays?year=${year}&pageNumber=1&pageSize=1`;
+  // /api/v1/hris/employees is used as the connectivity probe — it's the
+  // canonical HRIS endpoint that confirms auth + reachability in one call.
+  const url = `${creds.baseUrl.replace(/\/$/, "")}/api/v1/hris/employees?pageNumber=1&pageSize=1`;
 
   try {
-    const token = getKekaAccessToken();
+    const token = await getKekaAccessToken(creds.baseUrl);
     const resp = await fetch(url, {
       headers: {
         Authorization: `Bearer ${token}`,
