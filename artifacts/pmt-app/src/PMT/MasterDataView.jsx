@@ -3817,7 +3817,7 @@ const MasterDataView = ({
             <ul className="space-y-1.5 text-xs text-slate-500 list-disc pl-4">
               <li>Keka employee leave records are matched to PMT users by email (falls back to Employee ID).</li>
               <li>Sync fetches leave data for the current date through the next 3 months.</li>
-              <li>A nightly automatic sync runs at 02:00 UTC to keep data fresh.</li>
+              <li>A nightly automatic sync runs at 02:00 local time to keep data fresh.</li>
               <li>Leave data is used to warn managers when assigning tasks on leave days.</li>
               <li>Overdue notifications and digest emails automatically respect leave days.</li>
             </ul>

@@ -1,5 +1,7 @@
 import cron from "node-cron";
+import { toZonedTime } from "date-fns-tz";
 import { syncKekaData, checkLeaveConflict } from "./keka-client";
+import { readFirebasePath } from "./firebase-admin";
 import { logger } from "./logger";
 
 export { checkLeaveConflict };
@@ -18,14 +20,43 @@ export async function runKekaSync(): Promise<void> {
   }
 }
 
+/**
+ * Check if it's currently 02:00 in the configured local timezone, then sync.
+ * Timezone is shared with the reminder-schedule setting in Firebase.
+ */
+async function runScheduledKekaSync(): Promise<void> {
+  try {
+    const schedRaw = await readFirebasePath<{
+      scheduleTimezone?: string;
+    }>("settings/notifications/reminders-schedule");
+
+    const tz = schedRaw?.scheduleTimezone || "Europe/London";
+    const nowInTz = toZonedTime(new Date(), tz);
+    const currentHour = nowInTz.getHours();
+
+    if (currentHour !== 2) {
+      logger.debug(
+        { currentHour, tz },
+        "[Keka] Hourly tick — not 02:00 local time, skipping"
+      );
+      return;
+    }
+
+    logger.info({ tz }, "[Keka] Hourly tick matches 02:00 local time — running nightly sync");
+    await runKekaSync();
+  } catch (err) {
+    logger.error({ err }, "[Keka] Error reading schedule config");
+  }
+}
+
 export function startKekaScheduler(): void {
-  cron.schedule("0 2 * * *", () => {
-    runKekaSync().catch((err) =>
+  cron.schedule("0 * * * *", () => {
+    runScheduledKekaSync().catch((err) =>
       logger.error({ err }, "[Keka] Unhandled scheduler error")
     );
   });
 
-  logger.info("[Keka] Scheduler started — nightly sync at 02:00 UTC");
+  logger.info("[Keka] Scheduler started — nightly sync at 02:00 local time");
 }
 
 export async function isDateLeaveOrHoliday(
