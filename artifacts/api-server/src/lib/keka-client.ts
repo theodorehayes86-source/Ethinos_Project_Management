@@ -13,19 +13,31 @@ const KEKA_PAGE_SIZE = 200;
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
 /**
+ * Keka's OAuth2 token exchange endpoint.
+ *
+ * IMPORTANT: The token MUST be obtained from login.keka.com — NOT from the
+ * company subdomain (e.g. ethinos.keka.com/connect/token returns 404).
+ * The baseUrl stored in settings is only used for API calls, not auth.
+ */
+const KEKA_TOKEN_ENDPOINT = "https://login.keka.com/connect/token";
+
+/**
  * Obtain a Keka access token via the grant_type=kekaapi OAuth2 exchange.
  *
  * Keka's HRIS API requires a short-lived Bearer token — the static API key
  * is a credential used in the token exchange, NOT a direct Bearer value.
  *
- * Exchange endpoint: POST {baseUrl}/connect/token
+ * Exchange endpoint: POST https://login.keka.com/connect/token
  * Body: grant_type=kekaapi & client_id & client_secret & api_key & scope=kekaapi
  *
- * NOTE: If this endpoint returns 404, the Keka HRIS Developer API has not yet
- * been activated for this Keka account. Enable it in Keka Admin →
- * Settings → Integrations → Developer Settings.
+ * The baseUrl parameter (company subdomain) is only used for API calls.
+ * Token exchange always targets login.keka.com.
+ *
+ * NOTE: If API calls return 404 for leave/holiday endpoints, the relevant
+ * API modules (Leave Management, Public Holidays) may not be enabled for
+ * this app in Keka Admin → Settings → Integrations → Developer Settings.
  */
-async function getKekaAccessToken(baseUrl: string): Promise<string> {
+async function getKekaAccessToken(_baseUrl: string): Promise<string> {
   // Return in-memory cached token while still valid (60-second buffer)
   if (cachedToken && Date.now() < cachedToken.expiresAt) {
     return cachedToken.token;
@@ -41,7 +53,6 @@ async function getKekaAccessToken(baseUrl: string): Promise<string> {
     );
   }
 
-  const tokenUrl = `${baseUrl.replace(/\/$/, "")}/connect/token`;
   const body = new URLSearchParams({
     grant_type: "kekaapi",
     client_id: clientId,
@@ -50,9 +61,9 @@ async function getKekaAccessToken(baseUrl: string): Promise<string> {
     scope: "kekaapi",
   });
 
-  logger.debug({ tokenUrl }, "[Keka] Fetching OAuth access token");
+  logger.debug({ tokenUrl: KEKA_TOKEN_ENDPOINT }, "[Keka] Fetching OAuth access token");
 
-  const resp = await fetch(tokenUrl, {
+  const resp = await fetch(KEKA_TOKEN_ENDPOINT, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -63,13 +74,6 @@ async function getKekaAccessToken(baseUrl: string): Promise<string> {
 
   if (!resp.ok) {
     const errBody = await resp.text().catch(() => "");
-    if (resp.status === 404) {
-      throw new Error(
-        `Keka HRIS API token endpoint not found (HTTP 404). ` +
-        `The Developer API may not be activated for your Keka account. ` +
-        `Go to Keka Admin → Settings → Integrations → Developer Settings to enable it.`
-      );
-    }
     throw new Error(
       `Keka token exchange failed (HTTP ${resp.status}): ${errBody.slice(0, 300)}`
     );
@@ -308,13 +312,29 @@ export async function testKekaConnection(): Promise<KekaConnectionTestResult> {
     };
   }
 
-  // /api/v1/hris/employees is used as the connectivity probe — it's the
-  // canonical HRIS endpoint that confirms auth + reachability in one call.
-  const url = `${creds.baseUrl.replace(/\/$/, "")}/api/v1/hris/employees?pageNumber=1&pageSize=1`;
+  // Step 1: Verify token exchange with login.keka.com
+  let token: string;
+  try {
+    token = await getKekaAccessToken(creds.baseUrl);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      success: false,
+      message: `OAuth token exchange failed: ${msg}`,
+    };
+  }
+
+  // Step 2: Probe the company subdomain to confirm the token is accepted.
+  // /api/v1/hris/employees is used as the reachability probe.
+  //   HTTP 200/2xx → fully connected, employees module accessible
+  //   HTTP 403      → token accepted, but this app lacks the employees privilege
+  //                   (this is expected — it still confirms the auth flow works)
+  //   HTTP 404      → endpoint not found; base URL may be wrong
+  //   Other errors  → connectivity / configuration problem
+  const probeUrl = `${creds.baseUrl.replace(/\/$/, "")}/api/v1/hris/employees?pageNumber=1&pageSize=1`;
 
   try {
-    const token = await getKekaAccessToken(creds.baseUrl);
-    const resp = await fetch(url, {
+    const resp = await fetch(probeUrl, {
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: "application/json",
@@ -325,7 +345,23 @@ export async function testKekaConnection(): Promise<KekaConnectionTestResult> {
     if (resp.ok) {
       return {
         success: true,
-        message: `Connected successfully to ${creds.baseUrl} (HTTP ${resp.status}).`,
+        message: `Connected to ${creds.baseUrl} (HTTP ${resp.status}). OAuth token accepted.`,
+        httpStatus: resp.status,
+      };
+    }
+
+    if (resp.status === 403) {
+      // Token is valid and the API is reachable — the app just lacks the
+      // "employees" module permission. Leave/holiday sync depends on separate
+      // module permissions (Leave Management, Public Holidays) that must be
+      // enabled in Keka Admin → Developer Settings for this app.
+      return {
+        success: true,
+        message:
+          `OAuth token accepted by ${creds.baseUrl}. ` +
+          `API is reachable, but this app has limited module access (HTTP 403 on employees probe). ` +
+          `Ensure the Leave Management and Public Holidays modules are enabled for this app in ` +
+          `Keka Admin → Settings → Integrations → Developer Settings.`,
         httpStatus: resp.status,
       };
     }
@@ -333,8 +369,8 @@ export async function testKekaConnection(): Promise<KekaConnectionTestResult> {
     const body = await resp.text().catch(() => "");
     return {
       success: false,
-      message: `Keka API responded with HTTP ${resp.status}. ${
-        body ? `Detail: ${body.slice(0, 200)}` : "Check your Base URL and credentials."
+      message: `Keka API probe returned HTTP ${resp.status}. ${
+        body ? `Detail: ${body.slice(0, 200)}` : "Check your Base URL."
       }`,
       httpStatus: resp.status,
     };
@@ -390,9 +426,12 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
   const unmatchedKekaIds = new Set<string>();
 
   try {
+    // Correct path: /api/v1/hris/leavemanagement/leavetransactions
+    // (Confirmed present on Keka gateway; requires Leave Management module access
+    // to be enabled for this app in Keka Admin → Developer Settings)
     const leaves = await kekaGet<KekaLeaveRecord>(
       creds.baseUrl,
-      `/api/v1/time/attendance/leaves?startDate=${fromDate}&endDate=${toDate}`
+      `/api/v1/hris/leavemanagement/leavetransactions?startDate=${fromDate}&endDate=${toDate}`
     );
 
     logger.info({ count: leaves.length }, "[Keka] Fetched leave records");
@@ -461,9 +500,11 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
     const region = creds.region || "All";
 
     for (const year of [currentYear, nextYear]) {
+      // Correct path: /api/v1/hris/publicholidays
+      // (Confirmed present on Keka gateway; requires Public Holidays module access)
       const holidays = await kekaGet<KekaHolidayRecord>(
         creds.baseUrl,
-        `/api/v1/time/attendance/publicholidays?year=${year}`
+        `/api/v1/hris/publicholidays?year=${year}`
       );
 
       logger.info({ count: holidays.length, year }, "[Keka] Fetched holidays");
