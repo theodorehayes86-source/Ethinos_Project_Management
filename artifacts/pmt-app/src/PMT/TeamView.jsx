@@ -234,6 +234,7 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
   const [selectedTask, setSelectedTask] = useState(null);
   const [showAddTask, setShowAddTask] = useState(false);
   const [memberLeaveByDate, setMemberLeaveByDate] = useState({});
+  const [leaveOpen, setLeaveOpen] = useState(true);
   const now = Date.now();
 
   useEffect(() => {
@@ -374,50 +375,57 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
         {/* Leave Overview */}
         {leaveGroups.length > 0 && (
           <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-2">
+            <button
+              onClick={() => setLeaveOpen(o => !o)}
+              className="w-full px-4 py-2.5 border-b border-slate-100 flex items-center gap-2 hover:bg-slate-50 transition-colors text-left"
+            >
               <CalendarClock size={13} className="text-indigo-500"/>
-              <h4 className="text-xs font-bold text-slate-700">Leave Overview</h4>
-            </div>
-            <div className="divide-y divide-slate-50">
-              {leaveGroups.map(lg => {
-                const isApproved = lg.status === 'approved';
-                const isToday = lg.isToday;
-                return (
-                  <div key={lg.id} className={`px-4 py-2.5 flex items-center gap-3 ${isToday ? 'bg-amber-50/60' : ''}`}>
-                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                      isToday
-                        ? 'bg-amber-100 text-amber-600'
-                        : isApproved
-                          ? 'bg-emerald-50 text-emerald-600'
-                          : 'bg-blue-50 text-blue-500'
-                    }`}>
-                      {isToday
-                        ? <CalendarX2 size={13}/>
-                        : isApproved
-                          ? <CalendarCheck2 size={13}/>
-                          : <CalendarClock size={13}/>
-                      }
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-slate-800 truncate">{lg.leaveType}</p>
-                      <p className="text-[10px] text-slate-500">{fmtLeaveDateRange(lg.startDate, lg.endDate)}{lg.session && lg.session !== 'full' ? ` · ${lg.session}` : ''}</p>
-                    </div>
-                    <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                      {isToday && (
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">Today</span>
-                      )}
-                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
-                        isApproved
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-blue-100 text-blue-600'
+              <h4 className="text-xs font-bold text-slate-700 flex-1">Leave Overview</h4>
+              <span className="text-[10px] text-slate-400 font-medium mr-1">{leaveGroups.length}</span>
+              <ChevronRight size={13} className={`text-slate-400 transition-transform ${leaveOpen ? 'rotate-90' : ''}`}/>
+            </button>
+            {leaveOpen && (
+              <div className="divide-y divide-slate-50">
+                {leaveGroups.map(lg => {
+                  const isApproved = lg.status === 'approved';
+                  const isToday = lg.isToday;
+                  return (
+                    <div key={lg.id} className={`px-4 py-2.5 flex items-center gap-3 ${isToday ? 'bg-amber-50/60' : ''}`}>
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                        isToday
+                          ? 'bg-amber-100 text-amber-600'
+                          : isApproved
+                            ? 'bg-emerald-50 text-emerald-600'
+                            : 'bg-blue-50 text-blue-500'
                       }`}>
-                        {isApproved ? 'Approved' : 'Pending'}
-                      </span>
+                        {isToday
+                          ? <CalendarX2 size={13}/>
+                          : isApproved
+                            ? <CalendarCheck2 size={13}/>
+                            : <CalendarClock size={13}/>
+                        }
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-slate-800 truncate">{lg.leaveType}</p>
+                        <p className="text-[10px] text-slate-500">{fmtLeaveDateRange(lg.startDate, lg.endDate)}{lg.session && lg.session !== 'full' ? ` · ${lg.session}` : ''}</p>
+                      </div>
+                      <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                        {isToday && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">Today</span>
+                        )}
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                          isApproved
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : 'bg-blue-100 text-blue-600'
+                        }`}>
+                          {isApproved ? 'Approved' : 'Pending'}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
