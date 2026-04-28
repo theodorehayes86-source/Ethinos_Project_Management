@@ -9,72 +9,19 @@ const KEKA_KEY_FILE = join(SECRETS_DIR, "keka-api-key");
 
 const KEKA_PAGE_SIZE = 200;
 
-// ─── OAuth token cache ────────────────────────────────────────────────────────
-let cachedToken: { token: string; expiresAt: number } | null = null;
-
 /**
- * Obtain a Keka Bearer token.
+ * Obtain the Keka Bearer token.
  *
- * Priority:
- *  1. OAuth2 via env KEKA_CLIENT_ID + KEKA_CLIENT_SECRET  (Keka grant_type=kekaapi)
- *  2. Raw API key from KEKA_API_KEY env var or .secrets file  (legacy / fallback)
+ * Keka's HRIS API uses the API key directly as a Bearer token — no OAuth
+ * token exchange is required. Priority:
+ *  1. KEKA_API_KEY environment variable (set as a Replit secret)
+ *  2. .secrets/keka-api-key file (written by the settings UI)
  */
-async function getKekaAccessToken(baseUrl: string): Promise<string> {
-  const clientId = process.env.KEKA_CLIENT_ID?.trim();
-  const clientSecret = process.env.KEKA_CLIENT_SECRET?.trim();
-
-  if (clientId && clientSecret) {
-    // Return cached token while still valid (with 60-second buffer)
-    if (cachedToken && Date.now() < cachedToken.expiresAt) {
-      return cachedToken.token;
-    }
-
-    const tokenUrl = `${baseUrl.replace(/\/$/, "")}/connect/token`;
-    const body = new URLSearchParams({
-      grant_type: "kekaapi",
-      client_id: clientId,
-      client_secret: clientSecret,
-      scope: "kekaapi",
-    });
-
-    logger.debug({ tokenUrl }, "[Keka] Fetching OAuth access token");
-
-    const resp = await fetch(tokenUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: body.toString(),
-    });
-
-    if (!resp.ok) {
-      const err = await resp.text().catch(() => "");
-      throw new Error(
-        `Keka token exchange failed (HTTP ${resp.status}): ${err.slice(0, 300)}`
-      );
-    }
-
-    const data = (await resp.json()) as {
-      access_token: string;
-      expires_in?: number;
-    };
-
-    const expiresIn = (data.expires_in ?? 3600) - 60;
-    cachedToken = {
-      token: data.access_token,
-      expiresAt: Date.now() + expiresIn * 1000,
-    };
-
-    logger.info(
-      { expiresIn },
-      "[Keka] OAuth token acquired and cached"
-    );
-    return cachedToken.token;
-  }
-
-  // Fallback: direct API key
+function getKekaAccessToken(): string {
   const apiKey = readKekaApiKey();
   if (!apiKey) {
     throw new Error(
-      "No Keka credentials available. Set KEKA_CLIENT_ID + KEKA_CLIENT_SECRET, or provide an API key."
+      "Keka API key not configured. Set the KEKA_API_KEY secret or enter an API key in Control Center → Integrations."
     );
   }
   return apiKey;
@@ -187,7 +134,7 @@ async function kekaGetPage<T>(
   path: string,
   pageNumber: number
 ): Promise<{ items: T[]; hasMore: boolean }> {
-  const token = await getKekaAccessToken(baseUrl);
+  const token = getKekaAccessToken();
   const separator = path.includes("?") ? "&" : "?";
   const url = `${baseUrl.replace(/\/$/, "")}${path}${separator}pageNumber=${pageNumber}&pageSize=${KEKA_PAGE_SIZE}`;
 
@@ -265,24 +212,19 @@ function expandLeaveDates(startDate: string, endDate: string): string[] {
 // ─── Credential resolution ────────────────────────────────────────────────────
 
 /**
- * Resolve Keka credentials from Firebase (baseUrl / region) + env/secrets (API key or OAuth).
- * Returns null only if no baseUrl is configured — OAuth creds from env are always available.
+ * Resolve Keka credentials from Firebase (baseUrl / region) + env/secrets (API key).
+ * Returns null if either the API key or the base URL is not configured.
  */
 export async function getKekaCredentials(): Promise<KekaCredentials | null> {
   try {
+    const apiKey = readKekaApiKey();
+    if (!apiKey) return null;
+
     const config = await readFirebasePath<{
       baseUrl?: string;
       region?: string;
     } | null>("settings/integrations/keka");
     if (!config?.baseUrl) return null;
-
-    // OAuth env creds take priority; fall back to stored API key
-    const hasOAuth =
-      !!process.env.KEKA_CLIENT_ID?.trim() &&
-      !!process.env.KEKA_CLIENT_SECRET?.trim();
-    const apiKey = hasOAuth ? "__oauth__" : (readKekaApiKey() ?? "");
-
-    if (!hasOAuth && !apiKey) return null;
 
     return { baseUrl: config.baseUrl, apiKey, region: config.region };
   } catch (err) {
@@ -307,7 +249,7 @@ export async function testKekaConnection(): Promise<KekaConnectionTestResult> {
   const url = `${creds.baseUrl.replace(/\/$/, "")}/api/v1/time/attendance/publicholidays?year=${year}&pageNumber=1&pageSize=1`;
 
   try {
-    const token = await getKekaAccessToken(creds.baseUrl);
+    const token = getKekaAccessToken();
     const resp = await fetch(url, {
       headers: {
         Authorization: `Bearer ${token}`,
