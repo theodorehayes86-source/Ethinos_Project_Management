@@ -49,3 +49,4 @@ Thumbs.db
 .local/
 artifacts/pmt-timer-widget/dist-electron/*.AppImage
 artifacts/pmt-timer-widget/dist-electron/linux-unpacked/
+.secrets/
