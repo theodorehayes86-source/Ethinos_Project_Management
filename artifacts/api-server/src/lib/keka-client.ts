@@ -9,8 +9,81 @@ const KEKA_KEY_FILE = join(SECRETS_DIR, "keka-api-key");
 
 const KEKA_PAGE_SIZE = 200;
 
+// ─── OAuth token cache ────────────────────────────────────────────────────────
+let cachedToken: { token: string; expiresAt: number } | null = null;
+
 /**
- * Read the Keka API key from the server-side secrets file or KEKA_API_KEY env var.
+ * Obtain a Keka Bearer token.
+ *
+ * Priority:
+ *  1. OAuth2 via env KEKA_CLIENT_ID + KEKA_CLIENT_SECRET  (Keka grant_type=kekaapi)
+ *  2. Raw API key from KEKA_API_KEY env var or .secrets file  (legacy / fallback)
+ */
+async function getKekaAccessToken(baseUrl: string): Promise<string> {
+  const clientId = process.env.KEKA_CLIENT_ID?.trim();
+  const clientSecret = process.env.KEKA_CLIENT_SECRET?.trim();
+
+  if (clientId && clientSecret) {
+    // Return cached token while still valid (with 60-second buffer)
+    if (cachedToken && Date.now() < cachedToken.expiresAt) {
+      return cachedToken.token;
+    }
+
+    const tokenUrl = `${baseUrl.replace(/\/$/, "")}/connect/token`;
+    const body = new URLSearchParams({
+      grant_type: "kekaapi",
+      client_id: clientId,
+      client_secret: clientSecret,
+      scope: "kekaapi",
+    });
+
+    logger.debug({ tokenUrl }, "[Keka] Fetching OAuth access token");
+
+    const resp = await fetch(tokenUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.text().catch(() => "");
+      throw new Error(
+        `Keka token exchange failed (HTTP ${resp.status}): ${err.slice(0, 300)}`
+      );
+    }
+
+    const data = (await resp.json()) as {
+      access_token: string;
+      expires_in?: number;
+    };
+
+    const expiresIn = (data.expires_in ?? 3600) - 60;
+    cachedToken = {
+      token: data.access_token,
+      expiresAt: Date.now() + expiresIn * 1000,
+    };
+
+    logger.info(
+      { expiresIn },
+      "[Keka] OAuth token acquired and cached"
+    );
+    return cachedToken.token;
+  }
+
+  // Fallback: direct API key
+  const apiKey = readKekaApiKey();
+  if (!apiKey) {
+    throw new Error(
+      "No Keka credentials available. Set KEKA_CLIENT_ID + KEKA_CLIENT_SECRET, or provide an API key."
+    );
+  }
+  return apiKey;
+}
+
+// ─── API key helpers (legacy / fallback) ─────────────────────────────────────
+
+/**
+ * Read the Keka API key from KEKA_API_KEY env var or the server-side secrets file.
  * The API key is NEVER stored in Firebase to prevent client-readable exposure.
  */
 export function readKekaApiKey(): string | null {
@@ -25,12 +98,13 @@ export function readKekaApiKey(): string | null {
 
 /**
  * Persist the Keka API key to the server-side secrets file (mode 0o600).
- * Only the server process can read this file.
  */
 export function writeKekaApiKey(key: string): void {
   mkdirSync(SECRETS_DIR, { recursive: true });
   writeFileSync(KEKA_KEY_FILE, key.trim(), { encoding: "utf8", mode: 0o600 });
 }
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface KekaCredentials {
   baseUrl: string;
@@ -78,27 +152,26 @@ interface KekaEmployee {
 
 interface KekaLeaveRecord {
   id: string;
-  employee?: KekaEmployee;
-  leaveType?: { name?: string };
   from?: string;
   to?: string;
-  halfDayType?: string | null;
-  sessionType?: string | null;
+  halfDayType?: string;
+  sessionType?: string;
+  employee: KekaEmployee;
+  leaveType?: { name?: string };
 }
 
 interface KekaHolidayRecord {
   id: string;
   name?: string;
   date?: string;
-  locationName?: string;
   region?: string;
+  locationName?: string;
 }
 
 interface KekaApiResponse<T> {
-  succeeded?: boolean;
   data?: T[];
   response?: T[];
-  pageInfo?: { pageNumber?: number; pageSize?: number; totalCount?: number };
+  pageInfo?: { totalCount?: number };
 }
 
 interface PMTUser {
@@ -107,22 +180,20 @@ interface PMTUser {
   kekaEmployeeId?: string;
 }
 
-/**
- * Fetch a single page from the Keka API.
- * Returns { items, hasMore } — hasMore is true when the page was full (signals pagination).
- */
+// ─── Pagination helpers ───────────────────────────────────────────────────────
+
 async function kekaGetPage<T>(
   baseUrl: string,
-  apiKey: string,
   path: string,
   pageNumber: number
 ): Promise<{ items: T[]; hasMore: boolean }> {
+  const token = await getKekaAccessToken(baseUrl);
   const separator = path.includes("?") ? "&" : "?";
   const url = `${baseUrl.replace(/\/$/, "")}${path}${separator}pageNumber=${pageNumber}&pageSize=${KEKA_PAGE_SIZE}`;
 
   const resp = await fetch(url, {
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${token}`,
       Accept: "application/json",
       "Content-Type": "application/json",
     },
@@ -145,19 +216,16 @@ async function kekaGetPage<T>(
   return { items, hasMore };
 }
 
-/**
- * Fetch ALL pages from a Keka API endpoint, handling pagination transparently.
- */
-async function kekaGet<T>(
-  baseUrl: string,
-  apiKey: string,
-  path: string
-): Promise<T[]> {
+async function kekaGet<T>(baseUrl: string, path: string): Promise<T[]> {
   const allItems: T[] = [];
   let pageNumber = 1;
 
   while (true) {
-    const { items, hasMore } = await kekaGetPage<T>(baseUrl, apiKey, path, pageNumber);
+    const { items, hasMore } = await kekaGetPage<T>(
+      baseUrl,
+      path,
+      pageNumber
+    );
     allItems.push(...items);
     if (!hasMore) break;
     pageNumber++;
@@ -171,13 +239,14 @@ async function kekaGet<T>(
 }
 
 function mapHalfDaySession(
-  halfDayType?: string | null
+  raw?: string
 ): "full" | "first-half" | "second-half" | "half-day" {
-  if (!halfDayType) return "full";
-  const lower = halfDayType.toLowerCase();
-  if (lower.includes("first") || lower === "firsthalf") return "first-half";
-  if (lower.includes("second") || lower === "secondhalf") return "second-half";
-  return "half-day";
+  if (!raw) return "full";
+  const v = raw.toLowerCase();
+  if (v.includes("first") || v === "firsthalf") return "first-half";
+  if (v.includes("second") || v === "secondhalf") return "second-half";
+  if (v.includes("half")) return "half-day";
+  return "full";
 }
 
 function expandLeaveDates(startDate: string, endDate: string): string[] {
@@ -193,15 +262,27 @@ function expandLeaveDates(startDate: string, endDate: string): string[] {
   return dates;
 }
 
+// ─── Credential resolution ────────────────────────────────────────────────────
+
+/**
+ * Resolve Keka credentials from Firebase (baseUrl / region) + env/secrets (API key or OAuth).
+ * Returns null only if no baseUrl is configured — OAuth creds from env are always available.
+ */
 export async function getKekaCredentials(): Promise<KekaCredentials | null> {
   try {
-    const apiKey = readKekaApiKey();
-    if (!apiKey) return null;
-
-    const config = await readFirebasePath<{ baseUrl?: string; region?: string } | null>(
-      "settings/integrations/keka"
-    );
+    const config = await readFirebasePath<{
+      baseUrl?: string;
+      region?: string;
+    } | null>("settings/integrations/keka");
     if (!config?.baseUrl) return null;
+
+    // OAuth env creds take priority; fall back to stored API key
+    const hasOAuth =
+      !!process.env.KEKA_CLIENT_ID?.trim() &&
+      !!process.env.KEKA_CLIENT_SECRET?.trim();
+    const apiKey = hasOAuth ? "__oauth__" : (readKekaApiKey() ?? "");
+
+    if (!hasOAuth && !apiKey) return null;
 
     return { baseUrl: config.baseUrl, apiKey, region: config.region };
   } catch (err) {
@@ -210,16 +291,15 @@ export async function getKekaCredentials(): Promise<KekaCredentials | null> {
   }
 }
 
-/**
- * Test whether the configured Keka credentials can successfully reach the API.
- * Makes a minimal read-only request (fetches one holiday) to verify auth + connectivity.
- */
+// ─── Connection test ──────────────────────────────────────────────────────────
+
 export async function testKekaConnection(): Promise<KekaConnectionTestResult> {
   const creds = await getKekaCredentials();
   if (!creds) {
     return {
       success: false,
-      message: "Keka credentials are not configured. Save a Base URL and API Key first.",
+      message:
+        "Keka credentials are not configured. Save a Base URL first, and ensure API credentials are set.",
     };
   }
 
@@ -227,9 +307,10 @@ export async function testKekaConnection(): Promise<KekaConnectionTestResult> {
   const url = `${creds.baseUrl.replace(/\/$/, "")}/api/v1/time/attendance/publicholidays?year=${year}&pageNumber=1&pageSize=1`;
 
   try {
+    const token = await getKekaAccessToken(creds.baseUrl);
     const resp = await fetch(url, {
       headers: {
-        Authorization: `Bearer ${creds.apiKey}`,
+        Authorization: `Bearer ${token}`,
         Accept: "application/json",
         "Content-Type": "application/json",
       },
@@ -246,7 +327,9 @@ export async function testKekaConnection(): Promise<KekaConnectionTestResult> {
     const body = await resp.text().catch(() => "");
     return {
       success: false,
-      message: `Keka API responded with HTTP ${resp.status}. ${body ? `Detail: ${body.slice(0, 200)}` : "Check your Base URL and API Key."}`,
+      message: `Keka API responded with HTTP ${resp.status}. ${
+        body ? `Detail: ${body.slice(0, 200)}` : "Check your Base URL and credentials."
+      }`,
       httpStatus: resp.status,
     };
   } catch (err) {
@@ -257,6 +340,8 @@ export async function testKekaConnection(): Promise<KekaConnectionTestResult> {
     };
   }
 }
+
+// ─── Full sync ────────────────────────────────────────────────────────────────
 
 export async function syncKekaData(): Promise<KekaSyncResult> {
   const syncedAt = new Date().toISOString();
@@ -301,7 +386,6 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
   try {
     const leaves = await kekaGet<KekaLeaveRecord>(
       creds.baseUrl,
-      creds.apiKey,
       `/api/v1/time/attendance/leaves?startDate=${fromDate}&endDate=${toDate}`
     );
 
@@ -373,7 +457,6 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
     for (const year of [currentYear, nextYear]) {
       const holidays = await kekaGet<KekaHolidayRecord>(
         creds.baseUrl,
-        creds.apiKey,
         `/api/v1/time/attendance/publicholidays?year=${year}`
       );
 
@@ -418,6 +501,8 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
   return result;
 }
 
+// ─── Leave / holiday conflict check ──────────────────────────────────────────
+
 export interface LeaveConflict {
   type: "full-leave" | "half-leave" | "holiday";
   leaveType?: string;
@@ -435,7 +520,9 @@ export async function checkLeaveConflict(
   try {
     const [leaveRecord, holidayRecord] = await Promise.all([
       readFirebasePath<LeaveRecord | null>(`leaveData/${userId}/${dateStr}`),
-      readFirebasePath<HolidayRecord | null>(`publicHolidays/${region}/${dateStr}`),
+      readFirebasePath<HolidayRecord | null>(
+        `publicHolidays/${region}/${dateStr}`
+      ),
     ]);
 
     if (leaveRecord) {
@@ -467,7 +554,10 @@ export async function checkLeaveConflict(
 
     return null;
   } catch (err) {
-    logger.warn({ err, userId, dateStr }, "[LeaveCheck] Error checking leave conflict");
+    logger.warn(
+      { err, userId, dateStr },
+      "[LeaveCheck] Error checking leave conflict"
+    );
     return null;
   }
 }
