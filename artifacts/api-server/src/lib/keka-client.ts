@@ -150,6 +150,8 @@ export interface KekaSyncResult {
   holidayRecordsWritten: number;
   usersMatched: number;
   usersUnmatched: number;
+  /** PMT users whose email was not found in Keka's employee list */
+  unmatchedPmtUsers?: Array<{ id: string; name?: string; email?: string }>;
   error?: string;
   syncedAt: string;
 }
@@ -492,6 +494,7 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
   let holidayRecordsWritten = 0;
   let usersMatched = 0;
   const unmatchedKekaIds = new Set<string>();
+  let unmatchedPmtUsers: Array<{ id: string; name?: string; email?: string }> = [];
 
   try {
     // Step 1: Pre-fetch employees to build Keka GUID → email map.
@@ -510,6 +513,21 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
         }
       }
       logger.info({ count: employees.length }, "[Keka] Pre-fetched employee list for email matching");
+
+      // Compute PMT users whose email does not appear in Keka's employee list.
+      // These are shown in the Integration tab so admins can fix mismatches.
+      const kekaEmailSet = new Set(Object.values(kekaIdToEmail));
+      unmatchedPmtUsers = pmtUsers
+        .filter(u => {
+          const uid = String(u.id ?? "");
+          if (!uid || uid === "undefined" || !u.email) return false;
+          // Already matched via stored kekaEmployeeId — not unmatched
+          if (u.kekaEmployeeId) return false;
+          return !kekaEmailSet.has(u.email.toLowerCase());
+        })
+        .map(u => ({ id: String(u.id), name: u.name, email: u.email }));
+
+      logger.info({ count: unmatchedPmtUsers.length }, "[Keka] PMT users with no Keka email match");
     } catch (empErr) {
       logger.warn({ empErr }, "[Keka] Could not pre-fetch employees — falling back to kekaEmployeeId matching only");
     }
@@ -653,6 +671,7 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
     holidayRecordsWritten,
     usersMatched,
     usersUnmatched: unmatchedKekaIds.size,
+    unmatchedPmtUsers,
     syncedAt,
   };
 

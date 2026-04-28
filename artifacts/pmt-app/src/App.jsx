@@ -1202,8 +1202,11 @@ const App = () => {
 
     const unsubs = [
       syncRef('users', (val) => {
-        const firebaseList = Array.isArray(val) ? val : Object.values(val);
-        setUsers(firebaseList);
+        const raw = Array.isArray(val) ? val : Object.values(val);
+        // Deduplicate by id (keep last occurrence — handles stale test-user duplicates in Firebase)
+        const seen = new Map();
+        raw.forEach(u => { if (u && (u.id != null)) seen.set(String(u.id), u); });
+        setUsers([...seen.values()]);
         if (!dbReadyOnce) { dbReadyOnce = true; setDbReady(true); }
       }),
       syncRef('clients', (val) => setClients(Array.isArray(val) ? val : Object.values(val))),
@@ -1833,7 +1836,7 @@ const App = () => {
           currentUser={null}
           isTestMode={false}
           onImpersonate={(testUser) => {
-            if (!users.find(u => u.id === testUser.id)) {
+            if (!users.find(u => String(u.id) === String(testUser.id))) {
               setUsers(prev => [...prev, testUser]);
             }
             setTestModeUserId(testUser.id);
@@ -2119,7 +2122,7 @@ const App = () => {
         currentUser={currentUser}
         isTestMode={isTestMode}
         onImpersonate={(testUser) => {
-          if (!users.find(u => u.id === testUser.id)) {
+          if (!users.find(u => String(u.id) === String(testUser.id))) {
             setUsers(prev => [...prev, testUser]);
           }
           setTestModeUserId(testUser.id);
