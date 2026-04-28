@@ -1163,15 +1163,16 @@ const HomeView = ({
       })()}
 
       {/* TASK LIST HEADER */}
-      <div ref={taskListRef} className="flex items-center gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden" style={{scrollbarWidth:'none',msOverflowStyle:'none'}}>
+      <div ref={taskListRef} className="flex items-center gap-2 min-w-0">
+        {/* My Tasks label — always visible */}
         <div className="flex items-center gap-2 shrink-0">
           <h2 className="text-sm font-bold text-slate-800 whitespace-nowrap">My Tasks</h2>
           <span className="text-xs text-slate-400 font-medium whitespace-nowrap">({myTasks.length} total)</span>
         </div>
-        <div className="flex items-center gap-2 ml-auto shrink-0">
-          {/* Status filter pills */}
-          {!showArchived && (
-            <div className="flex gap-1 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
+        {/* Filter pills — scrolls horizontally if needed, clipped safely */}
+        {!showArchived && (
+          <div className="flex-1 min-w-0 overflow-x-auto [&::-webkit-scrollbar]:hidden" style={{scrollbarWidth:'none',msOverflowStyle:'none'}}>
+            <div className="flex gap-1 bg-white border border-slate-200 rounded-xl p-1 shadow-sm w-max">
               {[
                 { key: 'all', label: 'Open' },
                 { key: 'WIP', label: 'WIP' },
@@ -1185,7 +1186,7 @@ const HomeView = ({
                 <button
                   key={f.key}
                   onClick={() => setStatusFilter(f.key)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
                     statusFilter === f.key
                       ? f.key === 'overdue' || f.key === 'dueToday'
                         ? 'bg-rose-600 text-white shadow-sm'
@@ -1201,10 +1202,13 @@ const HomeView = ({
                 </button>
               ))}
             </div>
-          )}
+          </div>
+        )}
+        {/* Archive + Add — fixed right, outside any overflow container so dropdown isn't clipped */}
+        <div className="flex items-center gap-2 shrink-0 ml-auto">
           <button
             onClick={() => setShowArchived(v => !v)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs border transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs border transition-all whitespace-nowrap ${
               showArchived
                 ? 'bg-amber-50 border-amber-300 text-amber-700'
                 : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
