@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { ChevronRight, ChevronLeft, AlertTriangle, CheckCircle, Star, Users, Plus, Tag, Calendar, Clock, X, ChevronDown, ChevronUp, ShieldCheck } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { ChevronRight, ChevronLeft, AlertTriangle, CheckCircle, Star, Users, Plus, Tag, Calendar, Clock, X, ChevronDown, ChevronUp, ShieldCheck, Info } from 'lucide-react';
 import ApproveSheet from './ApproveSheet.jsx';
 import TaskDetailSheet from './TaskDetailSheet.jsx';
 import AddTaskSheet from './AddTaskSheet.jsx';
@@ -29,6 +29,24 @@ function RollupBadge({ label, value, red }) {
       <p className="text-[9px] text-slate-400 uppercase tracking-wide">{label}</p>
     </div>
   );
+}
+
+function parseDueDateLocal(str) {
+  if (!str) return null;
+  try {
+    const months = { Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11 };
+    const m = str.match(/(\d+)[a-z]*\s+([A-Za-z]+)\s+(\d{4})/);
+    if (m) return new Date(parseInt(m[3]), months[m[2]], parseInt(m[1]));
+    const d = new Date(str);
+    return isNaN(d.getTime()) ? null : d;
+  } catch { return null; }
+}
+
+function toDateKey(d) {
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${mo}-${day}`;
 }
 
 const TASK_STATUS_COLORS = {
@@ -195,7 +213,6 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
   return (
     <>
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        {/* Header row */}
         <button
           className="w-full px-4 py-4 flex items-center gap-3 text-left active:bg-slate-50 transition-colors"
           onClick={() => hasTeam ? onDrillIn(user) : setShowTaskSheet(true)}
@@ -244,7 +261,6 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
           </div>
         </button>
 
-        {/* Filtered task list */}
         {filteredTasks && filteredTasks.length > 0 && (
           <div className="border-t border-slate-100 px-3 py-2.5 space-y-1.5">
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 mb-1">
@@ -259,7 +275,6 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
           </div>
         )}
 
-        {/* All Tasks collapsible */}
         {overridePersonal.allTasks.length > 0 && (
           <div className="border-t border-slate-100">
             <button
@@ -293,72 +308,251 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
   );
 }
 
-function MissedDeadlinesSection({ currentUser, users, clientLogs, clients, onTaskClick }) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+function KpiChipRow({ overdue, dueToday, awaitingQC, missingInfo, onScrollTo }) {
+  const chips = [
+    overdue > 0 && { label: 'Overdue', value: overdue, target: 'atRisk', bg: 'bg-red-50', border: 'border-red-100', valueCls: 'text-red-500', labelCls: 'text-red-400' },
+    dueToday > 0 && { label: 'Due Today', value: dueToday, target: 'atRisk', bg: 'bg-indigo-50', border: 'border-indigo-100', valueCls: 'text-indigo-600', labelCls: 'text-indigo-400' },
+    awaitingQC > 0 && { label: 'Awaiting QC', value: awaitingQC, target: 'atRisk', bg: 'bg-amber-50', border: 'border-amber-100', valueCls: 'text-amber-600', labelCls: 'text-amber-400' },
+    missingInfo > 0 && { label: 'Missing Info', value: missingInfo, target: 'missingInfo', bg: 'bg-slate-50', border: 'border-slate-200', valueCls: 'text-slate-600', labelCls: 'text-slate-400' },
+  ].filter(Boolean);
+
+  if (chips.length === 0) return null;
+
+  return (
+    <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
+      {chips.map(chip => (
+        <button
+          key={chip.label}
+          onClick={() => onScrollTo(chip.target)}
+          className={`flex-shrink-0 flex flex-col items-center px-4 py-2.5 rounded-xl ${chip.bg} border ${chip.border} min-h-[44px] min-w-[76px] active:opacity-70 transition-opacity`}
+        >
+          <span className={`text-base font-black leading-none ${chip.valueCls}`}>{chip.value}</span>
+          <span className={`text-[9px] uppercase tracking-wide mt-0.5 ${chip.labelCls}`}>{chip.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PersonAtRiskCard({ user, tasks, isOnLeave, accent, onTaskClick }) {
+  const red = accent === 'red';
+  const c = red
+    ? { bg: 'bg-red-50', border: 'border-red-100', avatar: 'bg-red-200', avatarText: 'text-red-700', name: 'text-red-800', countBg: 'bg-red-100', countText: 'text-red-500', rowHover: 'hover:bg-red-100', taskText: 'text-red-700' }
+    : { bg: 'bg-indigo-50', border: 'border-indigo-100', avatar: 'bg-indigo-200', avatarText: 'text-indigo-700', name: 'text-indigo-800', countBg: 'bg-indigo-100', countText: 'text-indigo-500', rowHover: 'hover:bg-indigo-100', taskText: 'text-indigo-700' };
+  const icon = red
+    ? <AlertTriangle size={10} className="text-red-400 flex-shrink-0" />
+    : <Clock size={10} className="text-indigo-400 flex-shrink-0" />;
+
+  return (
+    <div className={`${c.bg} rounded-2xl border ${c.border} px-4 py-3`}>
+      <div className="flex items-center gap-2 mb-2">
+        <div className={`w-6 h-6 rounded-full ${c.avatar} flex items-center justify-center flex-shrink-0`}>
+          <span className={`${c.avatarText} font-black text-[10px]`}>{initials(user.name)}</span>
+        </div>
+        <p className={`text-xs font-bold ${c.name}`}>{user.name}</p>
+        {isOnLeave && (
+          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700">On Leave</span>
+        )}
+        <span className={`ml-auto text-[10px] font-bold ${c.countText} ${c.countBg} px-1.5 py-0.5 rounded-full`}>
+          {tasks.length} {red ? 'overdue' : 'due today'}
+        </span>
+      </div>
+      <div className="space-y-1">
+        {tasks.map(t => (
+          <button
+            key={`${t._clientId}-${t.id}`}
+            onClick={() => onTaskClick(t)}
+            className={`w-full flex items-center gap-2 text-left px-2 py-1.5 rounded-xl ${c.rowHover} transition-colors min-h-[44px]`}
+          >
+            {icon}
+            <span className={`text-xs ${c.taskText} font-medium flex-1 truncate`}>{t.name || t.comment}</span>
+            {t._clientName && <span className={`text-[10px] ${c.countText} flex-shrink-0 truncate max-w-[80px]`}>{t._clientName}</span>}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AtRiskSection({ currentUser, users, clientLogs, clients, onTaskClick, leaveByUser, sectionRef }) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const todayEnd = new Date(today); todayEnd.setHours(23, 59, 59, 999);
+  const todayKey = toDateKey(today);
 
   const subtreeIds = getSubtreeIds(currentUser.id, users);
   subtreeIds.delete(String(currentUser.id));
 
-  const [leaveByUser, setLeaveByUser] = useState({});
-  useEffect(() => {
-    if (subtreeIds.size === 0) return;
-    let cancelled = false;
-    Promise.all([...subtreeIds].map(uid => getLeaveAndHolidayData(uid).then(d => [uid, d]))).then(entries => {
-      if (!cancelled) setLeaveByUser(Object.fromEntries(entries));
-    });
-    return () => { cancelled = true; };
-  }, [clientLogs]);
-
   const overdueByPerson = [];
+  const dueTodayByPerson = [];
+
   subtreeIds.forEach(uid => {
     const user = users.find(u => String(u.id) === uid);
     if (!user) return;
     const stats = getUserTaskStats(uid, clientLogs, clients);
     const ld = leaveByUser[uid] || {};
+    const isOnLeave = !!ld[todayKey];
     const filteredOverdue = stats.overdueTasks.filter(t => isTaskLeaveAwareOverdue(t, undefined, ld));
-    if (filteredOverdue.length > 0) {
-      overdueByPerson.push({ user, tasks: filteredOverdue });
-    }
+    if (filteredOverdue.length > 0) overdueByPerson.push({ user, tasks: filteredOverdue, isOnLeave });
+    if (stats.todayTasks.length > 0) dueTodayByPerson.push({ user, tasks: stats.todayTasks, isOnLeave });
   });
 
-  if (overdueByPerson.length === 0) return null;
+  if (overdueByPerson.length === 0 && dueTodayByPerson.length === 0) return null;
+
+  const totalCount = overdueByPerson.reduce((s, p) => s + p.tasks.length, 0)
+    + dueTodayByPerson.reduce((s, p) => s + p.tasks.length, 0);
 
   return (
-    <div>
+    <div ref={sectionRef}>
       <div className="flex items-center gap-2 mb-3">
         <AlertTriangle size={13} className="text-red-400" />
-        <h3 className="text-xs font-black text-red-500 uppercase tracking-widest">Missed Deadlines</h3>
-        <span className="ml-auto text-xs font-bold text-red-400 bg-red-50 rounded-full px-2 py-0.5">
-          {overdueByPerson.reduce((s, p) => s + p.tasks.length, 0)}
-        </span>
+        <h3 className="text-xs font-black text-red-500 uppercase tracking-widest">At Risk</h3>
+        <span className="ml-auto text-xs font-bold text-red-400 bg-red-50 rounded-full px-2 py-0.5">{totalCount}</span>
       </div>
-      <div className="space-y-2">
-        {overdueByPerson.map(({ user, tasks }) => (
-          <div key={user.id} className="bg-red-50 rounded-2xl border border-red-100 px-4 py-3">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-6 h-6 rounded-full bg-red-200 flex items-center justify-center flex-shrink-0">
-                <span className="text-red-700 font-black text-[10px]">{initials(user.name)}</span>
-              </div>
-              <p className="text-xs font-bold text-red-800">{user.name}</p>
-              <span className="ml-auto text-[10px] font-bold text-red-500 bg-red-100 px-1.5 py-0.5 rounded-full">{tasks.length} overdue</span>
-            </div>
-            <div className="space-y-1">
-              {tasks.map(t => (
+
+      {overdueByPerson.length > 0 && (
+        <div className={dueTodayByPerson.length > 0 ? 'mb-4' : ''}>
+          <p className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-2 px-1">Overdue</p>
+          <div className="space-y-2">
+            {overdueByPerson.map(({ user, tasks, isOnLeave }) => (
+              <PersonAtRiskCard key={user.id} user={user} tasks={tasks} isOnLeave={isOnLeave} accent="red" onTaskClick={onTaskClick} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {dueTodayByPerson.length > 0 && (
+        <div>
+          <p className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-2 px-1">Due Today</p>
+          <div className="space-y-2">
+            {dueTodayByPerson.map(({ user, tasks, isOnLeave }) => (
+              <PersonAtRiskCard key={user.id} user={user} tasks={tasks} isOnLeave={isOnLeave} accent="indigo" onTaskClick={onTaskClick} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MissingInfoSection({ subtreeTasks, onTaskClick, sectionRef }) {
+  const [open, setOpen] = useState(true);
+
+  const missingTasks = useMemo(
+    () => subtreeTasks.filter(t => !t.archived && t.status !== 'Done' && (!t.assigneeId || !t.dueDate)).slice(0, 20),
+    [subtreeTasks],
+  );
+
+  return (
+    <div ref={sectionRef}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center gap-2 mb-2 py-1 min-h-[44px]"
+      >
+        <Info size={13} className="text-amber-400" />
+        <h3 className="text-xs font-black text-amber-600 uppercase tracking-widest flex-1 text-left">Missing Info</h3>
+        <span className="text-xs font-bold text-amber-500 bg-amber-50 rounded-full px-2 py-0.5">{missingTasks.length}</span>
+        {open ? <ChevronUp size={13} className="text-slate-400" /> : <ChevronDown size={13} className="text-slate-400" />}
+      </button>
+      {open && (
+        missingTasks.length === 0 ? (
+          <div className="flex items-center gap-2 py-3 px-3 rounded-xl bg-emerald-50 border border-emerald-100">
+            <CheckCircle size={14} className="text-emerald-400 flex-shrink-0" />
+            <p className="text-xs text-emerald-600 font-medium">All tasks have assignees and due dates</p>
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {missingTasks.map(t => (
+              <button
+                key={`${t._clientId}-${t.id}`}
+                onClick={() => onTaskClick(t)}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-xl border border-amber-100 bg-amber-50 text-left active:bg-amber-100 transition-colors min-h-[44px]"
+              >
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap ${!t.assigneeId ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>
+                  {!t.assigneeId ? 'No Assignee' : 'No Due Date'}
+                </span>
+                <span className="text-xs text-slate-700 font-medium flex-1 truncate">{t.name || t.comment}</span>
+                {t._clientName && <span className="text-[10px] text-slate-400 flex-shrink-0 truncate max-w-[70px]">{t._clientName}</span>}
+              </button>
+            ))}
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
+function LeaveConflictsSection({ subtreeTasks, leaveByUser, users, onTaskClick, sectionRef }) {
+  const [open, setOpen] = useState(true);
+
+  const conflicts = useMemo(() => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const sevenDaysLater = new Date(today); sevenDaysLater.setDate(today.getDate() + 7);
+    const todayKey = toDateKey(today);
+
+    return subtreeTasks
+      .filter(t => !t.archived && t.status !== 'Done' && t.dueDate && t.assigneeId)
+      .map(t => {
+        const due = parseDueDateLocal(t.dueDate);
+        if (!due || due < today || due > sevenDaysLater) return null;
+        const dueKey = toDateKey(due);
+        const ld = leaveByUser[String(t.assigneeId)] || {};
+        const conflictDate = Object.keys(ld)
+          .filter(dk => dk >= todayKey && dk <= dueKey)
+          .sort()
+          .find(dk => {
+            const rec = ld[dk];
+            return rec && (rec.name || (rec.status && rec.status !== 'pending'));
+          });
+        if (!conflictDate) return null;
+        const badge = conflictDate === todayKey ? 'On Leave Today' : 'Leave on Due Date';
+        return { ...t, due, dueKey, badge };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.due - b.due);
+  }, [subtreeTasks, leaveByUser]);
+
+  return (
+    <div ref={sectionRef}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center gap-2 mb-2 py-1 min-h-[44px]"
+      >
+        <Calendar size={13} className="text-rose-400" />
+        <h3 className="text-xs font-black text-rose-600 uppercase tracking-widest flex-1 text-left">Leave Conflicts</h3>
+        <span className="text-xs font-bold text-rose-500 bg-rose-50 rounded-full px-2 py-0.5">{conflicts.length}</span>
+        {open ? <ChevronUp size={13} className="text-slate-400" /> : <ChevronDown size={13} className="text-slate-400" />}
+      </button>
+      {open && (
+        conflicts.length === 0 ? (
+          <div className="flex items-center gap-2 py-3 px-3 rounded-xl bg-emerald-50 border border-emerald-100">
+            <CheckCircle size={14} className="text-emerald-400 flex-shrink-0" />
+            <p className="text-xs text-emerald-600 font-medium">No upcoming conflicts</p>
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {conflicts.map(t => {
+              const member = users.find(u => String(u.id) === String(t.assigneeId));
+              const memberName = member?.name || 'Unknown';
+              return (
                 <button
                   key={`${t._clientId}-${t.id}`}
                   onClick={() => onTaskClick(t)}
-                  className="w-full flex items-center gap-2 text-left px-2 py-1.5 rounded-xl hover:bg-red-100 transition-colors"
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-xl border border-rose-100 bg-rose-50 text-left active:bg-rose-100 transition-colors min-h-[44px]"
                 >
-                  <AlertTriangle size={10} className="text-red-400 flex-shrink-0" />
-                  <span className="text-xs text-red-700 font-medium flex-1 truncate">{t.name || t.comment}</span>
-                  {t._clientName && <span className="text-[10px] text-red-400 flex-shrink-0 truncate max-w-[80px]">{t._clientName}</span>}
+                  <div className="w-7 h-7 rounded-full bg-rose-200 flex items-center justify-center flex-shrink-0">
+                    <span className="text-rose-700 font-black text-[9px]">{initials(memberName)}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-slate-800 line-clamp-2 leading-tight">{t.name || t.comment}</p>
+                    <p className="text-[10px] text-slate-400 truncate mt-0.5">{memberName} · {t._clientName} · {t.dueKey}</p>
+                  </div>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 flex-shrink-0 whitespace-nowrap">{t.badge}</span>
                 </button>
-              ))}
-            </div>
+              );
+            })}
           </div>
-        ))}
-      </div>
+        )
+      )}
     </div>
   );
 }
@@ -411,6 +605,11 @@ export default function ManagerDashboard({
   const [selectedTask, setSelectedTask] = useState(null);
   const [showAddTask, setShowAddTask] = useState(false);
   const [showAllDrillTasks, setShowAllDrillTasks] = useState(false);
+  const [leaveByUser, setLeaveByUser] = useState({});
+
+  const scrollContainerRef = useRef(null);
+  const atRiskRef = useRef(null);
+  const missingInfoRef = useRef(null);
 
   const viewUser = drillStack.length > 0 ? drillStack[drillStack.length - 1] : null;
   const displayUser = viewUser || currentUser;
@@ -421,10 +620,59 @@ export default function ManagerDashboard({
 
   const drillPersonalStats = viewUser ? getUserTaskStats(viewUser.id, clientLogs, clients) : null;
 
+  const subtreeIds = useMemo(() => {
+    const ids = getSubtreeIds(currentUser.id, users);
+    ids.delete(String(currentUser.id));
+    return ids;
+  }, [currentUser.id, users]);
+
+  useEffect(() => {
+    if (drillStack.length > 0 || subtreeIds.size === 0) return;
+    let cancelled = false;
+    Promise.all([...subtreeIds].map(uid => getLeaveAndHolidayData(uid).then(d => [uid, d]))).then(entries => {
+      if (!cancelled) setLeaveByUser(Object.fromEntries(entries));
+    });
+    return () => { cancelled = true; };
+  }, [clientLogs, subtreeIds, drillStack.length]);
+
+  const subtreeTasks = useMemo(() => {
+    if (drillStack.length > 0) return [];
+    const tasks = [];
+    Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
+      const client = clients.find(c => String(c.id) === String(clientId));
+      (logs || []).forEach(task => {
+        if (subtreeIds.has(String(task.assigneeId))) {
+          tasks.push({ ...task, _clientId: clientId, _clientName: client?.name || clientId });
+        }
+      });
+    });
+    return tasks;
+  }, [clientLogs, clients, subtreeIds, drillStack.length]);
+
+  const kpiCounts = useMemo(() => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(today); todayEnd.setHours(23, 59, 59, 999);
+    let overdue = 0, dueToday = 0, awaitingQC = 0, missingInfo = 0;
+    subtreeTasks.forEach(t => {
+      if (t.archived || t.status === 'Done') return;
+      const due = parseDueDateLocal(t.dueDate);
+      if (due && due < today) overdue++;
+      if (due && due >= today && due <= todayEnd) dueToday++;
+      if (t.qcEnabled && t.qcStatus === 'sent') awaitingQC++;
+      if (!t.assigneeId || !t.dueDate) missingInfo++;
+    });
+    return { overdue, dueToday, awaitingQC, missingInfo };
+  }, [subtreeTasks]);
+
+  const scrollTo = (target) => {
+    const el = target === 'atRisk' ? atRiskRef.current : target === 'missingInfo' ? missingInfoRef.current : null;
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {activeTab === 'team' && (
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto" ref={scrollContainerRef}>
           {drillStack.length > 0 && (
             <div className="flex items-center gap-2 px-4 py-2 bg-white border-b border-slate-100">
               <button
@@ -448,7 +696,28 @@ export default function ManagerDashboard({
           )}
 
           <div className="p-4 space-y-4">
-            {!viewUser && <MissedDeadlinesSection currentUser={currentUser} users={users} clientLogs={clientLogs} clients={clients} onTaskClick={setSelectedTask} />}
+            {drillStack.length === 0 && (
+              <KpiChipRow
+                overdue={kpiCounts.overdue}
+                dueToday={kpiCounts.dueToday}
+                awaitingQC={kpiCounts.awaitingQC}
+                missingInfo={kpiCounts.missingInfo}
+                onScrollTo={scrollTo}
+              />
+            )}
+
+            {drillStack.length === 0 && (
+              <AtRiskSection
+                currentUser={currentUser}
+                users={users}
+                clientLogs={clientLogs}
+                clients={clients}
+                onTaskClick={setSelectedTask}
+                leaveByUser={leaveByUser}
+                sectionRef={atRiskRef}
+              />
+            )}
+
             {drillPersonalStats && (
               <div className="bg-indigo-50 rounded-2xl border border-indigo-100 p-4">
                 <div className="flex items-center gap-2 mb-3">
@@ -479,13 +748,8 @@ export default function ManagerDashboard({
                             className={`w-full flex items-center gap-2 px-3 py-2 bg-white rounded-xl border text-left hover:border-indigo-300 transition-colors ${taskOverdue ? 'border-red-200' : 'border-indigo-100'}`}
                           >
                             <span className={`w-2 h-2 rounded-full flex-shrink-0 ${t.status === 'Done' ? 'bg-emerald-500' : t.status === 'WIP' ? 'bg-blue-500' : 'bg-amber-400'}`} />
-                            <span className="text-sm text-slate-700 font-medium flex-1 truncate">{t.name || t.comment}</span>
-                            {taskOverdue && (
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 flex items-center gap-0.5 flex-shrink-0">
-                                <AlertTriangle size={9} /> Overdue
-                              </span>
-                            )}
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold flex-shrink-0 ${STATUS_COLORS[t.status] || 'bg-slate-100 text-slate-500'}`}>{t.status}</span>
+                            <span className="text-xs text-indigo-800 font-medium flex-1 truncate">{t.name || t.comment}</span>
+                            {t._clientName && <span className="text-[10px] text-indigo-400 flex-shrink-0 truncate max-w-[80px]">{t._clientName}</span>}
                           </button>
                         );
                       });
@@ -493,7 +757,7 @@ export default function ManagerDashboard({
                     {drillPersonalStats.allTasks.length > 4 && (
                       <button
                         onClick={() => setShowAllDrillTasks(v => !v)}
-                        className="w-full text-xs text-indigo-500 font-semibold text-center pt-1.5 pb-0.5 hover:text-indigo-700 transition-colors active:opacity-70"
+                        className="w-full text-center text-xs text-indigo-500 font-semibold py-1.5 hover:text-indigo-700"
                       >
                         {showAllDrillTasks
                           ? 'Show less'
@@ -535,6 +799,24 @@ export default function ManagerDashboard({
                   />
                 ))}
               </>
+            )}
+
+            {drillStack.length === 0 && (
+              <MissingInfoSection
+                subtreeTasks={subtreeTasks}
+                onTaskClick={setSelectedTask}
+                sectionRef={missingInfoRef}
+              />
+            )}
+
+            {drillStack.length === 0 && (
+              <LeaveConflictsSection
+                subtreeTasks={subtreeTasks}
+                leaveByUser={leaveByUser}
+                users={users}
+                onTaskClick={setSelectedTask}
+                sectionRef={null}
+              />
             )}
           </div>
 
