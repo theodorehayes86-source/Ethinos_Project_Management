@@ -165,47 +165,73 @@ export async function getUserLeaveAndHolidayData(userId, region = "All") {
  * }>}
  */
 export async function getUserLeaveStatus(userId, region = "All") {
-  if (!userId) return { onLeaveToday: false, onLeavePendingToday: false, upcomingLeaveDate: null, upcomingPendingDate: null, upcomingHolidayDate: null };
+  if (!userId) return { onLeaveToday: false, onLeavePendingToday: false, upcomingLeaveDate: null, upcomingPendingDate: null };
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   try {
-    const [leaveSnap, holidaySnap] = await Promise.all([
-      get(ref(db, `leaveData/${userId}`)),
-      get(ref(db, `publicHolidays/${region}`)),
-    ]);
+    const leaveSnap = await get(ref(db, `leaveData/${userId}`));
     const leaveData = leaveSnap.val() || {};
-    const allHolidays = holidaySnap.val() || {};
 
     const todayKey = toDateKey(today);
     const todayRecord = leaveData[todayKey];
-    const todayIsHoliday = !!(allHolidays[todayKey]);
-    const onLeaveToday        = (!!todayRecord && todayRecord.status !== "pending") || todayIsHoliday;
-    const onLeavePendingToday = !onLeaveToday && !!todayRecord && todayRecord.status === "pending";
+    const onLeaveToday        = !!todayRecord && todayRecord.status !== "pending";
+    const onLeavePendingToday = !!todayRecord && todayRecord.status === "pending";
 
     let upcomingLeaveDate   = null;
     let upcomingPendingDate = null;
-    let upcomingHolidayDate = null;
 
     for (let i = 1; i <= 14; i++) {
       const d = new Date(today);
       d.setDate(d.getDate() + i);
       const dk = toDateKey(d);
       const rec = leaveData[dk];
-      if (rec) {
-        if (rec.status === "pending") {
-          if (!upcomingPendingDate) upcomingPendingDate = dk;
-        } else {
-          if (!upcomingLeaveDate) upcomingLeaveDate = dk;
-        }
+      if (!rec) continue;
+      if (rec.status === "pending") {
+        if (!upcomingPendingDate) upcomingPendingDate = dk;
+      } else {
+        if (!upcomingLeaveDate) upcomingLeaveDate = dk;
       }
-      if (allHolidays[dk] && !upcomingHolidayDate) upcomingHolidayDate = dk;
-      if (upcomingLeaveDate && upcomingPendingDate && upcomingHolidayDate) break;
+      if (upcomingLeaveDate && upcomingPendingDate) break;
     }
 
-    return { onLeaveToday, onLeavePendingToday, upcomingLeaveDate, upcomingPendingDate, upcomingHolidayDate };
+    // Check public holiday for today only (upcoming holidays are fetched once per view)
+    if (!onLeaveToday && !onLeavePendingToday) {
+      const holidaySnap = await get(ref(db, `publicHolidays/${region}/${todayKey}`));
+      if (holidaySnap.val()) {
+        return { onLeaveToday: true, onLeavePendingToday: false, upcomingLeaveDate: null, upcomingPendingDate: null };
+      }
+    }
+
+    return { onLeaveToday, onLeavePendingToday, upcomingLeaveDate, upcomingPendingDate };
   } catch {
-    return { onLeaveToday: false, onLeavePendingToday: false, upcomingLeaveDate: null, upcomingPendingDate: null, upcomingHolidayDate: null };
+    return { onLeaveToday: false, onLeavePendingToday: false, upcomingLeaveDate: null, upcomingPendingDate: null };
+  }
+}
+
+/**
+ * Fetches upcoming public holidays in the next `days` days as a Set of YYYY-MM-DD strings.
+ * Should be called once per view load (not per user) to avoid read amplification.
+ *
+ * @param {string} region - Firebase region key (default "All")
+ * @param {number} days - Lookahead window in days (default 14)
+ * @returns {Promise<Set<string>>}
+ */
+export async function getUpcomingHolidays(region = "All", days = 14) {
+  try {
+    const snap = await get(ref(db, `publicHolidays/${region}`));
+    const data = snap.val() || {};
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const cutoff = new Date(today); cutoff.setDate(today.getDate() + days);
+    const todayKey = toDateKey(today);
+    const cutoffKey = toDateKey(cutoff);
+    const result = new Set();
+    Object.keys(data).forEach(dk => {
+      if (dk >= todayKey && dk <= cutoffKey && data[dk]) result.add(dk);
+    });
+    return result;
+  } catch {
+    return new Set();
   }
 }
