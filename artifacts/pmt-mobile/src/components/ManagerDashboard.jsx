@@ -217,8 +217,8 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
           role="button"
           tabIndex={0}
           className="w-full px-4 py-4 flex items-center gap-3 text-left active:bg-slate-50 transition-colors cursor-pointer select-none"
-          onClick={() => hasTeam ? onDrillIn(user) : setShowTaskSheet(true)}
-          onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && (hasTeam ? onDrillIn(user) : setShowTaskSheet(true))}
+          onClick={() => setShowTaskSheet(true)}
+          onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && setShowTaskSheet(true)}
         >
           <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0 relative">
             <span className="text-indigo-700 font-black text-sm">{initials(user.name)}</span>
@@ -256,9 +256,13 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
             {overridePersonal.overdue > 0 && <FilterBadge label="Overdue" value={overridePersonal.overdue} red active={taskFilter === 'overdue'} onClick={() => toggleFilter('overdue')} />}
             {overridePersonal.pendingQC > 0 && <FilterBadge label="QC" value={overridePersonal.pendingQC} active={taskFilter === 'awaitingQC'} onClick={() => toggleFilter('awaitingQC')} />}
             {hasTeam && (
-              <button onClick={() => onDrillIn(user)} className="flex flex-col items-center ml-1">
-                <ChevronRight size={16} className="text-slate-300" />
-                <span className="text-[9px] text-slate-400 uppercase tracking-wide">Team</span>
+              <button
+                onClick={() => onDrillIn(user)}
+                className="flex items-center gap-1 ml-1 px-2.5 py-1.5 rounded-xl bg-indigo-50 border border-indigo-100 min-h-[44px]"
+              >
+                <Users size={12} className="text-indigo-500" />
+                <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wide">Team</span>
+                <ChevronRight size={12} className="text-indigo-400" />
               </button>
             )}
           </div>
