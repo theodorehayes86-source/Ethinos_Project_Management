@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { Search, ChevronLeft, ChevronDown, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, AlertTriangle, Calendar, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus, Hourglass, Archive, ArchiveRestore, LayoutGrid, LayoutList, ClipboardList, LayoutTemplate, CheckSquare } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import DatePicker from "react-datepicker";
@@ -36,6 +36,23 @@ const isTaskVisible = (task, currentUser) => {
   return task.departments.includes(currentUser?.department);
 };
 
+function formatDurationMs(ms = 0) {
+  const total = Math.floor(ms / 1000);
+  const h = String(Math.floor(total / 3600)).padStart(2, '0');
+  const m = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
+  const s = String(total % 60).padStart(2, '0');
+  return `${h}:${m}:${s}`;
+}
+
+const LiveElapsed = React.memo(function LiveElapsed({ startedAt, elapsedMs }) {
+  const [tick, setTick] = React.useState(Date.now());
+  React.useEffect(() => {
+    const id = setInterval(() => setTick(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return <>{formatDurationMs(elapsedMs + Math.max(0, tick - startedAt))}</>;
+});
+
 const ClientView = ({ 
   selectedClient, setSelectedClient, clients = [], setClients, 
   clientLogs = {}, setClientLogs, clientSearch = "", setClientSearch,
@@ -58,10 +75,19 @@ const ClientView = ({
 
   const [detailGroup, setDetailGroup] = useState(null);
 
-  const getGroupChildren = (group) => {
-    const logs = clientLogs[group.clientId] || [];
-    return logs.filter(t => t.taskGroupId === group.id);
-  };
+  const childrenByGroupId = useMemo(() => {
+    const map = new Map();
+    Object.values(clientLogs).forEach(logs => {
+      (logs || []).forEach(t => {
+        if (t.taskGroupId) {
+          const arr = map.get(t.taskGroupId);
+          if (arr) arr.push(t);
+          else map.set(t.taskGroupId, [t]);
+        }
+      });
+    });
+    return map;
+  }, [clientLogs]);
 
   const handleUpdateGroupChildTask = (updatedTask) => {
     const cid = updatedTask.taskGroupId
@@ -148,7 +174,6 @@ const ClientView = ({
   const [editingId, setEditingId] = useState(null);
   const [editField, setEditField] = useState(""); 
   const [tempValue, setTempValue] = useState("");
-  const [timerTick, setTimerTick] = useState(Date.now());
   const [taskStatusFilter, setTaskStatusFilter] = useState('All');
   const [newTaskCategory, setNewTaskCategory] = useState("");
   const [taskCategoryQuery, setTaskCategoryQuery] = useState("");
@@ -494,16 +519,6 @@ const ClientView = ({
     setEditDraft(null);
   };
 
-  useEffect(() => {
-    const hasRunningTimers = Object.values(clientLogs || {}).some(logs =>
-      (logs || []).some(log => log.timerState === 'running')
-    );
-
-    if (!hasRunningTimers) return;
-    const intervalId = setInterval(() => setTimerTick(Date.now()), 1000);
-    return () => clearInterval(intervalId);
-  }, [clientLogs]);
-
   const formatDuration = (milliseconds = 0) => {
     const totalSeconds = Math.floor(milliseconds / 1000);
     const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
@@ -520,14 +535,6 @@ const ClientView = ({
     if (h > 0 && m > 0) return `${h}h ${m}m`;
     if (h > 0) return `${h}h`;
     return `${m}m`;
-  };
-
-  const getElapsedMs = (log) => {
-    const baseElapsed = log.elapsedMs || 0;
-    if (log.timerState === 'running' && log.timerStartedAt) {
-      return baseElapsed + Math.max(0, timerTick - log.timerStartedAt);
-    }
-    return baseElapsed;
   };
 
   const updateTaskLog = (logId, updater) => {
@@ -1436,7 +1443,7 @@ const ClientView = ({
             ) : (
               <div className="divide-y divide-slate-100">
                 {displayedChecklistGroups.map(group => {
-                  const children = getGroupChildren(group);
+                  const children = childrenByGroupId.get(group.id) ?? [];
                   const clItems = children.filter(t => t.taskType === 'checklist');
                   const done = clItems.filter(t =>
                     t.requiresInput ? t.checklistNote?.trim() : t.checklistAnswer != null
@@ -1689,7 +1696,11 @@ const ClientView = ({
                       {/* Timer display */}
                       <td className="px-1.5 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex flex-col items-end gap-0.5">
-                          <span className="text-[10px] font-semibold text-slate-700">{formatDuration(getElapsedMs(log))}</span>
+                          <span className="text-[10px] font-semibold text-slate-700">
+                            {log.timerState === 'running' && log.timerStartedAt
+                              ? <LiveElapsed startedAt={log.timerStartedAt} elapsedMs={log.elapsedMs || 0} />
+                              : formatDuration(log.elapsedMs || 0)}
+                          </span>
                           {timerState === 'stopped' && log.timeTaken && (
                             <span className="text-[8px] font-medium text-emerald-600">Time: {log.timeTaken}</span>
                           )}
@@ -2959,7 +2970,7 @@ const ClientView = ({
         {detailGroup && (
           <ChecklistGroupDetailPanel
             group={detailGroup}
-            childTasks={getGroupChildren(detailGroup)}
+            childTasks={childrenByGroupId.get(detailGroup?.id) ?? []}
             currentUser={currentUser}
             users={users}
             taskCategories={taskCategories}
