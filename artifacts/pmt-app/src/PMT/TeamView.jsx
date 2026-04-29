@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Users, ChevronRight, ChevronLeft, Plus, X, Search, Star, ArrowUp, ArrowDown, Filter, CalendarClock, CalendarCheck2, CalendarX2, AlertTriangle } from 'lucide-react';
+import { Users, ChevronRight, ChevronLeft, Plus, X, Search, Star, ArrowUp, ArrowDown, Filter, CalendarClock, CalendarCheck2, CalendarX2, AlertTriangle, BarChart2, ClipboardCheck, Clock } from 'lucide-react';
 import { format, isBefore, isAfter, startOfWeek, endOfWeek, startOfMonth, endOfMonth, parse } from 'date-fns';
 import TaskDetailPanel from './TaskDetailPanel';
 import { sendNotification } from '../utils/notify';
@@ -605,6 +605,8 @@ const TeamView = ({
   setClientLogs,
   taskCategories = [],
   hierarchyOrder = [],
+  onOpenClient = () => {},
+  onGoToApprovals = () => {},
 }) => {
   const [drillStack, setDrillStack] = useState([]);
   const [selectedMember, setSelectedMember] = useState(null);
@@ -622,14 +624,16 @@ const TeamView = ({
     return depts;
   }, [users]);
 
+  const allClients = useMemo(() => [...(clients || []), ...(syntheticClients || [])], [clients, syntheticClients]);
+
   const allTasksForUser = useCallback((userId) => {
     const result = [];
     Object.entries(clientLogs).forEach(([cid, tasks]) => {
-      const clientObj = [...clients, ...syntheticClients].find(c => String(c.id) === String(cid));
+      const clientObj = allClients.find(c => String(c.id) === String(cid));
       (tasks || []).forEach(t => { if (String(t.assigneeId) === String(userId)) result.push({ ...t, cid, cName: clientObj?.name || cid }); });
     });
     return result;
-  }, [clientLogs, clients, syntheticClients]);
+  }, [clientLogs, allClients]);
 
   const currentParent = drillStack.length > 0 ? drillStack[drillStack.length - 1] : null;
 
@@ -729,6 +733,121 @@ const TeamView = ({
     return allTasksForUser(selectedMember.id);
   }, [selectedMember, allTasksForUser]);
 
+  const visibleMemberIds = useMemo(() => {
+    const ids = new Set();
+    leftPanelGroups.forEach(({ members }) => {
+      (members || []).forEach(m => ids.add(String(m.id)));
+    });
+    return ids;
+  }, [leftPanelGroups]);
+
+  const visibleTasks = useMemo(() => {
+    const result = [];
+    Object.entries(clientLogs).forEach(([cid, tasks]) => {
+      const clientObj = allClients.find(c => String(c.id) === String(cid));
+      (tasks || []).forEach(t => {
+        if (visibleMemberIds.has(String(t.assigneeId))) {
+          result.push({ ...t, cid, cName: clientObj?.name || cid });
+        }
+      });
+    });
+    return result;
+  }, [clientLogs, visibleMemberIds, allClients]);
+
+  const unassignedTasks = useMemo(() => {
+    const result = [];
+    Object.entries(clientLogs).forEach(([cid, tasks]) => {
+      const clientObj = allClients.find(c => String(c.id) === String(cid));
+      (tasks || []).forEach(t => {
+        if (!t.assigneeId && !t.archived && t.status !== 'Done') {
+          result.push({ ...t, cid, cName: clientObj?.name || cid });
+        }
+      });
+    });
+    return result;
+  }, [clientLogs, allClients]);
+
+  const kpiMetrics = useMemo(() => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(today); todayEnd.setHours(23, 59, 59, 999);
+    let overdue = 0, dueToday = 0, awaitingQC = 0, qcRejected = 0, missingDueDate = 0;
+    visibleTasks.forEach(t => {
+      if (t.archived) return;
+      if (t.status !== 'Done') {
+        const due = parseDueDate(t.dueDate);
+        if (!t.dueDate) missingDueDate++;
+        else if (due && due < today) overdue++;
+        else if (due && due >= today && due <= todayEnd) dueToday++;
+      }
+      if (t.qcEnabled && t.qcStatus === 'sent' && !t.archived) awaitingQC++;
+      if (t.qcStatus === 'rejected' && t.status !== 'Done' && !t.archived) qcRejected++;
+    });
+    return { overdue, dueToday, awaitingQC, qcRejected, unassigned: unassignedTasks.length, missingDueDate };
+  }, [visibleTasks, unassignedTasks]);
+
+  const atRiskTasks = useMemo(() => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(today); todayEnd.setHours(23, 59, 59, 999);
+    return visibleTasks
+      .filter(t => !t.archived && t.status !== 'Done')
+      .map(t => {
+        const due = parseDueDate(t.dueDate);
+        if (!due) return null;
+        const isOverdue = due < today;
+        const isDueToday = due >= today && due <= todayEnd;
+        if (!isOverdue && !isDueToday) return null;
+        return { ...t, isOverdue, isDueToday, daysOverdue: isOverdue ? Math.floor((today.getTime() - due.getTime()) / 86400000) : 0 };
+      })
+      .filter(Boolean)
+      .sort((a, b) => {
+        if (a.isOverdue && !b.isOverdue) return -1;
+        if (!a.isOverdue && b.isOverdue) return 1;
+        return b.daysOverdue - a.daysOverdue;
+      })
+      .slice(0, 30);
+  }, [visibleTasks]);
+
+  const workloadData = useMemo(() => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const memberMap = {};
+    leftPanelGroups.forEach(({ members }) => {
+      (members || []).forEach(m => { memberMap[String(m.id)] = { member: m, open: 0, wip: 0, done: 0, overdue: 0 }; });
+    });
+    visibleTasks.forEach(t => {
+      if (t.archived) return;
+      const key = String(t.assigneeId);
+      if (!memberMap[key]) return;
+      if (t.status === 'Done') { memberMap[key].done++; return; }
+      memberMap[key].open++;
+      if (t.status === 'WIP') memberMap[key].wip++;
+      const due = parseDueDate(t.dueDate);
+      if (due && due < today) memberMap[key].overdue++;
+    });
+    const rows = Object.values(memberMap).filter(r => r.open + r.done > 0);
+    const maxOpen = Math.max(...rows.map(r => r.open), 1);
+    return { rows: rows.sort((a, b) => b.overdue - a.overdue || b.open - a.open), maxOpen };
+  }, [visibleTasks, leftPanelGroups]);
+
+  const pendingQCTasks = useMemo(() => {
+    const today = new Date();
+    return visibleTasks
+      .filter(t => t.qcEnabled && t.qcStatus === 'sent' && !t.archived)
+      .map(t => {
+        const submitted = parseDueDate(t.date);
+        const daysAge = submitted ? Math.floor((today.getTime() - submitted.getTime()) / 86400000) : 0;
+        return { ...t, daysAge: Math.max(0, daysAge) };
+      })
+      .sort((a, b) => b.daysAge - a.daysAge);
+  }, [visibleTasks]);
+
+  const missingInfoTasks = useMemo(() => {
+    const nodue = visibleTasks
+      .filter(t => !t.archived && t.status !== 'Done' && !t.dueDate)
+      .map(t => ({ ...t, missingType: 'dueDate' }));
+    const noassignee = unassignedTasks.map(t => ({ ...t, missingType: 'assignee' }));
+    return [...noassignee, ...nodue].slice(0, 20);
+  }, [visibleTasks, unassignedTasks]);
+
   if (!currentUser) return null;
 
   const showDeptFilter = allDepartments.length > 1;
@@ -802,9 +921,183 @@ const TeamView = ({
             taskCategories={taskCategories}
           />
         ) : (
-          <div className="flex-1 flex items-center justify-center flex-col gap-3 text-slate-300">
-            <Users size={40}/>
-            <p className="text-sm font-semibold">Select a team member to view their stats</p>
+          <div className="flex flex-col h-full overflow-hidden">
+            <div className="px-5 py-3 border-b border-slate-100 flex-shrink-0 flex items-center justify-between">
+              <h3 className="text-xs font-bold text-slate-600 uppercase tracking-widest flex items-center gap-2">
+                <BarChart2 size={13} className="text-indigo-400" />Team Overview
+              </h3>
+              <span className="text-[10px] text-slate-400">{visibleMemberIds.size} member{visibleMemberIds.size !== 1 ? 's' : ''}</span>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* KPI cards */}
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { label: 'Overdue', value: kpiMetrics.overdue, accent: 'text-red-600', bg: 'bg-red-50 border-red-100' },
+                  { label: 'Due Today', value: kpiMetrics.dueToday, accent: 'text-amber-600', bg: 'bg-amber-50 border-amber-100' },
+                  { label: 'Awaiting QC', value: kpiMetrics.awaitingQC, accent: 'text-indigo-600', bg: 'bg-indigo-50 border-indigo-100' },
+                  { label: 'QC Rejected', value: kpiMetrics.qcRejected, accent: 'text-orange-600', bg: 'bg-orange-50 border-orange-100' },
+                  { label: 'Unassigned', value: kpiMetrics.unassigned, accent: 'text-slate-600', bg: 'bg-slate-50 border-slate-200' },
+                  { label: 'No Due Date', value: kpiMetrics.missingDueDate, accent: 'text-gray-500', bg: 'bg-gray-50 border-gray-200' },
+                ].map(card => (
+                  <div key={card.label} className={`rounded-xl border p-3 text-center ${card.bg}`}>
+                    <p className={`text-2xl font-black ${card.accent}`}>{card.value}</p>
+                    <p className="text-[10px] text-slate-500 font-semibold mt-0.5 leading-tight">{card.label}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* At-Risk Tasks */}
+              {atRiskTasks.length > 0 && (
+                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-2">
+                    <AlertTriangle size={13} className="text-red-400" />
+                    <h4 className="text-xs font-bold text-slate-700 flex-1">At-Risk Tasks</h4>
+                    <span className="text-[10px] font-bold text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">{atRiskTasks.length}</span>
+                  </div>
+                  <div className="divide-y divide-slate-50">
+                    {atRiskTasks.map((t, idx) => {
+                      const clientObj = allClients.find(c => String(c.id) === String(t.cid));
+                      return (
+                        <button
+                          key={`ar-${t.cid}-${t.id}-${idx}`}
+                          onClick={() => clientObj && onOpenClient(clientObj)}
+                          className="w-full flex items-center gap-2.5 px-4 py-2.5 hover:bg-slate-50 text-left transition-colors"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-slate-800 truncate">{t.name || t.comment}</p>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className="text-[10px] text-slate-400 truncate max-w-[80px]">{t.cName}</span>
+                              {t.assigneeName && <span className="text-[10px] text-slate-400 truncate">· {t.assigneeName}</span>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            {t.isOverdue ? (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">{t.daysOverdue}d late</span>
+                            ) : (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-600">Today</span>
+                            )}
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${STATUS_COLORS[t.status] || 'bg-slate-100 text-slate-500'}`}>{t.status}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Team Workload */}
+              {workloadData.rows.length > 0 && (
+                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-2">
+                    <BarChart2 size={13} className="text-indigo-400" />
+                    <h4 className="text-xs font-bold text-slate-700">Team Workload</h4>
+                  </div>
+                  <div className="divide-y divide-slate-50">
+                    {workloadData.rows.map((row) => {
+                      const barPct = workloadData.maxOpen > 0 ? (row.open / workloadData.maxOpen) * 100 : 0;
+                      return (
+                        <button
+                          key={row.member.id}
+                          onClick={() => setSelectedMember(row.member)}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 text-left transition-colors"
+                        >
+                          <div className={`w-7 h-7 rounded-full ${avatarColor(row.member.name)} flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0`}>
+                            {initials(row.member.name)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <p className="text-xs font-semibold text-slate-800 truncate">{row.member.name}</p>
+                              <div className="flex items-center gap-2 flex-shrink-0 text-[10px] font-bold">
+                                <span className="text-orange-500">{row.open} open</span>
+                                {row.overdue > 0 && <span className="text-red-500">{row.overdue} late</span>}
+                                <span className="text-emerald-500">{row.done} done</span>
+                              </div>
+                            </div>
+                            <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                              <div className={`h-full rounded-full transition-all ${row.overdue > 0 ? 'bg-red-400' : 'bg-indigo-400'}`} style={{ width: `${barPct}%` }} />
+                            </div>
+                          </div>
+                          <ChevronRight size={12} className="text-slate-300 flex-shrink-0" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Pending QC Reviews */}
+              {pendingQCTasks.length > 0 && (
+                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-2">
+                    <ClipboardCheck size={13} className="text-indigo-400" />
+                    <h4 className="text-xs font-bold text-slate-700 flex-1">Pending QC Reviews</h4>
+                    <button onClick={onGoToApprovals} className="text-[10px] font-bold text-indigo-500 hover:text-indigo-700 transition-colors">View all →</button>
+                  </div>
+                  <div className="divide-y divide-slate-50">
+                    {pendingQCTasks.slice(0, 10).map((t, idx) => (
+                      <div key={`qc-${t.cid}-${t.id}-${idx}`} className="flex items-center gap-2.5 px-4 py-2.5">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-slate-800 truncate">{t.name || t.comment}</p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="text-[10px] text-slate-400 truncate max-w-[80px]">{t.cName}</span>
+                            {t.assigneeName && <span className="text-[10px] text-slate-400 truncate">· {t.assigneeName}</span>}
+                          </div>
+                        </div>
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${t.daysAge > 3 ? 'bg-red-100 text-red-600' : t.daysAge > 1 ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-500'}`}>
+                          {t.daysAge === 0 ? 'Today' : `${t.daysAge}d`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Missing Info */}
+              {missingInfoTasks.length > 0 && (
+                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-2">
+                    <Clock size={13} className="text-slate-400" />
+                    <h4 className="text-xs font-bold text-slate-700 flex-1">Missing Info</h4>
+                    <span className="text-[10px] font-bold text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">{missingInfoTasks.length}</span>
+                  </div>
+                  <div className="divide-y divide-slate-50">
+                    {missingInfoTasks.map((t, idx) => {
+                      const clientObj = allClients.find(c => String(c.id) === String(t.cid));
+                      return (
+                        <button
+                          key={`mi-${t.cid}-${t.id}-${idx}`}
+                          onClick={() => clientObj && onOpenClient(clientObj)}
+                          className="w-full flex items-center gap-2.5 px-4 py-2.5 hover:bg-slate-50 text-left transition-colors"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-slate-800 truncate">{t.name || t.comment}</p>
+                            <span className="text-[10px] text-slate-400">{t.cName}</span>
+                          </div>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${t.missingType === 'assignee' ? 'bg-rose-100 text-rose-600' : 'bg-amber-100 text-amber-600'}`}>
+                            {t.missingType === 'assignee' ? 'No Assignee' : 'No Due Date'}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* All-clear state */}
+              {atRiskTasks.length === 0 && pendingQCTasks.length === 0 && missingInfoTasks.length === 0 && visibleMemberIds.size > 0 && (
+                <div className="flex flex-col items-center justify-center py-12 text-slate-300">
+                  <Users size={32} />
+                  <p className="text-sm font-semibold mt-2">Team is on track</p>
+                  <p className="text-xs mt-1 text-slate-400">No overdue, QC, or missing info issues</p>
+                </div>
+              )}
+              {visibleMemberIds.size === 0 && (
+                <div className="flex flex-col items-center justify-center py-12 text-slate-300">
+                  <Users size={32} />
+                  <p className="text-sm font-semibold mt-2">No team members in view</p>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

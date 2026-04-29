@@ -1992,6 +1992,8 @@ const App = () => {
               setClientLogs={persistClientLogs}
               taskCategories={filteredTaskCategoryNames}
               hierarchyOrder={hierarchyOrder}
+              onOpenClient={(client) => { setSelectedClient(client); setActiveTab('clients'); }}
+              onGoToApprovals={() => setActiveTab('approvals')}
             />
           )}
 
