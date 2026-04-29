@@ -1,5 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
-import admin from "firebase-admin";
+import { timingSafeEqual } from "crypto";
+import { getAdminAuth } from "../lib/firebase-admin";
 import { sendEmail, isEmailConfigured } from "../lib/microsoft-graph";
 import { readFirebasePath } from "../lib/firebase-admin";
 import { logger } from "../lib/logger";
@@ -15,11 +16,22 @@ async function requireFirebaseAuth(req: Request, res: Response, next: NextFuncti
   }
   const idToken = authHeader.slice(7);
   try {
-    await admin.auth().verifyIdToken(idToken);
+    await getAdminAuth().verifyIdToken(idToken);
     next();
   } catch (err) {
     logger.warn({ err }, "[Notify] Invalid Firebase ID token");
     res.status(401).json({ error: "Invalid or expired auth token" });
+  }
+}
+
+function apiKeyMatches(provided: string, secret: string): boolean {
+  try {
+    const a = Buffer.from(provided);
+    const b = Buffer.from(secret);
+    if (a.length !== b.length) return false;
+    return timingSafeEqual(a, b);
+  } catch {
+    return false;
   }
 }
 
@@ -653,14 +665,14 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
 /* ─── Admin: manual digest trigger ─── */
 
 router.post("/admin/trigger-digest", async (req: Request, res: Response) => {
-  const apiKey = req.headers["x-api-key"] || req.query["apiKey"];
+  const apiKey = req.header("x-admin-api-key");
   const expected = process.env.PMT_EXPORT_API_KEY;
 
   if (!expected) {
     return res.status(503).json({ error: "PMT_EXPORT_API_KEY not configured" });
   }
-  if (!apiKey || apiKey !== expected) {
-    return res.status(401).json({ error: "Invalid or missing API key. Pass it as the x-api-key header." });
+  if (!apiKey || !apiKeyMatches(apiKey, expected)) {
+    return res.status(401).json({ error: "Invalid or missing API key. Pass it as the x-admin-api-key header." });
   }
 
   const toEmail = (req.body?.toEmail as string | undefined) || process.env.NOTIFY_TEST_EMAIL || null;

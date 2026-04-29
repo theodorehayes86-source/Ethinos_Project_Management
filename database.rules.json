@@ -1,6 +1,54 @@
 {
   "rules": {
-    ".read": "auth != null && auth.token.email.matches(/.*@ethinos[.]com/)",
-    ".write": "auth != null && auth.token.email.matches(/.*@ethinos[.]com/)"
+    ".read": false,
+    ".write": false,
+
+    "userRoles": {
+      ".read": false,
+      ".write": false
+    },
+
+    "schedulerLocks": {
+      ".read": false,
+      ".write": false
+    },
+
+    "rateLimits": {
+      ".read": false,
+      ".write": false
+    },
+
+    "users": {
+      ".read": "auth != null && auth.token.email.matches(/.*@ethinos[.]com$/)",
+      ".write": "auth != null && (root.child('userRoles').child(auth.uid).val() === 'Admin' || root.child('userRoles').child(auth.uid).val() === 'Super Admin')",
+      ".indexOn": ["email", "managerId"]
+    },
+
+    "clients": {
+      ".read": "auth != null && auth.token.email.matches(/.*@ethinos[.]com$/)",
+      ".write": "auth != null && (root.child('userRoles').child(auth.uid).val() === 'Admin' || root.child('userRoles').child(auth.uid).val() === 'Super Admin')"
+    },
+
+    "clientLogs": {
+      ".read": "auth != null && auth.token.email.matches(/.*@ethinos[.]com$/)",
+      "$clientId": {
+        ".write": "auth != null && root.child('userRoles').child(auth.uid).val() !== null"
+      }
+    },
+
+    "config": {
+      ".read": "auth != null && auth.token.email.matches(/.*@ethinos[.]com$/)",
+      ".write": false
+    },
+
+    "settings": {
+      ".read": "auth != null && auth.token.email.matches(/.*@ethinos[.]com$/)",
+      ".write": "auth != null && (root.child('userRoles').child(auth.uid).val() === 'Admin' || root.child('userRoles').child(auth.uid).val() === 'Super Admin')"
+    },
+
+    "taskCategories": {
+      ".read": "auth != null && auth.token.email.matches(/.*@ethinos[.]com$/)",
+      ".write": "auth != null && (root.child('userRoles').child(auth.uid).val() === 'Admin' || root.child('userRoles').child(auth.uid).val() === 'Super Admin')"
+    }
   }
 }

@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { timingSafeEqual } from "crypto";
 import { readFirebasePath } from "../../lib/firebase-admin";
 import { parse, isValid, parseISO } from "date-fns";
 
@@ -166,18 +167,31 @@ function parseBillableFilter(param: unknown): boolean | null {
 
 /* ─── Middleware: API key check ─── */
 
-router.use((req, res, next) => {
-  const apiKey =
-    req.headers["x-api-key"] ||
-    req.query["apiKey"];
+const expected = process.env.PMT_EXPORT_API_KEY;
+if (!expected) {
+  console.warn("[Export] PMT_EXPORT_API_KEY is not set — all export requests will be rejected");
+}
 
-  const expected = process.env.PMT_EXPORT_API_KEY;
+function apiKeyMatches(provided: string, secret: string): boolean {
+  try {
+    const a = Buffer.from(provided);
+    const b = Buffer.from(secret);
+    if (a.length !== b.length) return false;
+    return timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
+
+router.use((req, res, next) => {
+  const apiKey = req.header("x-admin-api-key");
+
   if (!expected) {
     res.status(503).json({ error: "Export API is not configured (PMT_EXPORT_API_KEY missing)" });
     return;
   }
-  if (!apiKey || apiKey !== expected) {
-    res.status(401).json({ error: "Invalid or missing API key. Pass it as the x-api-key header." });
+  if (!apiKey || !apiKeyMatches(apiKey, expected)) {
+    res.status(401).json({ error: "Invalid or missing API key. Pass it as the x-admin-api-key header." });
     return;
   }
   next();

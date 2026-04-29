@@ -1,44 +1,65 @@
 import { Router, Request, Response, NextFunction, type IRouter } from "express";
-import admin from "firebase-admin";
+import type admin from "firebase-admin";
+import { getAdminAuth, getAdminDatabase } from "../lib/firebase-admin";
 import { sendEmail, isEmailConfigured } from "../lib/microsoft-graph";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
 // ---------------------------------------------------------------------------
-// Simple in-memory rate limiter for the public /reset-password endpoint.
+// Firebase-backed rate limiter for the public /reset-password endpoint.
 // Limits: max 3 requests per email per hour, max 10 requests per IP per hour.
+// Counters are stored under rateLimits/{key} so they survive restarts and
+// work across multiple instances.
 // ---------------------------------------------------------------------------
 
 const RESET_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 const RESET_MAX_PER_EMAIL = 3;
 const RESET_MAX_PER_IP = 10;
 
-const resetByEmail = new Map<string, { count: number; resetAt: number }>();
-const resetByIp = new Map<string, { count: number; resetAt: number }>();
+interface RateLimitEntry {
+  count: number;
+  expiresAt: number;
+}
 
-function checkResetRateLimit(email: string, ip: string): { limited: boolean; reason?: string } {
+async function checkFirebaseRateLimit(
+  key: string,
+  max: number,
+): Promise<{ limited: boolean }> {
+  const db = getAdminDatabase();
+  const ref = db.ref(`rateLimits/${key}`);
   const now = Date.now();
+  let limited = false;
 
-  const emailEntry = resetByEmail.get(email) ?? { count: 0, resetAt: now + RESET_WINDOW_MS };
-  if (emailEntry.resetAt < now) {
-    emailEntry.count = 0;
-    emailEntry.resetAt = now + RESET_WINDOW_MS;
-  }
-  emailEntry.count += 1;
-  resetByEmail.set(email, emailEntry);
-  if (emailEntry.count > RESET_MAX_PER_EMAIL) {
+  await ref.transaction((current: RateLimitEntry | null) => {
+    if (!current || current.expiresAt < now) {
+      return { count: 1, expiresAt: now + RESET_WINDOW_MS };
+    }
+    const nextCount = current.count + 1;
+    if (nextCount > max) {
+      limited = true;
+      return current;
+    }
+    return { count: nextCount, expiresAt: current.expiresAt };
+  });
+
+  return { limited };
+}
+
+async function checkResetRateLimit(
+  email: string,
+  ip: string,
+): Promise<{ limited: boolean; reason?: string }> {
+  const emailKey = `email_${Buffer.from(email).toString("base64url")}`;
+  const ipKey = `ip_${Buffer.from(ip).toString("base64url")}`;
+
+  const emailCheck = await checkFirebaseRateLimit(emailKey, RESET_MAX_PER_EMAIL);
+  if (emailCheck.limited) {
     return { limited: true, reason: "Too many reset requests for this address. Please try again later." };
   }
 
-  const ipEntry = resetByIp.get(ip) ?? { count: 0, resetAt: now + RESET_WINDOW_MS };
-  if (ipEntry.resetAt < now) {
-    ipEntry.count = 0;
-    ipEntry.resetAt = now + RESET_WINDOW_MS;
-  }
-  ipEntry.count += 1;
-  resetByIp.set(ip, ipEntry);
-  if (ipEntry.count > RESET_MAX_PER_IP) {
+  const ipCheck = await checkFirebaseRateLimit(ipKey, RESET_MAX_PER_IP);
+  if (ipCheck.limited) {
     return { limited: true, reason: "Too many requests from your network. Please try again later." };
   }
 
@@ -46,55 +67,10 @@ function checkResetRateLimit(email: string, ip: string): { limited: boolean; rea
 }
 
 // ---------------------------------------------------------------------------
-// Firebase Admin initialisation (lazy, idempotent)
-// ---------------------------------------------------------------------------
-
-type FirebaseAdminServices = {
-  auth: admin.auth.Auth;
-  db: admin.database.Database;
-};
-
-function getFirebaseAdmin(): FirebaseAdminServices {
-  const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-  const databaseURL = process.env.VITE_FIREBASE_DATABASE_URL;
-
-  if (!databaseURL) throw new Error("VITE_FIREBASE_DATABASE_URL is not set");
-  if (!serviceAccountJson) throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON is not set");
-
-  if (admin.apps.length === 0) {
-    let serviceAccount: admin.ServiceAccount;
-    try {
-      serviceAccount = JSON.parse(serviceAccountJson);
-    } catch {
-      throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON");
-    }
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      databaseURL,
-    });
-  }
-
-  return { auth: admin.auth(), db: admin.database() };
-}
-
-// ---------------------------------------------------------------------------
 // Role constants — roles allowed to create users and trigger admin resets
 // ---------------------------------------------------------------------------
 
 const ADMIN_ROLES = new Set(["Super Admin", "Admin"]);
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function generatePassword(length = 12): string {
-  const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789@#$%";
-  let password = "";
-  for (let i = 0; i < length; i++) {
-    password += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return password;
-}
 
 // ---------------------------------------------------------------------------
 // Download links — read from Firebase /config/downloads with fallbacks.
@@ -122,7 +98,6 @@ async function getDownloadLinks(db: admin.database.Database): Promise<DownloadLi
       const val = snap.val() as Partial<DownloadLinks>;
       return { ...DEFAULT_DOWNLOADS, ...val };
     }
-    // Seed the defaults on first use so admins can see and edit them in the DB.
     await db.ref("config/downloads").set(DEFAULT_DOWNLOADS);
   } catch (err) {
     logger.warn({ err }, "[Auth] Could not read /config/downloads — using defaults");
@@ -138,13 +113,13 @@ async function getDownloadLinks(db: admin.database.Database): Promise<DownloadLi
 function buildWelcomeEmail(d: {
   firstName: string;
   email: string;
-  tempPassword: string;
+  resetLink: string;
   links: DownloadLinks;
   isAdminCreated?: boolean;
 }): string {
   const intro = d.isAdminCreated
-    ? `Your Ethinos PMT account has been created by an administrator. Use the credentials below to sign in.`
-    : `You've signed into Ethinos PMT with your Microsoft account. Welcome aboard! Use these credentials to also log into the <strong>Ethinos Timer Pro</strong> desktop widget and the mobile companion app.`;
+    ? `Your Ethinos PMT account has been created by an administrator. Click the button below to set your password and sign in.`
+    : `You've signed into Ethinos PMT with your Microsoft account. Welcome aboard! Use the link below to set a password so you can also log into the <strong>Ethinos Timer Pro</strong> desktop widget and the mobile companion app.`;
 
   const downloadSection = `
     <div style="margin-top:28px;">
@@ -189,15 +164,13 @@ function buildWelcomeEmail(d: {
             <td style="padding:6px 0;font-size:13px;color:#64748b;width:120px;">Email</td>
             <td style="padding:6px 0;font-size:13px;color:#1e293b;font-weight:600;">${d.email}</td>
           </tr>
-          <tr>
-            <td style="padding:6px 0;font-size:13px;color:#64748b;">Password</td>
-            <td style="padding:6px 0;">
-              <code style="background:#e2e8f0;color:#1e293b;padding:3px 8px;border-radius:5px;font-size:15px;letter-spacing:0.03em;">${d.tempPassword}</code>
-            </td>
-          </tr>
         </table>
       </div>
-      <p style="margin:0 0 24px;font-size:12px;color:#94a3b8;">Please change your password after your first login.</p>
+
+      <div style="margin:20px 0;">
+        <a href="${d.resetLink}" style="display:inline-block;background:linear-gradient(135deg,#2563eb,#4f46e5);color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:13px 28px;border-radius:8px;">Set My Password</a>
+      </div>
+      <p style="margin:0 0 24px;font-size:12px;color:#94a3b8;">This link expires in 24 hours. If it has expired, use the "Forgot Password" option on the sign-in page.</p>
 
       ${downloadSection}
 
@@ -227,6 +200,25 @@ async function getPmtRole(db: admin.database.Database, email: string): Promise<s
   return role;
 }
 
+/**
+ * Write the user's role into the userRoles/{uid} path so that Firebase RTDB
+ * security rules can reference it via root.child('userRoles').child(auth.uid).
+ * This is a fire-and-forget write — any error is logged but does not block the
+ * calling request.
+ */
+async function syncUserRole(uid: string, role: string | null): Promise<void> {
+  try {
+    const db = getAdminDatabase();
+    if (role) {
+      await db.ref(`userRoles/${uid}`).set(role);
+    } else {
+      await db.ref(`userRoles/${uid}`).remove();
+    }
+  } catch (err) {
+    logger.warn({ err, uid }, "[Auth] Failed to sync userRoles — DB rules may not reflect current role until next sync");
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Middleware: verify Firebase Bearer token + look up PMT admin role
 // ---------------------------------------------------------------------------
@@ -253,7 +245,8 @@ async function requireAdminRole(
   }
 
   try {
-    const { auth, db } = getFirebaseAdmin();
+    const auth = getAdminAuth();
+    const db = getAdminDatabase();
     const decoded = await auth.verifyIdToken(idToken);
 
     const callerEmail = (decoded.email || "").toLowerCase();
@@ -263,13 +256,15 @@ async function requireAdminRole(
       return;
     }
 
-    // Verify the caller's PMT role from the trusted database (not from client claims)
     const role = await getPmtRole(db, callerEmail);
     if (!role || !ADMIN_ROLES.has(role)) {
       logger.warn({ callerEmail, role }, "Rejected — insufficient PMT role");
       res.status(403).json({ error: "Admin role required to perform this action" });
       return;
     }
+
+    // Keep userRoles/{uid} fresh so RTDB security rules reflect the current role.
+    void syncUserRole(decoded.uid, role);
 
     (req as AuthenticatedRequest).firebaseUser = decoded;
     next();
@@ -286,7 +281,7 @@ async function requireAdminRole(
 // Protected — caller must be a Firebase-authenticated PMT admin (Super Admin
 // or Admin role, verified from the database).
 // Creates a Firebase account for the target email (must be @ethinos.com),
-// auto-generates a temporary password, and sends a welcome email.
+// generates a password-reset link, and sends a welcome email.
 // ---------------------------------------------------------------------------
 
 router.post("/create-user", requireAdminRole, async (req, res) => {
@@ -305,14 +300,12 @@ router.post("/create-user", requireAdminRole, async (req, res) => {
       return;
     }
 
-    const { auth } = getFirebaseAdmin();
-    const tempPassword = generatePassword();
+    const auth = getAdminAuth();
 
     let userRecord: admin.auth.UserRecord;
     try {
       userRecord = await auth.createUser({
         email: normalizedEmail,
-        password: tempPassword,
         displayName: name?.trim() || undefined,
         emailVerified: false,
       });
@@ -325,20 +318,33 @@ router.post("/create-user", requireAdminRole, async (req, res) => {
       throw err;
     }
 
+    let resetLink: string;
+    try {
+      resetLink = await auth.generatePasswordResetLink(normalizedEmail);
+    } catch (err) {
+      logger.error({ err, email: normalizedEmail }, "Failed to generate password reset link — user still created");
+      res.json({
+        uid: userRecord.uid,
+        email: userRecord.email,
+        warning: "User created, but a password setup link could not be generated. The user can use 'Forgot Password' to set their password.",
+      });
+      return;
+    }
+
     let emailWarning: string | undefined;
 
     if (isEmailConfigured()) {
       try {
         const firstName = name?.trim().split(" ")[0] || "there";
-        const { db } = getFirebaseAdmin();
+        const db = getAdminDatabase();
         const links = await getDownloadLinks(db);
         await sendEmail({
           to: normalizedEmail,
-          subject: "Welcome to Ethinos PMT – Your Login Details & Downloads",
+          subject: "Welcome to Ethinos PMT – Set Your Password & Download the Apps",
           bodyHtml: buildWelcomeEmail({
             firstName,
             email: normalizedEmail,
-            tempPassword,
+            resetLink,
             links,
             isAdminCreated: true,
           }),
@@ -346,11 +352,11 @@ router.post("/create-user", requireAdminRole, async (req, res) => {
         logger.info({ email: normalizedEmail }, "Welcome email sent to new user");
       } catch (emailErr) {
         logger.error({ err: emailErr, email: normalizedEmail }, "Failed to send welcome email — user still created");
-        emailWarning = "User created, but the welcome email could not be sent. Please share the login credentials with the user manually.";
+        emailWarning = "User created, but the welcome email could not be sent. Please share the login details with the user manually.";
       }
     } else {
       logger.warn({ email: normalizedEmail }, "Microsoft Graph not configured — skipping welcome email");
-      emailWarning = "User created, but email is not configured. Please share the login credentials with the user manually.";
+      emailWarning = "User created, but email is not configured. Please share the login details with the user manually.";
     }
 
     res.json({
@@ -389,13 +395,22 @@ router.post("/reset-password", async (req, res) => {
     }
 
     const clientIp = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0].trim() ?? req.socket.remoteAddress ?? "unknown";
-    const rateCheck = checkResetRateLimit(normalizedEmail, clientIp);
+
+    let rateCheck: { limited: boolean; reason?: string };
+    try {
+      rateCheck = await checkResetRateLimit(normalizedEmail, clientIp);
+    } catch (err) {
+      logger.error({ err }, "Rate limit check failed — failing closed to protect the endpoint");
+      res.status(503).json({ error: "Password reset is temporarily unavailable. Please try again shortly." });
+      return;
+    }
+
     if (rateCheck.limited) {
       res.status(429).json({ error: rateCheck.reason });
       return;
     }
 
-    const { auth } = getFirebaseAdmin();
+    const auth = getAdminAuth();
 
     let resetLink: string;
     try {
@@ -403,8 +418,6 @@ router.post("/reset-password", async (req, res) => {
     } catch (err: unknown) {
       const firebaseErr = err as { code?: string };
       if (firebaseErr.code === "auth/user-not-found") {
-        // Return a uniform success response to prevent account enumeration.
-        // The user will simply not receive an email.
         logger.info({ email: normalizedEmail }, "Password reset requested for unknown email — silent no-op");
         res.json({ ok: true });
         return;
@@ -485,7 +498,6 @@ router.post("/ms-code-exchange", async (req, res) => {
       return;
     }
 
-    // Exchange the authorization code for tokens — server-to-server, no CORS issues.
     const tokenRes = await fetch(
       `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
       {
@@ -514,7 +526,6 @@ router.post("/ms-code-exchange", async (req, res) => {
       return;
     }
 
-    // Validate the access token and get the user's profile from Microsoft Graph.
     const graphResp = await fetch("https://graph.microsoft.com/v1.0/me", {
       headers: { Authorization: `Bearer ${tokenData.access_token}` },
     });
@@ -540,7 +551,8 @@ router.post("/ms-code-exchange", async (req, res) => {
       return;
     }
 
-    const { auth, db } = getFirebaseAdmin();
+    const auth = getAdminAuth();
+    const db = getAdminDatabase();
 
     let uid: string;
     try {
@@ -549,31 +561,26 @@ router.post("/ms-code-exchange", async (req, res) => {
     } catch (err: unknown) {
       const firebaseErr = err as { code?: string };
       if (firebaseErr.code === "auth/user-not-found") {
-        // Auto-provision a new Firebase account for first-time MS SSO users.
-        // Also generate and email a temporary password so they can log into
-        // the Electron widget (which only supports email/password login).
-        const tempPassword = generatePassword();
         const newUser = await auth.createUser({
           email: verifiedEmail,
           emailVerified: true,
           displayName,
-          password: tempPassword,
         });
         uid = newUser.uid;
         logger.info({ email: verifiedEmail }, "Auto-provisioned Firebase user for Microsoft SSO login");
 
-        // Send welcome email with credentials and download links.
         if (isEmailConfigured()) {
           try {
+            const resetLink = await auth.generatePasswordResetLink(verifiedEmail);
             const firstName = displayName?.split(" ")[0] || "there";
             const links = await getDownloadLinks(db);
             await sendEmail({
               to: verifiedEmail,
-              subject: "Welcome to Ethinos PMT – Your Login Details & Downloads",
+              subject: "Welcome to Ethinos PMT – Set Your Password & Download the Apps",
               bodyHtml: buildWelcomeEmail({
                 firstName,
                 email: verifiedEmail,
-                tempPassword,
+                resetLink,
                 links,
                 isAdminCreated: false,
               }),
@@ -587,6 +594,10 @@ router.post("/ms-code-exchange", async (req, res) => {
         throw err;
       }
     }
+
+    // Sync the user's PMT role to userRoles/{uid} so RTDB rules can enforce it.
+    const role = await getPmtRole(db, verifiedEmail);
+    void syncUserRole(uid, role);
 
     const customToken = await auth.createCustomToken(uid, { provider: "microsoft" });
 
@@ -639,7 +650,8 @@ router.post("/ms-token-exchange", async (req, res) => {
       return;
     }
 
-    const { auth } = getFirebaseAdmin();
+    const auth = getAdminAuth();
+    const db = getAdminDatabase();
 
     let uid: string;
     try {
@@ -659,6 +671,10 @@ router.post("/ms-token-exchange", async (req, res) => {
         throw err;
       }
     }
+
+    // Sync the user's PMT role to userRoles/{uid} so RTDB rules can enforce it.
+    const role = await getPmtRole(db, verifiedEmail);
+    void syncUserRole(uid, role);
 
     const customToken = await auth.createCustomToken(uid, { provider: "microsoft" });
 

@@ -3,13 +3,8 @@ import { logger } from "./logger";
 
 let db: admin.database.Database | null = null;
 
-function getFirebaseAdmin(): admin.database.Database {
-  if (db) return db;
-
-  if (admin.apps.length > 0) {
-    db = admin.app().database();
-    return db;
-  }
+function initFirebaseAdmin(): void {
+  if (admin.apps.length > 0) return;
 
   const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
   const databaseURL = process.env.VITE_FIREBASE_DATABASE_URL;
@@ -37,17 +32,27 @@ function getFirebaseAdmin(): admin.database.Database {
   });
 
   logger.info("Firebase Admin initialized");
+}
+
+export function getAdminDatabase(): admin.database.Database {
+  if (db) return db;
+  initFirebaseAdmin();
   db = admin.app().database();
   return db;
 }
 
+export function getAdminAuth(): admin.auth.Auth {
+  initFirebaseAdmin();
+  return admin.auth();
+}
+
 export async function readFirebasePath<T = unknown>(path: string): Promise<T> {
-  const database = getFirebaseAdmin();
+  const database = getAdminDatabase();
   const snap = await database.ref(path).once("value");
   return snap.val() as T;
 }
 
 export async function writeFirebasePath(path: string, value: unknown): Promise<void> {
-  const database = getFirebaseAdmin();
+  const database = getAdminDatabase();
   await database.ref(path).set(value);
 }
