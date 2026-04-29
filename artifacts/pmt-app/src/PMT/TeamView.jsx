@@ -46,6 +46,21 @@ const parseDueDate = (str) => {
   try { return parse(str, 'do MMM yyyy', new Date()); } catch { return null; }
 };
 
+const parseTimestamp = (val) => {
+  if (!val) return null;
+  try {
+    if (typeof val === 'number') return new Date(val);
+    if (typeof val === 'string') {
+      const asNum = Number(val);
+      if (!isNaN(asNum) && val.length > 8) return new Date(asNum);
+      const iso = new Date(val);
+      if (!isNaN(iso.getTime())) return iso;
+      return parseDueDate(val);
+    }
+    return null;
+  } catch { return null; }
+};
+
 const initials = (name) => {
   if (!name) return '?';
   return name.split(' ').filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
@@ -754,10 +769,23 @@ const TeamView = ({
     return result;
   }, [clientLogs, visibleMemberIds, allClients]);
 
+  const clientById = useMemo(() => {
+    const map = {};
+    allClients.forEach(c => { map[String(c.id)] = c; });
+    return map;
+  }, [allClients]);
+
+  const visibleClientIds = useMemo(() => {
+    const ids = new Set();
+    visibleTasks.forEach(t => ids.add(String(t.cid)));
+    return ids;
+  }, [visibleTasks]);
+
   const unassignedTasks = useMemo(() => {
     const result = [];
     Object.entries(clientLogs).forEach(([cid, tasks]) => {
-      const clientObj = allClients.find(c => String(c.id) === String(cid));
+      if (!visibleClientIds.has(String(cid))) return;
+      const clientObj = clientById[String(cid)];
       (tasks || []).forEach(t => {
         if (!t.assigneeId && !t.archived && t.status !== 'Done') {
           result.push({ ...t, cid, cName: clientObj?.name || cid });
@@ -765,7 +793,7 @@ const TeamView = ({
       });
     });
     return result;
-  }, [clientLogs, allClients]);
+  }, [clientLogs, visibleClientIds, clientById]);
 
   const kpiMetrics = useMemo(() => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -833,19 +861,12 @@ const TeamView = ({
     return visibleTasks
       .filter(t => t.qcStatus === 'sent' && !t.archived)
       .map(t => {
-        const submittedRaw = t.qcSubmittedAt || t.date;
-        const submitted = submittedRaw ? (typeof submittedRaw === 'number' ? new Date(submittedRaw) : parseDueDate(submittedRaw)) : null;
+        const submitted = parseTimestamp(t.qcSubmittedAt || t.date);
         const daysAge = submitted ? Math.floor((today.getTime() - submitted.getTime()) / 86400000) : 0;
         return { ...t, daysAge: Math.max(0, daysAge) };
       })
       .sort((a, b) => b.daysAge - a.daysAge);
   }, [visibleTasks]);
-
-  const clientById = useMemo(() => {
-    const map = {};
-    allClients.forEach(c => { map[String(c.id)] = c; });
-    return map;
-  }, [allClients]);
 
   const missingInfoTasks = useMemo(() => {
     const nodue = visibleTasks
@@ -1052,10 +1073,8 @@ const TeamView = ({
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {pendingQCTasks.slice(0, 10).map((t, idx) => {
-                        const submittedRaw = t.qcSubmittedAt || t.date;
-                        const submittedLabel = submittedRaw
-                          ? (() => { try { const d = typeof submittedRaw === 'number' ? new Date(submittedRaw) : parseDueDate(submittedRaw); return d ? format(d, 'dd MMM') : null; } catch { return null; } })()
-                          : null;
+                        const submittedD = parseTimestamp(t.qcSubmittedAt || t.date);
+                        const submittedLabel = submittedD ? format(submittedD, 'dd MMM') : null;
                         return (
                           <tr key={`qc-${t.cid}-${t.id}-${idx}`} className="hover:bg-slate-50 transition-colors">
                             <td className="px-4 py-2 text-xs font-semibold text-slate-800 max-w-[140px]"><p className="truncate">{t.name || t.comment}</p></td>
