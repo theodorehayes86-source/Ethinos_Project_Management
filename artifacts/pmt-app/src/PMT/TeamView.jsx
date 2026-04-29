@@ -630,6 +630,12 @@ const TeamView = ({
   const [leaveLoaded, setLeaveLoaded] = useState(false);
   const [upcomingHolidays, setUpcomingHolidays] = useState(new Set());
 
+  const overviewAtRiskRef = useRef(null);
+  const overviewPendingQCRef = useRef(null);
+  const overviewMissingInfoRef = useRef(null);
+  const overviewLeaveRef = useRef(null);
+  const scrollToOverview = (ref) => ref?.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
   const isSuperAdmin = currentUser?.role === 'Super Admin';
   const isBH = currentUser?.role === 'Business Head';
   const isCSMPM = CS_REPORT_ROLES.has(currentUser?.role);
@@ -1011,27 +1017,34 @@ const TeamView = ({
               {/* KPI cards */}
               <div className="grid grid-cols-3 gap-3">
                 {[
-                  { label: 'Overdue', value: kpiMetrics.overdue, accent: 'text-red-600', bg: 'bg-red-50 border-red-100' },
-                  { label: 'Due Today', value: kpiMetrics.dueToday, accent: 'text-amber-600', bg: 'bg-amber-50 border-amber-100' },
-                  { label: 'Awaiting QC', value: kpiMetrics.awaitingQC, accent: 'text-indigo-600', bg: 'bg-indigo-50 border-indigo-100' },
-                  { label: 'QC Rejected', value: kpiMetrics.qcRejected, accent: 'text-orange-600', bg: 'bg-orange-50 border-orange-100' },
-                  { label: 'Unassigned', value: kpiMetrics.unassigned, accent: 'text-slate-600', bg: 'bg-slate-50 border-slate-200' },
-                  { label: 'No Due Date', value: kpiMetrics.missingDueDate, accent: 'text-gray-500', bg: 'bg-gray-50 border-gray-200' },
+                  { label: 'Overdue',     value: kpiMetrics.overdue,       accent: 'text-red-600',    bg: 'bg-red-50 border-red-100',       ref: overviewAtRiskRef },
+                  { label: 'Due Today',   value: kpiMetrics.dueToday,      accent: 'text-amber-600',  bg: 'bg-amber-50 border-amber-100',   ref: overviewAtRiskRef },
+                  { label: 'Awaiting QC', value: kpiMetrics.awaitingQC,    accent: 'text-indigo-600', bg: 'bg-indigo-50 border-indigo-100', ref: overviewPendingQCRef },
+                  { label: 'QC Rejected', value: kpiMetrics.qcRejected,    accent: 'text-orange-600', bg: 'bg-orange-50 border-orange-100', ref: overviewPendingQCRef },
+                  { label: 'Unassigned',  value: kpiMetrics.unassigned,    accent: 'text-slate-600',  bg: 'bg-slate-50 border-slate-200',   ref: overviewMissingInfoRef },
+                  { label: 'No Due Date', value: kpiMetrics.missingDueDate, accent: 'text-gray-500',  bg: 'bg-gray-50 border-gray-200',     ref: overviewMissingInfoRef },
                 ].map(card => (
-                  <div key={card.label} className={`rounded-xl border p-3 text-center ${card.bg}`}>
+                  <button
+                    key={card.label}
+                    onClick={() => scrollToOverview(card.ref)}
+                    className={`rounded-xl border p-3 text-center transition-opacity hover:opacity-80 active:opacity-60 ${card.bg}`}
+                  >
                     <p className={`text-2xl font-black ${card.accent}`}>{card.value}</p>
                     <p className="text-[10px] text-slate-500 font-semibold mt-0.5 leading-tight">{card.label}</p>
-                  </div>
+                  </button>
                 ))}
-                <div className="rounded-xl border p-3 text-center bg-rose-50 border-rose-100">
+                <button
+                  onClick={() => scrollToOverview(overviewLeaveRef)}
+                  className="rounded-xl border p-3 text-center bg-rose-50 border-rose-100 transition-opacity hover:opacity-80 active:opacity-60"
+                >
                   <p className="text-2xl font-black text-rose-600">{leaveLoaded ? hardConflictCount : '—'}</p>
                   <p className="text-[10px] text-slate-500 font-semibold mt-0.5 leading-tight">Leave Conflicts</p>
-                </div>
+                </button>
               </div>
 
               {/* At-Risk Tasks */}
               {atRiskTasks.length > 0 && (
-                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                <div ref={overviewAtRiskRef} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
                   <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-2">
                     <AlertTriangle size={13} className="text-red-400" />
                     <h4 className="text-xs font-bold text-slate-700 flex-1">At-Risk Tasks</h4>
@@ -1110,7 +1123,7 @@ const TeamView = ({
 
               {/* Pending QC Reviews */}
               {pendingQCTasks.length > 0 && (
-                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                <div ref={overviewPendingQCRef} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
                   <button onClick={onGoToApprovals} className="w-full px-4 py-2.5 border-b border-slate-100 flex items-center gap-2 hover:bg-slate-50 transition-colors text-left">
                     <ClipboardCheck size={13} className="text-indigo-400" />
                     <h4 className="text-xs font-bold text-slate-700 flex-1">Pending QC Reviews</h4>
@@ -1147,7 +1160,7 @@ const TeamView = ({
 
               {/* Missing Info */}
               {missingInfoTasks.length > 0 && (
-                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                <div ref={overviewMissingInfoRef} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
                   <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-2">
                     <Clock size={13} className="text-slate-400" />
                     <h4 className="text-xs font-bold text-slate-700 flex-1">Missing Info</h4>
@@ -1177,7 +1190,7 @@ const TeamView = ({
               )}
 
               {/* Leave Conflicts */}
-              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <div ref={overviewLeaveRef} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
                 <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-2">
                   <CalendarX2 size={13} className="text-rose-400" />
                   <h4 className="text-xs font-bold text-slate-700 flex-1">Leave Conflicts</h4>
