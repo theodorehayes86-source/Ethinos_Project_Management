@@ -931,7 +931,7 @@ const TeamView = ({
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {/* KPI cards */}
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-3 gap-3">
                 {[
                   { label: 'Overdue', value: kpiMetrics.overdue, accent: 'text-red-600', bg: 'bg-red-50 border-red-100' },
                   { label: 'Due Today', value: kpiMetrics.dueToday, accent: 'text-amber-600', bg: 'bg-amber-50 border-amber-100' },
@@ -969,6 +969,7 @@ const TeamView = ({
                             <div className="flex items-center gap-1.5 mt-0.5">
                               <span className="text-[10px] text-slate-400 truncate max-w-[80px]">{t.cName}</span>
                               {t.assigneeName && <span className="text-[10px] text-slate-400 truncate">· {t.assigneeName}</span>}
+                              {t.dueDate && <span className="text-[10px] text-slate-400">· Due {t.dueDate}</span>}
                             </div>
                           </div>
                           <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -1030,26 +1031,33 @@ const TeamView = ({
               {/* Pending QC Reviews */}
               {pendingQCTasks.length > 0 && (
                 <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-2">
+                  <button onClick={onGoToApprovals} className="w-full px-4 py-2.5 border-b border-slate-100 flex items-center gap-2 hover:bg-slate-50 transition-colors text-left">
                     <ClipboardCheck size={13} className="text-indigo-400" />
                     <h4 className="text-xs font-bold text-slate-700 flex-1">Pending QC Reviews</h4>
-                    <button onClick={onGoToApprovals} className="text-[10px] font-bold text-indigo-500 hover:text-indigo-700 transition-colors">View all →</button>
-                  </div>
+                    <span className="text-[10px] font-bold text-indigo-500">View all →</span>
+                  </button>
                   <div className="divide-y divide-slate-50">
-                    {pendingQCTasks.slice(0, 10).map((t, idx) => (
-                      <div key={`qc-${t.cid}-${t.id}-${idx}`} className="flex items-center gap-2.5 px-4 py-2.5">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-semibold text-slate-800 truncate">{t.name || t.comment}</p>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="text-[10px] text-slate-400 truncate max-w-[80px]">{t.cName}</span>
-                            {t.assigneeName && <span className="text-[10px] text-slate-400 truncate">· {t.assigneeName}</span>}
+                    {pendingQCTasks.slice(0, 10).map((t, idx) => {
+                      const submittedRaw = t.qcSubmittedAt || t.date;
+                      const submittedLabel = submittedRaw
+                        ? (() => { try { const d = typeof submittedRaw === 'number' ? new Date(submittedRaw) : parseDueDate(submittedRaw); return d ? format(d, 'dd MMM') : null; } catch { return null; } })()
+                        : null;
+                      return (
+                        <div key={`qc-${t.cid}-${t.id}-${idx}`} className="flex items-center gap-2.5 px-4 py-2.5">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-slate-800 truncate">{t.name || t.comment}</p>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className="text-[10px] text-slate-400 truncate max-w-[80px]">{t.cName}</span>
+                              {t.assigneeName && <span className="text-[10px] text-slate-400 truncate">· {t.assigneeName}</span>}
+                              {submittedLabel && <span className="text-[10px] text-slate-400">· Submitted {submittedLabel}</span>}
+                            </div>
                           </div>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${t.daysAge > 3 ? 'bg-red-100 text-red-600' : t.daysAge > 1 ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-500'}`}>
+                            {t.daysAge === 0 ? 'Today' : `${t.daysAge}d`}
+                          </span>
                         </div>
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${t.daysAge > 3 ? 'bg-red-100 text-red-600' : t.daysAge > 1 ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-500'}`}>
-                          {t.daysAge === 0 ? 'Today' : `${t.daysAge}d`}
-                        </span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
