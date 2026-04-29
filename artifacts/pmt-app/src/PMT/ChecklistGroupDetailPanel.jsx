@@ -22,6 +22,15 @@ function formatDuration(ms) {
   return `${h}:${m}:${s}`;
 }
 
+const LiveElapsed = React.memo(function LiveElapsed({ startedAt, elapsedMs }) {
+  const [tick, setTick] = React.useState(Date.now());
+  React.useEffect(() => {
+    const id = setInterval(() => setTick(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return <>{formatDuration(elapsedMs + Math.max(0, tick - startedAt))}</>;
+});
+
 const ChecklistGroupDetailPanel = ({
   group,
   childTasks,
@@ -37,7 +46,6 @@ const ChecklistGroupDetailPanel = ({
 }) => {
   const [localChildren, setLocalChildren] = useState(childTasks || []);
   const [noteTexts, setNoteTexts] = useState({});
-  const [timerTick, setTimerTick] = useState(Date.now());
 
   // Inline task creation state — keyed by checklist item id
   const [createTaskOpen, setCreateTaskOpen] = useState({});
@@ -52,11 +60,6 @@ const ChecklistGroupDetailPanel = ({
     });
     setNoteTexts(initialNotes);
   }, [group.id]);
-
-  useEffect(() => {
-    const interval = setInterval(() => setTimerTick(Date.now()), 1000);
-    return () => clearInterval(interval);
-  }, []);
 
   const checklistItems = localChildren.filter(t => t.taskType === 'checklist');
   const standardItems = localChildren.filter(t => t.taskType !== 'checklist');
@@ -160,14 +163,6 @@ const ChecklistGroupDetailPanel = ({
     const updated = localChildren.map(t => t.id === task.id ? { ...t, ...changes } : t);
     setLocalChildren(updated);
     onUpdateChildTask({ ...task, ...changes });
-  };
-
-  const getElapsedMs = (task) => {
-    const base = task.elapsedMs || 0;
-    if (task.timerState === 'running' && task.timerStartedAt) {
-      return base + Math.max(0, timerTick - task.timerStartedAt);
-    }
-    return base;
   };
 
   const toggleCreateTask = (taskId, questionText) => {
@@ -463,7 +458,6 @@ const ChecklistGroupDetailPanel = ({
               <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2">Standard Tasks</p>
               <div className="space-y-2">
                 {standardItems.map(task => {
-                  const elapsed = getElapsedMs(task);
                   const isRunning = task.timerState === 'running';
                   const isPaused = task.timerState === 'paused';
                   const showTimer = task.status !== 'Done';
@@ -502,11 +496,14 @@ const ChecklistGroupDetailPanel = ({
                                 <Calendar size={9} /> {task.dueDate}
                               </span>
                             )}
-                            {elapsed > 0 && (
+                            {((task.elapsedMs > 0) || isRunning) && (
                               <span className={`flex items-center gap-1 text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full ${
                                 isRunning ? 'bg-blue-50 text-blue-700' : 'bg-slate-50 text-slate-500'
                               }`}>
-                                <Clock size={9} /> {formatDuration(elapsed)}
+                                <Clock size={9} />{' '}
+                                {isRunning && task.timerStartedAt
+                                  ? <LiveElapsed startedAt={task.timerStartedAt} elapsedMs={task.elapsedMs || 0} />
+                                  : formatDuration(task.elapsedMs || 0)}
                               </span>
                             )}
                           </div>
