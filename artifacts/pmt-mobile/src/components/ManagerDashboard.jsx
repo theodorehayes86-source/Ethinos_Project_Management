@@ -393,7 +393,8 @@ function AtRiskSection({ currentUser, users, clientLogs, clients, onTaskClick, l
     const isOnLeave = !!ld[todayKey];
     const filteredOverdue = stats.overdueTasks.filter(t => isTaskLeaveAwareOverdue(t, undefined, ld));
     if (filteredOverdue.length > 0) overdueByPerson.push({ user, tasks: filteredOverdue, isOnLeave });
-    if (stats.todayTasks.length > 0) dueTodayByPerson.push({ user, tasks: stats.todayTasks, isOnLeave });
+    const filteredToday = stats.todayTasks.filter(t => t.status !== 'Done' && !t.archived);
+    if (filteredToday.length > 0) dueTodayByPerson.push({ user, tasks: filteredToday, isOnLeave });
   });
 
   if (overdueByPerson.length === 0 && dueTodayByPerson.length === 0) return null;
@@ -505,7 +506,7 @@ function LeaveConflictsSection({ subtreeTasks, leaveByUser, users, onTaskClick, 
             return rec && (rec.name || (rec.status && rec.status !== 'pending'));
           });
         if (!conflictDate) return null;
-        const badge = conflictDate === todayKey ? 'On Leave' : 'Leave on Due Date';
+        const badge = conflictDate === dueKey ? 'Leave on Due Date' : 'On Leave';
         return { ...t, due, dueKey, badge };
       })
       .filter(Boolean)
