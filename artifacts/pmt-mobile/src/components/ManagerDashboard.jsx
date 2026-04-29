@@ -213,9 +213,12 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
   return (
     <>
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <button
-          className="w-full px-4 py-4 flex items-center gap-3 text-left active:bg-slate-50 transition-colors"
+        <div
+          role="button"
+          tabIndex={0}
+          className="w-full px-4 py-4 flex items-center gap-3 text-left active:bg-slate-50 transition-colors cursor-pointer select-none"
           onClick={() => hasTeam ? onDrillIn(user) : setShowTaskSheet(true)}
+          onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && (hasTeam ? onDrillIn(user) : setShowTaskSheet(true))}
         >
           <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0 relative">
             <span className="text-indigo-700 font-black text-sm">{initials(user.name)}</span>
@@ -259,7 +262,7 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
               </button>
             )}
           </div>
-        </button>
+        </div>
 
         {filteredTasks && filteredTasks.length > 0 && (
           <div className="border-t border-slate-100 px-3 py-2.5 space-y-1.5">
