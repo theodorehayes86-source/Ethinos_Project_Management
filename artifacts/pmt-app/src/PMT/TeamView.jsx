@@ -775,16 +775,9 @@ const TeamView = ({
     return map;
   }, [allClients]);
 
-  const visibleClientIds = useMemo(() => {
-    const ids = new Set();
-    visibleTasks.forEach(t => ids.add(String(t.cid)));
-    return ids;
-  }, [visibleTasks]);
-
   const unassignedTasks = useMemo(() => {
     const result = [];
     Object.entries(clientLogs).forEach(([cid, tasks]) => {
-      if (!visibleClientIds.has(String(cid))) return;
       const clientObj = clientById[String(cid)];
       (tasks || []).forEach(t => {
         if (!t.assigneeId && !t.archived && t.status !== 'Done') {
@@ -793,7 +786,7 @@ const TeamView = ({
       });
     });
     return result;
-  }, [clientLogs, visibleClientIds, clientById]);
+  }, [clientLogs, clientById]);
 
   const kpiMetrics = useMemo(() => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
