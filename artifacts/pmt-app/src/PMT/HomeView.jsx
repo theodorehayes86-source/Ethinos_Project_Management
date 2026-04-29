@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { format, parse, isBefore, addDays, differenceInCalendarDays } from 'date-fns';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
-import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, CheckCircle, XCircle, MinusCircle, Tag, Calendar, Archive, ArchiveRestore, LayoutTemplate, ChevronDown, ChevronUp, Play, Square, Pause, Send, ThumbsUp, ThumbsDown, RotateCcw, Pencil, ClipboardList } from 'lucide-react';
+import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, CheckCircle, XCircle, MinusCircle, Tag, Calendar, Archive, ArchiveRestore, LayoutTemplate, ChevronDown, ChevronUp, Play, Square, Pause, Send, ThumbsUp, ThumbsDown, RotateCcw, Pencil, ClipboardList, CheckSquare, Trash2 } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import TaskDetailPanel from './TaskDetailPanel';
 import ChecklistGroupDetailPanel from './ChecklistGroupDetailPanel';
@@ -130,6 +130,8 @@ const HomeView = ({
   const acknowledgedLeaveRef = useRef(null);
   const [currentUserLeaveData, setCurrentUserLeaveData] = useState({});
   const [teamLeaveStatuses, setTeamLeaveStatuses] = useState({});
+  const [selectedTaskIds, setSelectedTaskIds] = useState(new Set());
+  const [selectMode, setSelectMode] = useState(false);
 
   useEffect(() => {
     if (!currentUser?.id) return;
@@ -761,6 +763,31 @@ const HomeView = ({
     setClientLogs({ ...clientLogs, [cid]: updated });
   };
 
+  const handleBatchDelete = () => {
+    if (selectedTaskIds.size === 0) return;
+    if (!window.confirm(`Delete ${selectedTaskIds.size} selected task${selectedTaskIds.size > 1 ? 's' : ''}? This cannot be undone.`)) return;
+    const updated = {};
+    Object.keys(clientLogs).forEach(cid => {
+      updated[cid] = (clientLogs[cid] || []).filter(t => !selectedTaskIds.has(t.id));
+    });
+    setClientLogs({ ...clientLogs, ...updated });
+    setSelectedTaskIds(new Set());
+    setSelectMode(false);
+  };
+
+  const handleBatchStatus = (newStatus) => {
+    if (selectedTaskIds.size === 0) return;
+    const updated = {};
+    Object.keys(clientLogs).forEach(cid => {
+      updated[cid] = (clientLogs[cid] || []).map(t =>
+        selectedTaskIds.has(t.id) ? { ...t, status: newStatus } : t
+      );
+    });
+    setClientLogs({ ...clientLogs, ...updated });
+    setSelectedTaskIds(new Set());
+    setSelectMode(false);
+  };
+
   const hvTryParse = (str) => {
     if (!str) return null;
     try { const d = parse(str, 'do MMM yyyy', new Date()); return isNaN(d) ? null : d; } catch { return null; }
@@ -1206,6 +1233,24 @@ const HomeView = ({
         )}
         {/* Archive + Add — fixed right, outside any overflow container so dropdown isn't clipped */}
         <div className="flex items-center gap-2 shrink-0 ml-auto">
+          {!showArchived && (
+            <button
+              onClick={() => {
+                const next = !selectMode;
+                setSelectMode(next);
+                if (!next) setSelectedTaskIds(new Set());
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs border transition-all whitespace-nowrap ${
+                selectMode
+                  ? 'bg-blue-50 border-blue-300 text-blue-700'
+                  : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+              }`}
+              title="Select multiple tasks"
+            >
+              <CheckSquare size={12} />
+              {selectMode && selectedTaskIds.size > 0 ? `${selectedTaskIds.size} Selected` : 'Select'}
+            </button>
+          )}
           <button
             onClick={() => setShowArchived(v => !v)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs border transition-all whitespace-nowrap ${
@@ -1253,6 +1298,52 @@ const HomeView = ({
           </div>
         </div>
       </div>
+
+      {/* BATCH ACTION BAR */}
+      {selectMode && selectedTaskIds.size > 0 && (
+        <div className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 rounded-xl text-white shadow-lg">
+          <span className="text-sm font-bold flex-shrink-0">{selectedTaskIds.size} task{selectedTaskIds.size > 1 ? 's' : ''} selected</span>
+          <div className="flex-1" />
+          <button
+            onClick={() => {
+              const all = new Set(filteredMyTasks.map(t => t.id));
+              setSelectedTaskIds(all);
+            }}
+            className="px-3 py-1 rounded-lg text-xs font-semibold bg-blue-500 hover:bg-blue-400 transition-all whitespace-nowrap"
+          >
+            Select All ({filteredMyTasks.length})
+          </button>
+          <div className="flex items-center gap-1">
+            {['Pending','WIP','Done'].map(s => (
+              <button
+                key={s}
+                onClick={() => handleBatchStatus(s)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+                  s === 'Done' ? 'bg-emerald-500 hover:bg-emerald-400' :
+                  s === 'WIP' ? 'bg-sky-500 hover:bg-sky-400' : 'bg-orange-500 hover:bg-orange-400'
+                }`}
+              >
+                → {s}
+              </button>
+            ))}
+          </div>
+          {isManagement && (
+            <button
+              onClick={handleBatchDelete}
+              className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 transition-all"
+            >
+              <Trash2 size={11} /> Delete
+            </button>
+          )}
+          <button
+            onClick={() => { setSelectedTaskIds(new Set()); setSelectMode(false); }}
+            className="p-1 rounded-lg hover:bg-blue-500 transition-all"
+            title="Cancel selection"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       {/* TASK LIST */}
       {filteredMyTasks.length === 0 && tasksByClient.every(g => (g.taskGroups || []).length === 0) ? (
@@ -1395,14 +1486,34 @@ const HomeView = ({
                     const isPaused = task.timerState === 'paused';
                     const isStopped = task.timerState === 'stopped';
                     const showTimer = !task.archived && task.status !== 'Done';
+                    const isSelected = selectedTaskIds.has(task.id);
                     return (
                       <div
                         key={task.id}
                         className={`bg-white rounded-xl border shadow-sm px-4 py-3 transition-all ${
-                          isRunning ? 'border-blue-300 shadow-blue-100' : 'border-slate-100 hover:border-slate-200 hover:shadow-md'
-                        }`}
+                          selectMode && isSelected
+                            ? 'border-blue-400 bg-blue-50 shadow-blue-100'
+                            : isRunning ? 'border-blue-300 shadow-blue-100' : 'border-slate-100 hover:border-slate-200 hover:shadow-md'
+                        } ${selectMode ? 'cursor-pointer' : ''}`}
+                        onClick={selectMode ? () => {
+                          setSelectedTaskIds(prev => {
+                            const next = new Set(prev);
+                            next.has(task.id) ? next.delete(task.id) : next.add(task.id);
+                            return next;
+                          });
+                        } : undefined}
                       >
                         <div className="flex items-center gap-3">
+                          {/* Select checkbox */}
+                          {selectMode && (
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {}}
+                              onClick={e => e.stopPropagation()}
+                              className="w-4 h-4 accent-blue-600 cursor-pointer flex-shrink-0 rounded"
+                            />
+                          )}
                           {/* Status dot */}
                           <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
                             task.status === 'Done' ? 'bg-emerald-400' :
@@ -1410,7 +1521,10 @@ const HomeView = ({
                           }`} />
 
                           {/* Task name — clickable opens detail panel */}
-                          <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setDetailTask(task)}>
+                          <div
+                            className={`flex-1 min-w-0 ${selectMode ? '' : 'cursor-pointer'}`}
+                            onClick={selectMode ? undefined : () => setDetailTask(task)}
+                          >
                             <p className="text-sm font-semibold text-slate-800 truncate">{task.name || task.comment}</p>
                             {task.name && task.comment && (
                               <p className="text-xs text-slate-500 truncate mt-0.5">{task.comment}</p>
@@ -1444,7 +1558,7 @@ const HomeView = ({
                           </div>
 
                           {/* Controls */}
-                          <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                          <div className="flex flex-col items-end gap-1.5 flex-shrink-0" onClick={selectMode ? e => e.stopPropagation() : undefined}>
                             {/* Status dropdown */}
                             {!task.archived ? (
                               <select
