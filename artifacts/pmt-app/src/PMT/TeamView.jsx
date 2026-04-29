@@ -4,7 +4,7 @@ import { format, isBefore, isAfter, startOfWeek, endOfWeek, startOfMonth, endOfM
 import TaskDetailPanel from './TaskDetailPanel';
 import { sendNotification } from '../utils/notify';
 import DueDateInput from './DueDateInput';
-import { getUserLeaveStatus, getUserLeaveData, getUserLeaveAndHolidayData, checkLeaveConflict, toDateKey, isFullDayLeaveOrHoliday } from '../utils/leaveConflict';
+import { getUserLeaveStatus, getUserLeaveData, getUserLeaveAndHolidayData, checkLeaveConflict, toDateKey, isFullDayLeaveOrHoliday, getUpcomingHolidays } from '../utils/leaveConflict';
 import LeaveConflictModal from './LeaveConflictModal';
 
 const DEFAULT_STANDARD_TRACK = ['Director', 'Snr Manager', 'Manager', 'Asst Manager', 'Snr Executive', 'Executive', 'Employee', 'Intern'];
@@ -628,6 +628,7 @@ const TeamView = ({
   const [deptFilter, setDeptFilter] = useState('all');
   const [leaveStatuses, setLeaveStatuses] = useState({});
   const [leaveLoaded, setLeaveLoaded] = useState(false);
+  const [upcomingHolidays, setUpcomingHolidays] = useState(new Set());
 
   const isSuperAdmin = currentUser?.role === 'Super Admin';
   const isBH = currentUser?.role === 'Business Head';
@@ -714,19 +715,24 @@ const TeamView = ({
     setLeaveLoaded(false);
     if (!allMembers.length) {
       setLeaveStatuses({});
+      setUpcomingHolidays(new Set());
       setLeaveLoaded(true);
       return;
     }
     let cancelled = false;
-    Promise.all(
-      allMembers.map(m =>
-        getUserLeaveStatus(String(m.id)).then(status => ({ id: String(m.id), status }))
-      )
-    ).then(results => {
+    Promise.all([
+      Promise.all(
+        allMembers.map(m =>
+          getUserLeaveStatus(String(m.id)).then(status => ({ id: String(m.id), status }))
+        )
+      ),
+      getUpcomingHolidays('All', 14),
+    ]).then(([results, holidays]) => {
       if (cancelled) return;
       const map = {};
       results.forEach(({ id, status }) => { map[id] = status; });
       setLeaveStatuses(map);
+      setUpcomingHolidays(holidays);
       setLeaveLoaded(true);
     });
     return () => { cancelled = true; };
@@ -892,7 +898,9 @@ const TeamView = ({
         if (!status) return null;
         const dueKey = format(due, 'yyyy-MM-dd');
         let conflictType = null, badge = null, badgeStyle = null;
-        if (status.onLeaveToday) {
+        if (upcomingHolidays.has(dueKey)) {
+          conflictType = 'hard'; badge = 'Public Holiday'; badgeStyle = 'bg-rose-100 text-rose-700';
+        } else if (status.onLeaveToday) {
           conflictType = 'hard'; badge = 'On Leave Today'; badgeStyle = 'bg-red-100 text-red-700';
         } else if (status.upcomingLeaveDate && status.upcomingLeaveDate <= dueKey) {
           conflictType = 'hard'; badge = 'Leave on Due Date'; badgeStyle = 'bg-orange-100 text-orange-700';
@@ -910,7 +918,7 @@ const TeamView = ({
         if (a.conflictType !== b.conflictType) return a.conflictType === 'hard' ? -1 : 1;
         return a.due - b.due;
       });
-  }, [visibleTasks, leaveStatuses, leftPanelGroups]);
+  }, [visibleTasks, leaveStatuses, upcomingHolidays, leftPanelGroups]);
 
   const hardConflictCount = useMemo(
     () => leaveConflicts.filter(c => c.conflictType === 'hard').length,
@@ -1206,11 +1214,11 @@ const TeamView = ({
                             {initials(memberName)}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold text-slate-800 truncate">{t.name || t.comment}</p>
-                            <div className="flex items-center gap-1.5 mt-0.5">
+                            <p className="text-xs font-semibold text-slate-800 line-clamp-2 leading-tight">{t.name || t.comment}</p>
+                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                               <span className="text-[10px] font-medium text-slate-600">{memberName}</span>
                               <span className="text-[10px] text-slate-400">·</span>
-                              <span className="text-[10px] text-slate-400 truncate">{t.cName}</span>
+                              <span className="text-[10px] text-slate-400 truncate max-w-[80px]">{t.cName}</span>
                               <span className="text-[10px] text-slate-400">·</span>
                               <span className="text-[10px] text-slate-400 whitespace-nowrap">{format(t.due, 'd MMM')}</span>
                             </div>

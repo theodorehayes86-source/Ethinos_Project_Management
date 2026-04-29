@@ -209,3 +209,29 @@ export async function getUserLeaveStatus(userId, region = "All") {
     return { onLeaveToday: false, onLeavePendingToday: false, upcomingLeaveDate: null, upcomingPendingDate: null };
   }
 }
+
+/**
+ * Returns a Set of date strings (YYYY-MM-DD) that are public holidays within the next `days` days.
+ * Makes a single Firebase read of the entire region node, then filters to the requested window.
+ *
+ * @param {string} region - Firebase region key (default "All")
+ * @param {number} days - Number of days ahead to check (default 14)
+ * @returns {Promise<Set<string>>}
+ */
+export async function getUpcomingHolidays(region = "All", days = 14) {
+  try {
+    const snap = await get(ref(db, `publicHolidays/${region}`));
+    const data = snap.val() || {};
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const cutoff = new Date(today); cutoff.setDate(today.getDate() + days);
+    const todayKey = toDateKey(today);
+    const cutoffKey = toDateKey(cutoff);
+    const result = new Set();
+    Object.keys(data).forEach(dk => {
+      if (dk >= todayKey && dk <= cutoffKey && data[dk]) result.add(dk);
+    });
+    return result;
+  } catch {
+    return new Set();
+  }
+}
