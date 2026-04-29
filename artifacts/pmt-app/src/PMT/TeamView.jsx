@@ -627,6 +627,7 @@ const TeamView = ({
   const [selectedMember, setSelectedMember] = useState(null);
   const [deptFilter, setDeptFilter] = useState('all');
   const [leaveStatuses, setLeaveStatuses] = useState({});
+  const [leaveLoaded, setLeaveLoaded] = useState(false);
 
   const isSuperAdmin = currentUser?.role === 'Super Admin';
   const isBH = currentUser?.role === 'Business Head';
@@ -710,7 +711,12 @@ const TeamView = ({
 
   useEffect(() => {
     const allMembers = leftPanelGroups.flatMap(g => g.members || []);
-    if (!allMembers.length) return;
+    setLeaveLoaded(false);
+    if (!allMembers.length) {
+      setLeaveStatuses({});
+      setLeaveLoaded(true);
+      return;
+    }
     let cancelled = false;
     Promise.all(
       allMembers.map(m =>
@@ -721,6 +727,7 @@ const TeamView = ({
       const map = {};
       results.forEach(({ id, status }) => { map[id] = status; });
       setLeaveStatuses(map);
+      setLeaveLoaded(true);
     });
     return () => { cancelled = true; };
   }, [leftPanelGroups]);
@@ -869,6 +876,47 @@ const TeamView = ({
     return [...noassignee, ...nodue].slice(0, 20);
   }, [visibleTasks, unassignedTasks]);
 
+  const leaveConflicts = useMemo(() => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const sevenDaysLater = new Date(today); sevenDaysLater.setDate(today.getDate() + 7);
+    const memberLookup = {};
+    leftPanelGroups.forEach(({ members }) => {
+      (members || []).forEach(m => { memberLookup[String(m.id)] = m; });
+    });
+    return visibleTasks
+      .filter(t => !t.archived && t.status !== 'Done' && t.dueDate && t.assigneeId)
+      .map(t => {
+        const due = parseDueDate(t.dueDate);
+        if (!due || due < today || due > sevenDaysLater) return null;
+        const status = leaveStatuses[String(t.assigneeId)];
+        if (!status) return null;
+        const dueKey = format(due, 'yyyy-MM-dd');
+        let conflictType = null, badge = null, badgeStyle = null;
+        if (status.onLeaveToday) {
+          conflictType = 'hard'; badge = 'On Leave Today'; badgeStyle = 'bg-red-100 text-red-700';
+        } else if (status.upcomingLeaveDate && status.upcomingLeaveDate <= dueKey) {
+          conflictType = 'hard'; badge = 'Leave on Due Date'; badgeStyle = 'bg-orange-100 text-orange-700';
+        } else if (status.onLeavePendingToday) {
+          conflictType = 'soft'; badge = 'Pending Leave'; badgeStyle = 'bg-amber-100 text-amber-700';
+        } else if (status.upcomingPendingDate && status.upcomingPendingDate <= dueKey) {
+          conflictType = 'soft'; badge = 'Pending Leave'; badgeStyle = 'bg-amber-100 text-amber-700';
+        }
+        if (!conflictType) return null;
+        const member = memberLookup[String(t.assigneeId)];
+        return { ...t, due, dueKey, conflictType, badge, badgeStyle, member };
+      })
+      .filter(Boolean)
+      .sort((a, b) => {
+        if (a.conflictType !== b.conflictType) return a.conflictType === 'hard' ? -1 : 1;
+        return a.due - b.due;
+      });
+  }, [visibleTasks, leaveStatuses, leftPanelGroups]);
+
+  const hardConflictCount = useMemo(
+    () => leaveConflicts.filter(c => c.conflictType === 'hard').length,
+    [leaveConflicts]
+  );
+
   if (!currentUser) return null;
 
   const showDeptFilter = allDepartments.length > 1;
@@ -965,6 +1013,10 @@ const TeamView = ({
                     <p className="text-[10px] text-slate-500 font-semibold mt-0.5 leading-tight">{card.label}</p>
                   </div>
                 ))}
+                <div className="rounded-xl border p-3 text-center bg-rose-50 border-rose-100">
+                  <p className="text-2xl font-black text-rose-600">{leaveLoaded ? hardConflictCount : '—'}</p>
+                  <p className="text-[10px] text-slate-500 font-semibold mt-0.5 leading-tight">Leave Conflicts</p>
+                </div>
               </div>
 
               {/* At-Risk Tasks */}
@@ -1114,12 +1166,71 @@ const TeamView = ({
                 </div>
               )}
 
+              {/* Leave Conflicts */}
+              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-2">
+                  <CalendarX2 size={13} className="text-rose-400" />
+                  <h4 className="text-xs font-bold text-slate-700 flex-1">Leave Conflicts</h4>
+                  {leaveLoaded && <span className="text-[10px] font-bold text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">{leaveConflicts.length}</span>}
+                </div>
+                {!leaveLoaded ? (
+                  <div className="divide-y divide-slate-50">
+                    {[0, 1, 2].map(i => (
+                      <div key={i} className="flex items-center gap-3 px-4 py-3">
+                        <div className="w-7 h-7 rounded-full bg-slate-100 animate-pulse flex-shrink-0" />
+                        <div className="flex-1 space-y-1.5">
+                          <div className="h-2.5 bg-slate-100 rounded-full animate-pulse w-3/4" />
+                          <div className="h-2 bg-slate-100 rounded-full animate-pulse w-1/2" />
+                        </div>
+                        <div className="h-5 w-20 bg-slate-100 rounded-full animate-pulse flex-shrink-0" />
+                      </div>
+                    ))}
+                  </div>
+                ) : leaveConflicts.length === 0 ? (
+                  <div className="flex items-center gap-2 px-4 py-4">
+                    <CalendarCheck2 size={14} className="text-emerald-400 flex-shrink-0" />
+                    <p className="text-xs text-slate-400">No upcoming conflicts in the next 7 days</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-50">
+                    {leaveConflicts.map((t, idx) => {
+                      const clientObj = clientById[String(t.cid)] || { id: t.cid, name: t.cName };
+                      const memberName = t.member?.name || t.assigneeName || '?';
+                      return (
+                        <button
+                          key={`lc-${t.cid}-${t.id}-${idx}`}
+                          onClick={() => onOpenClient(clientObj)}
+                          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 text-left transition-colors"
+                        >
+                          <div className={`w-7 h-7 rounded-full ${avatarColor(memberName)} flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0`}>
+                            {initials(memberName)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-slate-800 truncate">{t.name || t.comment}</p>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className="text-[10px] font-medium text-slate-600">{memberName}</span>
+                              <span className="text-[10px] text-slate-400">·</span>
+                              <span className="text-[10px] text-slate-400 truncate">{t.cName}</span>
+                              <span className="text-[10px] text-slate-400">·</span>
+                              <span className="text-[10px] text-slate-400 whitespace-nowrap">{format(t.due, 'd MMM')}</span>
+                            </div>
+                          </div>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${t.badgeStyle}`}>
+                            {t.badge}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               {/* All-clear state */}
-              {atRiskTasks.length === 0 && pendingQCTasks.length === 0 && missingInfoTasks.length === 0 && visibleMemberIds.size > 0 && (
+              {atRiskTasks.length === 0 && pendingQCTasks.length === 0 && missingInfoTasks.length === 0 && leaveConflicts.length === 0 && leaveLoaded && visibleMemberIds.size > 0 && (
                 <div className="flex flex-col items-center justify-center py-12 text-slate-300">
                   <Users size={32} />
                   <p className="text-sm font-semibold mt-2">Team is on track</p>
-                  <p className="text-xs mt-1 text-slate-400">No overdue, QC, or missing info issues</p>
+                  <p className="text-xs mt-1 text-slate-400">No overdue, QC, missing info, or leave issues</p>
                 </div>
               )}
               {visibleMemberIds.size === 0 && (
