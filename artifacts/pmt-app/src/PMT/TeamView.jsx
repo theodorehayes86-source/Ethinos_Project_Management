@@ -779,7 +779,7 @@ const TeamView = ({
         else if (due && due < today) overdue++;
         else if (due && due >= today && due <= todayEnd) dueToday++;
       }
-      if (t.qcEnabled && t.qcStatus === 'sent' && !t.archived) awaitingQC++;
+      if (t.qcStatus === 'sent' && !t.archived) awaitingQC++;
       if (t.qcStatus === 'rejected' && t.status !== 'Done' && !t.archived) qcRejected++;
     });
     return { overdue, dueToday, awaitingQC, qcRejected, unassigned: unassignedTasks.length, missingDueDate };
@@ -831,7 +831,7 @@ const TeamView = ({
   const pendingQCTasks = useMemo(() => {
     const today = new Date();
     return visibleTasks
-      .filter(t => t.qcEnabled && t.qcStatus === 'sent' && !t.archived)
+      .filter(t => t.qcStatus === 'sent' && !t.archived)
       .map(t => {
         const submittedRaw = t.qcSubmittedAt || t.date;
         const submitted = submittedRaw ? (typeof submittedRaw === 'number' ? new Date(submittedRaw) : parseDueDate(submittedRaw)) : null;
