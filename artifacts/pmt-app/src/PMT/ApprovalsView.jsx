@@ -721,7 +721,7 @@ const AssignmentRequestCard = ({ task, client, request, onAccept, onDecline }) =
   );
 };
 
-const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Business Head'];
+const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Director', 'Business Head'];
 
 const ApprovalsView = ({ clientLogs, clients, syntheticClients = [], users, currentUser, persistClientLogs, setClients, setUsers }) => {
   const [activeSubTab, setActiveSubTab] = useState('pending');
@@ -740,7 +740,7 @@ const ApprovalsView = ({ clientLogs, clients, syntheticClients = [], users, curr
     );
   }
 
-  const isCrossDept = CROSS_DEPT_ROLES.includes(currentUser?.role);
+  const isCrossDept = CROSS_DEPT_ROLES.includes(currentUser?.role) || currentUser?.department === 'All';
   const userDept = currentUser?.department;
 
   // --- QC tasks ---
