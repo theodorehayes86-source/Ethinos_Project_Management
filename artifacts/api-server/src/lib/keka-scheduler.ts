@@ -3,6 +3,7 @@ import { toZonedTime } from "date-fns-tz";
 import { syncKekaData, checkLeaveConflict } from "./keka-client";
 import { readFirebasePath } from "./firebase-admin";
 import { logger } from "./logger";
+import { withJobLock } from "./job-lock";
 
 export { checkLeaveConflict };
 
@@ -49,9 +50,11 @@ async function runScheduledKekaSync(): Promise<void> {
   }
 }
 
+const KEKA_LOCK_TTL_MS = 54 * 60 * 1000;
+
 export function startKekaScheduler(): void {
   cron.schedule("0 * * * *", () => {
-    runScheduledKekaSync().catch((err) =>
+    withJobLock("keka-nightly", KEKA_LOCK_TTL_MS, () => runScheduledKekaSync()).catch((err) =>
       logger.error({ err }, "[Keka] Unhandled scheduler error")
     );
   });

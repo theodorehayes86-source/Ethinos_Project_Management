@@ -8,6 +8,8 @@ import { readFirebasePath, writeFirebasePath } from "./firebase-admin";
 import { sendEmail, isEmailConfigured } from "./microsoft-graph";
 import { logger } from "./logger";
 import { checkLeaveConflict } from "./keka-scheduler";
+import { withJobLock } from "./job-lock";
+import { mapLimit, getEmailConcurrency } from "./async-utils";
 
 const DEFAULT_TZ = "Europe/London";
 const DEFAULT_HOUR = 8;
@@ -281,17 +283,22 @@ export async function runWeeklyDigest(opts?: { force?: boolean; toEmail?: string
     let emailsSent = 0;
     let emailsSkipped = 0;
 
-    for (const user of users) {
-      // In force/preview mode, include all users with an email address regardless of opt-in
+    const eligibleUsers = users.filter((user) => {
       if (!user.email) {
         emailsSkipped++;
-        continue;
+        return false;
       }
       if (!force && !user.weeklyDigestEnabled) {
         emailsSkipped++;
-        continue;
+        return false;
       }
+      return true;
+    });
 
+    const today = startOfDay(nowInTz);
+    const concurrency = getEmailConcurrency();
+
+    await mapLimit(eligibleUsers, concurrency, async (user) => {
       const userId = String(user.id);
 
       const userTasks = allTasks.filter(task => {
@@ -339,9 +346,7 @@ export async function runWeeklyDigest(opts?: { force?: boolean; toEmail?: string
         }
       }
 
-      // Overdue tasks: pending tasks past due that are NOT on a leave/holiday day
       const overdueTaskNames: string[] = [];
-      const today = startOfDay(nowInTz);
       for (const task of allTasks) {
         if (String(task.assigneeId) !== userId) continue;
         if (!task.dueDate || task.status === "Done" || task.archived) continue;
@@ -359,7 +364,7 @@ export async function runWeeklyDigest(opts?: { force?: boolean; toEmail?: string
       }
 
       const bodyHtml = buildWeeklyDigestHtml({
-        userName: user.name || user.email,
+        userName: user.name || user.email!,
         weekNumber,
         weekLabel,
         days,
@@ -369,18 +374,18 @@ export async function runWeeklyDigest(opts?: { force?: boolean; toEmail?: string
         overdueTaskNames: overdueTaskNames.length > 0 ? overdueTaskNames : undefined,
       });
 
-      const sendTo = overrideEmail ?? user.email;
+      const sendTo = overrideEmail ?? user.email!;
       const subjectBase = `[Ethinos PMT] Week ${weekNumber} hours summary — ${format(prevMonday, "d MMM")}–${format(days[4], "d MMM yyyy")}`;
       const subject = overrideEmail ? `[PREVIEW → ${user.name || user.email}] ${subjectBase}` : subjectBase;
 
       try {
         await sendEmail({ to: sendTo, subject, bodyHtml });
         emailsSent++;
-        logger.info({ to: sendTo, user: user.name, weekNumber }, "[WeeklyDigest] Sent");
+        logger.info({ to: sendTo, user: user.name, userId, weekNumber }, "[WeeklyDigest] Sent");
       } catch (err) {
-        logger.error({ err, to: sendTo }, "[WeeklyDigest] Failed to send");
+        logger.error({ err, to: sendTo, user: user.name, userId }, "[WeeklyDigest] Failed to send");
       }
-    }
+    });
 
     logger.info({ emailsSent, emailsSkipped }, "[WeeklyDigest] Complete");
 
@@ -401,12 +406,11 @@ export async function runWeeklyDigest(opts?: { force?: boolean; toEmail?: string
   }
 }
 
+const DIGEST_LOCK_TTL_MS = 54 * 60 * 1000;
+
 export function startWeeklyDigestScheduler(): void {
-  // Run every hour on Mondays (UTC). Timezone + hour gate is applied inside
-  // runWeeklyDigest() by reading the configured scheduleTimezone/scheduleHour
-  // from Firebase so the digest fires at the right local time for any timezone.
   cron.schedule("0 * * * 1", () => {
-    runWeeklyDigest().catch(err =>
+    withJobLock("weekly-digest-monday", DIGEST_LOCK_TTL_MS, () => runWeeklyDigest()).catch(err =>
       logger.error({ err }, "[WeeklyDigest] Unhandled error")
     );
   });

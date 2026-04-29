@@ -5,6 +5,8 @@ import { readFirebasePath, writeFirebasePath } from "./firebase-admin";
 import { sendEmail, isEmailConfigured } from "./microsoft-graph";
 import { logger } from "./logger";
 import { isDateLeaveOrHoliday } from "./keka-scheduler";
+import { withJobLock } from "./job-lock";
+import { mapLimit, getEmailConcurrency } from "./async-utils";
 
 interface TaskLog {
   id: string | number;
@@ -107,6 +109,16 @@ function buildReminderEmailHtml(
 </html>`;
 }
 
+interface PendingReminderEmail {
+  taskId: string;
+  sentKey: string;
+  assigneeEmail: string;
+  subject: string;
+  bodyHtml: string;
+  qcEmail?: string;
+  qcSubject?: string;
+}
+
 export async function runReminderCheck(): Promise<void> {
   logger.info("[Reminders] Running scheduled reminder check");
 
@@ -129,18 +141,21 @@ export async function runReminderCheck(): Promise<void> {
         ).filter(Boolean)
       : [];
 
+    const userById = new Map(users.map((u) => [String(u.id), u]));
+
     const sentReminders: Record<string, Record<string, string>> =
       sentRemindersRaw || {};
 
     const today = startOfDay(new Date());
     const todayStr = today.toISOString().slice(0, 10);
-    let emailsSent = 0;
     let emailsSkipped = 0;
 
     const emailConfigured = isEmailConfigured();
     if (!emailConfigured) {
       logger.warn("[Reminders] Email not configured — will log but not send");
     }
+
+    const pendingEmails: PendingReminderEmail[] = [];
 
     for (const [, logsRaw] of Object.entries(clientLogsRaw)) {
       const logs: TaskLog[] = Array.isArray(logsRaw)
@@ -177,7 +192,7 @@ export async function runReminderCheck(): Promise<void> {
 
           const assigneeEmail =
             task.assigneeEmail ||
-            users.find((u) => String(u.id) === String(task.assigneeId))?.email;
+            userById.get(String(task.assigneeId))?.email;
 
           if (!assigneeEmail) {
             logger.warn(
@@ -195,40 +210,49 @@ export async function runReminderCheck(): Promise<void> {
 
           const bodyHtml = buildReminderEmailHtml(task, isOverdue, offsetNum);
 
-          try {
-            if (emailConfigured) {
-              await sendEmail({ to: assigneeEmail, subject, bodyHtml });
-
-              if (isOverdue && task.qcEnabled && task.qcAssigneeId) {
-                const qcEmail =
-                  task.qcAssigneeEmail ||
-                  users.find(
-                    (u) => String(u.id) === String(task.qcAssigneeId)
-                  )?.email;
-
-                if (qcEmail && qcEmail !== assigneeEmail) {
-                  const qcSubject = `[Ethinos PMT] QC Alert — Overdue: "${task.name}" (assigned to ${task.assigneeName || "unknown"})`;
-                  await sendEmail({ to: qcEmail, subject: qcSubject, bodyHtml });
-                }
-              }
-            } else {
-              logger.info(
-                { to: assigneeEmail, subject },
-                "[Reminders] (dry-run) Would have sent reminder"
-              );
+          let qcEmail: string | undefined;
+          let qcSubject: string | undefined;
+          if (isOverdue && task.qcEnabled && task.qcAssigneeId) {
+            const qcAddr =
+              task.qcAssigneeEmail ||
+              userById.get(String(task.qcAssigneeId))?.email;
+            if (qcAddr && qcAddr !== assigneeEmail) {
+              qcEmail = qcAddr;
+              qcSubject = `[Ethinos PMT] QC Alert — Overdue: "${task.name}" (assigned to ${task.assigneeName || "unknown"})`;
             }
-
-            await writeFirebasePath(
-              `sentReminders/${taskId}/${sentKey}`,
-              new Date().toISOString()
-            );
-            emailsSent++;
-          } catch (err) {
-            logger.error({ err, taskId, offset }, "[Reminders] Failed to send reminder email");
           }
+
+          pendingEmails.push({ taskId, sentKey, assigneeEmail, subject, bodyHtml, qcEmail, qcSubject });
         }
       }
     }
+
+    const concurrency = getEmailConcurrency();
+    let emailsSent = 0;
+
+    await mapLimit(pendingEmails, concurrency, async (item) => {
+      try {
+        if (emailConfigured) {
+          await sendEmail({ to: item.assigneeEmail, subject: item.subject, bodyHtml: item.bodyHtml });
+          if (item.qcEmail && item.qcSubject) {
+            await sendEmail({ to: item.qcEmail, subject: item.qcSubject, bodyHtml: item.bodyHtml });
+          }
+        } else {
+          logger.info(
+            { to: item.assigneeEmail, subject: item.subject },
+            "[Reminders] (dry-run) Would have sent reminder"
+          );
+        }
+
+        await writeFirebasePath(
+          `sentReminders/${item.taskId}/${item.sentKey}`,
+          new Date().toISOString()
+        );
+        emailsSent++;
+      } catch (err) {
+        logger.error({ err, taskId: item.taskId }, "[Reminders] Failed to send reminder email");
+      }
+    });
 
     logger.info(
       { emailsSent, emailsSkipped, today: todayStr },
@@ -320,6 +344,17 @@ function applyCustomIntroTextScheduler(html: string, customIntroText?: string): 
   return html.slice(0, idx + marker.length) + introBlock + html.slice(idx + marker.length);
 }
 
+interface PendingOverdueDueSoonEmail {
+  taskId: string;
+  kind: "overdue" | "due-soon";
+  to: string;
+  subject: string;
+  bodyHtml: string;
+  bcc: string[];
+  cooldownPath: string;
+  cooldownValue: string;
+}
+
 export async function runOverdueDueSoonCheck(): Promise<void> {
   logger.info("[Overdue/DueSoon] Running check");
 
@@ -351,10 +386,14 @@ export async function runOverdueDueSoonCheck(): Promise<void> {
       ? (Array.isArray(usersRaw) ? (usersRaw as User[]) : Object.values(usersRaw as Record<string, User>)).filter(Boolean)
       : [];
 
+    const userById = new Map(users.map((u) => [String(u.id), u]));
+
     const cooldowns: Record<string, { lastOverdueNotifiedAt?: string; lastDueSoonNotifiedAt?: string }> = cooldownsRaw || {};
     const today = startOfDay(new Date());
     const todayStr = today.toISOString().slice(0, 10);
     const emailConfigured = isEmailConfigured();
+
+    const pendingEmails: PendingOverdueDueSoonEmail[] = [];
 
     for (const [, logsRaw] of Object.entries(clientLogsRaw)) {
       const logs: TaskLog[] = Array.isArray(logsRaw)
@@ -374,7 +413,7 @@ export async function runOverdueDueSoonCheck(): Promise<void> {
 
         const assigneeEmail =
           task.assigneeEmail ||
-          users.find((u) => String(u.id) === String(task.assigneeId))?.email;
+          userById.get(String(task.assigneeId))?.email;
 
         if (!assigneeEmail) continue;
 
@@ -390,53 +429,63 @@ export async function runOverdueDueSoonCheck(): Promise<void> {
             }
           }
 
-          try {
-            if (emailConfigured) {
-              const subject = applyCustomSubjectScheduler(
-                `[PMT] Overdue: "${task.name}"`,
-                overdueSetting.customSubject
-              );
-              let html = buildOverdueHtml(task);
-              html = applyCustomIntroTextScheduler(html, overdueSetting.customIntroText);
-              const bcc = Array.isArray(overdueSetting.bccEmails)
-                ? overdueSetting.bccEmails.filter(Boolean)
-                : [];
-              await sendEmail({ to: assigneeEmail, subject, bodyHtml: html, bcc });
-              await writeFirebasePath(`notificationCooldowns/${taskId}/lastOverdueNotifiedAt`, todayStr);
-              logger.info({ taskId, assigneeEmail }, "[Overdue/DueSoon] Sent overdue notification");
-            } else {
-              logger.info({ taskId, assigneeEmail }, "[Overdue/DueSoon] (dry-run) Would send overdue notification");
-            }
-          } catch (err) {
-            logger.error({ err, taskId }, "[Overdue/DueSoon] Failed to send overdue email");
-          }
+          const subject = applyCustomSubjectScheduler(
+            `[PMT] Overdue: "${task.name}"`,
+            overdueSetting.customSubject
+          );
+          let html = buildOverdueHtml(task);
+          html = applyCustomIntroTextScheduler(html, overdueSetting.customIntroText);
+          const bcc = Array.isArray(overdueSetting.bccEmails)
+            ? overdueSetting.bccEmails.filter(Boolean)
+            : [];
+          pendingEmails.push({
+            taskId,
+            kind: "overdue",
+            to: assigneeEmail,
+            subject,
+            bodyHtml: html,
+            bcc,
+            cooldownPath: `notificationCooldowns/${taskId}/lastOverdueNotifiedAt`,
+            cooldownValue: todayStr,
+          });
         }
 
         if (dueSoonEnabled && diffDays === 2) {
           if (cooldown.lastDueSoonNotifiedAt === todayStr) continue;
-          try {
-            if (emailConfigured) {
-              const subject = applyCustomSubjectScheduler(
-                `[PMT] Due in 2 days: "${task.name}"`,
-                dueSoonSetting.customSubject
-              );
-              let html = buildDueSoonHtml(task);
-              html = applyCustomIntroTextScheduler(html, dueSoonSetting.customIntroText);
-              const bcc = Array.isArray(dueSoonSetting.bccEmails)
-                ? dueSoonSetting.bccEmails.filter(Boolean)
-                : [];
-              await sendEmail({ to: assigneeEmail, subject, bodyHtml: html, bcc });
-              await writeFirebasePath(`notificationCooldowns/${taskId}/lastDueSoonNotifiedAt`, todayStr);
-              logger.info({ taskId, assigneeEmail }, "[Overdue/DueSoon] Sent due-soon notification");
-            } else {
-              logger.info({ taskId, assigneeEmail }, "[Overdue/DueSoon] (dry-run) Would send due-soon notification");
-            }
-          } catch (err) {
-            logger.error({ err, taskId }, "[Overdue/DueSoon] Failed to send due-soon email");
-          }
+          const subject = applyCustomSubjectScheduler(
+            `[PMT] Due in 2 days: "${task.name}"`,
+            dueSoonSetting.customSubject
+          );
+          let html = buildDueSoonHtml(task);
+          html = applyCustomIntroTextScheduler(html, dueSoonSetting.customIntroText);
+          const bcc = Array.isArray(dueSoonSetting.bccEmails)
+            ? dueSoonSetting.bccEmails.filter(Boolean)
+            : [];
+          pendingEmails.push({
+            taskId,
+            kind: "due-soon",
+            to: assigneeEmail,
+            subject,
+            bodyHtml: html,
+            bcc,
+            cooldownPath: `notificationCooldowns/${taskId}/lastDueSoonNotifiedAt`,
+            cooldownValue: todayStr,
+          });
         }
       }
     }
+
+    const concurrency = getEmailConcurrency();
+
+    await mapLimit(pendingEmails, concurrency, async (item) => {
+      if (emailConfigured) {
+        await sendEmail({ to: item.to, subject: item.subject, bodyHtml: item.bodyHtml, bcc: item.bcc });
+        await writeFirebasePath(item.cooldownPath, item.cooldownValue);
+        logger.info({ taskId: item.taskId, to: item.to, kind: item.kind }, "[Overdue/DueSoon] Sent notification");
+      } else {
+        logger.info({ taskId: item.taskId, to: item.to, kind: item.kind }, "[Overdue/DueSoon] (dry-run) Would send notification");
+      }
+    });
 
     logger.info("[Overdue/DueSoon] Check complete");
   } catch (err) {
@@ -482,21 +531,21 @@ async function runScheduledChecks(): Promise<void> {
   }
 }
 
+const REMINDER_LOCK_TTL_MS = 54 * 60 * 1000;
+const REMINDER_STARTUP_LOCK_TTL_MS = 5 * 60 * 1000;
+
 export function startReminderScheduler(): void {
-  // Run every hour. Timezone + hour gate is applied inside runScheduledChecks()
-  // by reading settings/notifications/reminders-schedule from Firebase.
   cron.schedule("0 * * * *", () => {
-    runScheduledChecks().catch((err) =>
+    withJobLock("reminders-hourly", REMINDER_LOCK_TTL_MS, () => runScheduledChecks()).catch((err) =>
       logger.error({ err }, "[Reminders] Unhandled scheduler error")
     );
   });
 
-  // Startup checks run immediately (cooldowns prevent duplicate sends)
-  runReminderCheck().catch((err) =>
+  withJobLock("reminders-startup", REMINDER_STARTUP_LOCK_TTL_MS, async () => {
+    await runReminderCheck();
+    await runOverdueDueSoonCheck();
+  }).catch((err) =>
     logger.error({ err }, "[Reminders] Error on startup check")
-  );
-  runOverdueDueSoonCheck().catch((err) =>
-    logger.error({ err }, "[Overdue/DueSoon] Error on startup check")
   );
 
   logger.info(

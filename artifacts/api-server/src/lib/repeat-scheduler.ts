@@ -2,6 +2,7 @@ import cron from "node-cron";
 import { parse, isValid, startOfDay, addDays, addMonths, format } from "date-fns";
 import { readFirebasePath, writeFirebasePath } from "./firebase-admin";
 import { logger } from "./logger";
+import { withJobLock } from "./job-lock";
 
 interface TaskLog {
   id: string | number;
@@ -373,23 +374,25 @@ export async function runGroupRepeatCheck(): Promise<void> {
   }
 }
 
+const REPEAT_LOCK_TTL_MS = 21 * 60 * 60 * 1000;
+
 export function startRepeatScheduler(): void {
-  // Run at 06:00 daily — one hour before the reminder check at 07:00
   cron.schedule("0 6 * * *", () => {
-    runRepeatCheck().catch((err) =>
+    withJobLock("repeat-daily", REPEAT_LOCK_TTL_MS, async () => {
+      await runRepeatCheck();
+      await runGroupRepeatCheck();
+    }).catch((err) =>
       logger.error({ err }, "[Repeat] Unhandled error")
-    );
-    runGroupRepeatCheck().catch((err) =>
-      logger.error({ err }, "[GroupRepeat] Unhandled error")
     );
   });
 
-  // Also run on startup to catch any missed spawns
-  runRepeatCheck().catch((err) =>
+  const REPEAT_STARTUP_LOCK_TTL_MS = 5 * 60 * 1000;
+
+  withJobLock("repeat-startup", REPEAT_STARTUP_LOCK_TTL_MS, async () => {
+    await runRepeatCheck();
+    await runGroupRepeatCheck();
+  }).catch((err) =>
     logger.error({ err }, "[Repeat] Error on startup check")
-  );
-  runGroupRepeatCheck().catch((err) =>
-    logger.error({ err }, "[GroupRepeat] Error on startup check")
   );
 
   logger.info("[Repeat] Scheduler started — runs daily at 06:00");
