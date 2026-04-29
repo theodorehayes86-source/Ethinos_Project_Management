@@ -441,7 +441,13 @@ function MissingInfoSection({ subtreeTasks, unassignedTasks, onTaskClick, sectio
   const missingTasks = useMemo(() => {
     const noAssignee = unassignedTasks;
     const noDueDate = subtreeTasks.filter(t => !t.archived && t.status !== 'Done' && !t.dueDate);
-    return [...noAssignee, ...noDueDate].slice(0, 20);
+    const seen = new Set();
+    return [...noAssignee, ...noDueDate].filter(t => {
+      const key = `${t._clientId}-${t.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 20);
   }, [subtreeTasks, unassignedTasks]);
 
   return (
@@ -503,7 +509,7 @@ function LeaveConflictsSection({ subtreeTasks, leaveByUser, users, onTaskClick, 
           .sort()
           .find(dk => {
             const rec = ld[dk];
-            return rec && (rec.name || (rec.status && rec.status !== 'pending'));
+            return rec && !rec.name && rec.status && rec.status !== 'pending';
           });
         if (!conflictDate) return null;
         const badge = conflictDate === dueKey ? 'Leave on Due Date' : 'On Leave';
