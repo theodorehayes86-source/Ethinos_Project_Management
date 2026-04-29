@@ -434,13 +434,14 @@ function AtRiskSection({ currentUser, users, clientLogs, clients, onTaskClick, l
   );
 }
 
-function MissingInfoSection({ subtreeTasks, onTaskClick, sectionRef }) {
+function MissingInfoSection({ subtreeTasks, unassignedTasks, onTaskClick, sectionRef }) {
   const [open, setOpen] = useState(true);
 
-  const missingTasks = useMemo(
-    () => subtreeTasks.filter(t => !t.archived && t.status !== 'Done' && (!t.assigneeId || !t.dueDate)).slice(0, 20),
-    [subtreeTasks],
-  );
+  const missingTasks = useMemo(() => {
+    const noAssignee = unassignedTasks;
+    const noDueDate = subtreeTasks.filter(t => !t.archived && t.status !== 'Done' && !t.dueDate);
+    return [...noAssignee, ...noDueDate].slice(0, 20);
+  }, [subtreeTasks, unassignedTasks]);
 
   return (
     <div ref={sectionRef}>
@@ -504,7 +505,7 @@ function LeaveConflictsSection({ subtreeTasks, leaveByUser, users, onTaskClick, 
             return rec && (rec.name || (rec.status && rec.status !== 'pending'));
           });
         if (!conflictDate) return null;
-        const badge = conflictDate === todayKey ? 'On Leave Today' : 'Leave on Due Date';
+        const badge = conflictDate === todayKey ? 'On Leave' : 'Leave on Due Date';
         return { ...t, due, dueKey, badge };
       })
       .filter(Boolean)
@@ -649,6 +650,20 @@ export default function ManagerDashboard({
     return tasks;
   }, [clientLogs, clients, subtreeIds, drillStack.length]);
 
+  const unassignedTasks = useMemo(() => {
+    if (drillStack.length > 0) return [];
+    const tasks = [];
+    Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
+      const client = clients.find(c => String(c.id) === String(clientId));
+      (logs || []).forEach(task => {
+        if (!task.assigneeId && !task.archived && task.status !== 'Done') {
+          tasks.push({ ...task, _clientId: clientId, _clientName: client?.name || clientId });
+        }
+      });
+    });
+    return tasks;
+  }, [clientLogs, clients, drillStack.length]);
+
   const kpiCounts = useMemo(() => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const todayEnd = new Date(today); todayEnd.setHours(23, 59, 59, 999);
@@ -659,10 +674,11 @@ export default function ManagerDashboard({
       if (due && due < today) overdue++;
       if (due && due >= today && due <= todayEnd) dueToday++;
       if (t.qcEnabled && t.qcStatus === 'sent') awaitingQC++;
-      if (!t.assigneeId || !t.dueDate) missingInfo++;
+      if (!t.dueDate) missingInfo++;
     });
+    missingInfo += unassignedTasks.length;
     return { overdue, dueToday, awaitingQC, missingInfo };
-  }, [subtreeTasks]);
+  }, [subtreeTasks, unassignedTasks]);
 
   const scrollTo = (target) => {
     const el = target === 'atRisk' ? atRiskRef.current : target === 'missingInfo' ? missingInfoRef.current : null;
@@ -804,6 +820,7 @@ export default function ManagerDashboard({
             {drillStack.length === 0 && (
               <MissingInfoSection
                 subtreeTasks={subtreeTasks}
+                unassignedTasks={unassignedTasks}
                 onTaskClick={setSelectedTask}
                 sectionRef={missingInfoRef}
               />
