@@ -279,6 +279,12 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
   const [memberLeaveByDate, setMemberLeaveByDate] = useState({});
   const [leaveOpen, setLeaveOpen] = useState(true);
 
+  const memberTasksRef = useRef(null);
+  const scrollToTasks = (filter) => {
+    if (filter) setStatusFilter(filter);
+    setTimeout(() => memberTasksRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  };
+
   useEffect(() => {
     if (!member?.id) return;
     let cancelled = false;
@@ -396,15 +402,15 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
       </div>
       <div className="p-4 overflow-y-auto flex-1 space-y-4">
         <div className="grid grid-cols-4 gap-2">
-          {[{ label: 'Total', value: stats.total, color: 'text-slate-800' }, { label: 'Pending', value: stats.pending, color: 'text-orange-600' }, { label: 'WIP', value: stats.wip, color: 'text-blue-600' }, { label: 'Done', value: stats.done, color: 'text-emerald-600' }].map(s => (
-            <div key={s.label} className="bg-white border border-slate-200 rounded-xl p-3 text-center">
+          {[{ label: 'Total', value: stats.total, color: 'text-slate-800', filter: 'all' }, { label: 'Pending', value: stats.pending, color: 'text-orange-600', filter: 'Pending' }, { label: 'WIP', value: stats.wip, color: 'text-blue-600', filter: 'WIP' }, { label: 'Done', value: stats.done, color: 'text-emerald-600', filter: 'Done' }].map(s => (
+            <button key={s.label} onClick={() => scrollToTasks(s.filter)} className="bg-white border border-slate-200 rounded-xl p-3 text-center transition-opacity hover:opacity-80 active:opacity-60">
               <p className={`text-xl font-black ${s.color}`}>{s.value}</p>
               <p className="text-[10px] text-slate-500 font-semibold mt-0.5">{s.label}</p>
-            </div>
+            </button>
           ))}
         </div>
         <div className="grid grid-cols-4 gap-2">
-          <div className="bg-white border border-slate-200 rounded-xl p-3 text-center"><p className="text-xl font-black text-red-600">{stats.overdue}</p><p className="text-[10px] text-slate-500 font-semibold mt-0.5">Overdue</p></div>
+          <button onClick={() => scrollToTasks('all')} className="bg-white border border-slate-200 rounded-xl p-3 text-center transition-opacity hover:opacity-80 active:opacity-60"><p className="text-xl font-black text-red-600">{stats.overdue}</p><p className="text-[10px] text-slate-500 font-semibold mt-0.5">Overdue</p></button>
           <div className="bg-white border border-slate-200 rounded-xl p-3 text-center"><p className="text-xl font-black text-amber-600">{stats.avgQc ?? '—'}</p><p className="text-[10px] text-slate-500 font-semibold mt-0.5">Avg QC</p></div>
           <div className="bg-white border border-slate-200 rounded-xl p-3 text-center"><p className="text-sm font-black text-indigo-600">{fmtMs(stats.billableMs)}</p><p className="text-[10px] text-slate-500 font-semibold mt-0.5">Billable</p></div>
           <div className="bg-white border border-slate-200 rounded-xl p-3 text-center"><p className="text-sm font-black text-slate-600">{fmtMs(stats.nonBillableMs)}</p><p className="text-[10px] text-slate-500 font-semibold mt-0.5">Non-Bill.</p></div>
@@ -481,7 +487,7 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
             </table>
           </div>
         )}
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <div ref={memberTasksRef} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
           <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-2 flex-wrap">
             <h4 className="text-xs font-bold text-slate-700 mr-1">Tasks</h4>
             <div className="relative"><Search size={10} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400"/><input value={taskSearch} onChange={e => setTaskSearch(e.target.value)} placeholder="Search…" className="pl-6 pr-2 py-1 text-[10px] border border-slate-200 rounded-md bg-slate-50 outline-none w-28"/></div>
