@@ -988,9 +988,9 @@ const TeamView = ({
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {atRiskTasks.map((t, idx) => {
-                        const clientObj = clientById[String(t.cid)];
+                        const clientObj = clientById[String(t.cid)] || { id: t.cid, name: t.cName };
                         return (
-                          <tr key={`ar-${t.cid}-${t.id}-${idx}`} onClick={() => clientObj && onOpenClient(clientObj)} className="hover:bg-slate-50 cursor-pointer transition-colors">
+                          <tr key={`ar-${t.cid}-${t.id}-${idx}`} onClick={() => onOpenClient(clientObj)} className="hover:bg-slate-50 cursor-pointer transition-colors">
                             <td className="px-4 py-2 text-xs font-semibold text-slate-800 max-w-[140px]"><p className="truncate">{t.name || t.comment}</p></td>
                             <td className="px-3 py-2 text-[10px] text-slate-500 truncate max-w-[80px]">{t.cName}</td>
                             <td className="px-3 py-2 text-[10px] text-slate-500 truncate max-w-[70px]">{t.assigneeName || '—'}</td>
@@ -1065,7 +1065,7 @@ const TeamView = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                      {pendingQCTasks.slice(0, 10).map((t, idx) => {
+                      {pendingQCTasks.map((t, idx) => {
                         const submittedD = parseTimestamp(t.qcSubmittedAt || t.date);
                         const submittedLabel = submittedD ? format(submittedD, 'dd MMM') : null;
                         return (
@@ -1093,11 +1093,11 @@ const TeamView = ({
                   </div>
                   <div className="divide-y divide-slate-50">
                     {missingInfoTasks.map((t, idx) => {
-                      const clientObj = clientById[String(t.cid)];
+                      const clientObj = clientById[String(t.cid)] || { id: t.cid, name: t.cName };
                       return (
                         <button
                           key={`mi-${t.cid}-${t.id}-${idx}`}
-                          onClick={() => clientObj && onOpenClient(clientObj)}
+                          onClick={() => onOpenClient(clientObj)}
                           className="w-full flex items-center gap-2.5 px-4 py-2.5 hover:bg-slate-50 text-left transition-colors"
                         >
                           <div className="flex-1 min-w-0">
