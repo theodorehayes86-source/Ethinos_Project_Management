@@ -213,52 +213,51 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
   return (
     <>
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div
-          role="button"
-          tabIndex={0}
-          className="w-full px-4 py-4 flex items-center gap-3 text-left active:bg-slate-50 transition-colors cursor-pointer select-none"
-          onClick={() => setShowTaskSheet(true)}
-          onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && setShowTaskSheet(true)}
-        >
-          <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0 relative">
-            <span className="text-indigo-700 font-black text-sm">{initials(user.name)}</span>
-            {leaveStatus === 'on_leave' && (
-              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-orange-400 border-2 border-white" title="On Leave" />
-            )}
-            {leaveStatus === 'leave_soon' && (
-              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-amber-300 border-2 border-white" title="Leave Soon" />
-            )}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <p className="text-sm font-bold text-slate-900 truncate">{user.name}</p>
+        <div className="flex items-stretch">
+          <button
+            type="button"
+            className="flex items-center gap-3 px-4 py-4 flex-1 min-w-0 text-left active:bg-slate-50 transition-colors"
+            onClick={() => setShowTaskSheet(true)}
+          >
+            <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0 relative">
+              <span className="text-indigo-700 font-black text-sm">{initials(user.name)}</span>
               {leaveStatus === 'on_leave' && (
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700">
-                  On Leave
-                </span>
+                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-orange-400 border-2 border-white" title="On Leave" />
               )}
-              {leaveStatus === 'leave_soon' && leaveDate && (
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
-                  Leave {new Date(leaveDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+              {leaveStatus === 'leave_soon' && (
+                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-amber-300 border-2 border-white" title="Leave Soon" />
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <p className="text-sm font-bold text-slate-900 truncate">{user.name}</p>
+                {leaveStatus === 'on_leave' && (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700">On Leave</span>
+                )}
+                {leaveStatus === 'leave_soon' && leaveDate && (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                    Leave {new Date(leaveDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-400">{user.role}</p>
+              {overridePersonal.avgRating && (
+                <span className="flex items-center gap-0.5 text-[11px] text-amber-500 font-bold mt-0.5">
+                  <Star size={10} className="fill-amber-400" /> {overridePersonal.avgRating.toFixed(1)}/10
                 </span>
               )}
             </div>
-            <p className="text-xs text-slate-400">{user.role}</p>
-            {overridePersonal.avgRating && (
-              <span className="flex items-center gap-0.5 text-[11px] text-amber-500 font-bold mt-0.5">
-                <Star size={10} className="fill-amber-400" /> {overridePersonal.avgRating.toFixed(1)}/10
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
+          </button>
+          <div className="flex items-center gap-1.5 pr-3 flex-shrink-0">
             <FilterBadge label="Pending" value={overridePersonal.pending} active={taskFilter === 'pending'} onClick={() => toggleFilter('pending')} />
             <FilterBadge label="Today"   value={overridePersonal.today}   active={taskFilter === 'today'}   onClick={() => toggleFilter('today')} />
             {overridePersonal.overdue > 0 && <FilterBadge label="Overdue" value={overridePersonal.overdue} red active={taskFilter === 'overdue'} onClick={() => toggleFilter('overdue')} />}
             {overridePersonal.pendingQC > 0 && <FilterBadge label="QC" value={overridePersonal.pendingQC} active={taskFilter === 'awaitingQC'} onClick={() => toggleFilter('awaitingQC')} />}
             {hasTeam && (
               <button
+                type="button"
                 onClick={() => onDrillIn(user)}
-                className="flex items-center gap-1 ml-1 px-2.5 py-1.5 rounded-xl bg-indigo-50 border border-indigo-100 min-h-[44px]"
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-indigo-50 border border-indigo-100 min-h-[44px]"
               >
                 <Users size={12} className="text-indigo-500" />
                 <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wide">Team</span>
