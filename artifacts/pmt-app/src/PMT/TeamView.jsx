@@ -26,6 +26,15 @@ const fmtMs = (ms) => {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 };
 
+const LiveElapsed = React.memo(function LiveElapsed({ startedAt, elapsedMs }) {
+  const [tick, setTick] = React.useState(Date.now());
+  React.useEffect(() => {
+    const id = setInterval(() => setTick(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return <>{fmtMs(elapsedMs + Math.max(0, tick - startedAt))}</>;
+});
+
 const getElapsed = (task, now = Date.now()) => {
   let ms = task.elapsedMs || 0;
   if (task.timerState === 'running' && task.timerStartedAt) ms += now - task.timerStartedAt;
@@ -254,7 +263,6 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
   const [showAddTask, setShowAddTask] = useState(false);
   const [memberLeaveByDate, setMemberLeaveByDate] = useState({});
   const [leaveOpen, setLeaveOpen] = useState(true);
-  const now = Date.now();
 
   useEffect(() => {
     if (!member?.id) return;
@@ -323,24 +331,26 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
     });
     const rated = done.filter(t => t.qcRating);
     const avgQc = rated.length > 0 ? (rated.reduce((s, t) => s + t.qcRating, 0) / rated.length).toFixed(1) : null;
+    const snapNow = Date.now();
     let billableMs = 0, nonBillableMs = 0, aboveEst = 0, belowEst = 0;
     base.forEach(t => {
-      const ms = getElapsed(t, now);
+      const ms = getElapsed(t, snapNow);
       if (t.billable !== false) billableMs += ms; else nonBillableMs += ms;
       if (t.estimatedMs) { if (ms > t.estimatedMs) aboveEst++; else belowEst++; }
     });
     return { total: base.length, done: done.length, wip: wip.length, pending: pending.length, overdue: overdue.length, avgQc, billableMs, nonBillableMs, aboveEst, belowEst };
-  }, [allMemberTasks, now, memberLeaveByDate]);
+  }, [allMemberTasks, memberLeaveByDate]);
 
   const clientHourSplit = useMemo(() => {
+    const snapNow = Date.now();
     const map = {};
     allMemberTasks.filter(t => !t.archived).forEach(t => {
-      const ms = getElapsed(t, now);
+      const ms = getElapsed(t, snapNow);
       if (!map[t.cid]) map[t.cid] = { name: t.cName || t.cid, ms: 0, count: 0 };
       map[t.cid].ms += ms; map[t.cid].count++;
     });
     return Object.values(map).sort((a, b) => b.ms - a.ms);
-  }, [allMemberTasks, now]);
+  }, [allMemberTasks]);
 
   const uniqueClients = useMemo(() => {
     const seen = {};
@@ -469,8 +479,9 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
             : (
               <div className="divide-y divide-slate-50">
                 {tasks.map(task => {
-                  const elapsed = getElapsed(task, now);
-                  const over = task.estimatedMs && elapsed > task.estimatedMs;
+                  const isRunning = task.timerState === 'running' && task.timerStartedAt;
+                  const elapsed = isRunning ? 0 : getElapsed(task, Date.now());
+                  const over = task.estimatedMs && (isRunning ? (task.elapsedMs || 0) : elapsed) > task.estimatedMs;
                   const dueD = parseDueDate(task.dueDate);
                   const isOverdue = dueD && isBefore(dueD, new Date()) && task.status !== 'Done';
                   return (
@@ -489,7 +500,12 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
                         </div>
                       </div>
                       <div className="flex items-center gap-3 mt-1 text-[10px] text-slate-400">
-                        <span>{fmtMs(elapsed)} logged</span>
+                        <span>
+                          {isRunning
+                            ? <><LiveElapsed startedAt={task.timerStartedAt} elapsedMs={task.elapsedMs || 0}/> logged</>
+                            : <>{fmtMs(elapsed)} logged</>
+                          }
+                        </span>
                         {task.estimatedMs && <span className={over ? 'text-red-500' : 'text-emerald-500'}>{over ? <ArrowUp size={9} className="inline"/> : <ArrowDown size={9} className="inline"/>}{' est. '}{fmtMs(task.estimatedMs)}</span>}
                       </div>
                     </button>
