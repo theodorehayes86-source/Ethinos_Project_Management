@@ -14,6 +14,24 @@ import { checkLeaveConflict, toDateKey, getUserLeaveAndHolidayData, isFullDayLea
 
 const managementRoles = ['Super Admin', 'Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
 
+function formatDuration(ms) {
+  if (!ms) return '0:00:00';
+  const total = Math.floor(ms / 1000);
+  const h = String(Math.floor(total / 3600)).padStart(2, '0');
+  const m = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
+  const s = String(total % 60).padStart(2, '0');
+  return `${h}:${m}:${s}`;
+}
+
+const LiveElapsed = React.memo(function LiveElapsed({ startedAt, elapsedMs }) {
+  const [tick, setTick] = React.useState(Date.now());
+  React.useEffect(() => {
+    const id = setInterval(() => setTick(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return <>{formatDuration(elapsedMs + Math.max(0, tick - startedAt))}</>;
+});
+
 const ROLE_RANK = {
   'Super Admin':    100,
   'Director':        90,
@@ -664,13 +682,6 @@ const HomeView = ({
     closeModal();
   };
 
-  // --- Personal task data ---
-  const myTasks = useMemo(() => {
-    return allTasks.filter(t =>
-      String(t.assigneeId) === String(currentUser?.id) && !t.archived && !t.taskGroupId
-    );
-  }, [allTasks, currentUser]);
-
   // --- Task groups assigned to current user ---
   const myTaskGroups = useMemo(() => {
     return taskGroups.filter(g =>
@@ -678,39 +689,73 @@ const HomeView = ({
     );
   }, [taskGroups, currentUser]);
 
-  // --- Get child tasks for a group ---
-  const getGroupChildren = useCallback((group) => {
-    const logs = clientLogs[group.clientId] || [];
-    return logs.filter(t => t.taskGroupId === group.id);
+  // --- Index child tasks by groupId for O(1) lookup ---
+  const childrenByGroupId = useMemo(() => {
+    const map = new Map();
+    Object.values(clientLogs).forEach(logs => {
+      (logs || []).forEach(t => {
+        if (t.taskGroupId) {
+          const arr = map.get(t.taskGroupId);
+          if (arr) arr.push(t);
+          else map.set(t.taskGroupId, [t]);
+        }
+      });
+    });
+    return map;
   }, [clientLogs]);
-
-  const myArchivedTasks = useMemo(() => {
-    return allTasks.filter(t => String(t.assigneeId) === String(currentUser?.id) && t.archived);
-  }, [allTasks, currentUser]);
-
-  const myOpenTasks = myTasks.filter(t => t.status !== 'Done');
-  const myWip = myTasks.filter(t => t.status === 'WIP');
-  const myPending = myTasks.filter(t => t.status === 'Pending');
-  const myDone = myTasks.filter(t => t.status === 'Done');
 
   const todayStr = format(new Date(), 'do MMM yyyy');
   const todayStart = (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })();
-  const myOverdue = myTasks.filter(t => {
-    if (!t.dueDate || t.status === 'Done') return false;
-    try {
-      const d = parse(t.dueDate, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0);
-      if (!(d < todayStart)) return false;
-      const y = d.getFullYear(), mo = String(d.getMonth()+1).padStart(2,'0'), dy = String(d.getDate()).padStart(2,'0');
-      return !isFullDayLeaveOrHoliday(currentUserLeaveData[`${y}-${mo}-${dy}`]);
-    } catch { return false; }
-  });
-  const myDueToday = myTasks.filter(t => t.dueDate === todayStr && t.status !== 'Done');
-  const my48Plus = myTasks.filter(t => {
-    if (t.status === 'Done') return false;
-    try { return differenceInCalendarDays(new Date(), parse(t.date, 'do MMM yyyy', new Date())) >= 2; } catch { return false; }
-  });
 
-  const myAwaitingQC = myTasks.filter(t => t.qcEnabled && t.qcStatus === 'sent');
+  // --- Single pass over allTasks: mine, archived, and all status/alert buckets ---
+  const { myTasks, myArchivedTasks, taskBuckets } = useMemo(() => {
+    const uid = String(currentUser?.id || '');
+    const tStart = new Date(); tStart.setHours(0,0,0,0);
+    const tStr = format(tStart, 'do MMM yyyy');
+    const mine = [], archived = [];
+    const openTasks = [], wip = [], pending = [], done = [], overdue = [], dueToday = [], plus48 = [], awaitingQC = [];
+    allTasks.forEach(t => {
+      if (String(t.assigneeId) !== uid) return;
+      if (t.archived) { archived.push(t); return; }
+      if (t.taskGroupId) return;
+      mine.push(t);
+      if (t.status !== 'Done') openTasks.push(t);
+      if (t.status === 'WIP') wip.push(t);
+      if (t.status === 'Pending') pending.push(t);
+      if (t.status === 'Done') done.push(t);
+      if (t.qcEnabled && t.qcStatus === 'sent') awaitingQC.push(t);
+      if (t.dueDate && t.status !== 'Done') {
+        if (t.dueDate === tStr) {
+          dueToday.push(t);
+        } else {
+          try {
+            const d = parse(t.dueDate, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0);
+            if (d < tStart) {
+              const y = d.getFullYear(), mo = String(d.getMonth()+1).padStart(2,'0'), dy = String(d.getDate()).padStart(2,'0');
+              if (!isFullDayLeaveOrHoliday(currentUserLeaveData[`${y}-${mo}-${dy}`])) overdue.push(t);
+            }
+          } catch { /* skip */ }
+        }
+      }
+      if (t.status !== 'Done') {
+        try { if (differenceInCalendarDays(new Date(), parse(t.date, 'do MMM yyyy', new Date())) >= 2) plus48.push(t); } catch { /* skip */ }
+      }
+    });
+    return {
+      myTasks: mine,
+      myArchivedTasks: archived,
+      taskBuckets: { openTasks, wip, pending, done, overdue, dueToday, plus48, awaitingQC },
+    };
+  }, [allTasks, currentUser, currentUserLeaveData]);
+
+  const myOpenTasks = taskBuckets.openTasks;
+  const myWip = taskBuckets.wip;
+  const myPending = taskBuckets.pending;
+  const myDone = taskBuckets.done;
+  const myOverdue = taskBuckets.overdue;
+  const myDueToday = taskBuckets.dueToday;
+  const my48Plus = taskBuckets.plus48;
+  const myAwaitingQC = taskBuckets.awaitingQC;
 
   // --- Checklist group stats — use g.date (assignment date, always set) not g.dueDate (usually null) ---
   const myOverdueChecklists = myTaskGroups.filter(g => {
@@ -841,35 +886,12 @@ const HomeView = ({
     setEditDraft(null);
   };
 
-  // Timer tick for live display
-  const [timerTick, setTimerTick] = useState(Date.now());
-  useEffect(() => {
-    const interval = setInterval(() => setTimerTick(Date.now()), 1000);
-    return () => clearInterval(interval);
-  }, []);
 
   useEffect(() => {
     const handler = (e) => { if (addMenuRef.current && !addMenuRef.current.contains(e.target)) setShowAddMenu(false); };
     if (showAddMenu) document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [showAddMenu]);
-
-  const formatDuration = (ms) => {
-    if (!ms) return '0:00:00';
-    const total = Math.floor(ms / 1000);
-    const h = String(Math.floor(total / 3600)).padStart(2, '0');
-    const m = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
-    const s = String(total % 60).padStart(2, '0');
-    return `${h}:${m}:${s}`;
-  };
-
-  const getElapsedMs = (task) => {
-    const base = task.elapsedMs || 0;
-    if (task.timerState === 'running' && task.timerStartedAt) {
-      return base + Math.max(0, timerTick - task.timerStartedAt);
-    }
-    return base;
-  };
 
   const startTaskTimer = useCallback((task) => {
     handleUpdateTask(task, { status: 'WIP', timerState: 'running', timerStartedAt: Date.now() });
@@ -1426,7 +1448,7 @@ const HomeView = ({
                   ].sort(compareByDate).map(({ _type, item }) => {
                     if (_type === 'group') {
                       const group = item;
-                      const children = getGroupChildren(group);
+                      const children = childrenByGroupId.get(group.id) ?? [];
                       const checklistChildren = children.filter(t => t.taskType === 'checklist');
                       const answeredCount = checklistChildren.filter(t =>
                         t.requiresInput ? t.checklistNote?.trim() : t.checklistAnswer != null
@@ -1481,7 +1503,6 @@ const HomeView = ({
                       );
                     }
                     const task = item;
-                    const elapsed = getElapsedMs(task);
                     const isRunning = task.timerState === 'running';
                     const isPaused = task.timerState === 'paused';
                     const isStopped = task.timerState === 'stopped';
@@ -1547,11 +1568,15 @@ const HomeView = ({
                                   <RotateCcw size={9} /> Series
                                 </span>
                               )}
-                              {elapsed > 0 && (
+                              {(task.elapsedMs > 0 || isRunning) && (
                                 <span className={`flex items-center gap-1 text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full ${
                                   isRunning ? 'bg-blue-50 text-blue-700' : 'bg-slate-50 text-slate-500'
                                 }`}>
-                                  <Clock size={9} /> {formatDuration(elapsed)}
+                                  <Clock size={9} />
+                                  {isRunning && task.timerStartedAt
+                                    ? <LiveElapsed startedAt={task.timerStartedAt} elapsedMs={task.elapsedMs || 0} />
+                                    : formatDuration(task.elapsedMs || 0)
+                                  }
                                 </span>
                               )}
                             </div>
@@ -2565,7 +2590,7 @@ const HomeView = ({
       {detailGroup && (
         <ChecklistGroupDetailPanel
           group={detailGroup}
-          childTasks={getGroupChildren(detailGroup)}
+          childTasks={childrenByGroupId.get(detailGroup?.id) ?? []}
           currentUser={currentUser}
           users={users}
           taskCategories={taskCategories}
