@@ -823,7 +823,7 @@ const TeamView = ({
       const due = parseDueDate(t.dueDate);
       if (due && due < today) memberMap[key].overdue++;
     });
-    const rows = Object.values(memberMap).filter(r => r.open + r.done > 0);
+    const rows = Object.values(memberMap);
     const maxOpen = Math.max(...rows.map(r => r.open), 1);
     return { rows: rows.sort((a, b) => b.overdue - a.overdue || b.open - a.open), maxOpen };
   }, [visibleTasks, leftPanelGroups]);
@@ -833,7 +833,8 @@ const TeamView = ({
     return visibleTasks
       .filter(t => t.qcEnabled && t.qcStatus === 'sent' && !t.archived)
       .map(t => {
-        const submitted = parseDueDate(t.date);
+        const submittedRaw = t.qcSubmittedAt || t.date;
+        const submitted = submittedRaw ? (typeof submittedRaw === 'number' ? new Date(submittedRaw) : parseDueDate(submittedRaw)) : null;
         const daysAge = submitted ? Math.floor((today.getTime() - submitted.getTime()) / 86400000) : 0;
         return { ...t, daysAge: Math.max(0, daysAge) };
       })
@@ -1009,7 +1010,8 @@ const TeamView = ({
                               <p className="text-xs font-semibold text-slate-800 truncate">{row.member.name}</p>
                               <div className="flex items-center gap-2 flex-shrink-0 text-[10px] font-bold">
                                 <span className="text-orange-500">{row.open} open</span>
-                                {row.overdue > 0 && <span className="text-red-500">{row.overdue} late</span>}
+                                <span className="text-blue-500">{row.wip} WIP</span>
+                                <span className="text-red-500">{row.overdue} late</span>
                                 <span className="text-emerald-500">{row.done} done</span>
                               </div>
                             </div>
