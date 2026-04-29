@@ -700,12 +700,12 @@ export default function ManagerDashboard({
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {activeTab === 'team' && (
-        <div className="flex-1 overflow-y-auto" ref={scrollContainerRef}>
+        <>
           {drillStack.length > 0 && (
-            <div className="flex items-center gap-2 px-4 py-2 bg-white border-b border-slate-100">
+            <div className="flex items-center gap-2 px-4 py-2 bg-white border-b border-slate-100 flex-shrink-0">
               <button
                 onClick={drillOut}
-                className="flex items-center gap-1 text-indigo-600 text-sm font-bold min-h-[36px] px-2"
+                className="flex items-center gap-1 text-indigo-600 text-sm font-bold min-h-[44px] px-2"
               >
                 <ChevronLeft size={16} /> Back
               </button>
@@ -722,7 +722,7 @@ export default function ManagerDashboard({
               </div>
             </div>
           )}
-
+          <div className="flex-1 overflow-y-auto" ref={scrollContainerRef}>
           <div className="p-4 space-y-4">
             {drillStack.length === 0 && (
               <KpiChipRow
@@ -848,14 +848,17 @@ export default function ManagerDashboard({
               />
             )}
           </div>
+          </div>
+        </>
+      )}
 
-          <button
-            onClick={() => setShowAddTask(true)}
-            className="fixed bottom-20 right-4 w-14 h-14 rounded-full bg-indigo-600 shadow-lg flex items-center justify-center text-white z-30 active:scale-95 transition-transform"
-          >
-            <Plus size={24} />
-          </button>
-        </div>
+      {activeTab === 'team' && (
+        <button
+          onClick={() => setShowAddTask(true)}
+          className="fixed bottom-20 right-4 w-14 h-14 rounded-full bg-indigo-600 shadow-lg flex items-center justify-center text-white z-30 active:scale-95 transition-transform"
+        >
+          <Plus size={24} />
+        </button>
       )}
 
       {activeTab === 'approvals' && (
