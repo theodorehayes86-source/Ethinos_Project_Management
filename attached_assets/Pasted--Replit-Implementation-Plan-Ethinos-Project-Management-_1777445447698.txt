@@ -1,0 +1,1347 @@
+# Replit Implementation Plan: Ethinos Project Management Performance + Security Fixes
+
+## Purpose
+
+Use this document as a Replit Agent implementation brief. The goal is to apply the highest-impact backend, Firebase, scheduler, and frontend performance fixes in a safe order.
+
+Repository:
+
+```txt
+https://github.com/theodorehayes86-source/Ethinos_Project_Management
+```
+
+Primary focus:
+
+1. Fix critical security and correctness issues first.
+2. Reduce full-database scans and whole-array writes.
+3. Prevent duplicate scheduled jobs in multi-instance deployments.
+4. Improve frontend rendering performance in the large task view.
+5. Keep changes incremental and backward-compatible where possible.
+
+---
+
+## Assumptions
+
+The codebase appears to use:
+
+* React / Vite frontend under `artifacts/pmt-app`
+* Express / TypeScript API under `artifacts/api-server`
+* Firebase Realtime Database as the main operational datastore
+* Firebase Admin SDK on the backend
+* Microsoft Graph for email delivery
+* Scheduled jobs for reminders, repeat tasks, weekly digests, and Keka sync
+
+Do not rewrite the entire application. Apply changes in small, testable commits.
+
+---
+
+# Phase 1 — Critical Security + Correctness Fixes
+
+## Task 1.1 — Lock down Firebase Realtime Database rules
+
+### Problem
+
+Current `database.rules.json` grants broad read/write access to authenticated `@ethinos.com` users. This lets any valid domain user bypass frontend/API role checks and directly modify sensitive data.
+
+### File
+
+```txt
+database.rules.json
+```
+
+### Required change
+
+Replace top-level global read/write rules with path-level rules. At minimum:
+
+* Deny all by default.
+* Allow users to read their own profile.
+* Allow Admin / Super Admin users to manage users and settings.
+* Restrict task/client data by explicit access paths.
+* Add indexes for common lookups.
+
+### Suggested baseline
+
+```json
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "roles": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || root.child('roles').child(auth.uid).val() === 'Admin' || root.child('roles').child(auth.uid).val() === 'Super Admin')",
+        ".write": "auth != null && root.child('roles').child(auth.uid).val() === 'Super Admin'"
+      }
+    },
+
+    "users": {
+      ".indexOn": ["email", "managerId"],
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || root.child('roles').child(auth.uid).val() === 'Admin' || root.child('roles').child(auth.uid).val() === 'Super Admin')",
+        ".write": "auth != null && (root.child('roles').child(auth.uid).val() === 'Admin' || root.child('roles').child(auth.uid).val() === 'Super Admin')",
+        ".validate": "newData.hasChildren(['email', 'role'])"
+      }
+    },
+
+    "settings": {
+      ".read": "auth != null",
+      ".write": "auth != null && (root.child('roles').child(auth.uid).val() === 'Admin' || root.child('roles').child(auth.uid).val() === 'Super Admin')"
+    },
+
+    "clientLogs": {
+      "$clientId": {
+        "$taskId": {
+          ".read": "auth != null && root.child('clientAccess').child(auth.uid).child($clientId).val() === true",
+          ".write": "auth != null && root.child('clientWriters').child(auth.uid).child($clientId).val() === true"
+        }
+      }
+    },
+
+    "tasksByAssignee": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || root.child('roles').child(auth.uid).val() === 'Admin' || root.child('roles').child(auth.uid).val() === 'Super Admin')",
+        ".write": "auth != null && (root.child('roles').child(auth.uid).val() === 'Admin' || root.child('roles').child(auth.uid).val() === 'Super Admin')"
+      }
+    },
+
+    "tasksByDueDate": {
+      "$date": {
+        ".read": "auth != null",
+        ".write": "auth != null && (root.child('roles').child(auth.uid).val() === 'Admin' || root.child('roles').child(auth.uid).val() === 'Super Admin')"
+      }
+    },
+
+    "schedulerLocks": {
+      ".read": false,
+      ".write": false
+    },
+
+    "rateLimits": {
+      ".read": false,
+      ".write": false
+    }
+  }
+}
+```
+
+### Acceptance criteria
+
+* Top-level `.read` and `.write` are both `false`.
+* Non-admin users cannot write `settings`, `users`, scheduler state, or rate limit state.
+* Task access is no longer globally open to every authenticated domain user.
+* Existing app flows still work for authorized users.
+
+---
+
+## Task 1.2 — Centralize Firebase Admin initialization
+
+### Problem
+
+Firebase Admin appears to be initialized in multiple locations. This creates singleton drift and inconsistent environment handling.
+
+### Files
+
+```txt
+artifacts/api-server/src/lib/firebase-admin.ts
+artifacts/api-server/src/routes/auth.ts
+```
+
+### Required change
+
+Use `lib/firebase-admin.ts` as the only Firebase Admin bootstrap module. Do not initialize Admin SDK directly inside route files.
+
+### Target API
+
+```ts
+// artifacts/api-server/src/lib/firebase-admin.ts
+import admin from "firebase-admin";
+
+let app: admin.app.App | null = null;
+
+export function getFirebaseAdmin(): admin.app.App {
+  if (app) return app;
+
+  if (admin.apps.length > 0) {
+    app = admin.app();
+    return app;
+  }
+
+  app = admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n")
+    }),
+    databaseURL: process.env.FIREBASE_DATABASE_URL
+  });
+
+  return app;
+}
+
+export function getAdminDatabase(): admin.database.Database {
+  return getFirebaseAdmin().database();
+}
+
+export function getAdminAuth(): admin.auth.Auth {
+  return getFirebaseAdmin().auth();
+}
+```
+
+### Update imports
+
+```ts
+import { getAdminAuth, getAdminDatabase } from "../lib/firebase-admin";
+```
+
+### Acceptance criteria
+
+* No route file calls `admin.initializeApp()` directly.
+* Firebase Admin credentials are parsed in one place.
+* App boots exactly once without duplicate initialization warnings.
+
+---
+
+## Task 1.3 — Replace emailed temporary passwords with password reset links
+
+### Problem
+
+The auth route generates temporary passwords using `Math.random()` and emails them. This is unsafe for secrets and exposes credentials through email.
+
+### File
+
+```txt
+artifacts/api-server/src/routes/auth.ts
+```
+
+### Required change
+
+Do not generate or email passwords. Create the Firebase user, then send a password reset / set-password link.
+
+### Before pattern to remove
+
+```ts
+function generatePassword(length = 14) {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
+  let password = "";
+
+  for (let i = 0; i < length; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+
+  return password;
+}
+```
+
+### Target implementation
+
+```ts
+const auth = getAdminAuth();
+
+const user = await auth.createUser({
+  email,
+  displayName,
+  emailVerified: false,
+  disabled: false
+});
+
+const resetLink = await auth.generatePasswordResetLink(email);
+
+await sendEmail({
+  to: email,
+  subject: "Set your PMT password",
+  text: `Welcome to PMT. Set your password here: ${resetLink}`,
+  html: `
+    <p>Welcome to PMT.</p>
+    <p><a href="${resetLink}">Set your password</a></p>
+  `
+});
+```
+
+### Acceptance criteria
+
+* No `Math.random()` is used for password or token generation.
+* No plaintext password is emailed.
+* User onboarding still creates Firebase users successfully.
+* Password setup happens through Firebase reset/set-password links.
+
+---
+
+## Task 1.4 — Make `/notify` server-authoritative
+
+### Problem
+
+The notify route accepts client-provided notification content and recipient data. Authenticated users should not be able to directly control email recipients or message bodies.
+
+### File
+
+```txt
+artifacts/api-server/src/routes/notify.ts
+```
+
+### Required change
+
+Change `/notify` so the client sends only identifiers. The server must load the task/user data, verify permissions, derive recipients, and generate email content internally.
+
+### Target request body
+
+```ts
+type NotifyRequest = {
+  type: "task-assigned" | "task-due" | "approval-required";
+  clientId: string;
+  taskId: string;
+};
+```
+
+### Implementation sketch
+
+```ts
+function parseNotifyRequest(body: unknown): NotifyRequest {
+  if (!body || typeof body !== "object") {
+    throw new Error("Invalid request body");
+  }
+
+  const value = body as Partial<NotifyRequest>;
+
+  if (
+    value.type !== "task-assigned" &&
+    value.type !== "task-due" &&
+    value.type !== "approval-required"
+  ) {
+    throw new Error("Invalid notification type");
+  }
+
+  if (!value.clientId || !value.taskId) {
+    throw new Error("Missing task reference");
+  }
+
+  return {
+    type: value.type,
+    clientId: value.clientId,
+    taskId: value.taskId
+  };
+}
+
+router.post("/notify", requireFirebaseAuth, async (req, res) => {
+  const decoded = req.user!;
+  const { type, clientId, taskId } = parseNotifyRequest(req.body);
+
+  const task = await readFirebasePath<Task>(`clientLogs/${clientId}/${taskId}`);
+
+  if (!task) {
+    return res.status(404).json({ error: "Task not found" });
+  }
+
+  await assertCanNotify(decoded.uid, task);
+
+  const assignee = await readFirebasePath<User>(`users/${task.assigneeId}`);
+
+  if (!assignee?.email?.endsWith("@ethinos.com")) {
+    return res.status(400).json({ error: "Invalid recipient" });
+  }
+
+  await sendTaskNotification({
+    type,
+    task,
+    recipientEmail: assignee.email
+  });
+
+  return res.json({ ok: true });
+});
+```
+
+### Acceptance criteria
+
+* Request body no longer accepts arbitrary `to`, `subject`, `html`, or recipient email fields.
+* The server verifies the authenticated user can trigger the notification.
+* Email body and recipients are derived server-side.
+* Invalid task IDs return 404.
+* Unauthorized users return 403.
+
+---
+
+# Phase 2 — Scheduler Safety + Performance
+
+## Task 2.1 — Add distributed scheduler locks
+
+### Problem
+
+Schedulers are started from the API server boot path. If multiple app instances run, each instance executes the same jobs, causing duplicate reminders, duplicate repeat tasks, duplicate digests, and duplicate external writes.
+
+### Files
+
+```txt
+artifacts/api-server/src/index.ts
+artifacts/api-server/src/lib/reminder-scheduler.ts
+artifacts/api-server/src/lib/repeat-scheduler.ts
+artifacts/api-server/src/lib/weekly-digest-scheduler.ts
+artifacts/api-server/src/lib/keka-scheduler.ts
+```
+
+### Required change
+
+Add a reusable Firebase-backed distributed lock utility and wrap every scheduled job run.
+
+### New file
+
+```txt
+artifacts/api-server/src/lib/job-lock.ts
+```
+
+### Implementation
+
+```ts
+import { getAdminDatabase } from "./firebase-admin";
+
+export async function withJobLock(
+  name: string,
+  ttlMs: number,
+  job: () => Promise<void>
+): Promise<void> {
+  const db = getAdminDatabase();
+  const lockRef = db.ref(`schedulerLocks/${name}`);
+  const now = Date.now();
+  const owner = `${process.env.HOSTNAME ?? "local"}:${process.pid}`;
+
+  const result = await lockRef.transaction((current) => {
+    if (current?.expiresAt && current.expiresAt > now) {
+      return;
+    }
+
+    return {
+      owner,
+      startedAt: now,
+      expiresAt: now + ttlMs
+    };
+  });
+
+  if (!result.committed) return;
+
+  try {
+    await job();
+  } finally {
+    const snapshot = await lockRef.once("value");
+    if (snapshot.val()?.owner === owner) {
+      await lockRef.remove();
+    }
+  }
+}
+```
+
+### Usage example
+
+```ts
+import { withJobLock } from "./job-lock";
+
+cron.schedule("0 * * * *", () =>
+  withJobLock("reminders-hourly", 55 * 60_000, runScheduledReminderChecks)
+);
+```
+
+### Acceptance criteria
+
+* Every scheduler job is protected by a named lock.
+* Lock TTL is shorter than the schedule interval.
+* Duplicate app instances do not run the same job concurrently.
+* Failed jobs release locks or allow expiration.
+
+---
+
+## Task 2.2 — Avoid `users.find()` inside task loops
+
+### Problem
+
+Schedulers repeatedly scan the full users array for each task. This creates `O(tasks × users)` work.
+
+### File
+
+```txt
+artifacts/api-server/src/lib/reminder-scheduler.ts
+```
+
+### Required change
+
+Build `Map` indexes once per scheduler run.
+
+### Before
+
+```ts
+const assigneeEmail =
+  task.assigneeEmail ||
+  users.find((u) => String(u.id) === String(task.assigneeId))?.email;
+```
+
+### After
+
+```ts
+const userById = new Map(users.map((user) => [String(user.id), user]));
+
+const assigneeEmail =
+  task.assigneeEmail ||
+  userById.get(String(task.assigneeId))?.email;
+```
+
+### Acceptance criteria
+
+* No repeated `users.find(...)` calls inside task loops.
+* User lookup is `Map#get`.
+* Scheduler output remains unchanged.
+
+### Expected impact
+
+For 20,000 tasks and 80 users, this removes up to roughly 1.6 million repeated comparisons per scheduler run.
+
+---
+
+## Task 2.3 — Add bounded email concurrency
+
+### Problem
+
+Some email sending is sequential; other paths may use unbounded parallel sends. Sequential sends are slow, while unbounded sends risk Microsoft Graph throttling.
+
+### Files
+
+```txt
+artifacts/api-server/src/lib/reminder-scheduler.ts
+artifacts/api-server/src/lib/weekly-digest-scheduler.ts
+artifacts/api-server/src/routes/notify.ts
+```
+
+### New helper
+
+```txt
+artifacts/api-server/src/lib/async-utils.ts
+```
+
+### Implementation
+
+```ts
+export async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = [];
+  let index = 0;
+
+  async function worker() {
+    while (index < items.length) {
+      const currentIndex = index++;
+      results[currentIndex] = await fn(items[currentIndex]);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, worker)
+  );
+
+  return results;
+}
+```
+
+### Usage
+
+```ts
+await mapLimit(recipients, 5, async (recipient) => {
+  await sendEmail(buildReminderEmail(recipient));
+});
+```
+
+### Acceptance criteria
+
+* Bulk email paths use bounded concurrency.
+* Default concurrency should be 5 unless environment config specifies another value.
+* Errors are logged per recipient without aborting unrelated sends.
+
+### Expected impact
+
+For 100 emails at 300 ms average Graph latency:
+
+* Sequential: roughly 30 seconds
+* Concurrency 5: roughly 6 seconds
+
+---
+
+## Task 2.4 — Stop full-tree scans for due/reminder jobs
+
+### Problem
+
+Reminder and digest jobs read all `clientLogs` and filter in memory. This does not scale as task volume grows.
+
+### Required change
+
+Add indexed mirrors for common scheduler access patterns:
+
+```txt
+tasksByDueDate/{yyyy-mm-dd}/{taskId}
+tasksByAssignee/{userId}/{taskId}
+```
+
+Keep these indexes updated whenever tasks are created, updated, assigned, rescheduled, completed, or archived.
+
+### New repository file
+
+```txt
+artifacts/api-server/src/repositories/task-repository.ts
+```
+
+### Implementation sketch
+
+```ts
+import { getAdminDatabase } from "../lib/firebase-admin";
+
+export type TaskWrite = {
+  clientId: string;
+  taskId: string;
+  assigneeId?: string;
+  dueDate?: string;
+  task: Record<string, unknown>;
+};
+
+export async function upsertTask({
+  clientId,
+  taskId,
+  assigneeId,
+  dueDate,
+  task
+}: TaskWrite): Promise<void> {
+  const db = getAdminDatabase();
+
+  const updates: Record<string, unknown> = {
+    [`clientLogs/${clientId}/${taskId}`]: task
+  };
+
+  if (assigneeId) {
+    updates[`tasksByAssignee/${assigneeId}/${taskId}`] = {
+      clientId,
+      dueDate: dueDate ?? null
+    };
+  }
+
+  if (dueDate) {
+    updates[`tasksByDueDate/${dueDate}/${taskId}`] = {
+      clientId,
+      assigneeId: assigneeId ?? null
+    };
+  }
+
+  await db.ref().update(updates);
+}
+```
+
+### Query helper
+
+```ts
+export async function getTasksDueOn(dateKey: string): Promise<Task[]> {
+  const db = getAdminDatabase();
+
+  const dueIndex = await db.ref(`tasksByDueDate/${dateKey}`).once("value");
+  const refs = dueIndex.val() ?? {};
+
+  const reads = Object.entries(refs).map(async ([taskId, ref]) => {
+    const { clientId } = ref as { clientId: string };
+    const snap = await db.ref(`clientLogs/${clientId}/${taskId}`).once("value");
+    return snap.val() as Task | null;
+  });
+
+  return (await Promise.all(reads)).filter(Boolean) as Task[];
+}
+```
+
+### Acceptance criteria
+
+* Scheduler no longer needs to read the entire `clientLogs` tree for date-based checks.
+* Task writes update primary record and indexes atomically through multi-location update.
+* Existing task data is backfilled into new indexes through a migration script.
+
+---
+
+# Phase 3 — Data Model + Write Efficiency
+
+## Task 3.1 — Convert whole-array task writes to keyed task records
+
+### Problem
+
+Task lists are written as whole arrays under `clientLogs/{clientId}`. This causes large payload writes and lost-update risk under concurrent edits.
+
+### Current risky pattern
+
+```ts
+await writeFirebasePath(`clientLogs/${clientId}`, updatedLogsArray);
+```
+
+### Target data shape
+
+```txt
+clientLogs/{clientId}/{taskId} = task
+```
+
+### Required change
+
+* Store tasks as keyed objects instead of arrays.
+* Update individual task records by path.
+* Use transactions for patching existing tasks.
+* Use multi-location updates for indexes.
+
+### Repository method
+
+```ts
+export async function updateTask({
+  clientId,
+  taskId,
+  patch,
+  actorId
+}: {
+  clientId: string;
+  taskId: string;
+  patch: Partial<Task>;
+  actorId: string;
+}) {
+  const db = getAdminDatabase();
+
+  await db.ref(`clientLogs/${clientId}/${taskId}`).transaction((current) => {
+    if (!current) return current;
+
+    return {
+      ...current,
+      ...patch,
+      updatedAt: new Date().toISOString(),
+      updatedBy: actorId
+    };
+  });
+}
+```
+
+### Acceptance criteria
+
+* New task writes use `clientLogs/{clientId}/{taskId}`.
+* Updates patch one task instead of rewriting the whole client task list.
+* Concurrent updates to different tasks do not overwrite each other.
+* Migration preserves existing task IDs where available.
+
+### Expected impact
+
+For a client with 5,000 tasks, updating one task goes from rewriting 5,000 records to writing 1 record plus small index updates.
+
+---
+
+## Task 3.2 — Add migration script for task indexes
+
+### New file
+
+```txt
+artifacts/api-server/scripts/backfill-task-indexes.ts
+```
+
+### Purpose
+
+Backfill:
+
+```txt
+tasksByDueDate
+tasksByAssignee
+clientLogs keyed format if needed
+```
+
+### Implementation sketch
+
+```ts
+import { getAdminDatabase } from "../src/lib/firebase-admin";
+
+async function main() {
+  const db = getAdminDatabase();
+  const snap = await db.ref("clientLogs").once("value");
+  const clientLogs = snap.val() ?? {};
+
+  const updates: Record<string, unknown> = {};
+
+  for (const [clientId, tasksValue] of Object.entries(clientLogs)) {
+    const tasks = Array.isArray(tasksValue)
+      ? tasksValue
+      : Object.values(tasksValue as Record<string, unknown>);
+
+    for (const task of tasks as any[]) {
+      if (!task) continue;
+
+      const taskId = String(task.id ?? task.taskId ?? db.ref().push().key);
+      const assigneeId = task.assigneeId ? String(task.assigneeId) : null;
+      const dueDate = task.dueDate ? String(task.dueDate).slice(0, 10) : null;
+
+      updates[`clientLogs/${clientId}/${taskId}`] = {
+        ...task,
+        id: taskId
+      };
+
+      if (assigneeId) {
+        updates[`tasksByAssignee/${assigneeId}/${taskId}`] = {
+          clientId,
+          dueDate
+        };
+      }
+
+      if (dueDate) {
+        updates[`tasksByDueDate/${dueDate}/${taskId}`] = {
+          clientId,
+          assigneeId
+        };
+      }
+    }
+  }
+
+  await db.ref().update(updates);
+  console.log(`Backfilled ${Object.keys(updates).length} paths`);
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+```
+
+### Acceptance criteria
+
+* Script can run idempotently.
+* Script logs number of paths written.
+* Script does not delete legacy data until the app is confirmed compatible.
+* Add an npm script for running it manually.
+
+---
+
+# Phase 4 — Frontend Performance Improvements
+
+## Task 4.1 — Remove parent-level one-second re-render in `HomeView.jsx`
+
+### Problem
+
+A timer tick in the large parent component causes the entire task view to re-render every second.
+
+### File
+
+```txt
+artifacts/pmt-app/src/PMT/HomeView.jsx
+```
+
+### Current pattern to remove
+
+```jsx
+useEffect(() => {
+  const id = setInterval(() => setTimerTick(Date.now()), 1000);
+  return () => clearInterval(id);
+}, []);
+```
+
+### New component
+
+```jsx
+const LiveElapsed = React.memo(function LiveElapsed({ startedAt, elapsedMs }) {
+  const [now, setNow] = React.useState(Date.now());
+
+  React.useEffect(() => {
+    if (!startedAt) return undefined;
+
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [startedAt]);
+
+  const totalMs = elapsedMs + (startedAt ? now - startedAt : 0);
+
+  return <span>{formatDuration(totalMs)}</span>;
+});
+```
+
+### Acceptance criteria
+
+* `HomeView` no longer re-renders once per second.
+* Only active timer display components update once per second.
+* Task filters and grouping are not recomputed every second.
+
+---
+
+## Task 4.2 — Compute task buckets in one pass
+
+### Problem
+
+The frontend repeatedly filters the same task arrays for different views and counts.
+
+### File
+
+```txt
+artifacts/pmt-app/src/PMT/HomeView.jsx
+```
+
+### Required change
+
+Use `useMemo` and a single pass over tasks.
+
+### Implementation
+
+```jsx
+const taskBuckets = React.useMemo(() => {
+  const buckets = {
+    mine: [],
+    open: [],
+    wip: [],
+    overdue: [],
+    archived: []
+  };
+
+  for (const task of allTasks) {
+    if (task.assigneeId !== currentUser?.id) continue;
+
+    buckets.mine.push(task);
+
+    if (task.archived) {
+      buckets.archived.push(task);
+      continue;
+    }
+
+    if (task.status === "Open") buckets.open.push(task);
+    if (task.status === "WIP") buckets.wip.push(task);
+    if (isOverdue(task)) buckets.overdue.push(task);
+  }
+
+  return buckets;
+}, [allTasks, currentUser?.id]);
+```
+
+### Acceptance criteria
+
+* Repeated `.filter()` chains over the same task list are removed from render path.
+* Derived task arrays are memoized.
+* UI behavior remains unchanged.
+
+---
+
+## Task 4.3 — Index checklist/group children once
+
+### Problem
+
+Group child lookup currently filters logs repeatedly, creating `O(groups × tasks)` frontend work.
+
+### File
+
+```txt
+artifacts/pmt-app/src/PMT/HomeView.jsx
+```
+
+### Required change
+
+Build a `Map` of children by group ID once.
+
+### Implementation
+
+```jsx
+const childrenByGroupId = React.useMemo(() => {
+  const map = new Map();
+
+  for (const task of logs) {
+    if (!task.taskGroupId) continue;
+
+    const existing = map.get(task.taskGroupId) ?? [];
+    existing.push(task);
+    map.set(task.taskGroupId, existing);
+  }
+
+  return map;
+}, [logs]);
+
+const getGroupChildren = React.useCallback(
+  (groupId) => childrenByGroupId.get(groupId) ?? [],
+  [childrenByGroupId]
+);
+```
+
+### Acceptance criteria
+
+* No repeated full-log filtering per group.
+* Group child lookup is `Map#get`.
+* Checklist/group display remains unchanged.
+
+---
+
+## Task 4.4 — Split `HomeView.jsx` into smaller modules
+
+### Problem
+
+`HomeView.jsx` owns too many responsibilities: task state, filtering, timers, modals, leave logic, checklist groups, task mutation, and rendering.
+
+### Target structure
+
+```txt
+artifacts/pmt-app/src/PMT/Home/
+  HomeView.jsx
+  hooks/
+    useTaskBuckets.js
+    useTaskMutations.js
+    useLeaveStatus.js
+    useChecklistGroups.js
+  components/
+    TaskCreateModal.jsx
+    TaskEditModal.jsx
+    ChecklistGroupModal.jsx
+    LiveElapsed.jsx
+    TaskBoard.jsx
+```
+
+### Acceptance criteria
+
+* `HomeView.jsx` becomes an orchestration component.
+* Heavy derivation logic lives in hooks.
+* Timer display logic is isolated.
+* No behavior changes are introduced during this refactor.
+
+---
+
+# Phase 5 — API Hardening Quick Wins
+
+## Task 5.1 — Restrict CORS
+
+### File
+
+```txt
+artifacts/api-server/src/app.ts
+```
+
+### Current risky pattern
+
+```ts
+app.use(cors());
+```
+
+### Required change
+
+```ts
+const allowedOrigins = (process.env.CORS_ORIGINS ?? "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error("CORS origin denied"));
+  },
+  credentials: true
+}));
+```
+
+### Acceptance criteria
+
+* Production CORS origins are controlled by environment variable.
+* Unknown browser origins are denied.
+* Local development still works by setting `CORS_ORIGINS`.
+
+---
+
+## Task 5.2 — Add request body size limits
+
+### File
+
+```txt
+artifacts/api-server/src/app.ts
+```
+
+### Required change
+
+```ts
+app.use(express.json({ limit: "256kb" }));
+app.use(express.urlencoded({ extended: true, limit: "64kb" }));
+```
+
+### Acceptance criteria
+
+* JSON request body size is bounded.
+* URL-encoded body size is bounded.
+* Existing legitimate requests fit under the configured limit.
+
+---
+
+## Task 5.3 — Remove API keys from query strings
+
+### Problem
+
+Admin trigger routes should not accept API keys in query params because query strings are often logged by proxies and hosting platforms.
+
+### File
+
+```txt
+artifacts/api-server/src/routes/notify.ts
+```
+
+### Required change
+
+Only accept admin trigger API keys through headers.
+
+### Implementation
+
+```ts
+import { timingSafeEqual } from "node:crypto";
+
+function isValidApiKey(actual: string | undefined, expected: string): boolean {
+  if (!actual) return false;
+
+  const a = Buffer.from(actual);
+  const b = Buffer.from(expected);
+
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+function requireAdminApiKey(req, res, next) {
+  const expected = process.env.ADMIN_TRIGGER_API_KEY;
+
+  if (!expected) {
+    return res.status(500).json({ error: "Admin trigger key is not configured" });
+  }
+
+  const actual = req.header("x-admin-api-key");
+
+  if (!isValidApiKey(actual, expected)) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  return next();
+}
+```
+
+### Acceptance criteria
+
+* Query-string API keys are no longer accepted.
+* Header comparison uses constant-time comparison.
+* Missing server-side API key fails closed.
+
+---
+
+## Task 5.4 — Replace in-memory reset-password rate limiting
+
+### Problem
+
+In-memory rate limiting resets when the process restarts and does not work across multiple instances.
+
+### File
+
+```txt
+artifacts/api-server/src/routes/auth.ts
+```
+
+### Required change
+
+Use Firebase-backed rate limit counters with expiration timestamps.
+
+### Implementation
+
+```ts
+async function incrementRateLimit(key: string, windowMs: number) {
+  const ref = getAdminDatabase().ref(`rateLimits/${key}`);
+  const now = Date.now();
+
+  const result = await ref.transaction((current) => {
+    if (!current || current.expiresAt < now) {
+      return { count: 1, expiresAt: now + windowMs };
+    }
+
+    return {
+      count: current.count + 1,
+      expiresAt: current.expiresAt
+    };
+  });
+
+  return result.snapshot.val() as { count: number; expiresAt: number };
+}
+```
+
+### Acceptance criteria
+
+* Reset-password throttling works across multiple app instances.
+* Counters expire after the configured window.
+* Abuse attempts return `429`.
+
+---
+
+# Suggested Commit Order
+
+## Commit 1 — Firebase and API hardening
+
+Files:
+
+```txt
+database.rules.json
+artifacts/api-server/src/app.ts
+artifacts/api-server/src/lib/firebase-admin.ts
+artifacts/api-server/src/routes/auth.ts
+artifacts/api-server/src/routes/notify.ts
+```
+
+Changes:
+
+* Deny-by-default RTDB rules.
+* Centralize Firebase Admin initialization.
+* Replace temporary password emails with reset links.
+* Restrict CORS.
+* Add body size limits.
+* Remove query-string API keys.
+
+## Commit 2 — Scheduler locking
+
+Files:
+
+```txt
+artifacts/api-server/src/lib/job-lock.ts
+artifacts/api-server/src/lib/reminder-scheduler.ts
+artifacts/api-server/src/lib/repeat-scheduler.ts
+artifacts/api-server/src/lib/weekly-digest-scheduler.ts
+artifacts/api-server/src/lib/keka-scheduler.ts
+```
+
+Changes:
+
+* Add distributed lock utility.
+* Wrap every cron/scheduler job.
+* Add logs for skipped locked jobs.
+
+## Commit 3 — Scheduler performance
+
+Files:
+
+```txt
+artifacts/api-server/src/lib/async-utils.ts
+artifacts/api-server/src/lib/reminder-scheduler.ts
+artifacts/api-server/src/lib/weekly-digest-scheduler.ts
+```
+
+Changes:
+
+* Add `mapLimit`.
+* Replace repeated `users.find()` with maps.
+* Add bounded email concurrency.
+* Batch leave/holiday reads where possible.
+
+## Commit 4 — Task indexes and keyed writes
+
+Files:
+
+```txt
+artifacts/api-server/src/repositories/task-repository.ts
+artifacts/api-server/scripts/backfill-task-indexes.ts
+package.json
+```
+
+Changes:
+
+* Add task repository.
+* Add indexed mirrors for assignee and due date.
+* Add migration script.
+* Add npm script to run migration manually.
+
+## Commit 5 — Frontend rendering improvements
+
+Files:
+
+```txt
+artifacts/pmt-app/src/PMT/HomeView.jsx
+artifacts/pmt-app/src/PMT/Home/components/LiveElapsed.jsx
+artifacts/pmt-app/src/PMT/Home/hooks/useTaskBuckets.js
+artifacts/pmt-app/src/PMT/Home/hooks/useChecklistGroups.js
+```
+
+Changes:
+
+* Remove parent-level one-second timer.
+* Isolate live timer rendering.
+* Memoize task buckets.
+* Index group children with `Map`.
+
+---
+
+# Validation Checklist
+
+## Backend
+
+Run:
+
+```bash
+cd artifacts/api-server
+npm install
+npm run typecheck
+npm test
+npm run build
+```
+
+If scripts are missing, add or use the closest available scripts in `package.json`.
+
+Manual checks:
+
+* App boots without Firebase duplicate initialization warning.
+* `/notify` rejects arbitrary email payloads.
+* Admin trigger endpoint rejects query-string API keys.
+* Reset-password flow sends a reset link, not a plaintext password.
+* Scheduler logs show only one worker acquiring each job lock.
+
+## Firebase
+
+Validate:
+
+* Rules deny unauthenticated access.
+* Regular users cannot write `settings` or arbitrary `users` records.
+* Admin users can perform expected admin actions.
+* Task access still works for authorized users.
+* Indexed task mirror paths are populated after migration.
+
+## Frontend
+
+Run:
+
+```bash
+cd artifacts/pmt-app
+npm install
+npm run build
+```
+
+Manual checks:
+
+* Home/task view loads.
+* Timer display still updates for active tasks.
+* Non-timer task UI no longer re-renders every second.
+* Task filters, checklist groups, modals, and updates still behave correctly.
+
+---
+
+# Performance Targets
+
+Use these targets to verify improvement:
+
+| Area                     | Current Risk                    | Target                        |
+| ------------------------ | ------------------------------- | ----------------------------- |
+| Scheduler duplicate jobs | One run per app instance        | One run per schedule globally |
+| User lookup in scheduler | `O(tasks × users)`              | `O(tasks + users)`            |
+| Due-task lookup          | Full `clientLogs` scan          | Date-indexed lookup           |
+| Single task update       | Rewrite full client task array  | Patch one task record         |
+| Email sending            | Sequential or unbounded         | Bounded concurrency of 5      |
+| Home view timer          | Full parent render every second | Timer component render only   |
+| Group child lookup       | `O(groups × tasks)`             | `O(groups + tasks)`           |
+
+---
+
+# Do Not Do
+
+Avoid these changes unless explicitly approved:
+
+* Do not replace Firebase with PostgreSQL in one large migration.
+* Do not rewrite the entire frontend.
+* Do not introduce new dependencies unless the existing project already uses an equivalent utility.
+* Do not change visible task behavior while refactoring performance internals.
+* Do not delete legacy `clientLogs` array data until keyed reads/writes and migrations are verified.
+
+---
+
+# Final Expected Outcome
+
+After completing these tasks:
+
+* Firebase access is no longer globally open to every authenticated domain user.
+* Schedulers are safe in multi-instance deployments.
+* Reminder/digest workloads avoid the worst repeated scans.
+* Task updates become smaller and safer under concurrency.
+* The Home task view performs less repeated render work.
+* Auth and notification routes are materially safer.
