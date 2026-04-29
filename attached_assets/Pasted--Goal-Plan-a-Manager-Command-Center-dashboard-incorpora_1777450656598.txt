@@ -1,0 +1,45 @@
+
+
+Goal:
+Plan a Manager Command Center dashboard incorporated into team view that gives managers a real-time operational overview of team and task health. 
+
+Before making changes, inspect the repository and produce a detailed implementation plan only. Do not modify code yet.
+
+Context:
+The app already has task management, assignment, reminders, users, roles, Keka leave/holiday sync, and possibly manager relationships. The dashboard should help managers identify urgent issues without manually checking every user/client/task.
+
+Feature requirements:
+1. Add a manager dashboard route, likely `/manager`.
+2. Show any missing KPI cards:
+   - Overdue tasks
+   - Due today
+   - Blocked tasks, if supported
+   - Awaiting approval/review, if supported
+   - Users over capacity, if supported
+   - Tasks without assignee or due date
+3. Add dashboard panels:
+   - At-risk tasks
+   - Team workload summary
+   - Leave/holiday conflicts
+   - Pending reviews or approvals
+   - Client/project health summary
+4. Every dashboard item should deep-link to the relevant task, user, client, or filtered task view.
+5. Restrict data based on role and manager permissions.
+6. Avoid expensive full-tree reads in the frontend where possible.
+
+Planning output required:
+1. Identify existing role/user/manager data structures.
+2. Identify existing task status, due date, client, and assignee fields.
+3. Determine whether this should be frontend-derived, backend-derived, or hybrid.
+4. Propose dashboard data model and computed metrics.
+5. Propose route/component layout.
+6. Identify performance risks from reading all tasks.
+7. Propose an incremental first version that does not require a large database migration.
+8. Provide implementation steps in small commits.
+9. Provide acceptance criteria and manual test cases.
+
+Constraints:
+- Do not expose data across unauthorized teams.
+- Do not add heavyweight charting libraries unless already present.
+- Keep dashboard actionable, not decorative.
+- Prioritize exception visibility: overdue, blocked, unassigned, pending approval, leave conflict.
