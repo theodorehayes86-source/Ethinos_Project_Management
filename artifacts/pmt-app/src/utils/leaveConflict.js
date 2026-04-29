@@ -165,73 +165,47 @@ export async function getUserLeaveAndHolidayData(userId, region = "All") {
  * }>}
  */
 export async function getUserLeaveStatus(userId, region = "All") {
-  if (!userId) return { onLeaveToday: false, onLeavePendingToday: false, upcomingLeaveDate: null, upcomingPendingDate: null };
+  if (!userId) return { onLeaveToday: false, onLeavePendingToday: false, upcomingLeaveDate: null, upcomingPendingDate: null, upcomingHolidayDate: null };
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   try {
-    const leaveSnap = await get(ref(db, `leaveData/${userId}`));
+    const [leaveSnap, holidaySnap] = await Promise.all([
+      get(ref(db, `leaveData/${userId}`)),
+      get(ref(db, `publicHolidays/${region}`)),
+    ]);
     const leaveData = leaveSnap.val() || {};
+    const allHolidays = holidaySnap.val() || {};
 
     const todayKey = toDateKey(today);
     const todayRecord = leaveData[todayKey];
-    const onLeaveToday        = !!todayRecord && todayRecord.status !== "pending";
-    const onLeavePendingToday = !!todayRecord && todayRecord.status === "pending";
+    const todayIsHoliday = !!(allHolidays[todayKey]);
+    const onLeaveToday        = (!!todayRecord && todayRecord.status !== "pending") || todayIsHoliday;
+    const onLeavePendingToday = !onLeaveToday && !!todayRecord && todayRecord.status === "pending";
 
     let upcomingLeaveDate   = null;
     let upcomingPendingDate = null;
+    let upcomingHolidayDate = null;
 
     for (let i = 1; i <= 14; i++) {
       const d = new Date(today);
       d.setDate(d.getDate() + i);
       const dk = toDateKey(d);
       const rec = leaveData[dk];
-      if (!rec) continue;
-      if (rec.status === "pending") {
-        if (!upcomingPendingDate) upcomingPendingDate = dk;
-      } else {
-        if (!upcomingLeaveDate) upcomingLeaveDate = dk;
+      if (rec) {
+        if (rec.status === "pending") {
+          if (!upcomingPendingDate) upcomingPendingDate = dk;
+        } else {
+          if (!upcomingLeaveDate) upcomingLeaveDate = dk;
+        }
       }
-      if (upcomingLeaveDate && upcomingPendingDate) break;
+      if (allHolidays[dk] && !upcomingHolidayDate) upcomingHolidayDate = dk;
+      if (upcomingLeaveDate && upcomingPendingDate && upcomingHolidayDate) break;
     }
 
-    // Check public holiday for today
-    if (!onLeaveToday && !onLeavePendingToday) {
-      const holidaySnap = await get(ref(db, `publicHolidays/${region}/${todayKey}`));
-      if (holidaySnap.val()) {
-        return { onLeaveToday: true, onLeavePendingToday: false, upcomingLeaveDate: null, upcomingPendingDate: null };
-      }
-    }
-
-    return { onLeaveToday, onLeavePendingToday, upcomingLeaveDate, upcomingPendingDate };
+    return { onLeaveToday, onLeavePendingToday, upcomingLeaveDate, upcomingPendingDate, upcomingHolidayDate };
   } catch {
-    return { onLeaveToday: false, onLeavePendingToday: false, upcomingLeaveDate: null, upcomingPendingDate: null };
-  }
-}
-
-/**
- * Returns a Set of date strings (YYYY-MM-DD) that are public holidays within the next `days` days.
- * Makes a single Firebase read of the entire region node, then filters to the requested window.
- *
- * @param {string} region - Firebase region key (default "All")
- * @param {number} days - Number of days ahead to check (default 14)
- * @returns {Promise<Set<string>>}
- */
-export async function getUpcomingHolidays(region = "All", days = 14) {
-  try {
-    const snap = await get(ref(db, `publicHolidays/${region}`));
-    const data = snap.val() || {};
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const cutoff = new Date(today); cutoff.setDate(today.getDate() + days);
-    const todayKey = toDateKey(today);
-    const cutoffKey = toDateKey(cutoff);
-    const result = new Set();
-    Object.keys(data).forEach(dk => {
-      if (dk >= todayKey && dk <= cutoffKey && data[dk]) result.add(dk);
-    });
-    return result;
-  } catch {
-    return new Set();
+    return { onLeaveToday: false, onLeavePendingToday: false, upcomingLeaveDate: null, upcomingPendingDate: null, upcomingHolidayDate: null };
   }
 }

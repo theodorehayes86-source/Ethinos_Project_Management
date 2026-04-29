@@ -4,7 +4,7 @@ import { format, isBefore, isAfter, startOfWeek, endOfWeek, startOfMonth, endOfM
 import TaskDetailPanel from './TaskDetailPanel';
 import { sendNotification } from '../utils/notify';
 import DueDateInput from './DueDateInput';
-import { getUserLeaveStatus, getUserLeaveData, getUserLeaveAndHolidayData, checkLeaveConflict, toDateKey, isFullDayLeaveOrHoliday, getUpcomingHolidays } from '../utils/leaveConflict';
+import { getUserLeaveStatus, getUserLeaveData, getUserLeaveAndHolidayData, checkLeaveConflict, toDateKey, isFullDayLeaveOrHoliday } from '../utils/leaveConflict';
 import LeaveConflictModal from './LeaveConflictModal';
 
 const DEFAULT_STANDARD_TRACK = ['Director', 'Snr Manager', 'Manager', 'Asst Manager', 'Snr Executive', 'Executive', 'Employee', 'Intern'];
@@ -628,7 +628,6 @@ const TeamView = ({
   const [deptFilter, setDeptFilter] = useState('all');
   const [leaveStatuses, setLeaveStatuses] = useState({});
   const [leaveLoaded, setLeaveLoaded] = useState(false);
-  const [upcomingHolidays, setUpcomingHolidays] = useState(new Set());
 
   const isSuperAdmin = currentUser?.role === 'Super Admin';
   const isBH = currentUser?.role === 'Business Head';
@@ -715,24 +714,19 @@ const TeamView = ({
     setLeaveLoaded(false);
     if (!allMembers.length) {
       setLeaveStatuses({});
-      setUpcomingHolidays(new Set());
       setLeaveLoaded(true);
       return;
     }
     let cancelled = false;
-    Promise.all([
-      Promise.all(
-        allMembers.map(m =>
-          getUserLeaveStatus(String(m.id)).then(status => ({ id: String(m.id), status }))
-        )
-      ),
-      getUpcomingHolidays('All', 14),
-    ]).then(([results, holidays]) => {
+    Promise.all(
+      allMembers.map(m =>
+        getUserLeaveStatus(String(m.id)).then(status => ({ id: String(m.id), status }))
+      )
+    ).then(results => {
       if (cancelled) return;
       const map = {};
       results.forEach(({ id, status }) => { map[id] = status; });
       setLeaveStatuses(map);
-      setUpcomingHolidays(holidays);
       setLeaveLoaded(true);
     });
     return () => { cancelled = true; };
@@ -898,11 +892,11 @@ const TeamView = ({
         if (!status) return null;
         const dueKey = format(due, 'yyyy-MM-dd');
         let conflictType = null, badge = null, badgeStyle = null;
-        if (upcomingHolidays.has(dueKey)) {
-          conflictType = 'hard'; badge = 'Public Holiday'; badgeStyle = 'bg-rose-100 text-rose-700';
-        } else if (status.onLeaveToday) {
+        if (status.onLeaveToday) {
           conflictType = 'hard'; badge = 'On Leave Today'; badgeStyle = 'bg-red-100 text-red-700';
         } else if (status.upcomingLeaveDate && status.upcomingLeaveDate <= dueKey) {
+          conflictType = 'hard'; badge = 'Leave on Due Date'; badgeStyle = 'bg-orange-100 text-orange-700';
+        } else if (status.upcomingHolidayDate && status.upcomingHolidayDate <= dueKey) {
           conflictType = 'hard'; badge = 'Leave on Due Date'; badgeStyle = 'bg-orange-100 text-orange-700';
         } else if (status.onLeavePendingToday) {
           conflictType = 'soft'; badge = 'Pending Leave'; badgeStyle = 'bg-amber-100 text-amber-700';
@@ -918,7 +912,7 @@ const TeamView = ({
         if (a.conflictType !== b.conflictType) return a.conflictType === 'hard' ? -1 : 1;
         return a.due - b.due;
       });
-  }, [visibleTasks, leaveStatuses, upcomingHolidays, leftPanelGroups]);
+  }, [visibleTasks, leaveStatuses, leftPanelGroups]);
 
   const hardConflictCount = useMemo(
     () => leaveConflicts.filter(c => c.conflictType === 'hard').length,
