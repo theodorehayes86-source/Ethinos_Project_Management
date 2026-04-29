@@ -397,18 +397,23 @@ function AtRiskSection({ currentUser, users, clientLogs, clients, onTaskClick, l
     if (filteredToday.length > 0) dueTodayByPerson.push({ user, tasks: filteredToday, isOnLeave });
   });
 
-  if (overdueByPerson.length === 0 && dueTodayByPerson.length === 0) return null;
-
   const totalCount = overdueByPerson.reduce((s, p) => s + p.tasks.length, 0)
     + dueTodayByPerson.reduce((s, p) => s + p.tasks.length, 0);
 
   return (
     <div ref={sectionRef}>
       <div className="flex items-center gap-2 mb-3">
-        <AlertTriangle size={13} className="text-red-400" />
-        <h3 className="text-xs font-black text-red-500 uppercase tracking-widest">At Risk</h3>
-        <span className="ml-auto text-xs font-bold text-red-400 bg-red-50 rounded-full px-2 py-0.5">{totalCount}</span>
+        <AlertTriangle size={13} className={totalCount > 0 ? 'text-red-400' : 'text-slate-300'} />
+        <h3 className={`text-xs font-black uppercase tracking-widest ${totalCount > 0 ? 'text-red-500' : 'text-slate-400'}`}>At Risk</h3>
+        <span className={`ml-auto text-xs font-bold rounded-full px-2 py-0.5 ${totalCount > 0 ? 'text-red-400 bg-red-50' : 'text-slate-400 bg-slate-100'}`}>{totalCount}</span>
       </div>
+
+      {totalCount === 0 && (
+        <div className="flex items-center gap-2 py-3 px-3 rounded-xl bg-emerald-50 border border-emerald-100">
+          <CheckCircle size={14} className="text-emerald-400 flex-shrink-0" />
+          <p className="text-xs text-emerald-600 font-medium">All team members are on track</p>
+        </div>
+      )}
 
       {overdueByPerson.length > 0 && (
         <div className={dueTodayByPerson.length > 0 ? 'mb-4' : ''}>
