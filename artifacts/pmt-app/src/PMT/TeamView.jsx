@@ -841,6 +841,12 @@ const TeamView = ({
       .sort((a, b) => b.daysAge - a.daysAge);
   }, [visibleTasks]);
 
+  const clientById = useMemo(() => {
+    const map = {};
+    allClients.forEach(c => { map[String(c.id)] = c; });
+    return map;
+  }, [allClients]);
+
   const missingInfoTasks = useMemo(() => {
     const nodue = visibleTasks
       .filter(t => !t.archived && t.status !== 'Done' && !t.dueDate)
@@ -955,35 +961,33 @@ const TeamView = ({
                     <h4 className="text-xs font-bold text-slate-700 flex-1">At-Risk Tasks</h4>
                     <span className="text-[10px] font-bold text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">{atRiskTasks.length}</span>
                   </div>
-                  <div className="divide-y divide-slate-50">
-                    {atRiskTasks.map((t, idx) => {
-                      const clientObj = allClients.find(c => String(c.id) === String(t.cid));
-                      return (
-                        <button
-                          key={`ar-${t.cid}-${t.id}-${idx}`}
-                          onClick={() => clientObj && onOpenClient(clientObj)}
-                          className="w-full flex items-center gap-2.5 px-4 py-2.5 hover:bg-slate-50 text-left transition-colors"
-                        >
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold text-slate-800 truncate">{t.name || t.comment}</p>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                              <span className="text-[10px] text-slate-400 truncate max-w-[80px]">{t.cName}</span>
-                              {t.assigneeName && <span className="text-[10px] text-slate-400 truncate">· {t.assigneeName}</span>}
-                              {t.dueDate && <span className="text-[10px] text-slate-400">· Due {t.dueDate}</span>}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5 flex-shrink-0">
-                            {t.isOverdue ? (
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">{t.daysOverdue}d late</span>
-                            ) : (
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-600">Today</span>
-                            )}
-                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${STATUS_COLORS[t.status] || 'bg-slate-100 text-slate-500'}`}>{t.status}</span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <table className="w-full text-[11px]">
+                    <thead className="bg-slate-50 border-b border-slate-100">
+                      <tr>
+                        <th className="px-4 py-1.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wide">Task</th>
+                        <th className="px-3 py-1.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wide">Client</th>
+                        <th className="px-3 py-1.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wide">Assignee</th>
+                        <th className="px-3 py-1.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wide">Due</th>
+                        <th className="px-3 py-1.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wide">Status</th>
+                        <th className="px-3 py-1.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wide">Age</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {atRiskTasks.map((t, idx) => {
+                        const clientObj = clientById[String(t.cid)];
+                        return (
+                          <tr key={`ar-${t.cid}-${t.id}-${idx}`} onClick={() => clientObj && onOpenClient(clientObj)} className="hover:bg-slate-50 cursor-pointer transition-colors">
+                            <td className="px-4 py-2 text-xs font-semibold text-slate-800 max-w-[140px]"><p className="truncate">{t.name || t.comment}</p></td>
+                            <td className="px-3 py-2 text-[10px] text-slate-500 truncate max-w-[80px]">{t.cName}</td>
+                            <td className="px-3 py-2 text-[10px] text-slate-500 truncate max-w-[70px]">{t.assigneeName || '—'}</td>
+                            <td className="px-3 py-2 text-[10px] text-slate-500 whitespace-nowrap">{t.dueDate || '—'}</td>
+                            <td className="px-3 py-2"><span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${STATUS_COLORS[t.status] || 'bg-slate-100 text-slate-500'}`}>{t.status}</span></td>
+                            <td className="px-3 py-2">{t.isOverdue ? <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">{t.daysOverdue}d late</span> : <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-600">Today</span>}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               )}
 
@@ -1036,29 +1040,34 @@ const TeamView = ({
                     <h4 className="text-xs font-bold text-slate-700 flex-1">Pending QC Reviews</h4>
                     <span className="text-[10px] font-bold text-indigo-500">View all →</span>
                   </button>
-                  <div className="divide-y divide-slate-50">
-                    {pendingQCTasks.slice(0, 10).map((t, idx) => {
-                      const submittedRaw = t.qcSubmittedAt || t.date;
-                      const submittedLabel = submittedRaw
-                        ? (() => { try { const d = typeof submittedRaw === 'number' ? new Date(submittedRaw) : parseDueDate(submittedRaw); return d ? format(d, 'dd MMM') : null; } catch { return null; } })()
-                        : null;
-                      return (
-                        <div key={`qc-${t.cid}-${t.id}-${idx}`} className="flex items-center gap-2.5 px-4 py-2.5">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold text-slate-800 truncate">{t.name || t.comment}</p>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                              <span className="text-[10px] text-slate-400 truncate max-w-[80px]">{t.cName}</span>
-                              {t.assigneeName && <span className="text-[10px] text-slate-400 truncate">· {t.assigneeName}</span>}
-                              {submittedLabel && <span className="text-[10px] text-slate-400">· Submitted {submittedLabel}</span>}
-                            </div>
-                          </div>
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${t.daysAge > 3 ? 'bg-red-100 text-red-600' : t.daysAge > 1 ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-500'}`}>
-                            {t.daysAge === 0 ? 'Today' : `${t.daysAge}d`}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <table className="w-full text-[11px]">
+                    <thead className="bg-slate-50 border-b border-slate-100">
+                      <tr>
+                        <th className="px-4 py-1.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wide">Task</th>
+                        <th className="px-3 py-1.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wide">Client</th>
+                        <th className="px-3 py-1.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wide">Assignee</th>
+                        <th className="px-3 py-1.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wide">Submitted</th>
+                        <th className="px-3 py-1.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wide">Age</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {pendingQCTasks.slice(0, 10).map((t, idx) => {
+                        const submittedRaw = t.qcSubmittedAt || t.date;
+                        const submittedLabel = submittedRaw
+                          ? (() => { try { const d = typeof submittedRaw === 'number' ? new Date(submittedRaw) : parseDueDate(submittedRaw); return d ? format(d, 'dd MMM') : null; } catch { return null; } })()
+                          : null;
+                        return (
+                          <tr key={`qc-${t.cid}-${t.id}-${idx}`} className="hover:bg-slate-50 transition-colors">
+                            <td className="px-4 py-2 text-xs font-semibold text-slate-800 max-w-[140px]"><p className="truncate">{t.name || t.comment}</p></td>
+                            <td className="px-3 py-2 text-[10px] text-slate-500 truncate max-w-[80px]">{t.cName}</td>
+                            <td className="px-3 py-2 text-[10px] text-slate-500 truncate max-w-[70px]">{t.assigneeName || '—'}</td>
+                            <td className="px-3 py-2 text-[10px] text-slate-500 whitespace-nowrap">{submittedLabel || '—'}</td>
+                            <td className="px-3 py-2"><span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${t.daysAge > 3 ? 'bg-red-100 text-red-600' : t.daysAge > 1 ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-500'}`}>{t.daysAge === 0 ? 'Today' : `${t.daysAge}d`}</span></td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               )}
 
@@ -1072,7 +1081,7 @@ const TeamView = ({
                   </div>
                   <div className="divide-y divide-slate-50">
                     {missingInfoTasks.map((t, idx) => {
-                      const clientObj = allClients.find(c => String(c.id) === String(t.cid));
+                      const clientObj = clientById[String(t.cid)];
                       return (
                         <button
                           key={`mi-${t.cid}-${t.id}-${idx}`}
