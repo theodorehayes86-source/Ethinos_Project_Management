@@ -113,7 +113,7 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
       </div>
 
       {/* Navigation Items */}
-      <nav className="flex-1 px-3.5 space-y-2.5">
+      <nav className="flex-1 min-h-0 overflow-y-auto px-3.5 py-1 space-y-2.5">
         {menuItems.map((item) => {
           const isActive = activeTab === item.id;
           return (
