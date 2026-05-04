@@ -91,7 +91,7 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
       className={`${isMinimized ? 'w-20' : 'w-64'} border-r border-white/45 bg-white/30 backdrop-blur-sm flex flex-col transition-all duration-300 z-30`}
     >
       {/* XP Logo Section */}
-      <div className={`${isMinimized ? 'p-4 flex justify-center' : 'p-7 flex justify-start pl-7'}`}>
+      <div className={`flex-shrink-0 ${isMinimized ? 'p-4 flex justify-center' : 'p-7 flex justify-start pl-7'}`}>
         <div
           className={`${
             isMinimized
@@ -153,7 +153,7 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
       </nav>
 
       {/* Sidebar Footer */}
-      <div className="p-4 space-y-3">
+      <div className="flex-shrink-0 p-4 space-y-3">
 
         {/* Download Timer Widget card */}
         {!isMinimized ? (
