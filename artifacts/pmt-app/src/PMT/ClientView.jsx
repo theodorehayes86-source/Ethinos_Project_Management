@@ -3025,6 +3025,7 @@ const ClientView = ({
             currentUser={currentUser}
             users={users}
             canEdit={canFullyEditTask(detailTask) && canModifyTaskMeta()}
+            clientName={selectedClient?.name || ''}
             setNotifications={setNotifications}
             onClose={() => setDetailTask(null)}
             onUpdate={(updatedTask) => {

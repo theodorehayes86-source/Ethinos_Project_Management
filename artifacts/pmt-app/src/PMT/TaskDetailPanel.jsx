@@ -49,7 +49,7 @@ const tryParseDate = (str) => {
   }
 };
 
-const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEditDueDate = true, setNotifications = () => {}, onClose, onUpdate, seriesCount = 0 }) => {
+const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEditDueDate = true, setNotifications = () => {}, onClose, onUpdate, seriesCount = 0, clientName = '' }) => {
   const [steps, setSteps] = useState(() => task.steps || []);
   const [messages, setMessages] = useState(() => task.messages || []);
   const [localDueDate, setLocalDueDate] = useState(() => tryParseDate(task.dueDate));
@@ -74,6 +74,7 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
   const [newLinkLabel, setNewLinkLabel] = useState('');
   const [editingSharepoint, setEditingSharepoint] = useState(false);
   const [sharepointInput, setSharepointInput] = useState('');
+  const [sharepointLabelInput, setSharepointLabelInput] = useState('');
 
   // Edit recorded time state
   const [editingTime, setEditingTime] = useState(false);
@@ -314,12 +315,13 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
   const handleSaveSharepoint = () => {
     const raw = sharepointInput.trim();
     const url = raw && !/^https?:\/\//i.test(raw) ? `https://${raw}` : raw;
+    const label = sharepointLabelInput.trim() || clientName || 'SharePoint Folder';
     setEditingSharepoint(false);
-    saveUpdate({ ...task, steps, messages, links, sharepointUrl: url || null });
+    saveUpdate({ ...task, steps, messages, links, sharepointUrl: url || null, sharepointLabel: url ? label : null });
   };
 
   const handleClearSharepoint = () => {
-    saveUpdate({ ...task, steps, messages, links, sharepointUrl: null });
+    saveUpdate({ ...task, steps, messages, links, sharepointUrl: null, sharepointLabel: null });
   };
 
   const checkedCount = steps.filter(s => s.checked).length;
@@ -925,33 +927,42 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
                 <FolderOpen size={10} /> SharePoint Folder
               </p>
               {editingSharepoint ? (
-                <div className="flex gap-2 items-center">
+                <div className="space-y-2">
                   <input
-                    type="url"
-                    value={sharepointInput}
-                    onChange={e => setSharepointInput(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') { e.preventDefault(); handleSaveSharepoint(); }
-                      if (e.key === 'Escape') setEditingSharepoint(false);
-                    }}
-                    placeholder="Paste SharePoint folder URL…"
-                    className="flex-1 bg-white border border-blue-300 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
-                    autoFocus
+                    type="text"
+                    value={sharepointLabelInput}
+                    onChange={e => setSharepointLabelInput(e.target.value)}
+                    placeholder={clientName ? `Label (default: ${clientName})` : 'Label (e.g. Client Name)'}
+                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
                   />
-                  <button
-                    onClick={handleSaveSharepoint}
-                    className="p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all flex-shrink-0"
-                    title="Save"
-                  >
-                    <Check size={13} />
-                  </button>
-                  <button
-                    onClick={() => setEditingSharepoint(false)}
-                    className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100 transition-all flex-shrink-0"
-                    title="Cancel"
-                  >
-                    <X size={13} />
-                  </button>
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="url"
+                      value={sharepointInput}
+                      onChange={e => setSharepointInput(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') { e.preventDefault(); handleSaveSharepoint(); }
+                        if (e.key === 'Escape') setEditingSharepoint(false);
+                      }}
+                      placeholder="Paste SharePoint folder URL…"
+                      className="flex-1 bg-white border border-blue-300 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                      autoFocus
+                    />
+                    <button
+                      onClick={handleSaveSharepoint}
+                      className="p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all flex-shrink-0"
+                      title="Save"
+                    >
+                      <Check size={13} />
+                    </button>
+                    <button
+                      onClick={() => setEditingSharepoint(false)}
+                      className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100 transition-all flex-shrink-0"
+                      title="Cancel"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
                 </div>
               ) : task.sharepointUrl ? (
                 <div className="flex items-center gap-2 bg-blue-50 rounded-lg px-3 py-2 border border-blue-100 group">
@@ -962,11 +973,15 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
                     rel="noopener noreferrer"
                     className="flex-1 text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline truncate flex items-center gap-1"
                   >
-                    SharePoint Folder
+                    {task.sharepointLabel || clientName || 'SharePoint Folder'}
                     <ExternalLink size={9} className="flex-shrink-0 opacity-60" />
                   </a>
                   <button
-                    onClick={() => { setSharepointInput(task.sharepointUrl); setEditingSharepoint(true); }}
+                    onClick={() => {
+                      setSharepointInput(task.sharepointUrl);
+                      setSharepointLabelInput(task.sharepointLabel || clientName || '');
+                      setEditingSharepoint(true);
+                    }}
                     className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-100 transition-all flex-shrink-0"
                     title="Edit link"
                   >
@@ -982,7 +997,7 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
                 </div>
               ) : (
                 <button
-                  onClick={() => { setSharepointInput(''); setEditingSharepoint(true); }}
+                  onClick={() => { setSharepointInput(''); setSharepointLabelInput(clientName || ''); setEditingSharepoint(true); }}
                   className="w-full flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-blue-200 text-xs text-blue-500 hover:bg-blue-50 hover:border-blue-300 transition-all"
                 >
                   <Plus size={11} /> Add SharePoint folder link
