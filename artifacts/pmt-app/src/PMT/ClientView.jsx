@@ -121,6 +121,15 @@ const ClientView = ({
     setSelectedTaskIds(new Set());
   };
 
+  const handleBatchArchive = (clientId) => {
+    if (selectedTaskIds.size === 0 || !clientId) return;
+    const updated = (clientLogs[clientId] || []).map(t =>
+      selectedTaskIds.has(t.id) ? { ...t, archived: true } : t
+    );
+    setClientLogs({ ...clientLogs, [clientId]: updated });
+    setSelectedTaskIds(new Set());
+  };
+
   const handleBatchStatus = (clientId, newStatus) => {
     if (selectedTaskIds.size === 0 || !clientId) return;
     const updated = (clientLogs[clientId] || []).map(t =>
@@ -1499,6 +1508,12 @@ const ClientView = ({
                 </button>
               ))}
             </div>
+            <button
+              onClick={() => handleBatchArchive(selectedClient.id)}
+              className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-semibold bg-slate-600 hover:bg-slate-500 transition-all"
+            >
+              <Archive size={11} /> Archive
+            </button>
             {isManagement && (
               <button
                 onClick={() => handleBatchDelete(selectedClient.id)}
