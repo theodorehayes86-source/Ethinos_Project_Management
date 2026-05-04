@@ -906,9 +906,8 @@ const HomeView = ({
   }, []);
 
   // 4-hour timer alert: check every 60s for any running timer >= 4 hrs
-  // DRY RUN: threshold = 10s, check every 3s — restore after testing
   useEffect(() => {
-    const FOUR_HOURS = 10_000; // DRY RUN — change back to: 4 * 60 * 60 * 1000
+    const FOUR_HOURS = 4 * 60 * 60 * 1000;
     const check = () => {
       if (timerAlert) return; // already showing one
       const now = Date.now();
@@ -936,7 +935,7 @@ const HomeView = ({
       }
     };
     check();
-    const id = setInterval(check, 3_000); // DRY RUN — change back to: 60_000
+    const id = setInterval(check, 60_000);
     return () => clearInterval(id);
   }, [clientLogs, timerAlert]);
 
