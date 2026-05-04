@@ -88,6 +88,13 @@ Standard Firebase email+password auth. Restricted to `@ethinos.com` addresses.
 | `POST` | `/api/keka/test-connection` | Firebase Bearer (Admin+) | Verify Keka credentials with a minimal API call |
 | `POST` | `/api/keka/sync` | Firebase Bearer (Admin+) | Trigger full leave + holiday sync from Keka |
 
+## Versioning & Commit Convention
+
+- The primary versioned artifact is `artifacts/pmt-app` (`@workspace/pmt-app`).
+- **Every task session that changes `pmt-app` must bump the version** in `artifacts/pmt-app/package.json` before committing (patch bump `1.0.x` for fixes/enhancements, minor bump `1.x.0` for significant features).
+- Commit messages must include the version: `v1.0.30 — Short description of change`.
+- The current version is tracked in `artifacts/pmt-app/package.json`.
+
 ## Key Commands
 
 - `pnpm run typecheck` — full typecheck across all packages
