@@ -920,9 +920,10 @@ const HomeView = ({
           if (totalMs < FOUR_HOURS) continue;
           const snoozedUntil = alertedTasksRef.current.get(task.id) || 0;
           if (now < snoozedUntil) continue;
-          // Trigger alert
+          // Trigger alert — enrich task with cid so pauseTaskTimer can locate it
           alertedTasksRef.current.set(task.id, now + FOUR_HOURS);
-          setTimerAlert({ task, clientId });
+          const enrichedTask = { ...task, cid: task.cid || clientId };
+          setTimerAlert({ task: enrichedTask, clientId });
           setAlertCountdown(120);
           if ('Notification' in window && Notification.permission === 'granted') {
             new Notification('Timer still running ⏱', {
