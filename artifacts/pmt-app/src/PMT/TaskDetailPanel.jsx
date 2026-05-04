@@ -340,8 +340,16 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
     const mStr = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
     const sStr = '00';
     const newTimeTaken = `${hStr}:${mStr}:${sStr}`;
+    // Ensure timerState reflects that time has been recorded.
+    // A task that was never tracked (idle) with manually-added time must become
+    // 'paused' so it is recognised consistently in the task row, reports, and
+    // API export. If time is zeroed out, revert to 'idle'.
+    const currentTimerState = task.timerState || 'idle';
+    let newTimerState = currentTimerState;
+    if (newMs > 0 && currentTimerState === 'idle') newTimerState = 'paused';
+    if (newMs === 0 && (currentTimerState === 'paused' || currentTimerState === 'stopped')) newTimerState = 'idle';
     setEditingTime(false);
-    saveUpdate({ ...task, steps, messages, links, elapsedMs: newMs, timeTaken: newTimeTaken });
+    saveUpdate({ ...task, steps, messages, links, elapsedMs: newMs, timeTaken: newMs > 0 ? newTimeTaken : null, timerState: newTimerState });
   };
 
   const isOverdue = (() => {
