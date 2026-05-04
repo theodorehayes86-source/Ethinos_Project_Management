@@ -151,6 +151,11 @@ const HomeView = ({
   const [selectedTaskIds, setSelectedTaskIds] = useState(new Set());
   const [selectMode, setSelectMode] = useState(false);
 
+  // --- 4-hour timer alert ---
+  const [timerAlert, setTimerAlert] = useState(null); // { task, clientId }
+  const [alertCountdown, setAlertCountdown] = useState(120);
+  const alertedTasksRef = useRef(new Map()); // taskId → snoozedUntil timestamp
+
   useEffect(() => {
     if (!currentUser?.id) return;
     let cancelled = false;
@@ -892,6 +897,58 @@ const HomeView = ({
     if (showAddMenu) document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [showAddMenu]);
+
+  // Request notification permission once on mount
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  // 4-hour timer alert: check every 60s for any running timer >= 4 hrs
+  useEffect(() => {
+    const FOUR_HOURS = 4 * 60 * 60 * 1000;
+    const check = () => {
+      if (timerAlert) return; // already showing one
+      const now = Date.now();
+      for (const [clientId, tasks] of Object.entries(clientLogs)) {
+        if (!Array.isArray(tasks)) continue;
+        for (const task of tasks) {
+          if (task.timerState !== 'running' || !task.timerStartedAt) continue;
+          const totalMs = (task.elapsedMs || 0) + (now - task.timerStartedAt);
+          if (totalMs < FOUR_HOURS) continue;
+          const snoozedUntil = alertedTasksRef.current.get(task.id) || 0;
+          if (now < snoozedUntil) continue;
+          // Trigger alert
+          alertedTasksRef.current.set(task.id, now + FOUR_HOURS);
+          setTimerAlert({ task, clientId });
+          setAlertCountdown(120);
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('Timer still running ⏱', {
+              body: `"${task.name || task.comment || 'Task'}" has been running for over 4 hours. Are you still working?`,
+              icon: '/ethinos-icon.png',
+            });
+          }
+          return;
+        }
+      }
+    };
+    check();
+    const id = setInterval(check, 60_000);
+    return () => clearInterval(id);
+  }, [clientLogs, timerAlert]);
+
+  // 2-minute countdown — auto-pause if no response
+  useEffect(() => {
+    if (!timerAlert) return;
+    if (alertCountdown <= 0) {
+      pauseTaskTimer(timerAlert.task);
+      setTimerAlert(null);
+      return;
+    }
+    const id = setInterval(() => setAlertCountdown(c => c - 1), 1000);
+    return () => clearInterval(id);
+  }, [timerAlert, alertCountdown]);
 
   const startTaskTimer = useCallback((task) => {
     handleUpdateTask(task, { status: 'WIP', timerState: 'running', timerStartedAt: Date.now() });
@@ -2800,6 +2857,68 @@ const HomeView = ({
             setEditDraft(prev => prev ? { ...prev, dueDate: null } : prev);
           }}
         />
+      )}
+
+      {/* 4-hour timer alert popup */}
+      {timerAlert && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-sm mx-4 overflow-hidden">
+            {/* Countdown bar */}
+            <div
+              className="h-1.5 bg-amber-400 transition-all duration-1000"
+              style={{ width: `${(alertCountdown / 120) * 100}%` }}
+            />
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center flex-shrink-0">
+                  <Clock size={20} className="text-amber-500" />
+                </div>
+                <div>
+                  <p className="font-black text-slate-900 text-sm">Timer Still Running</p>
+                  <p className="text-xs text-amber-600 font-semibold">Active for over 4 hours</p>
+                </div>
+              </div>
+
+              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1">Task</p>
+              <p className="text-sm font-semibold text-slate-800 mb-1 truncate">
+                {timerAlert.task.name || timerAlert.task.comment || 'Untitled task'}
+              </p>
+              {timerAlert.task.assigneeName && (
+                <p className="text-xs text-slate-400 mb-4">Assigned to {timerAlert.task.assigneeName}</p>
+              )}
+
+              <p className="text-sm text-slate-700 font-medium mb-5">
+                Are you still working on this task?
+              </p>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    // Snooze — re-alert after another 4 hours
+                    alertedTasksRef.current.set(timerAlert.task.id, Date.now() + 4 * 60 * 60 * 1000);
+                    setTimerAlert(null);
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all"
+                >
+                  Yes, still working
+                </button>
+                <button
+                  onClick={() => {
+                    pauseTaskTimer(timerAlert.task);
+                    setTimerAlert(null);
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all"
+                >
+                  No, pause it
+                </button>
+              </div>
+
+              <p className="text-center text-[10px] text-slate-400 mt-3">
+                Auto-pausing in <span className="font-bold text-amber-500">{alertCountdown}s</span> if no response
+              </p>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
