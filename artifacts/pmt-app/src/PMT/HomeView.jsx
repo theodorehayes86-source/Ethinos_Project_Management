@@ -906,8 +906,9 @@ const HomeView = ({
   }, []);
 
   // 4-hour timer alert: check every 60s for any running timer >= 4 hrs
+  // DRY RUN — restore: FOUR_HOURS = 4*60*60*1000, interval = 60_000
   useEffect(() => {
-    const FOUR_HOURS = 4 * 60 * 60 * 1000;
+    const FOUR_HOURS = 10_000;
     const check = () => {
       if (timerAlert) return; // already showing one
       const now = Date.now();
@@ -923,7 +924,7 @@ const HomeView = ({
           alertedTasksRef.current.set(task.id, now + FOUR_HOURS);
           const enrichedTask = { ...task, cid: task.cid || clientId };
           setTimerAlert({ task: enrichedTask, clientId });
-          setAlertCountdown(120);
+          setAlertCountdown(5); // DRY RUN — restore to 120
           if ('Notification' in window && Notification.permission === 'granted') {
             new Notification('Timer still running ⏱', {
               body: `"${task.name || task.comment || 'Task'}" has been running for over 4 hours. Are you still working?`,
@@ -935,7 +936,7 @@ const HomeView = ({
       }
     };
     check();
-    const id = setInterval(check, 60_000);
+    const id = setInterval(check, 3_000); // DRY RUN
     return () => clearInterval(id);
   }, [clientLogs, timerAlert]);
 
