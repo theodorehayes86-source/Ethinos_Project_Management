@@ -88,8 +88,16 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
 
   return (
     <aside
-      className={`${isMinimized ? 'w-20' : 'w-64'} border-r border-white/45 bg-white/30 backdrop-blur-sm flex flex-col transition-all duration-300 z-30`}
+      className={`${isMinimized ? 'w-20' : 'w-64'} relative border-r border-white/45 bg-white/30 backdrop-blur-sm flex flex-col transition-all duration-300 z-30`}
     >
+      {/* Collapse / expand tab on the outer right edge */}
+      <button
+        onClick={() => setIsMinimized && setIsMinimized(!isMinimized)}
+        title={isMinimized ? 'Expand Sidebar' : 'Minimize Sidebar'}
+        className="absolute top-1/2 -translate-y-1/2 -right-3.5 z-40 w-7 h-7 rounded-full bg-white border border-slate-200 shadow-md flex items-center justify-center text-slate-500 hover:text-indigo-600 hover:border-indigo-300 hover:shadow-indigo-100 transition-all duration-200"
+      >
+        {isMinimized ? <ChevronRight size={13} /> : <ChevronLeft size={13} />}
+      </button>
       {/* XP Logo Section */}
       <div className={`flex-shrink-0 ${isMinimized ? 'p-4 flex justify-center' : 'p-7 flex justify-start pl-7'}`}>
         <div
@@ -232,17 +240,6 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
           </div>
         )}
 
-        <button
-          onClick={() => setIsMinimized && setIsMinimized(!isMinimized)}
-          className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-bold text-[11px] uppercase tracking-widest text-slate-600 border border-white/80 hover:bg-white/90 hover:border-indigo-200/70 hover:text-slate-900 transition-all duration-200 bg-white/70 shadow-sm backdrop-blur-sm"
-          title={isMinimized ? 'Expand Sidebar' : 'Minimize Sidebar'}
-        >
-          {isMinimized ? (
-            <ChevronRight size={16} />
-          ) : (
-            <ChevronLeft size={16} />
-          )}
-        </button>
       </div>
     </aside>
   );
