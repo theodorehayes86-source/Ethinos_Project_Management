@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Plus, Trash2, Send, Link, Check, ExternalLink, AtSign, MessageSquare, CheckCircle, XCircle, CornerDownLeft, Pencil, Clock } from 'lucide-react';
+import { X, Plus, Trash2, Send, Link, Check, ExternalLink, AtSign, MessageSquare, CheckCircle, XCircle, CornerDownLeft, Pencil, Clock, FolderOpen } from 'lucide-react';
 import { format, parse, isBefore } from 'date-fns';
 import { sendNotification } from '../utils/notify';
 import DueDateInput from './DueDateInput';
@@ -72,6 +72,8 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
   const [newMessage, setNewMessage] = useState('');
   const [newLinkUrl, setNewLinkUrl] = useState('');
   const [newLinkLabel, setNewLinkLabel] = useState('');
+  const [editingSharepoint, setEditingSharepoint] = useState(false);
+  const [sharepointInput, setSharepointInput] = useState('');
 
   // Edit recorded time state
   const [editingTime, setEditingTime] = useState(false);
@@ -307,6 +309,17 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
     const updated = links.filter(l => l.id !== linkId);
     setLinks(updated);
     saveUpdate({ ...task, steps, messages, links: updated });
+  };
+
+  const handleSaveSharepoint = () => {
+    const raw = sharepointInput.trim();
+    const url = raw && !/^https?:\/\//i.test(raw) ? `https://${raw}` : raw;
+    setEditingSharepoint(false);
+    saveUpdate({ ...task, steps, messages, links, sharepointUrl: url || null });
+  };
+
+  const handleClearSharepoint = () => {
+    saveUpdate({ ...task, steps, messages, links, sharepointUrl: null });
   };
 
   const checkedCount = steps.filter(s => s.checked).length;
@@ -904,11 +917,86 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
 
           {/* Links */}
           <section>
-            <h3 className="text-xs font-bold uppercase tracking-wide text-slate-700 mb-2">Links</h3>
+            <h3 className="text-xs font-bold uppercase tracking-wide text-slate-700 mb-3">Links</h3>
 
+            {/* ── SharePoint Folder (dedicated single slot) ── */}
+            <div className="mb-3">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-blue-600 mb-1.5 flex items-center gap-1">
+                <FolderOpen size={10} /> SharePoint Folder
+              </p>
+              {editingSharepoint ? (
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="url"
+                    value={sharepointInput}
+                    onChange={e => setSharepointInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') { e.preventDefault(); handleSaveSharepoint(); }
+                      if (e.key === 'Escape') setEditingSharepoint(false);
+                    }}
+                    placeholder="Paste SharePoint folder URL…"
+                    className="flex-1 bg-white border border-blue-300 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                    autoFocus
+                  />
+                  <button
+                    onClick={handleSaveSharepoint}
+                    className="p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all flex-shrink-0"
+                    title="Save"
+                  >
+                    <Check size={13} />
+                  </button>
+                  <button
+                    onClick={() => setEditingSharepoint(false)}
+                    className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100 transition-all flex-shrink-0"
+                    title="Cancel"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              ) : task.sharepointUrl ? (
+                <div className="flex items-center gap-2 bg-blue-50 rounded-lg px-3 py-2 border border-blue-100 group">
+                  <FolderOpen size={11} className="flex-shrink-0 text-blue-500" />
+                  <a
+                    href={task.sharepointUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline truncate flex items-center gap-1"
+                  >
+                    SharePoint Folder
+                    <ExternalLink size={9} className="flex-shrink-0 opacity-60" />
+                  </a>
+                  <button
+                    onClick={() => { setSharepointInput(task.sharepointUrl); setEditingSharepoint(true); }}
+                    className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-100 transition-all flex-shrink-0"
+                    title="Edit link"
+                  >
+                    <Pencil size={11} />
+                  </button>
+                  <button
+                    onClick={handleClearSharepoint}
+                    className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all flex-shrink-0"
+                    title="Remove link"
+                  >
+                    <Trash2 size={11} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => { setSharepointInput(''); setEditingSharepoint(true); }}
+                  className="w-full flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-blue-200 text-xs text-blue-500 hover:bg-blue-50 hover:border-blue-300 transition-all"
+                >
+                  <Plus size={11} /> Add SharePoint folder link
+                </button>
+              )}
+            </div>
+
+            <div className="border-t border-slate-100 my-3" />
+
+            {/* ── Other Links ── */}
+            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-1.5">Other Links</p>
             <div className="space-y-1.5 mb-3">
               {links.length === 0 && (
-                <p className="text-xs text-slate-400 italic">No links added yet.</p>
+                <p className="text-xs text-slate-400 italic">No other links added yet.</p>
               )}
               {links.map(link => (
                 <div key={link.id} className="flex items-center gap-2 group bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
@@ -922,48 +1010,44 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
                     {link.label}
                     <ExternalLink size={9} className="flex-shrink-0 opacity-60" />
                   </a>
-                  {canEdit && (
-                    <button
-                      onClick={() => handleDeleteLink(link.id)}
-                      className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all flex-shrink-0"
-                      title="Remove link"
-                    >
-                      <Trash2 size={11} />
-                    </button>
-                  )}
+                  <button
+                    onClick={() => handleDeleteLink(link.id)}
+                    className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all flex-shrink-0"
+                    title="Remove link"
+                  >
+                    <Trash2 size={11} />
+                  </button>
                 </div>
               ))}
             </div>
 
-            {canEdit && (
-              <div className="space-y-2">
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={newLinkLabel}
+                onChange={e => setNewLinkLabel(e.target.value)}
+                placeholder="Label (optional)"
+                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+              />
+              <div className="flex gap-2">
                 <input
-                  type="text"
-                  value={newLinkLabel}
-                  onChange={e => setNewLinkLabel(e.target.value)}
-                  placeholder="Label (optional)"
-                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                  type="url"
+                  value={newLinkUrl}
+                  onChange={e => setNewLinkUrl(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddLink(); } }}
+                  placeholder="Paste URL…"
+                  className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
                 />
-                <div className="flex gap-2">
-                  <input
-                    type="url"
-                    value={newLinkUrl}
-                    onChange={e => setNewLinkUrl(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddLink(); } }}
-                    placeholder="Paste URL..."
-                    className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
-                  />
-                  <button
-                    onClick={handleAddLink}
-                    disabled={!newLinkUrl.trim()}
-                    className="p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
-                    title="Save link"
-                  >
-                    <Plus size={14} />
-                  </button>
-                </div>
+                <button
+                  onClick={handleAddLink}
+                  disabled={!newLinkUrl.trim()}
+                  className="p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+                  title="Add link"
+                >
+                  <Plus size={14} />
+                </button>
               </div>
-            )}
+            </div>
           </section>
         </div>
       </div>
