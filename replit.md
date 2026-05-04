@@ -94,6 +94,8 @@ Standard Firebase email+password auth. Restricted to `@ethinos.com` addresses.
 - **Every task session that changes `pmt-app` must bump the version** in `artifacts/pmt-app/package.json` before committing (patch bump `1.0.x` for fixes/enhancements, minor bump `1.x.0` for significant features).
 - Commit messages must include the version: `v1.0.30 — Short description of change`.
 - The current version is tracked in `artifacts/pmt-app/package.json`.
+- **The in-app version display updates automatically** — `vite.config.ts` reads `package.json` version at build time and injects it as `__APP_VERSION__`, which renders as "Flow Pro v1.0.x" in the sidebar footer. Bumping `package.json` is the only step required; the preview and production UI both pick it up automatically.
+- After each GitHub push, confirm the sidebar shows the correct version number.
 
 ## Key Commands
 
