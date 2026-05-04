@@ -1056,7 +1056,8 @@ const TeamView = ({
                     <h4 className="text-xs font-bold text-slate-700 flex-1">At-Risk Tasks</h4>
                     <span className="text-[10px] font-bold text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">{atRiskTasks.length}</span>
                   </div>
-                  <table className="w-full text-[11px]">
+                  <div className="overflow-x-auto">
+                  <table className="w-full min-w-[540px] text-[11px]">
                     <thead className="bg-slate-50 border-b border-slate-100">
                       <tr>
                         <th className="px-4 py-1.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wide">Task</th>
@@ -1083,6 +1084,7 @@ const TeamView = ({
                       })}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               )}
 
