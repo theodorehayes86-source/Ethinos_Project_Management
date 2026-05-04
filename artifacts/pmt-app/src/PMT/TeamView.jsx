@@ -945,7 +945,7 @@ const TeamView = ({
 
   return (
     <div className="flex gap-4 h-full">
-      <div className="w-72 flex-shrink-0 flex flex-col space-y-3">
+      <div className="w-72 flex-shrink-0 flex flex-col gap-3 overflow-hidden">
         <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col gap-2">
           <div className="flex items-center gap-2 text-xs text-slate-500 font-semibold min-h-[24px] flex-wrap">
             <button onClick={() => drillBack(0)} className={`flex items-center gap-1 ${drillStack.length === 0 ? 'text-blue-600 font-bold cursor-default' : 'hover:text-slate-700 cursor-pointer'}`}>
@@ -977,7 +977,7 @@ const TeamView = ({
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto space-y-4">
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
           {leftPanelGroups.length === 0 && (
             <div className="bg-white border border-slate-200 rounded-xl p-6 text-center">
               <Users size={28} className="text-slate-300 mx-auto mb-2"/>
