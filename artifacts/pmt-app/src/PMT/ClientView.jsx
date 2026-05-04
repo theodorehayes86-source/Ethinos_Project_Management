@@ -320,6 +320,18 @@ const ClientView = ({
 
   const isManagement = managementRoles.includes(currentUser?.role);
 
+  // True when the selected client is a real client (not personal / ethinos-internal).
+  // Employees may not edit time, delete or archive tasks on real client accounts.
+  const isRealClient = (clientId) =>
+    clientId && clientId !== '__personal__' && clientId !== '__ethinos__';
+
+  // Whether the current user may edit time, delete or archive a task.
+  // Management always can. Non-management only can on personal / ethinos-internal.
+  const canModifyTaskMeta = () => {
+    if (isManagement) return true;
+    return !isRealClient(selectedClient?.id);
+  };
+
   // Permission helpers for task-level access
   const canFullyEditTask = (log) => {
     if (!currentUser) return false;
@@ -1674,23 +1686,25 @@ const ClientView = ({
                                 <Edit2 size={12}/>
                               </button>
                             )}
-                            <button
-                              onClick={() => {
-                                const upd = (clientLogs[selectedClient.id] || []).map(l =>
-                                  l.id === log.id ? { ...l, archived: !l.archived } : l
-                                );
-                                setClientLogs({ ...clientLogs, [selectedClient.id]: upd });
-                              }}
-                              className={`p-1.5 rounded-md transition-all ${
-                                log.archived
-                                  ? 'text-amber-500 hover:text-amber-700 hover:bg-amber-50'
-                                  : 'text-slate-300 hover:text-amber-500 hover:bg-amber-50'
-                              }`}
-                              title={log.archived ? 'Unarchive task' : 'Archive task'}
-                            >
-                              {log.archived ? <ArchiveRestore size={12}/> : <Archive size={12}/>}
-                            </button>
-                            {!log.archived && (
+                            {canModifyTaskMeta() && (
+                              <button
+                                onClick={() => {
+                                  const upd = (clientLogs[selectedClient.id] || []).map(l =>
+                                    l.id === log.id ? { ...l, archived: !l.archived } : l
+                                  );
+                                  setClientLogs({ ...clientLogs, [selectedClient.id]: upd });
+                                }}
+                                className={`p-1.5 rounded-md transition-all ${
+                                  log.archived
+                                    ? 'text-amber-500 hover:text-amber-700 hover:bg-amber-50'
+                                    : 'text-slate-300 hover:text-amber-500 hover:bg-amber-50'
+                                }`}
+                                title={log.archived ? 'Unarchive task' : 'Archive task'}
+                              >
+                                {log.archived ? <ArchiveRestore size={12}/> : <Archive size={12}/>}
+                              </button>
+                            )}
+                            {!log.archived && canModifyTaskMeta() && (
                               <button
                                 onClick={() => {
                                   if (window.confirm('Are you sure you want to delete this task?')) {
@@ -3010,7 +3024,7 @@ const ClientView = ({
             task={detailTask}
             currentUser={currentUser}
             users={users}
-            canEdit={canFullyEditTask(detailTask)}
+            canEdit={canFullyEditTask(detailTask) && canModifyTaskMeta()}
             setNotifications={setNotifications}
             onClose={() => setDetailTask(null)}
             onUpdate={(updatedTask) => {
