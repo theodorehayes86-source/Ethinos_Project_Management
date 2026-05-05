@@ -39,6 +39,8 @@ const DEFAULT_TASK_CATEGORIES = [
   { name: 'Technical Setup', departments: [] },
   { name: 'Training & Development', departments: [] },
   { name: 'Other', departments: [] },
+  { name: 'GEO (Generative Engine Optimization)', departments: ['Growth'] },
+  { name: 'Pre-Sales & Consulting', departments: ['Growth'] },
 ];
 
 // Migrate legacy string categories to the new object format.
