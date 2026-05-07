@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { Search, ChevronLeft, ChevronDown, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, AlertTriangle, Calendar, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus, Hourglass, Archive, ArchiveRestore, LayoutGrid, LayoutList, ClipboardList, LayoutTemplate, CheckSquare } from 'lucide-react';
+import { Search, ChevronLeft, ChevronDown, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, AlertTriangle, Calendar, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus, Hourglass, Archive, ArchiveRestore, LayoutGrid, LayoutList, ClipboardList, LayoutTemplate, CheckSquare, Upload } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import DatePicker from "react-datepicker";
 import { format, subDays, parse, addDays, differenceInCalendarDays } from 'date-fns';
@@ -11,6 +11,7 @@ import { ReminderPills } from './ReminderPills';
 import DueDateInput from './DueDateInput';
 import LeaveConflictModal from './LeaveConflictModal';
 import { checkLeaveConflict, toDateKey } from '../utils/leaveConflict';
+import CsvImportModal from './CsvImportModal';
 
 const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Business Head'];
 
@@ -69,6 +70,7 @@ const ClientView = ({
   const taskListRef = useRef(null);
   const checklistGroupsRef = useRef(null);
   const [showClientAddMenu, setShowClientAddMenu] = useState(false);
+  const [showCsvImport, setShowCsvImport] = useState(false);
   const clientAddMenuRef = useRef(null);
   const scrollToTaskTable = () => setTimeout(() => taskListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   const scrollToGroups = () => setTimeout(() => checklistGroupsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
@@ -1285,6 +1287,14 @@ const ClientView = ({
                 <option value="48H+">48H+ Not Done</option>
                 <option value="AwaitingQC">Awaiting QC</option>
               </select>
+            )}
+            {['Super Admin', 'Admin', 'Manager', 'Snr Manager'].includes(currentUser?.role) && (
+              <button
+                onClick={() => setShowCsvImport(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg font-semibold text-xs border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-all"
+              >
+                <Upload size={13}/> Import Tasks
+              </button>
             )}
             <div className="relative" ref={clientAddMenuRef}>
               <button
@@ -4219,6 +4229,102 @@ const ClientView = ({
           onCancel={() => {
             setEditLeaveConflict(null);
             setEditDraft(prev => prev ? { ...prev, dueDate: null } : prev);
+          }}
+        />
+      )}
+
+      {showCsvImport && selectedClient && (
+        <CsvImportModal
+          mode="tasks"
+          onClose={() => setShowCsvImport(false)}
+          validate={(row) => {
+            const errs = [];
+            if (!row.taskName || !row.taskName.trim()) errs.push('Task name is required');
+            if (!row.assigneeEmail || !row.assigneeEmail.trim()) {
+              errs.push('Assignee email is required');
+            } else {
+              const matched = (users || []).find(u => (u.email || '').toLowerCase() === row.assigneeEmail.trim().toLowerCase());
+              if (!matched) errs.push(`Unknown assignee: ${row.assigneeEmail.trim()}`);
+            }
+            if (!row.category || !row.category.trim()) {
+              errs.push('Category is required');
+            } else {
+              const matched = (taskCategories || []).find(c => {
+                const name = typeof c === 'string' ? c : c.name;
+                return name.toLowerCase() === row.category.trim().toLowerCase();
+              });
+              if (!matched) errs.push(`Unknown category: ${row.category.trim()}`);
+            }
+            if (row.dueDate && row.dueDate.trim()) {
+              const parsed = parse(row.dueDate.trim(), 'dd/MM/yyyy', new Date());
+              if (isNaN(parsed.getTime())) errs.push('Invalid dueDate — use dd/MM/yyyy');
+            }
+            return errs;
+          }}
+          onImport={async (validRows) => {
+            const results = [];
+            const newTasks = [];
+            for (const row of validRows) {
+              const assignee = (users || []).find(u => (u.email || '').toLowerCase() === row.assigneeEmail.trim().toLowerCase());
+              const categoryObj = (taskCategories || []).find(c => {
+                const name = typeof c === 'string' ? c : c.name;
+                return name.toLowerCase() === row.category.trim().toLowerCase();
+              });
+              const categoryName = categoryObj ? (typeof categoryObj === 'string' ? categoryObj : categoryObj.name) : row.category.trim();
+              let parsedDueDate = null;
+              if (row.dueDate && row.dueDate.trim()) {
+                const d = parse(row.dueDate.trim(), 'dd/MM/yyyy', new Date());
+                if (!isNaN(d.getTime())) parsedDueDate = format(d, 'do MMM yyyy');
+              }
+              const statusMap = { 'in progress': 'WIP', 'wip': 'WIP', 'pending': 'Pending', 'done': 'Done', 'completed': 'Done', 'rejected': 'Rejected' };
+              const taskStatus = statusMap[(row.status || '').toLowerCase()] || 'Pending';
+              const newTask = {
+                id: Date.now() + Math.random(),
+                name: row.taskName.trim(),
+                date: format(new Date(), 'do MMM yyyy'),
+                dueDate: parsedDueDate,
+                comment: (row.description || '').trim(),
+                result: '',
+                status: taskStatus,
+                creatorId: currentUser?.id || null,
+                creatorName: currentUser?.name || 'Unassigned',
+                creatorRole: currentUser?.role || 'Employee',
+                assigneeId: assignee.id,
+                assigneeName: assignee.name,
+                assigneeEmail: assignee.email || '',
+                category: categoryName,
+                repeatFrequency: 'Once',
+                repeatEnd: null,
+                repeatDays: null,
+                repeatMonthlyWeek: null,
+                repeatMonthlyDay: null,
+                lastSpawnedDate: null,
+                timerState: 'idle',
+                timerStartedAt: null,
+                elapsedMs: 0,
+                timeTaken: null,
+                qcEnabled: false,
+                qcAssigneeId: null,
+                qcAssigneeName: null,
+                qcStatus: null,
+                qcRating: null,
+                qcFeedback: null,
+                qcReviewedAt: null,
+                departments: currentUser?.department ? [currentUser.department] : null,
+                billable: true,
+                estimatedMs: null,
+                reminderOffsets: null,
+              };
+              newTasks.push(newTask);
+              results.push({ success: true, label: `${row.taskName.trim()} → ${assignee.name}` });
+            }
+            if (newTasks.length > 0) {
+              setClientLogs({
+                ...clientLogs,
+                [selectedClient.id]: [...newTasks, ...(clientLogs[selectedClient.id] || [])],
+              });
+            }
+            return results;
           }}
         />
       )}

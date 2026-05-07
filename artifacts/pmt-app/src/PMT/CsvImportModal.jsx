@@ -45,6 +45,14 @@ const MODE_CONFIG = {
     columns: ['name', 'email', 'password', 'role', 'department', 'region', 'position', 'clients', 'reportingManager'],
     columnLabels: { name: 'Name', email: 'Email', password: 'Password', role: 'Role', department: 'Dept', region: 'Region', position: 'Position', clients: 'Clients (pipe-sep)', reportingManager: 'Reporting Manager (email)' },
   },
+  tasks: {
+    title: 'Import Tasks',
+    subtitle: 'Bulk upload tasks for this client. dueDate is optional (format dd/MM/yyyy). status defaults to Pending if omitted.',
+    templateContent: 'taskName,description,category,assigneeEmail,dueDate,status\nSetup campaign tracking,Configure UTM parameters and GA goals,Technical Setup,jane@ethinos.com,15/06/2026,Pending',
+    templateName: 'tasks-template.csv',
+    columns: ['taskName', 'description', 'category', 'assigneeEmail', 'dueDate', 'status'],
+    columnLabels: { taskName: 'Task Name', description: 'Description', category: 'Category', assigneeEmail: 'Assignee Email', dueDate: 'Due Date (dd/MM/yyyy)', status: 'Status' },
+  },
   clients: {
     title: 'Import Clients',
     subtitle: 'Bulk upload client projects. Entity is the parent company/group.',
@@ -119,7 +127,17 @@ const CsvImportModal = ({
   const handleImport = async () => {
     setStep('importing');
     const res = await onImport(validRows);
-    setResults(res);
+    const errorResults = [];
+    parsedRows.forEach((row, idx) => {
+      if (rowErrors[idx]) {
+        errorResults.push({
+          success: false,
+          label: row[config.columns[0]] || `Row ${idx + 1}`,
+          error: rowErrors[idx].join(' · '),
+        });
+      }
+    });
+    setResults([...res, ...errorResults]);
     setStep('done');
   };
 
