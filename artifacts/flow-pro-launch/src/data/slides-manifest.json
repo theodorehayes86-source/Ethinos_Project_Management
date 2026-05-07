@@ -1,1 +1,66 @@
-[]
+[
+  {
+    "id": "a1b2c3d4-0001-4000-8000-000000000001",
+    "position": 1,
+    "filepath": "src/pages/slides/Slide1Title.tsx",
+    "title": "Introducing Ethinos Flow Pro",
+    "description": "Title slide — hero image, display headline, subtitle, date and URL",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0002-4000-8000-000000000002",
+    "position": 2,
+    "filepath": "src/pages/slides/Slide2WhyWeBuiltIt.tsx",
+    "title": "Why We Built It",
+    "description": "Four numbered pain points — tasks, visibility, time logging, client tracking",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0003-4000-8000-000000000003",
+    "position": 3,
+    "filepath": "src/pages/slides/Slide3WhatIsFlowPro.tsx",
+    "title": "What Is Flow Pro?",
+    "description": "Platform overview — description left, 2×2 feature cards right",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0004-4000-8000-000000000004",
+    "position": 4,
+    "filepath": "src/pages/slides/Slide4TaskManagement.tsx",
+    "title": "Task Management",
+    "description": "Four task management features in a 2×2 card grid",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0005-4000-8000-000000000005",
+    "position": 5,
+    "filepath": "src/pages/slides/Slide5TimeTracking.tsx",
+    "title": "Time Tracking",
+    "description": "Timer description left, decorative timer display right",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0006-4000-8000-000000000006",
+    "position": 6,
+    "filepath": "src/pages/slides/Slide6ForManagers.tsx",
+    "title": "For Managers & Directors",
+    "description": "Four management features — Team View, Approvals, Reports, Workload",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0007-4000-8000-000000000007",
+    "position": 7,
+    "filepath": "src/pages/slides/Slide7GettingStarted.tsx",
+    "title": "Getting Started",
+    "description": "Four numbered steps to get started with Flow Pro",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0008-4000-8000-000000000008",
+    "position": 8,
+    "filepath": "src/pages/slides/Slide8Closing.tsx",
+    "title": "Let's Get Started",
+    "description": "Closing slide — headline, divider, admin contact, URL",
+    "speakerNotes": ""
+  }
+]
