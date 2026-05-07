@@ -1,0 +1,31 @@
+kind = "slides"
+previewPath = "/flow-pro-launch/"
+title = "Flow Pro Launch Deck"
+version = "1.0.0"
+id = "artifacts/flow-pro-launch"
+router = "path"
+
+[[integratedSkills]]
+name = "slides"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/flow-pro-launch/" ]
+localPort = 24211
+
+[services.development]
+run = "pnpm --filter @workspace/flow-pro-launch run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/flow-pro-launch", "run", "build" ]
+publicDir = "artifacts/flow-pro-launch/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24211"
+BASE_PATH = "/flow-pro-launch/"
