@@ -1,8 +1,13 @@
 uploads = []
-outputs = []
 
 [[generated]]
 id = "gj74TYOnERAfj4pal7K-j"
 uri = "file://attached_assets/generated_images/flow-pro-hero.png"
 type = "image"
 title = "flow pro hero"
+
+[[outputs]]
+id = "huKsD8nImNjsOGWMWVdpI"
+uri = "file://.local/outputs/Asset-Manager.pptx"
+type = "slides"
+title = "Asset Manager.pptx"
