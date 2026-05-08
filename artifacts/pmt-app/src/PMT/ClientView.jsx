@@ -120,6 +120,13 @@ const ClientView = ({
     if (!window.confirm(`Delete ${selectedTaskIds.size} selected task${selectedTaskIds.size > 1 ? 's' : ''}? This cannot be undone.`)) return;
     const updated = (clientLogs[clientId] || []).filter(t => !selectedTaskIds.has(t.id));
     setClientLogs({ ...clientLogs, [clientId]: updated });
+    const affectedGroupIds = new Set(
+      (clientLogs[clientId] || []).filter(t => selectedTaskIds.has(t.id) && t.taskGroupId).map(t => t.taskGroupId)
+    );
+    if (affectedGroupIds.size > 0) {
+      const emptyGroupIds = [...affectedGroupIds].filter(gid => !updated.some(t => t.taskGroupId === gid));
+      if (emptyGroupIds.length > 0) setTaskGroups(taskGroups.filter(g => !emptyGroupIds.includes(g.id)));
+    }
     setSelectedTaskIds(new Set());
   };
 
@@ -217,6 +224,20 @@ const ClientView = ({
   const [detailTask, setDetailTask] = useState(null);
 
   useEffect(() => { setSelectedTaskIds(new Set()); }, [selectedClient?.id]);
+
+  // Auto-clean orphaned task groups whose client's logs have loaded but contain no tasks for that group
+  useEffect(() => {
+    if (!taskGroups.length) return;
+    const emptyGroups = taskGroups.filter(g => {
+      const logs = clientLogs[g.clientId];
+      if (!Array.isArray(logs)) return false; // data not yet loaded — skip
+      return !logs.some(t => t.taskGroupId === g.id);
+    });
+    if (emptyGroups.length > 0) {
+      const emptyIds = new Set(emptyGroups.map(g => g.id));
+      setTaskGroups(taskGroups.filter(g => !emptyIds.has(g.id)));
+    }
+  }, [taskGroups, clientLogs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Leave conflict check state (for new task creation)
   const [leaveConflict, setLeaveConflict] = useState(null);
@@ -1720,6 +1741,9 @@ const ClientView = ({
                                   if (window.confirm('Are you sure you want to delete this task?')) {
                                     const upd = clientLogs[selectedClient.id].filter(l => l.id !== log.id);
                                     setClientLogs({ ...clientLogs, [selectedClient.id]: upd });
+                                    if (log.taskGroupId && !upd.some(t => t.taskGroupId === log.taskGroupId)) {
+                                      setTaskGroups(taskGroups.filter(g => g.id !== log.taskGroupId));
+                                    }
                                   }
                                 }}
                                 className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-md transition-all"
