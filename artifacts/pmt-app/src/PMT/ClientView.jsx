@@ -3728,6 +3728,102 @@ const ClientView = ({
           </div>
         </div>
       )}
+
+      {showCsvImport && (
+        <CsvImportModal
+          mode="tasks"
+          onClose={() => setShowCsvImport(false)}
+          validate={(row) => {
+            const errs = [];
+            if (!row.taskName || !row.taskName.trim()) errs.push('Task name is required');
+            if (!row.assigneeEmail || !row.assigneeEmail.trim()) {
+              errs.push('Assignee email is required');
+            } else {
+              const matched = (users || []).find(u => (u.email || '').toLowerCase() === row.assigneeEmail.trim().toLowerCase());
+              if (!matched) errs.push(`Unknown assignee: ${row.assigneeEmail.trim()}`);
+            }
+            if (!row.category || !row.category.trim()) {
+              errs.push('Category is required');
+            } else {
+              const matched = (taskCategories || []).find(c => {
+                const name = typeof c === 'string' ? c : c.name;
+                return name.toLowerCase() === row.category.trim().toLowerCase();
+              });
+              if (!matched) errs.push(`Unknown category: ${row.category.trim()}`);
+            }
+            if (row.dueDate && row.dueDate.trim()) {
+              const parsed = parse(row.dueDate.trim(), 'dd/MM/yyyy', new Date());
+              if (isNaN(parsed.getTime())) errs.push('Invalid dueDate — use dd/MM/yyyy');
+            }
+            return errs;
+          }}
+          onImport={async (validRows) => {
+            const results = [];
+            const newTasks = [];
+            for (const row of validRows) {
+              const assignee = (users || []).find(u => (u.email || '').toLowerCase() === row.assigneeEmail.trim().toLowerCase());
+              const categoryObj = (taskCategories || []).find(c => {
+                const name = typeof c === 'string' ? c : c.name;
+                return name.toLowerCase() === row.category.trim().toLowerCase();
+              });
+              const categoryName = categoryObj ? (typeof categoryObj === 'string' ? categoryObj : categoryObj.name) : row.category.trim();
+              let parsedDueDate = null;
+              if (row.dueDate && row.dueDate.trim()) {
+                const d = parse(row.dueDate.trim(), 'dd/MM/yyyy', new Date());
+                if (!isNaN(d.getTime())) parsedDueDate = format(d, 'do MMM yyyy');
+              }
+              const statusMap = { 'in progress': 'WIP', 'wip': 'WIP', 'pending': 'Pending', 'done': 'Done', 'completed': 'Done', 'rejected': 'Rejected' };
+              const taskStatus = statusMap[(row.status || '').toLowerCase()] || 'Pending';
+              const newTask = {
+                id: Date.now() + Math.random(),
+                name: row.taskName.trim(),
+                date: format(new Date(), 'do MMM yyyy'),
+                dueDate: parsedDueDate,
+                comment: (row.description || '').trim(),
+                result: '',
+                status: taskStatus,
+                creatorId: currentUser?.id || null,
+                creatorName: currentUser?.name || 'Unassigned',
+                creatorRole: currentUser?.role || 'Employee',
+                assigneeId: assignee.id,
+                assigneeName: assignee.name,
+                assigneeEmail: assignee.email || '',
+                category: categoryName,
+                repeatFrequency: 'Once',
+                repeatEnd: null,
+                repeatDays: null,
+                repeatMonthlyWeek: null,
+                repeatMonthlyDay: null,
+                lastSpawnedDate: null,
+                timerState: 'idle',
+                timerStartedAt: null,
+                elapsedMs: 0,
+                timeTaken: null,
+                qcEnabled: false,
+                qcAssigneeId: null,
+                qcAssigneeName: null,
+                qcStatus: null,
+                qcRating: null,
+                qcFeedback: null,
+                qcReviewedAt: null,
+                departments: currentUser?.department ? [currentUser.department] : null,
+                billable: true,
+                estimatedMs: null,
+                reminderOffsets: null,
+              };
+              newTasks.push(newTask);
+              results.push({ success: true, label: `${row.taskName.trim()} → ${assignee.name}` });
+            }
+            if (newTasks.length > 0) {
+              setClientLogs({
+                ...clientLogs,
+                [selectedClient.id]: [...newTasks, ...(clientLogs[selectedClient.id] || [])],
+              });
+            }
+            return results;
+          }}
+        />
+      )}
       </div>
     );
   }
@@ -4233,101 +4329,6 @@ const ClientView = ({
         />
       )}
 
-      {showCsvImport && selectedClient && (
-        <CsvImportModal
-          mode="tasks"
-          onClose={() => setShowCsvImport(false)}
-          validate={(row) => {
-            const errs = [];
-            if (!row.taskName || !row.taskName.trim()) errs.push('Task name is required');
-            if (!row.assigneeEmail || !row.assigneeEmail.trim()) {
-              errs.push('Assignee email is required');
-            } else {
-              const matched = (users || []).find(u => (u.email || '').toLowerCase() === row.assigneeEmail.trim().toLowerCase());
-              if (!matched) errs.push(`Unknown assignee: ${row.assigneeEmail.trim()}`);
-            }
-            if (!row.category || !row.category.trim()) {
-              errs.push('Category is required');
-            } else {
-              const matched = (taskCategories || []).find(c => {
-                const name = typeof c === 'string' ? c : c.name;
-                return name.toLowerCase() === row.category.trim().toLowerCase();
-              });
-              if (!matched) errs.push(`Unknown category: ${row.category.trim()}`);
-            }
-            if (row.dueDate && row.dueDate.trim()) {
-              const parsed = parse(row.dueDate.trim(), 'dd/MM/yyyy', new Date());
-              if (isNaN(parsed.getTime())) errs.push('Invalid dueDate — use dd/MM/yyyy');
-            }
-            return errs;
-          }}
-          onImport={async (validRows) => {
-            const results = [];
-            const newTasks = [];
-            for (const row of validRows) {
-              const assignee = (users || []).find(u => (u.email || '').toLowerCase() === row.assigneeEmail.trim().toLowerCase());
-              const categoryObj = (taskCategories || []).find(c => {
-                const name = typeof c === 'string' ? c : c.name;
-                return name.toLowerCase() === row.category.trim().toLowerCase();
-              });
-              const categoryName = categoryObj ? (typeof categoryObj === 'string' ? categoryObj : categoryObj.name) : row.category.trim();
-              let parsedDueDate = null;
-              if (row.dueDate && row.dueDate.trim()) {
-                const d = parse(row.dueDate.trim(), 'dd/MM/yyyy', new Date());
-                if (!isNaN(d.getTime())) parsedDueDate = format(d, 'do MMM yyyy');
-              }
-              const statusMap = { 'in progress': 'WIP', 'wip': 'WIP', 'pending': 'Pending', 'done': 'Done', 'completed': 'Done', 'rejected': 'Rejected' };
-              const taskStatus = statusMap[(row.status || '').toLowerCase()] || 'Pending';
-              const newTask = {
-                id: Date.now() + Math.random(),
-                name: row.taskName.trim(),
-                date: format(new Date(), 'do MMM yyyy'),
-                dueDate: parsedDueDate,
-                comment: (row.description || '').trim(),
-                result: '',
-                status: taskStatus,
-                creatorId: currentUser?.id || null,
-                creatorName: currentUser?.name || 'Unassigned',
-                creatorRole: currentUser?.role || 'Employee',
-                assigneeId: assignee.id,
-                assigneeName: assignee.name,
-                assigneeEmail: assignee.email || '',
-                category: categoryName,
-                repeatFrequency: 'Once',
-                repeatEnd: null,
-                repeatDays: null,
-                repeatMonthlyWeek: null,
-                repeatMonthlyDay: null,
-                lastSpawnedDate: null,
-                timerState: 'idle',
-                timerStartedAt: null,
-                elapsedMs: 0,
-                timeTaken: null,
-                qcEnabled: false,
-                qcAssigneeId: null,
-                qcAssigneeName: null,
-                qcStatus: null,
-                qcRating: null,
-                qcFeedback: null,
-                qcReviewedAt: null,
-                departments: currentUser?.department ? [currentUser.department] : null,
-                billable: true,
-                estimatedMs: null,
-                reminderOffsets: null,
-              };
-              newTasks.push(newTask);
-              results.push({ success: true, label: `${row.taskName.trim()} → ${assignee.name}` });
-            }
-            if (newTasks.length > 0) {
-              setClientLogs({
-                ...clientLogs,
-                [selectedClient.id]: [...newTasks, ...(clientLogs[selectedClient.id] || [])],
-              });
-            }
-            return results;
-          }}
-        />
-      )}
     </div>
   );
 };
