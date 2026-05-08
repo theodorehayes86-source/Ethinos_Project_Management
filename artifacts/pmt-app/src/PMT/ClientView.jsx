@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { Search, ChevronLeft, ChevronDown, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, AlertTriangle, Calendar, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus, Hourglass, Archive, ArchiveRestore, LayoutGrid, LayoutList, ClipboardList, LayoutTemplate, CheckSquare, Upload } from 'lucide-react';
+import { Search, ChevronLeft, ChevronDown, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, AlertTriangle, Calendar, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus, Hourglass, Archive, ArchiveRestore, LayoutGrid, LayoutList, ClipboardList, LayoutTemplate, CheckSquare, Upload, Copy } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import DatePicker from "react-datepicker";
 import { format, subDays, parse, addDays, differenceInCalendarDays } from 'date-fns';
@@ -148,6 +148,41 @@ const ClientView = ({
     setSelectedTaskIds(new Set());
   };
 
+  const handleBulkCopy = (sourceClientId, targetClientId, assigneeOverrideId) => {
+    if (!targetClientId) return;
+    const sourceTasks = (clientLogs[sourceClientId] || []).filter(t => selectedTaskIds.has(t.id));
+    if (sourceTasks.length === 0) return;
+    const overrideUser = assigneeOverrideId && assigneeOverrideId !== 'keep'
+      ? (users || []).find(u => String(u.id) === String(assigneeOverrideId))
+      : null;
+    const copies = sourceTasks.map((t, i) => ({
+      ...t,
+      id: Date.now() + i + Math.random(),
+      status: 'Pending',
+      timerState: 'idle',
+      timerStartedAt: null,
+      elapsedMs: 0,
+      timeTaken: null,
+      result: '',
+      qcStatus: null,
+      qcRating: null,
+      qcFeedback: null,
+      qcReviewedAt: null,
+      taskGroupId: undefined,
+      creatorId: currentUser?.id || null,
+      creatorName: currentUser?.name || 'Unassigned',
+      creatorRole: currentUser?.role || 'Employee',
+      date: format(new Date(), 'do MMM yyyy'),
+      ...(overrideUser ? { assigneeId: overrideUser.id, assigneeName: overrideUser.name, assigneeEmail: overrideUser.email || '' } : {}),
+    }));
+    setClientLogs({
+      ...clientLogs,
+      [targetClientId]: [...copies, ...(clientLogs[targetClientId] || [])],
+    });
+    setSelectedTaskIds(new Set());
+    setShowBulkCopyModal(false);
+  };
+
   const handleCreateTaskFromGroupItem = ({ taskName, category, dueDate, comment, clientId, clientName, assigneeId, assigneeName }) => {
     const newTask = {
       id: Date.now(),
@@ -214,6 +249,11 @@ const ClientView = ({
   const [clientDisplayMode, setClientDisplayMode] = useState(() => localStorage.getItem('clientDisplayMode') || 'cards');
   const [showArchived, setShowArchived] = useState(false);
   const [selectedTaskIds, setSelectedTaskIds] = useState(new Set());
+  const [showBulkCopyModal, setShowBulkCopyModal] = useState(false);
+  const [copyClientQuery, setCopyClientQuery] = useState('');
+  const [copyTargetClientId, setCopyTargetClientId] = useState('');
+  const [copyAssigneeOverride, setCopyAssigneeOverride] = useState('keep');
+  const [copyAssigneeQuery, setCopyAssigneeQuery] = useState('');
 
   // Ethinos internal client filters (Super Admin only)
   const [ethinosDeptFilter, setEthinosDeptFilter] = useState('All');
@@ -1557,6 +1597,18 @@ const ClientView = ({
             >
               <Archive size={11} /> Archive
             </button>
+            <button
+              onClick={() => {
+                setCopyClientQuery('');
+                setCopyTargetClientId('');
+                setCopyAssigneeOverride('keep');
+                setCopyAssigneeQuery('');
+                setShowBulkCopyModal(true);
+              }}
+              className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-semibold bg-violet-500 hover:bg-violet-400 transition-all"
+            >
+              <Copy size={11} /> Copy to…
+            </button>
             {isManagement && (
               <button
                 onClick={() => handleBatchDelete(selectedClient.id)}
@@ -1574,6 +1626,137 @@ const ClientView = ({
             </button>
           </div>
         )}
+
+        {/* Bulk Copy Modal */}
+        {showBulkCopyModal && (() => {
+          const filteredClients = (clients || [])
+            .filter(c => c.id !== selectedClient.id && c.name?.toLowerCase().includes(copyClientQuery.toLowerCase()))
+            .sort((a, b) => a.name.localeCompare(b.name));
+          const targetClient = filteredClients.find(c => String(c.id) === String(copyTargetClientId)) ||
+            (clients || []).find(c => String(c.id) === String(copyTargetClientId));
+          const filteredUsers = (users || [])
+            .filter(u => u.name?.toLowerCase().includes(copyAssigneeQuery.toLowerCase()))
+            .sort((a, b) => a.name.localeCompare(b.name));
+          return (
+            <div className="fixed inset-0 z-[800] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4" onClick={() => setShowBulkCopyModal(false)}>
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-5" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">Copy tasks</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Copying {selectedTaskIds.size} task{selectedTaskIds.size > 1 ? 's' : ''} as new Pending tasks</p>
+                  </div>
+                  <button onClick={() => setShowBulkCopyModal(false)} className="p-1.5 rounded-lg hover:bg-slate-100 transition-all"><X size={16} className="text-slate-500" /></button>
+                </div>
+
+                {/* Target client */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-700">Destination client</label>
+                  <div className="relative">
+                    <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <input
+                      autoFocus
+                      type="text"
+                      placeholder="Search clients…"
+                      value={copyClientQuery}
+                      onChange={e => { setCopyClientQuery(e.target.value); setCopyTargetClientId(''); }}
+                      className="w-full pl-7 pr-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-400"
+                    />
+                  </div>
+                  {copyClientQuery && !copyTargetClientId && (
+                    <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100 shadow-sm">
+                      {filteredClients.length === 0 ? (
+                        <p className="text-xs text-slate-400 px-3 py-2">No clients found</p>
+                      ) : filteredClients.slice(0, 8).map(c => (
+                        <button
+                          key={c.id}
+                          onClick={() => { setCopyTargetClientId(String(c.id)); setCopyClientQuery(c.name); }}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-violet-50 text-slate-800"
+                        >
+                          {c.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {copyTargetClientId && targetClient && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-violet-50 rounded-xl border border-violet-200">
+                      <CheckCircle size={13} className="text-violet-500 flex-shrink-0" />
+                      <span className="text-sm font-medium text-violet-800 truncate">{targetClient.name}</span>
+                      <button onClick={() => { setCopyTargetClientId(''); setCopyClientQuery(''); }} className="ml-auto p-0.5 rounded hover:bg-violet-200 transition-all"><X size={11} className="text-violet-500" /></button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Assignee override */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-700">Assignee</label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setCopyAssigneeOverride('keep')}
+                      className={`flex-1 py-1.5 rounded-xl text-xs font-semibold border transition-all ${copyAssigneeOverride === 'keep' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'}`}
+                    >
+                      Keep original
+                    </button>
+                    <button
+                      onClick={() => setCopyAssigneeOverride('override')}
+                      className={`flex-1 py-1.5 rounded-xl text-xs font-semibold border transition-all ${copyAssigneeOverride === 'override' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'}`}
+                    >
+                      Change assignee
+                    </button>
+                  </div>
+                  {copyAssigneeOverride === 'override' && (
+                    <div className="space-y-1">
+                      <div className="relative">
+                        <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                        <input
+                          type="text"
+                          placeholder="Search users…"
+                          value={copyAssigneeQuery}
+                          onChange={e => setCopyAssigneeQuery(e.target.value)}
+                          className="w-full pl-7 pr-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-400"
+                        />
+                      </div>
+                      <div className="max-h-36 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100 shadow-sm">
+                        {filteredUsers.length === 0 ? (
+                          <p className="text-xs text-slate-400 px-3 py-2">No users found</p>
+                        ) : filteredUsers.slice(0, 8).map(u => (
+                          <button
+                            key={u.id}
+                            onClick={() => { setCopyAssigneeOverride(String(u.id)); setCopyAssigneeQuery(u.name); }}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-violet-50 text-slate-800 flex items-center gap-2"
+                          >
+                            <span className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600 flex-shrink-0">{u.name?.[0]}</span>
+                            {u.name}
+                            {u.role && <span className="ml-auto text-[10px] text-slate-400">{u.role}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {copyAssigneeOverride !== 'keep' && copyAssigneeOverride !== 'override' && (() => {
+                    const u = (users || []).find(x => String(x.id) === String(copyAssigneeOverride));
+                    return u ? (
+                      <div className="flex items-center gap-2 px-3 py-1.5 bg-violet-50 rounded-xl border border-violet-200">
+                        <span className="w-5 h-5 rounded-full bg-violet-200 flex items-center justify-center text-[10px] font-bold text-violet-700 flex-shrink-0">{u.name?.[0]}</span>
+                        <span className="text-sm font-medium text-violet-800 truncate">{u.name}</span>
+                        <button onClick={() => { setCopyAssigneeOverride('override'); setCopyAssigneeQuery(''); }} className="ml-auto p-0.5 rounded hover:bg-violet-200 transition-all"><X size={11} className="text-violet-500" /></button>
+                      </div>
+                    ) : null;
+                  })()}
+                </div>
+
+                <button
+                  disabled={!copyTargetClientId}
+                  onClick={() => handleBulkCopy(selectedClient.id, copyTargetClientId, copyAssigneeOverride)}
+                  className="w-full py-2.5 rounded-xl text-sm font-bold transition-all bg-violet-600 hover:bg-violet-500 text-white disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  <Copy size={14} />
+                  Copy {selectedTaskIds.size} task{selectedTaskIds.size > 1 ? 's' : ''}
+                  {targetClient ? ` → ${targetClient.name}` : ''}
+                </button>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Task Table */}
         <div ref={taskListRef} className={`bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden${taskStatusFilter.startsWith('cl-') ? ' hidden' : ''}`}>
