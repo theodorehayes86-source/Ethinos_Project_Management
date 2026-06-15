@@ -4026,6 +4026,19 @@ const ClientView = ({
                 ...clientLogs,
                 [selectedClient.id]: [...newTasks, ...(clientLogs[selectedClient.id] || [])],
               });
+              for (const task of newTasks) {
+                if (task.assigneeEmail && String(task.assigneeId) !== String(currentUser?.id)) {
+                  sendNotification('task-assigned', {
+                    assigneeEmail: task.assigneeEmail,
+                    assigneeName: task.assigneeName,
+                    taskName: task.name,
+                    taskDescription: task.comment,
+                    clientName: selectedClient.name,
+                    dueDate: task.dueDate,
+                    creatorName: currentUser?.name,
+                  });
+                }
+              }
             }
             return results;
           }}
