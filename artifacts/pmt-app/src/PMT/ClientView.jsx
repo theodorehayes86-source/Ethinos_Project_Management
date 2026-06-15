@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { useToast } from '../hooks/use-toast';
 import { Search, ChevronLeft, ChevronDown, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, AlertTriangle, Calendar, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus, Hourglass, Archive, ArchiveRestore, LayoutGrid, LayoutList, ClipboardList, LayoutTemplate, CheckSquare, Upload, Copy } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import DatePicker from "react-datepicker";
@@ -67,6 +68,8 @@ const ClientView = ({
   const managementRoles = ['Super Admin', 'Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
   
+  const { toast } = useToast();
+
   const taskListRef = useRef(null);
   const checklistGroupsRef = useRef(null);
   const [showClientAddMenu, setShowClientAddMenu] = useState(false);
@@ -3939,7 +3942,16 @@ const ClientView = ({
       {showCsvImport && (
         <CsvImportModal
           mode="tasks"
-          onClose={() => setShowCsvImport(false)}
+          onClose={(result) => {
+            setShowCsvImport(false);
+            if (result?.imported > 0) {
+              const clientName = selectedClient?.name || 'client';
+              const skippedPart = result.skipped > 0 ? `, ${result.skipped} skipped` : '';
+              toast({
+                title: `${result.imported} task${result.imported !== 1 ? 's' : ''} imported to ${clientName}${skippedPart}`,
+              });
+            }
+          }}
           validate={(row) => {
             const errs = [];
             if (!row.taskName || !row.taskName.trim()) errs.push('Task name is required');
