@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { format, parse, isBefore, addDays, differenceInCalendarDays } from 'date-fns';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
-import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, CheckCircle, XCircle, MinusCircle, Tag, Calendar, Archive, ArchiveRestore, LayoutTemplate, ChevronDown, ChevronUp, Play, Square, Pause, Send, ThumbsUp, ThumbsDown, RotateCcw, Pencil, ClipboardList, CheckSquare, Trash2 } from 'lucide-react';
+import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, CheckCircle, XCircle, MinusCircle, Tag, Calendar, CalendarCheck, Archive, ArchiveRestore, LayoutTemplate, ChevronDown, ChevronUp, Play, Square, Pause, Send, ThumbsUp, ThumbsDown, RotateCcw, Pencil, ClipboardList, CheckSquare, Trash2 } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import TaskDetailPanel from './TaskDetailPanel';
 import ChecklistGroupDetailPanel from './ChecklistGroupDetailPanel';
@@ -1060,7 +1060,7 @@ const HomeView = ({
       }}
     >
       {/* PERSONAL STATS */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
         {[
           {
             label: 'My Clients', filterKey: null, value: accessibleClients.length,
@@ -1070,6 +1070,10 @@ const HomeView = ({
           {
             label: 'Open Tasks', filterKey: 'all', value: myOpenTasks.length, clCount: myOpenChecklists.length,
             icon: <Clock size={16} className="text-green-600"/>, bgColor: 'bg-green-50', iconBgColor: 'bg-green-100', border: 'border-green-100',
+          },
+          {
+            label: "Today's Tasks", filterKey: 'dueToday', value: myDueToday.length, clCount: myDueTodayChecklists.length,
+            icon: <CalendarCheck size={16} className="text-teal-600"/>, bgColor: 'bg-teal-50', iconBgColor: 'bg-teal-100', border: 'border-teal-100',
           },
           {
             label: 'WIP', filterKey: 'WIP', value: myWip.length, clCount: 0,
