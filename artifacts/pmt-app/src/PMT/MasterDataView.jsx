@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { Plus, Trash2, Search, ShieldCheck, Edit2, X, ChevronUp, ChevronDown, Lock, Users, Crown, Check, Star, UserCheck, UserPlus, Edit3, Mail, MessageSquare, Bug, Lightbulb, AlertCircle, CheckCircle2, Clock, Filter, Eye, EyeOff, FlaskConical, Archive, ArchiveRestore, ChevronRight, CornerDownLeft, Send, Upload, Pencil, Link2, RefreshCw, AlertTriangle, CalendarOff } from 'lucide-react';
+import { useToast } from '../hooks/use-toast';
 import UserPickerModal from './UserPickerModal';
 import CsvImportModal from './CsvImportModal';
 import { sendNotification } from '../utils/notify';
@@ -117,6 +118,7 @@ const MasterDataView = ({
   checklistAccessRoles = [],
   setChecklistAccessRoles,
 }) => {
+  const { toast } = useToast();
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
 
@@ -4495,7 +4497,18 @@ const MasterDataView = ({
     {csvMode && (
       <CsvImportModal
         mode={csvMode}
-        onClose={() => setCsvMode(null)}
+        onClose={(result) => {
+          const mode = csvMode;
+          setCsvMode(null);
+          if (result?.imported > 0) {
+            const skippedPart = result.skipped > 0 ? `, ${result.skipped} skipped` : '';
+            if (mode === 'users') {
+              toast({ title: `${result.imported} user${result.imported !== 1 ? 's' : ''} imported${skippedPart}` });
+            } else {
+              toast({ title: `${result.imported} client${result.imported !== 1 ? 's' : ''} imported${skippedPart}` });
+            }
+          }
+        }}
         validate={
           csvMode === 'users' ? validateCsvUser
           : csvMode === 'clients' ? validateCsvClient
