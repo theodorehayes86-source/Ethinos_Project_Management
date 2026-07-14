@@ -121,10 +121,10 @@ const ClientView = ({
   const handleBatchDelete = (clientId) => {
     if (selectedTaskIds.size === 0 || !clientId) return;
     if (!window.confirm(`Delete ${selectedTaskIds.size} selected task${selectedTaskIds.size > 1 ? 's' : ''}? This cannot be undone.`)) return;
-    const updated = (clientLogs[clientId] || []).filter(t => !selectedTaskIds.has(t.id));
+    const updated = (clientLogs[clientId] || []).filter(t => !selectedTaskIds.has(String(t.id)));
     setClientLogs({ ...clientLogs, [clientId]: updated });
     const affectedGroupIds = new Set(
-      (clientLogs[clientId] || []).filter(t => selectedTaskIds.has(t.id) && t.taskGroupId).map(t => t.taskGroupId)
+      (clientLogs[clientId] || []).filter(t => selectedTaskIds.has(String(t.id)) && t.taskGroupId).map(t => t.taskGroupId)
     );
     if (affectedGroupIds.size > 0) {
       const emptyGroupIds = [...affectedGroupIds].filter(gid => !updated.some(t => t.taskGroupId === gid));
@@ -136,7 +136,7 @@ const ClientView = ({
   const handleBatchArchive = (clientId) => {
     if (selectedTaskIds.size === 0 || !clientId) return;
     const updated = (clientLogs[clientId] || []).map(t =>
-      selectedTaskIds.has(t.id) ? { ...t, archived: true } : t
+      selectedTaskIds.has(String(t.id)) ? { ...t, archived: true } : t
     );
     setClientLogs({ ...clientLogs, [clientId]: updated });
     setSelectedTaskIds(new Set());
@@ -145,7 +145,7 @@ const ClientView = ({
   const handleBatchStatus = (clientId, newStatus) => {
     if (selectedTaskIds.size === 0 || !clientId) return;
     const updated = (clientLogs[clientId] || []).map(t =>
-      selectedTaskIds.has(t.id) ? { ...t, status: newStatus } : t
+      selectedTaskIds.has(String(t.id)) ? { ...t, status: newStatus } : t
     );
     setClientLogs({ ...clientLogs, [clientId]: updated });
     setSelectedTaskIds(new Set());
@@ -153,7 +153,7 @@ const ClientView = ({
 
   const handleBulkCopy = (sourceClientId, targetClientId, assigneeOverrideId) => {
     if (!targetClientId) return;
-    const sourceTasks = (clientLogs[sourceClientId] || []).filter(t => selectedTaskIds.has(t.id));
+    const sourceTasks = (clientLogs[sourceClientId] || []).filter(t => selectedTaskIds.has(String(t.id)));
     if (sourceTasks.length === 0) return;
     const overrideUser = assigneeOverrideId && assigneeOverrideId !== 'keep'
       ? (users || []).find(u => String(u.id) === String(assigneeOverrideId))
@@ -1573,7 +1573,7 @@ const ClientView = ({
             <div className="flex-1" />
             <button
               onClick={() => {
-                const all = new Set(filteredTaskLogs.filter(l => !l.archived).map(l => l.id));
+                const all = new Set(filteredTaskLogs.filter(l => !l.archived).map(l => String(l.id)));
                 setSelectedTaskIds(all);
               }}
               className="px-3 py-1 rounded-lg text-xs font-semibold bg-blue-500 hover:bg-blue-400 transition-all whitespace-nowrap"
@@ -1783,10 +1783,10 @@ const ClientView = ({
                     <input
                       type="checkbox"
                       className="w-3.5 h-3.5 accent-blue-600 cursor-pointer rounded"
-                      checked={filteredTaskLogs.filter(l => !l.archived).length > 0 && filteredTaskLogs.filter(l => !l.archived).every(l => selectedTaskIds.has(l.id))}
+                      checked={filteredTaskLogs.filter(l => !l.archived).length > 0 && filteredTaskLogs.filter(l => !l.archived).every(l => selectedTaskIds.has(String(l.id)))}
                       onChange={e => {
                         if (e.target.checked) {
-                          setSelectedTaskIds(new Set(filteredTaskLogs.filter(l => !l.archived).map(l => l.id)));
+                          setSelectedTaskIds(new Set(filteredTaskLogs.filter(l => !l.archived).map(l => String(l.id))));
                         } else {
                           setSelectedTaskIds(new Set());
                         }
@@ -1808,7 +1808,7 @@ const ClientView = ({
                 {filteredTaskLogs.map(log => {
                   const timerState = log.timerState || (log.elapsedMs > 0 ? 'paused' : 'idle');
 
-                  const isSelected = selectedTaskIds.has(log.id);
+                  const isSelected = selectedTaskIds.has(String(log.id));
                   return (
                     <tr
                       key={log.id}
@@ -1825,7 +1825,8 @@ const ClientView = ({
                               e.stopPropagation();
                               setSelectedTaskIds(prev => {
                                 const next = new Set(prev);
-                                next.has(log.id) ? next.delete(log.id) : next.add(log.id);
+                                const sid = String(log.id);
+                                next.has(sid) ? next.delete(sid) : next.add(sid);
                                 return next;
                               });
                             }}
