@@ -207,7 +207,11 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
 
         const tasks = arr
           .map((log, idx) => ({ ...log, clientId: client.id, taskIndex: idx }))
-          .filter((log) => String(log.assigneeId) === String(pmtUser.id));
+          .filter(
+            (log) =>
+              String(log.assigneeId) === String(pmtUser.id) &&
+              log.qcStatus !== "sent"
+          );
 
         return {
           clientId: client.id,
