@@ -1288,8 +1288,8 @@ const HomeView = ({
                 { key: 'all', label: 'Open' },
                 { key: 'WIP', label: 'WIP' },
                 { key: 'Pending', label: 'Pending' },
-                { key: 'dueToday', label: 'Due Today', alertCount: myDueToday.length + myDueTodayChecklists.length, show: myDueToday.length + myDueTodayChecklists.length > 0 || statusFilter === 'dueToday' },
-                { key: 'overdue', label: 'Overdue', alertCount: myOverdue.length + myOverdueChecklists.length },
+                { key: 'dueToday', label: "Today's Tasks", alertCount: myDueToday.length + myDueTodayChecklists.length, color: 'teal' },
+                { key: 'overdue', label: 'Overdue', alertCount: myOverdue.length + myOverdueChecklists.length, color: 'rose' },
                 { key: '48plus', label: '48 hrs+', alertCount: my48Plus.length, show: my48Plus.length > 0 || statusFilter === '48plus' },
                 { key: 'awaitingQC', label: 'QC', alertCount: myAwaitingQC.length, show: myAwaitingQC.length > 0 || statusFilter === 'awaitingQC' },
                 { key: 'done', label: 'Done' },
@@ -1299,13 +1299,17 @@ const HomeView = ({
                   onClick={() => setStatusFilter(f.key)}
                   className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
                     statusFilter === f.key
-                      ? f.key === 'overdue' || f.key === 'dueToday'
-                        ? 'bg-rose-600 text-white shadow-sm'
-                        : 'bg-slate-900 text-white shadow-sm'
+                      ? f.color === 'teal'
+                        ? 'bg-teal-600 text-white shadow-sm'
+                        : f.color === 'rose'
+                          ? 'bg-rose-600 text-white shadow-sm'
+                          : 'bg-slate-900 text-white shadow-sm'
                       : (f.alertCount > 0)
-                        ? f.key === 'overdue' || f.key === 'dueToday'
-                          ? 'text-rose-600 hover:bg-rose-50'
-                          : 'text-slate-600 hover:bg-slate-50'
+                        ? f.color === 'teal'
+                          ? 'text-teal-600 hover:bg-teal-50'
+                          : f.color === 'rose'
+                            ? 'text-rose-600 hover:bg-rose-50'
+                            : 'text-slate-600 hover:bg-slate-50'
                         : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'
                   }`}
                 >
