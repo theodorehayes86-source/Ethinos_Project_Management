@@ -1,7 +1,13 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { timingSafeEqual } from "crypto";
 import { getAdminAuth } from "../lib/firebase-admin";
-import { sendEmail, isEmailConfigured } from "../lib/microsoft-graph";
+import {
+  sendEmail,
+  isEmailConfigured,
+  isTeamsConfigured,
+  resolveEntraObjectId,
+  sendTeamsActivityNotification,
+} from "../lib/microsoft-graph";
 import { readFirebasePath } from "../lib/firebase-admin";
 import { logger } from "../lib/logger";
 import { runWeeklyDigest } from "../lib/weekly-digest-scheduler";
@@ -504,7 +510,7 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
       }
 
       case "mention": {
-        const { recipientEmail, recipientName, mentionerName, taskName, clientName, messageText } = data as Record<string, string>;
+        const { recipientEmail, recipientId, recipientName, mentionerName, taskName, clientName, messageText } = data as Record<string, string>;
         if (!recipientEmail) return res.json({ sent: false, reason: "no_email" });
         const to = resolveRecipient(recipientEmail);
         const subject = applyCustomSubject(
@@ -515,6 +521,35 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
         html = applyCustomIntroText(html, setting.customIntroText);
         await sendEmail({ to, subject, bodyHtml: html, bcc: testMode ? [] : firebaseBcc });
         logger.info({ to, original: recipientEmail, taskName, testMode }, "[Notify] mention email sent");
+
+        // Teams activity ping — fires independently, never blocks or breaks the email path
+        if (isTeamsConfigured() && recipientEmail && recipientId) {
+          void (async () => {
+            try {
+              const teamsEnabled = await readFirebasePath<boolean | null>(
+                `users/${recipientId}/teamsNotificationsEnabled`
+              );
+              if (!teamsEnabled) return;
+
+              const objectId = await resolveEntraObjectId(recipientEmail, recipientId);
+              if (!objectId) {
+                logger.warn({ recipientEmail }, "[Teams] Could not resolve Entra Object ID — skipping ping");
+                return;
+              }
+
+              const preview = `${mentionerName || "Someone"} mentioned you in "${taskName}"`;
+              await sendTeamsActivityNotification({
+                recipientObjectId: objectId,
+                mentionerName: mentionerName || "Someone",
+                taskName: taskName || "",
+                clientName: clientName || "",
+                previewText: preview.length > 150 ? preview.slice(0, 147) + "…" : preview,
+              });
+            } catch (err) {
+              logger.warn({ err }, "[Teams] Async ping failed — email was already sent");
+            }
+          })();
+        }
         break;
       }
 

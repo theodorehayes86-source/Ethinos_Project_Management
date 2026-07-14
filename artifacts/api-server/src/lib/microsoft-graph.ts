@@ -1,4 +1,5 @@
 import { logger } from "./logger";
+import { readFirebasePath, writeFirebasePath } from "./firebase-admin";
 
 interface GraphTokenResponse {
   access_token: string;
@@ -120,4 +121,134 @@ export function isEmailConfigured(): boolean {
     process.env.AZURE_CLIENT_SECRET &&
     process.env.MS_SENDER_EMAIL
   );
+}
+
+/* ─── Teams activity notifications ─── */
+
+export function isTeamsConfigured(): boolean {
+  return !!(process.env.TEAMS_APP_ID && isEmailConfigured());
+}
+
+const objectIdMemoryCache = new Map<string, string>();
+
+/**
+ * Resolve a user's Entra (Azure AD) Object ID from their email address.
+ * Checks an in-memory cache first, then Firebase (users/{pmtUserId}/msObjectId),
+ * then calls Graph API and caches the result for future lookups.
+ */
+export async function resolveEntraObjectId(
+  email: string,
+  pmtUserId?: string
+): Promise<string | null> {
+  const normalised = email.toLowerCase();
+
+  if (objectIdMemoryCache.has(normalised)) {
+    return objectIdMemoryCache.get(normalised)!;
+  }
+
+  if (pmtUserId) {
+    try {
+      const stored = await readFirebasePath<string | null>(`users/${pmtUserId}/msObjectId`);
+      if (stored && typeof stored === "string") {
+        objectIdMemoryCache.set(normalised, stored);
+        return stored;
+      }
+    } catch {
+      // Fall through to Graph API lookup
+    }
+  }
+
+  try {
+    const token = await getAccessToken();
+    const resp = await fetch(
+      `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(normalised)}?$select=id`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!resp.ok) {
+      logger.warn(
+        { status: resp.status, email: normalised },
+        "[Teams] Graph user lookup failed"
+      );
+      return null;
+    }
+    const json = (await resp.json()) as { id?: string };
+    if (!json.id) return null;
+
+    objectIdMemoryCache.set(normalised, json.id);
+
+    if (pmtUserId) {
+      writeFirebasePath(`users/${pmtUserId}/msObjectId`, json.id).catch((err) => {
+        logger.warn({ err, pmtUserId }, "[Teams] Could not cache msObjectId in Firebase");
+      });
+    }
+
+    return json.id;
+  } catch (err) {
+    logger.warn({ err, email: normalised }, "[Teams] resolveEntraObjectId threw");
+    return null;
+  }
+}
+
+/**
+ * Send a Teams activity-feed notification to a user.
+ * Requires TEAMS_APP_ID env var and TeamsActivity.Send Graph permission.
+ * Failures are caught and logged — never throws, never blocks the email path.
+ */
+export async function sendTeamsActivityNotification(params: {
+  recipientObjectId: string;
+  mentionerName: string;
+  taskName: string;
+  clientName?: string;
+  previewText: string;
+}): Promise<void> {
+  const teamsAppId = process.env.TEAMS_APP_ID;
+  if (!teamsAppId) return;
+
+  try {
+    const token = await getAccessToken();
+    const appUrl = "https://pmt.ethinos.com";
+
+    const body = {
+      topic: {
+        source: "entityUrl",
+        value: `https://teams.microsoft.com/l/entity/${teamsAppId}/home?webUrl=${encodeURIComponent(appUrl)}`,
+      },
+      activityType: "taskMention",
+      previewText: {
+        content: params.previewText,
+      },
+      templateParameters: [
+        { name: "mentionerName", value: params.mentionerName || "A teammate" },
+        { name: "taskName", value: params.taskName || "a task" },
+        { name: "clientName", value: params.clientName || "" },
+      ],
+    };
+
+    const resp = await fetch(
+      `https://graph.microsoft.com/v1.0/users/${params.recipientObjectId}/teamwork/sendActivityNotification`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      }
+    );
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      logger.warn(
+        { status: resp.status, body: text, recipientObjectId: params.recipientObjectId },
+        "[Teams] sendActivityNotification failed"
+      );
+    } else {
+      logger.info(
+        { recipientObjectId: params.recipientObjectId, taskName: params.taskName },
+        "[Teams] Activity notification sent"
+      );
+    }
+  } catch (err) {
+    logger.warn({ err }, "[Teams] sendActivityNotification threw — skipping");
+  }
 }

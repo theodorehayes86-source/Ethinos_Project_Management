@@ -41,6 +41,15 @@ if (!hasTenantId || !hasClientId || !hasClientSecret || !hasSenderEmail) {
 
 logger.info("Microsoft Graph email service configured");
 
+if (!process.env.TEAMS_APP_ID) {
+  logger.warn(
+    "TEAMS_APP_ID is not set — Teams activity notifications for @mentions will be silently skipped. " +
+    "See teams-app/README.md for setup instructions."
+  );
+} else {
+  logger.info("Teams activity notifications configured");
+}
+
 app.listen(port, (err) => {
   if (err) {
     logger.error({ err }, "Error listening on port");

@@ -219,6 +219,7 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
       if (recipientEmail) {
         sendNotification('mention', {
           recipientEmail,
+          recipientId: mentioned.id,
           recipientName: mentioned.name,
           mentionerName: currentUser?.name,
           taskName: task.name || task.comment,

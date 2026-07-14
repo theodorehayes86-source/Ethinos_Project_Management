@@ -62,6 +62,7 @@ Standard Firebase email+password auth. Restricted to `@ethinos.com` addresses.
 | `PMT_EXPORT_API_KEY` | API key protecting the CSV export endpoint |
 | `SESSION_SECRET` | Express session secret |
 | `KEKA_API_KEY` | (Optional) Keka HR API key — alternative to setting it via Settings UI |
+| `TEAMS_APP_ID` | (Optional) Teams app UUID from tenant catalog — enables @mention activity-feed pings. See `teams-app/README.md` for setup. |
 
 ### Frontend (pmt-app)
 | Secret / Env Var | Description |

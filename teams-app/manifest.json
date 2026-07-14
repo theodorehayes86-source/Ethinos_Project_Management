@@ -1,0 +1,55 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.17",
+  "version": "1.0.0",
+  "id": "${TEAMS_APP_ID}",
+  "packageName": "com.ethinos.pmt",
+  "developer": {
+    "name": "Ethinos Digital Marketing",
+    "websiteUrl": "https://pmt.ethinos.com",
+    "privacyUrl": "https://pmt.ethinos.com",
+    "termsOfUseUrl": "https://pmt.ethinos.com"
+  },
+  "name": {
+    "short": "Ethinos Flow Pro",
+    "full": "Ethinos Flow Pro — Project Management Tool"
+  },
+  "description": {
+    "short": "Track tasks, log time, and stay in sync with your team.",
+    "full": "Ethinos Flow Pro is the internal project management tool for Ethinos staff. Receive real-time Teams notifications when teammates @mention you in task discussions."
+  },
+  "icons": {
+    "color": "icon-color.png",
+    "outline": "icon-outline.png"
+  },
+  "accentColor": "#2563EB",
+  "webApplicationInfo": {
+    "id": "${VITE_AZURE_CLIENT_ID}",
+    "resource": "api://pmt.ethinos.com/${VITE_AZURE_CLIENT_ID}"
+  },
+  "activities": {
+    "activityTypes": [
+      {
+        "type": "taskMention",
+        "description": "You were mentioned in a task discussion",
+        "templateText": "{mentionerName} mentioned you in \"{taskName}\""
+      }
+    ]
+  },
+  "staticTabs": [
+    {
+      "entityId": "home",
+      "name": "Flow Pro",
+      "contentUrl": "https://pmt.ethinos.com",
+      "websiteUrl": "https://pmt.ethinos.com",
+      "scopes": ["personal"]
+    }
+  ],
+  "permissions": [
+    "identity",
+    "messageTeamMembers"
+  ],
+  "validDomains": [
+    "pmt.ethinos.com"
+  ]
+}
