@@ -146,9 +146,10 @@ export async function resolveEntraObjectId(
     return objectIdMemoryCache.get(normalised)!;
   }
 
+  // Firebase cache: stored in a flat keyed collection separate from the users array
   if (pmtUserId) {
     try {
-      const stored = await readFirebasePath<string | null>(`users/${pmtUserId}/msObjectId`);
+      const stored = await readFirebasePath<string | null>(`userMeta/${pmtUserId}/msObjectId`);
       if (stored && typeof stored === "string") {
         objectIdMemoryCache.set(normalised, stored);
         return stored;
@@ -177,7 +178,7 @@ export async function resolveEntraObjectId(
     objectIdMemoryCache.set(normalised, json.id);
 
     if (pmtUserId) {
-      writeFirebasePath(`users/${pmtUserId}/msObjectId`, json.id).catch((err) => {
+      writeFirebasePath(`userMeta/${pmtUserId}/msObjectId`, json.id).catch((err) => {
         logger.warn({ err, pmtUserId }, "[Teams] Could not cache msObjectId in Firebase");
       });
     }
@@ -200,18 +201,22 @@ export async function sendTeamsActivityNotification(params: {
   taskName: string;
   clientName?: string;
   previewText: string;
+  taskId?: string;
 }): Promise<void> {
   const teamsAppId = process.env.TEAMS_APP_ID;
   if (!teamsAppId) return;
 
   try {
     const token = await getAccessToken();
-    const appUrl = "https://pmt.ethinos.com";
+    const baseUrl = "https://pmt.ethinos.com";
+    const deepLinkUrl = params.taskId
+      ? `${baseUrl}/?task=${encodeURIComponent(params.taskId)}`
+      : baseUrl;
 
     const body = {
       topic: {
         source: "entityUrl",
-        value: `https://teams.microsoft.com/l/entity/${teamsAppId}/home?webUrl=${encodeURIComponent(appUrl)}`,
+        value: `https://teams.microsoft.com/l/entity/${teamsAppId}/home?webUrl=${encodeURIComponent(deepLinkUrl)}`,
       },
       activityType: "taskMention",
       previewText: {

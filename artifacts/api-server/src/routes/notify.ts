@@ -510,7 +510,7 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
       }
 
       case "mention": {
-        const { recipientEmail, recipientId, recipientName, mentionerName, taskName, clientName, messageText } = data as Record<string, string>;
+        const { recipientEmail, recipientId, recipientName, mentionerName, taskName, clientName, messageText, taskId } = data as Record<string, string>;
         if (!recipientEmail) return res.json({ sent: false, reason: "no_email" });
         const to = resolveRecipient(recipientEmail);
         const subject = applyCustomSubject(
@@ -526,10 +526,16 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
         if (isTeamsConfigured() && recipientEmail && recipientId) {
           void (async () => {
             try {
-              const teamsEnabled = await readFirebasePath<boolean | null>(
-                `users/${recipientId}/teamsNotificationsEnabled`
-              );
-              if (!teamsEnabled) return;
+              // Users are stored as an array in Firebase, not keyed by user ID.
+              // Read the full array and find the matching record by id.
+              type FirebaseUser = { id?: string; teamsNotificationsEnabled?: boolean };
+              const usersRaw = await readFirebasePath<FirebaseUser[] | Record<string, FirebaseUser> | null>("users");
+              const usersArr: FirebaseUser[] = Array.isArray(usersRaw)
+                ? usersRaw
+                : usersRaw ? Object.values(usersRaw) : [];
+              const userRecord = usersArr.find((u) => u && u.id === recipientId);
+
+              if (!userRecord?.teamsNotificationsEnabled) return;
 
               const objectId = await resolveEntraObjectId(recipientEmail, recipientId);
               if (!objectId) {
@@ -544,6 +550,7 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
                 taskName: taskName || "",
                 clientName: clientName || "",
                 previewText: preview.length > 150 ? preview.slice(0, 147) + "…" : preview,
+                taskId: taskId || undefined,
               });
             } catch (err) {
               logger.warn({ err }, "[Teams] Async ping failed — email was already sent");

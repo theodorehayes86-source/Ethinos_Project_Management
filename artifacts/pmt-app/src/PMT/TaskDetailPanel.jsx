@@ -225,6 +225,7 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
           taskName: task.name || task.comment,
           clientName: task.clientName || task.cid || '',
           messageText: text,
+          taskId: task.id,
         });
       }
     });
