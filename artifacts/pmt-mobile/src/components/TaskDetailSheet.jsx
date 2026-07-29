@@ -190,11 +190,13 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
       if (recipientEmail) {
         sendNotification('mention', {
           recipientEmail,
+          recipientId: mentioned.id,
           recipientName: mentioned.name,
           mentionerName: currentUser.name,
           taskName: task.name || task.comment || 'Task',
           clientName: task._clientName || '',
           messageText: text,
+          taskId: task.id,
         });
       }
     });
