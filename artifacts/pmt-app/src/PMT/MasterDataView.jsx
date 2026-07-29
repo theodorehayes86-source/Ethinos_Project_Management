@@ -347,6 +347,10 @@ const MasterDataView = ({
   const [teamsConnected, setTeamsConnected] = useState(null); // null = loading
   const [teamsConnecting, setTeamsConnecting] = useState(false);
   const [teamsDisconnecting, setTeamsDisconnecting] = useState(false);
+
+  // Teams test-ping state (Notifications tab)
+  const [teamsPingTesting, setTeamsPingTesting] = useState(false);
+  const [teamsPingResult, setTeamsPingResult] = useState(null); // null | 'success' | string(error)
   const [kekaLoaded, setKekaLoaded] = useState(false);
 
   // ── Archive tab ──
@@ -444,7 +448,7 @@ const MasterDataView = ({
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'teams') checkTeamsStatus();
+    if (activeTab === 'teams' || activeTab === 'notifications') checkTeamsStatus();
   }, [activeTab, checkTeamsStatus]);
 
   const connectTeams = async () => {
@@ -514,6 +518,9 @@ const MasterDataView = ({
 
   const DIGEST_HOURS = [5,6,7,8,9,10,11,12];
 
+  // Events that support Teams activity pings (managed per-event via teamsActivityEnabled setting)
+  const TEAMS_PING_EVENTS = new Set(['mention', 'task-assigned', 'qc-submitted', 'qc-returned']);
+
   const NOTIFICATION_EVENTS = [
     { id: 'task-assigned', label: 'Task Assigned', description: 'Sent to the assignee when a task is created and assigned to them.', when: 'On task creation / assignment', defaultOn: true },
     { id: 'approval-required', label: 'Approval Required', description: 'Sent to managers when someone requests to be assigned a task.', when: 'On assignment request', defaultOn: true },
@@ -528,6 +535,24 @@ const MasterDataView = ({
     { id: 'task-due-soon', label: 'Task Due Soon', description: 'Daily check — sent to the assignee when a task is exactly 2 days from its due date.', when: 'Daily (configurable time), 2 days before due date', defaultOn: false },
     { id: 'task-status-changed', label: 'Task Status Changed', description: 'Sent to the assignee when another user changes their task status to WIP or Done.', when: 'On status change to WIP or Done', defaultOn: false },
   ];
+
+  const getTeamsActivityEnabled = (eventId) => {
+    const setting = notificationSettings[eventId];
+    if (setting && typeof setting.teamsActivityEnabled === 'boolean') return setting.teamsActivityEnabled;
+    return eventId === 'mention'; // mention defaults ON, everything else defaults OFF
+  };
+
+  const sendTestTeamsPing = async () => {
+    setTeamsPingTesting(true);
+    setTeamsPingResult(null);
+    try {
+      const result = await kekaAuthFetch('/teams/test-ping', { method: 'POST' });
+      setTeamsPingResult(result.sent ? 'success' : (result.error || 'Unknown error'));
+    } catch (e) {
+      setTeamsPingResult(String(e));
+    }
+    setTeamsPingTesting(false);
+  };
 
   const getEventEnabled = (eventId) => {
     const setting = notificationSettings[eventId];
@@ -2419,6 +2444,22 @@ const MasterDataView = ({
                       className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white outline-none focus:ring-2 ring-blue-500/20 resize-none"
                     />
                   </div>
+                  {/* Teams ping toggle — only shown for supported events */}
+                  {TEAMS_PING_EVENTS.has(event.id) && (
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-600 block">Teams activity ping</label>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Send a Teams notification banner in addition to the email</p>
+                      </div>
+                      <button
+                        onClick={() => onUpdateNotificationSetting && onUpdateNotificationSetting(event.id, { teamsActivityEnabled: !getTeamsActivityEnabled(event.id) })}
+                        disabled={!onUpdateNotificationSetting}
+                        className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:opacity-50 ${getTeamsActivityEnabled(event.id) ? 'bg-[#464EB8]' : 'bg-slate-300'}`}
+                      >
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ${getTeamsActivityEnabled(event.id) ? 'translate-x-4' : 'translate-x-0'}`} />
+                      </button>
+                    </div>
+                  )}
                   <div>
                     <label className="text-[11px] font-semibold text-slate-600 block mb-1">BCC addresses</label>
                     <div className="flex gap-1.5 mb-1.5">
@@ -2663,6 +2704,81 @@ const MasterDataView = ({
                 </div>
               );
             })()}
+
+            {/* Microsoft Teams activity pings */}
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <svg viewBox="0 0 24 24" className="w-4 h-4 flex-shrink-0" fill="none">
+                  <path d="M20.625 7.5h-5.25A1.125 1.125 0 0014.25 8.625v6.75a1.125 1.125 0 001.125 1.125h5.25A1.125 1.125 0 0021.75 15.375v-6.75A1.125 1.125 0 0020.625 7.5z" fill="#464EB8"/>
+                  <path d="M13.5 4.5a3 3 0 11-6 0 3 3 0 016 0zM3 18.75A6.75 6.75 0 0115.513 13.5H3V18.75z" fill="#464EB8"/>
+                  <circle cx="17.25" cy="5.25" r="2.25" fill="#464EB8"/>
+                </svg>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Microsoft Teams Activity Pings</p>
+                {teamsConnected === true && (
+                  <span className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-semibold">
+                    <Check size={10} /> Configured
+                  </span>
+                )}
+                {teamsConnected === false && (
+                  <span className="ml-auto text-[11px] text-slate-400 font-medium">Not configured</span>
+                )}
+              </div>
+
+              <p className="text-[11px] text-slate-500 mb-3 leading-relaxed">
+                When enabled, Flow Pro sends a Teams activity notification (banner + bell) in addition to the email. Each event below can be toggled independently. Users must have the Teams app installed and <b>Teams Pings</b> enabled on their profile.
+              </p>
+
+              {/* Per-event toggles grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
+                {NOTIFICATION_EVENTS.filter(e => TEAMS_PING_EVENTS.has(e.id)).map(event => {
+                  const pingEnabled = getTeamsActivityEnabled(event.id);
+                  return (
+                    <div key={event.id} className={`flex items-center gap-3 p-2.5 rounded-lg border ${pingEnabled ? 'border-[#464EB8]/30 bg-[#464EB8]/5' : 'border-slate-200 bg-slate-50'}`}>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-slate-800 truncate">{event.label}</p>
+                        <p className="text-[10px] text-slate-400 truncate">{event.when}</p>
+                      </div>
+                      <button
+                        onClick={() => onUpdateNotificationSetting && onUpdateNotificationSetting(event.id, { teamsActivityEnabled: !pingEnabled })}
+                        disabled={!onUpdateNotificationSetting}
+                        title={pingEnabled ? 'Disable Teams ping' : 'Enable Teams ping'}
+                        className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:opacity-50 ${pingEnabled ? 'bg-[#464EB8]' : 'bg-slate-300'}`}
+                      >
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ${pingEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Test ping button */}
+              <div className="flex items-center gap-3 pt-1 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={sendTestTeamsPing}
+                  disabled={teamsPingTesting || teamsConnected === null}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#464EB8] text-white hover:bg-[#3d44a5] disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-2"
+                >
+                  <Bell size={11} />
+                  {teamsPingTesting ? 'Sending…' : 'Send test ping to myself'}
+                </button>
+                {teamsPingResult === 'success' && (
+                  <span className="text-[11px] font-semibold text-emerald-600 inline-flex items-center gap-1">
+                    <Check size={11} /> Ping sent — check Teams
+                  </span>
+                )}
+                {teamsPingResult && teamsPingResult !== 'success' && (
+                  <span className="text-[11px] text-red-600 font-semibold">
+                    Error: {teamsPingResult.includes("Teams app") ? "Teams app not installed" : teamsPingResult.slice(0, 60)}
+                  </span>
+                )}
+                {teamsConnected === false && (
+                  <span className="text-[11px] text-slate-400">
+                    Set up in the <b>Microsoft Teams</b> tab first
+                  </span>
+                )}
+              </div>
+            </div>
 
             {/* Active events */}
             {activeEvents.length > 0 && (

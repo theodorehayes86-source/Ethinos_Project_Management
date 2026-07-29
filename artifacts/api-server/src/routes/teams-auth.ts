@@ -10,12 +10,19 @@
  * These allow the server to send 1:1 Teams DMs on behalf of the user.
  */
 
-import { Router, type Request, type Response } from "express";
+import { Router, type Request, type Response, type NextFunction } from "express";
 import { createHmac, timingSafeEqual } from "crypto";
 import { getAdminAuth } from "../lib/firebase-admin";
 import { readFirebasePath, writeFirebasePath } from "../lib/firebase-admin";
-import { getUserDelegatedToken } from "../lib/microsoft-graph";
+import { getUserDelegatedToken, resolveEntraObjectId, sendTeamsActivityNotification } from "../lib/microsoft-graph";
 import { logger } from "../lib/logger";
+
+async function requireFirebaseAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) { res.status(401).json({ error: "Missing Authorization header" }); return; }
+  try { await getAdminAuth().verifyIdToken(authHeader.slice(7)); next(); }
+  catch { res.status(401).json({ error: "Invalid or expired token" }); }
+}
 
 const router = Router();
 
@@ -295,5 +302,45 @@ function closePopupHtml(status: "success" | "error", message: string): string {
 </body>
 </html>`;
 }
+
+/* ─── Test ping endpoint ─── */
+
+router.post("/test-ping", requireFirebaseAuth, async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization!;
+    const decoded = await getAdminAuth().verifyIdToken(authHeader.slice(7));
+    const email = decoded.email;
+    if (!email) { res.status(400).json({ error: "No email in token" }); return; }
+
+    type FBUser = { id?: string; email?: string; emailAddress?: string };
+    const usersRaw = await readFirebasePath<FBUser[] | Record<string, FBUser> | null>("users");
+    const usersArr: FBUser[] = Array.isArray(usersRaw)
+      ? usersRaw : usersRaw ? Object.values(usersRaw) : [];
+    const userRecord = usersArr.find(u => u && (u.email === email || u.emailAddress === email));
+    const userId = userRecord ? String(userRecord.id ?? "") : "";
+
+    const objectId = await resolveEntraObjectId(email, userId);
+    if (!objectId) {
+      res.status(404).json({ error: "Could not resolve your Teams user ID. Make sure your Ethinos Microsoft account email matches your PMT account." });
+      return;
+    }
+
+    await sendTeamsActivityNotification({
+      recipientObjectId: objectId,
+      mentionerName: "Flow Pro",
+      taskName: "Test Notification",
+      clientName: "Ethinos",
+      previewText: "✅ Teams activity notifications are working.",
+      taskId: undefined,
+    });
+
+    logger.info({ email }, "[Teams] Test ping sent successfully");
+    res.json({ sent: true });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn({ err }, "[Teams] Test ping failed");
+    res.status(500).json({ error: msg });
+  }
+});
 
 export default router;

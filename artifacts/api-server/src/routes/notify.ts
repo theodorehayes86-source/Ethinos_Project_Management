@@ -57,6 +57,65 @@ interface NotificationSetting {
   customSubject?: string;
   customIntroText?: string;
   bccEmails?: string[];
+  teamsActivityEnabled?: boolean;
+}
+
+/** Whether Teams activity pings are enabled for this event type.
+ *  "mention" defaults ON (existing behaviour); everything else defaults OFF. */
+function isTeamsActivityEnabled(setting: NotificationSetting, type: string): boolean {
+  if (typeof setting.teamsActivityEnabled === "boolean") return setting.teamsActivityEnabled;
+  return type === "mention";
+}
+
+/** Shared helper: fire a Teams activity-notification for one recipient.
+ *  Silently skips if the user has teamsNotificationsEnabled=false in Firebase. */
+async function fireTeamsActivityPing({
+  recipientEmail,
+  recipientId,
+  taskName,
+  clientName,
+  taskId,
+  previewText,
+  actorName,
+  eventType,
+}: {
+  recipientEmail: string;
+  recipientId?: string;
+  taskName: string;
+  clientName?: string;
+  taskId?: string;
+  previewText: string;
+  actorName?: string;
+  eventType: string;
+}): Promise<void> {
+  try {
+    type FBUser = { id?: string; email?: string; emailAddress?: string; teamsNotificationsEnabled?: boolean };
+    const usersRaw = await readFirebasePath<FBUser[] | Record<string, FBUser> | null>("users");
+    const usersArr: FBUser[] = Array.isArray(usersRaw)
+      ? usersRaw
+      : usersRaw ? Object.values(usersRaw) : [];
+    const userRecord = recipientId
+      ? usersArr.find((u) => u && String(u.id) === String(recipientId))
+      : usersArr.find((u) => u && (u.email === recipientEmail || u.emailAddress === recipientEmail));
+    if (!userRecord?.teamsNotificationsEnabled) return;
+    const effectiveId = recipientId ?? String(userRecord.id ?? "");
+    const objectId = await resolveEntraObjectId(recipientEmail, effectiveId);
+    if (!objectId) {
+      logger.warn({ recipientEmail }, "[Teams] Could not resolve Entra Object ID — skipping ping");
+      return;
+    }
+    await sendTeamsActivityNotification({
+      recipientObjectId: objectId,
+      mentionerName: actorName || "Flow Pro",
+      taskName: taskName || "",
+      clientName: clientName || "",
+      previewText: previewText.length > 150 ? previewText.slice(0, 147) + "…" : previewText,
+      taskId: taskId || undefined,
+    });
+    logger.info({ eventType, recipientEmail }, "[Teams] Activity ping sent");
+  } catch (err) {
+    logger.warn({ err, eventType, recipientEmail }, "[Teams] Activity ping failed");
+  }
 }
 
 async function getNotificationSetting(type: string): Promise<NotificationSetting> {
@@ -472,6 +531,18 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
         html = applyCustomIntroText(html, setting.customIntroText);
         await sendEmail({ to, subject, bodyHtml: html, bcc: testMode ? [] : firebaseBcc });
         logger.info({ to, original: assigneeEmail, taskName, testMode }, "[Notify] task-assigned email sent");
+        // Teams activity ping
+        if (isTeamsConfigured() && isTeamsActivityEnabled(setting, "task-assigned") && assigneeEmail) {
+          void fireTeamsActivityPing({
+            recipientEmail: assigneeEmail as string,
+            taskName: taskName as string,
+            clientName: clientName as string | undefined,
+            taskId: data.taskId as string | undefined,
+            previewText: `New task assigned to you: "${taskName}"`,
+            actorName: creatorName as string | undefined,
+            eventType: "task-assigned",
+          });
+        }
         break;
       }
 
@@ -525,7 +596,7 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
         logger.info({ to, original: recipientEmail, taskName, testMode }, "[Notify] mention email sent");
 
         // Teams activity ping — fires independently, never blocks or breaks the email path
-        if (isTeamsConfigured() && recipientEmail && recipientId) {
+        if (isTeamsConfigured() && isTeamsActivityEnabled(setting, "mention") && recipientEmail && recipientId) {
           void (async () => {
             try {
               // Users are stored as an array in Firebase, not keyed by user ID.
@@ -614,6 +685,19 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
         const bccList = testMode ? [] : firebaseBcc.filter((e) => e !== assigneeEmail);
         await sendEmail({ to, subject, bodyHtml: html, bcc: bccList });
         logger.info({ to, original: assigneeEmail, taskName, bccCount: bccList.length, testMode }, "[Notify] qc-returned email sent");
+        // Teams activity ping
+        if (isTeamsConfigured() && isTeamsActivityEnabled(setting, "qc-returned") && assigneeEmail) {
+          const { assigneeId } = data as Record<string, string>;
+          void fireTeamsActivityPing({
+            recipientEmail: assigneeEmail as string,
+            recipientId: assigneeId,
+            taskName: taskName as string,
+            clientName: clientName as string | undefined,
+            previewText: `${(data as Record<string, string>).reviewerName || "Reviewer"} returned "${taskName}" for revision`,
+            actorName: (data as Record<string, string>).reviewerName,
+            eventType: "qc-returned",
+          });
+        }
         break;
       }
 
@@ -629,6 +713,17 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
         html = applyCustomIntroText(html, setting.customIntroText);
         await sendEmail({ to, subject, bodyHtml: html, bcc: testMode ? [] : firebaseBcc });
         logger.info({ to, original: reviewerEmail, taskName, testMode }, "[Notify] qc-submitted email sent");
+        // Teams activity ping
+        if (isTeamsConfigured() && isTeamsActivityEnabled(setting, "qc-submitted") && reviewerEmail) {
+          void fireTeamsActivityPing({
+            recipientEmail: reviewerEmail,
+            taskName: taskName,
+            clientName: clientName,
+            previewText: `${submitterName || "Someone"} submitted "${taskName}" for QC review`,
+            actorName: submitterName,
+            eventType: "qc-submitted",
+          });
+        }
         break;
       }
 
