@@ -236,10 +236,16 @@ export async function sendTeamsActivityNotification(params: {
       ? `${baseUrl}/?task=${encodeURIComponent(params.taskId)}`
       : baseUrl;
 
+    // Teams activity notification topic:
+    // source "text" with a Teams deep-link webUrl is required for user-level notifications.
+    // The webUrl must start with https://teams.microsoft.com/l/
+    const teamsDeepLink = `https://teams.microsoft.com/l/entity/${teamsAppId}/home`;
+
     const body = {
       topic: {
-        source: "entityUrl",
-        value: `https://teams.microsoft.com/l/entity/${teamsAppId}/home?webUrl=${encodeURIComponent(deepLinkUrl)}`,
+        source: "text",
+        value: params.taskName ? `Task: ${params.taskName}` : "Flow Pro Task",
+        webUrl: teamsDeepLink,
       },
       activityType: "taskMention",
       previewText: {
