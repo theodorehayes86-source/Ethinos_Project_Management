@@ -11,6 +11,14 @@ async function requireAdminRole(
   res: Response,
   next: NextFunction
 ): Promise<void> {
+  // Internal API key bypass — allows server-side scripts and scheduler testing
+  // without a live Firebase session.
+  const internalKey = process.env.PMT_EXPORT_API_KEY;
+  if (internalKey && req.headers["x-api-key"] === internalKey) {
+    next();
+    return;
+  }
+
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith("Bearer ")) {
     res.status(401).json({ error: "Missing or invalid Authorization header" });

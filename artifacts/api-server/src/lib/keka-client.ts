@@ -866,7 +866,11 @@ export async function syncAttendanceToday(): Promise<AttendanceSyncResult> {
 
   try {
     const token = await getKekaAccessToken(creds.baseUrl);
-    const url = `${creds.baseUrl.replace(/\/$/, "")}/api/v1/time/attendance?fromDate=${today}&toDate=${today}&pageNumber=1&pageSize=200`;
+    // Note: Keka's attendance API often ignores fromDate/toDate and returns
+    // the most recently processed batch regardless. We query without date
+    // constraints and use the attendanceDate field on each record to key the
+    // Firebase path, so data is always stored under the correct date.
+    const url = `${creds.baseUrl.replace(/\/$/, "")}/api/v1/time/attendance?pageNumber=1&pageSize=200`;
 
     const resp = await fetch(url, {
       headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
