@@ -11,3 +11,9 @@ id = "huKsD8nImNjsOGWMWVdpI"
 uri = "file://.local/outputs/Asset-Manager.pptx"
 type = "slides"
 title = "Asset Manager.pptx"
+
+[[outputs]]
+id = "W0rAwvAtP4IURUIgV8Une"
+uri = "file://teams-app/EthinosFlowPro-teams-app.zip"
+type = "unspecified"
+title = "Ethinos Flow Pro — Teams App Package"
