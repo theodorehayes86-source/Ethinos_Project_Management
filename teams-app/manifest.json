@@ -3,20 +3,19 @@
   "manifestVersion": "1.17",
   "version": "1.0.0",
   "id": "357151d3-0f6a-4270-a942-0bdf9202fc05",
-  "packageName": "com.ethinos.pmt",
   "developer": {
     "name": "Ethinos Digital Marketing",
-    "websiteUrl": "https://pmt.ethinos.com",
-    "privacyUrl": "https://pmt.ethinos.com",
-    "termsOfUseUrl": "https://pmt.ethinos.com"
+    "websiteUrl": "https://project.ethinos.com",
+    "privacyUrl": "https://project.ethinos.com",
+    "termsOfUseUrl": "https://project.ethinos.com"
   },
   "name": {
     "short": "Ethinos Flow Pro",
-    "full": "Ethinos Flow Pro — Project Management Tool"
+    "full": "Ethinos Flow Pro \u2014 Project Management Tool"
   },
   "description": {
-    "short": "Track tasks, log time, and stay in sync with your team.",
-    "full": "Ethinos Flow Pro is the internal project management tool for Ethinos staff. Receive real-time Teams notifications when teammates @mention you in task discussions."
+    "short": "Task updates & @mention alerts for Ethinos staff.",
+    "full": "Ethinos Flow Pro is the internal project management tool for Ethinos staff. Receive real-time Teams activity notifications when teammates @mention you in task discussions."
   },
   "icons": {
     "color": "icon-color.png",
@@ -24,8 +23,8 @@
   },
   "accentColor": "#2563EB",
   "webApplicationInfo": {
-    "id": "${VITE_AZURE_CLIENT_ID}",
-    "resource": "api://pmt.ethinos.com/${VITE_AZURE_CLIENT_ID}"
+    "id": "879dea7e-d057-4d4b-ac14-d48f7deafbfa",
+    "resource": "api://project.ethinos.com/879dea7e-d057-4d4b-ac14-d48f7deafbfa"
   },
   "activities": {
     "activityTypes": [
@@ -40,9 +39,11 @@
     {
       "entityId": "home",
       "name": "Flow Pro",
-      "contentUrl": "https://pmt.ethinos.com",
-      "websiteUrl": "https://pmt.ethinos.com",
-      "scopes": ["personal"]
+      "contentUrl": "https://project.ethinos.com",
+      "websiteUrl": "https://project.ethinos.com",
+      "scopes": [
+        "personal"
+      ]
     }
   ],
   "permissions": [
@@ -50,6 +51,6 @@
     "messageTeamMembers"
   ],
   "validDomains": [
-    "pmt.ethinos.com"
+    "project.ethinos.com"
   ]
 }
