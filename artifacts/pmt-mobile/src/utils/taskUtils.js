@@ -2,6 +2,23 @@ import { parse, isBefore, startOfToday, format, addDays } from 'date-fns';
 import { ref, get } from 'firebase/database';
 import { db } from '../firebase.js';
 
+/**
+ * Fetch today's attendance data for ALL users in a single Firebase read.
+ * Returns a map of pmtUserId → { clockIn, clockOut, isInOffice, grossHours, syncedAt }.
+ * Call once per view and share — do NOT call per-user.
+ *
+ * @returns {Promise<Record<string, {clockIn: string|null, clockOut: string|null, isInOffice: boolean, grossHours: number, syncedAt: string}>>}
+ */
+export async function getTodayAttendanceMap() {
+  const today = format(new Date(), 'yyyy-MM-dd');
+  try {
+    const snap = await get(ref(db, `attendanceData/${today}`));
+    return snap.val() || {};
+  } catch {
+    return {};
+  }
+}
+
 export const isTaskOverdue = (task, currentStatus) => {
   const status = currentStatus !== undefined ? currentStatus : task.status;
   if (!task.dueDate || status === 'Done') return false;

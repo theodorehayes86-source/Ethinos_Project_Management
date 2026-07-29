@@ -211,6 +211,24 @@ export async function getUserLeaveStatus(userId, region = "All") {
 }
 
 /**
+ * Fetch today's attendance data for ALL users in a single Firebase read.
+ * Returns a map of pmtUserId → { clockIn, clockOut, isInOffice, grossHours, syncedAt }.
+ * Call once per view load and share the result — do NOT call per-user.
+ *
+ * @returns {Promise<Record<string, {clockIn: string|null, clockOut: string|null, isInOffice: boolean, grossHours: number, syncedAt: string}>>}
+ */
+export async function getTodayAttendanceMap() {
+  const today = toDateKey(new Date());
+  if (!today) return {};
+  try {
+    const snap = await get(ref(db, `attendanceData/${today}`));
+    return snap.val() || {};
+  } catch {
+    return {};
+  }
+}
+
+/**
  * Fetches upcoming public holidays in the next `days` days as a Set of YYYY-MM-DD strings.
  * Should be called once per view load (not per user) to avoid read amplification.
  *

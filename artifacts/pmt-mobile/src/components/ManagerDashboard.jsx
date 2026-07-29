@@ -9,7 +9,7 @@ import {
   getUserTaskStats,
   getSubtreeStats,
 } from '../hooks/useFirebaseData.js';
-import { isTaskOverdue, isTaskLeaveAwareOverdue, getLeaveAndHolidayData, getLeaveDataForUser, getLeaveStatus } from '../utils/taskUtils.js';
+import { isTaskOverdue, isTaskLeaveAwareOverdue, getLeaveAndHolidayData, getLeaveDataForUser, getLeaveStatus, getTodayAttendanceMap } from '../utils/taskUtils.js';
 
 const STATUS_COLORS = {
   Pending: 'bg-amber-100 text-amber-700',
@@ -170,7 +170,7 @@ function TaskRow({ task, onTaskClick }) {
   );
 }
 
-function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onTaskClick }) {
+function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onTaskClick, attendanceStatus }) {
   const personal = getUserTaskStats(user.id, clientLogs, clients);
   const team     = getSubtreeStats(user.id, allUsers, clientLogs, clients);
   const reports  = getDirectReports(user.id, allUsers);
@@ -226,6 +226,13 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
               )}
               {leaveStatus === 'leave_soon' && (
                 <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-amber-300 border-2 border-white" title="Leave Soon" />
+              )}
+              {/* Attendance dot: only show when not on leave and clock-in data exists */}
+              {leaveStatus !== 'on_leave' && attendanceStatus?.clockIn && (
+                <span
+                  className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${attendanceStatus.isInOffice ? 'bg-emerald-400' : 'bg-slate-400'}`}
+                  title={attendanceStatus.isInOffice ? 'In office' : 'Left for day'}
+                />
               )}
             </div>
             <div className="flex-1 min-w-0">
@@ -625,6 +632,7 @@ export default function ManagerDashboard({
   const [showAddTask, setShowAddTask] = useState(false);
   const [showAllDrillTasks, setShowAllDrillTasks] = useState(false);
   const [leaveByUser, setLeaveByUser] = useState({});
+  const [attendanceByUser, setAttendanceByUser] = useState({});
 
   const scrollContainerRef = useRef(null);
   const atRiskRef = useRef(null);
@@ -648,8 +656,15 @@ export default function ManagerDashboard({
   useEffect(() => {
     if (drillStack.length > 0 || subtreeIds.size === 0) return;
     let cancelled = false;
-    Promise.all([...subtreeIds].map(uid => getLeaveAndHolidayData(uid).then(d => [uid, d]))).then(entries => {
-      if (!cancelled) setLeaveByUser(Object.fromEntries(entries));
+    Promise.all([
+      Promise.all([...subtreeIds].map(uid => getLeaveAndHolidayData(uid).then(d => [uid, d]))),
+      // Single Firebase read for the whole team's attendance today
+      getTodayAttendanceMap(),
+    ]).then(([leaveEntries, attendanceMap]) => {
+      if (!cancelled) {
+        setLeaveByUser(Object.fromEntries(leaveEntries));
+        setAttendanceByUser(attendanceMap);
+      }
     });
     return () => { cancelled = true; };
   }, [clientLogs, subtreeIds, drillStack.length]);
@@ -739,6 +754,45 @@ export default function ManagerDashboard({
                 onScrollTo={scrollTo}
               />
             )}
+
+            {drillStack.length === 0 && (() => {
+              const teamIds = [...subtreeIds];
+              if (teamIds.length === 0 || Object.keys(attendanceByUser).length === 0) return null;
+              const inOffice   = teamIds.filter(id => attendanceByUser[id]?.isInOffice).length;
+              const leftToday  = teamIds.filter(id => attendanceByUser[id]?.clockIn && !attendanceByUser[id]?.isInOffice).length;
+              const notArrived = teamIds.length - inOffice - leftToday;
+              return (
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-4 py-3">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2.5">Today's Attendance</p>
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 flex-shrink-0" />
+                      <div>
+                        <p className="text-sm font-black text-slate-900">{inOffice}</p>
+                        <p className="text-[9px] text-slate-400 uppercase tracking-wide leading-tight">In Office</p>
+                      </div>
+                    </div>
+                    <div className="w-px h-8 bg-slate-100" />
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-slate-400 flex-shrink-0" />
+                      <div>
+                        <p className="text-sm font-black text-slate-900">{leftToday}</p>
+                        <p className="text-[9px] text-slate-400 uppercase tracking-wide leading-tight">Left</p>
+                      </div>
+                    </div>
+                    <div className="w-px h-8 bg-slate-100" />
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-slate-200 flex-shrink-0" />
+                      <div>
+                        <p className="text-sm font-black text-slate-500">{notArrived}</p>
+                        <p className="text-[9px] text-slate-400 uppercase tracking-wide leading-tight">Not In</p>
+                      </div>
+                    </div>
+                    <p className="ml-auto text-[9px] text-slate-300">via Keka</p>
+                  </div>
+                </div>
+              );
+            })()}
 
             {drillStack.length === 0 && (
               <AtRiskSection
@@ -830,6 +884,7 @@ export default function ManagerDashboard({
                     allUsers={users}
                     onDrillIn={drillIn}
                     onTaskClick={setSelectedTask}
+                    attendanceStatus={attendanceByUser[String(u.id)] ?? null}
                   />
                 ))}
               </>

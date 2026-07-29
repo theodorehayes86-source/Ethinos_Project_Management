@@ -812,6 +812,133 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
   return result;
 }
 
+// ─── Attendance sync ──────────────────────────────────────────────────────────
+
+interface KekaAttendanceRecord {
+  id: string;
+  employeeNumber?: string;
+  employeeIdentifier: string;
+  attendanceDate?: string;
+  dayType?: number;
+  totalGrossHours?: number;
+  totalEffectiveHours?: number;
+  firstInOfTheDay?: {
+    timestamp: string;
+    punchStatus: number;
+    premiseName?: string;
+    locationAddress?: string | null;
+  } | null;
+  lastOutOfTheDay?: {
+    timestamp: string;
+    punchStatus: number;
+    premiseName?: string;
+    locationAddress?: string | null;
+  } | null;
+}
+
+export interface AttendanceSyncResult {
+  success: boolean;
+  recordsWritten: number;
+  date: string;
+  syncedAt: string;
+  error?: string;
+}
+
+/**
+ * Fetch today's attendance from Keka and write clock-in/out status to Firebase.
+ *
+ * Firebase path: attendanceData/{yyyy-MM-dd}/{pmtUserId}
+ * Fields: clockIn (ISO|null), clockOut (ISO|null), isInOffice (bool),
+ *         grossHours, effectiveHours, syncedAt
+ *
+ * Rate limit: Keka allows 50 req/min. This function makes 1 API call (today's
+ * data ≤ 200 employees per page). At 10-minute scheduler intervals that is
+ * 6 calls/hour — well within budget.
+ */
+export async function syncAttendanceToday(): Promise<AttendanceSyncResult> {
+  const syncedAt = new Date().toISOString();
+  const today = format(new Date(), "yyyy-MM-dd");
+
+  const creds = await getKekaCredentials();
+  if (!creds) {
+    return { success: false, recordsWritten: 0, date: today, syncedAt, error: "Keka credentials not configured" };
+  }
+
+  try {
+    const token = await getKekaAccessToken(creds.baseUrl);
+    const url = `${creds.baseUrl.replace(/\/$/, "")}/api/v1/time/attendance?fromDate=${today}&toDate=${today}&pageNumber=1&pageSize=200`;
+
+    const resp = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    });
+
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => "");
+      throw new Error(`Keka attendance API HTTP ${resp.status}: ${body.slice(0, 200)}`);
+    }
+
+    const body = (await resp.json()) as KekaApiResponse<KekaAttendanceRecord>;
+    const records = (body.data ?? body.response ?? []) as KekaAttendanceRecord[];
+
+    // Build kekaEmployeeId → pmtUserId map from Firebase users
+    const usersRaw = await readFirebasePath<unknown>("users");
+    const kekaIdToUserId: Record<string, string> = {};
+    if (usersRaw) {
+      const userList: PMTUser[] = Array.isArray(usersRaw)
+        ? (usersRaw as PMTUser[]).filter(Boolean)
+        : Object.values(usersRaw as Record<string, PMTUser>).filter(Boolean);
+      for (const u of userList) {
+        if (u.kekaEmployeeId && u.id != null) {
+          kekaIdToUserId[u.kekaEmployeeId] = String(u.id);
+        }
+      }
+    }
+
+    const nowStr = new Date().toISOString();
+    let recordsWritten = 0;
+
+    for (const rec of records) {
+      const empId = rec.employeeIdentifier;
+      if (!empId) continue;
+      const pmtUserId = kekaIdToUserId[empId];
+      if (!pmtUserId) continue;
+
+      const clockIn = rec.firstInOfTheDay?.timestamp ?? null;
+      const clockOut = rec.lastOutOfTheDay?.timestamp ?? null;
+      // isInOffice = clocked in today and not yet clocked out
+      const isInOffice = clockIn !== null && clockOut === null;
+
+      await writeFirebasePath(`attendanceData/${today}/${pmtUserId}`, {
+        clockIn,
+        clockOut,
+        isInOffice,
+        grossHours: rec.totalGrossHours ?? 0,
+        effectiveHours: rec.totalEffectiveHours ?? 0,
+        syncedAt: nowStr,
+      });
+      recordsWritten++;
+    }
+
+    await writeFirebasePath("settings/integrations/keka/lastAttendanceSync", {
+      syncedAt: nowStr,
+      recordsWritten,
+      date: today,
+    });
+
+    logger.info({ recordsWritten, date: today }, "[Keka] Attendance sync complete");
+    return { success: true, recordsWritten, date: today, syncedAt };
+  } catch (err) {
+    logger.error({ err }, "[Keka] Attendance sync failed");
+    return {
+      success: false,
+      recordsWritten: 0,
+      date: today,
+      syncedAt,
+      error: String(err),
+    };
+  }
+}
+
 // ─── Leave / holiday conflict check ──────────────────────────────────────────
 
 export interface LeaveConflict {

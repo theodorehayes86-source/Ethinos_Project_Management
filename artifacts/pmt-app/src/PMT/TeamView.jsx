@@ -4,7 +4,7 @@ import { format, isBefore, isAfter, startOfWeek, endOfWeek, startOfMonth, endOfM
 import TaskDetailPanel from './TaskDetailPanel';
 import { sendNotification } from '../utils/notify';
 import DueDateInput from './DueDateInput';
-import { getUserLeaveStatus, getUserLeaveData, getUserLeaveAndHolidayData, checkLeaveConflict, toDateKey, isFullDayLeaveOrHoliday, getUpcomingHolidays } from '../utils/leaveConflict';
+import { getUserLeaveStatus, getUserLeaveData, getUserLeaveAndHolidayData, checkLeaveConflict, toDateKey, isFullDayLeaveOrHoliday, getUpcomingHolidays, getTodayAttendanceMap } from '../utils/leaveConflict';
 import LeaveConflictModal from './LeaveConflictModal';
 
 const DEFAULT_STANDARD_TRACK = ['Director', 'Snr Manager', 'Manager', 'Asst Manager', 'Snr Executive', 'Executive', 'Employee', 'Intern'];
@@ -565,8 +565,9 @@ const fmtLeaveDateRange = (start, end) => {
   return `${s.toLocaleDateString('en-IN', opts)} – ${e.toLocaleDateString('en-IN', opts)}`;
 };
 
-const MemberCard = ({ member, isSelected, onClick, leaveStatus }) => {
+const MemberCard = ({ member, isSelected, onClick, leaveStatus, attendanceStatus }) => {
   const ls = leaveStatus || {};
+  const as = attendanceStatus || null;
 
   // Build badge: today states take priority, then upcoming
   // At most 2 badges: one for today, one for upcoming
@@ -585,11 +586,24 @@ const MemberCard = ({ member, isSelected, onClick, leaveStatus }) => {
         : null
     : null;
 
+  // Attendance dot on avatar: green = currently in office, slate = clocked out today
+  // Only show when data exists — absence of data means no biometric / weekend / not yet synced
+  const attendanceDot = as?.clockIn
+    ? as.isInOffice
+      ? 'bg-emerald-400'   // clocked in, not yet out = in office right now
+      : 'bg-slate-400'     // clocked in and out = was in today, left
+    : null;
+
   return (
     <button onClick={onClick}
       className={`w-full text-left px-4 py-3 rounded-xl border transition-all ${isSelected ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white border-slate-200 hover:border-blue-200 hover:shadow-sm text-slate-700'}`}>
       <div className="flex items-center gap-3">
-        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-[11px] flex-shrink-0 ${isSelected ? 'bg-white/20 text-white' : `${avatarColor(member.name)} text-white`}`}>{initials(member.name)}</div>
+        <div className="relative flex-shrink-0">
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-[11px] ${isSelected ? 'bg-white/20 text-white' : `${avatarColor(member.name)} text-white`}`}>{initials(member.name)}</div>
+          {attendanceDot && !ls.onLeaveToday && (
+            <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${attendanceDot}`} title={as.isInOffice ? 'In office' : 'Left for day'} />
+          )}
+        </div>
         <div className="flex-1 min-w-0">
           <p className={`text-xs font-bold truncate ${isSelected ? 'text-white' : 'text-slate-800'}`}>{member.name}</p>
           {member.department && <p className={`text-[10px] truncate ${isSelected ? 'text-blue-100' : 'text-slate-500'}`}>{member.department}</p>}
@@ -635,6 +649,7 @@ const TeamView = ({
   const [leaveStatuses, setLeaveStatuses] = useState({});
   const [leaveLoaded, setLeaveLoaded] = useState(false);
   const [upcomingHolidays, setUpcomingHolidays] = useState(new Set());
+  const [attendanceStatuses, setAttendanceStatuses] = useState({});
 
   const overviewAtRiskRef = useRef(null);
   const overviewPendingQCRef = useRef(null);
@@ -739,12 +754,15 @@ const TeamView = ({
         )
       ),
       getUpcomingHolidays('All', 14),
-    ]).then(([results, holidays]) => {
+      // Single Firebase read for all attendance — one call for the whole team
+      getTodayAttendanceMap(),
+    ]).then(([results, holidays, attendanceMap]) => {
       if (cancelled) return;
       const map = {};
       results.forEach(({ id, status }) => { map[id] = status; });
       setLeaveStatuses(map);
       setUpcomingHolidays(holidays);
+      setAttendanceStatuses(attendanceMap);
     }).finally(() => {
       if (!cancelled) setLeaveLoaded(true);
     });
@@ -990,7 +1008,7 @@ const TeamView = ({
               {members.length === 0
                 ? <EmptyLevelRow role={role}/>
                 : members.map(member => (
-                    <MemberCard key={member.id} member={member} isSelected={selectedMember?.id === member.id} onClick={() => setSelectedMember(member)} leaveStatus={leaveStatuses[String(member.id)]}/>
+                    <MemberCard key={member.id} member={member} isSelected={selectedMember?.id === member.id} onClick={() => setSelectedMember(member)} leaveStatus={leaveStatuses[String(member.id)]} attendanceStatus={attendanceStatuses[String(member.id)]}/>
                   ))
               }
             </div>

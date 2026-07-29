@@ -1,7 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import admin from "firebase-admin";
 import { readFirebasePath, writeFirebasePath } from "../lib/firebase-admin";
-import { syncKekaData, getKekaCredentials, readKekaApiKey, writeKekaApiKey, readKekaClientId, writeKekaClientId, readKekaClientSecret, writeKekaClientSecret, testKekaConnection } from "../lib/keka-client";
+import { syncKekaData, syncAttendanceToday, getKekaCredentials, readKekaApiKey, writeKekaApiKey, readKekaClientId, writeKekaClientId, readKekaClientSecret, writeKekaClientSecret, testKekaConnection } from "../lib/keka-client";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -55,6 +55,17 @@ router.post("/keka/sync", requireAdminRole, async (_req: Request, res: Response)
   } catch (err) {
     logger.error({ err }, "[Keka] Manual sync failed");
     res.status(500).json({ error: "Sync failed", details: String(err) });
+  }
+});
+
+router.post("/keka/sync-attendance", requireAdminRole, async (_req: Request, res: Response) => {
+  logger.info("[Keka] Manual attendance sync triggered via API");
+  try {
+    const result = await syncAttendanceToday();
+    res.json(result);
+  } catch (err) {
+    logger.error({ err }, "[Keka] Manual attendance sync failed");
+    res.status(500).json({ error: "Attendance sync failed", details: String(err) });
   }
 });
 

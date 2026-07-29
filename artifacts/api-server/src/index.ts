@@ -4,6 +4,7 @@ import { startReminderScheduler } from "./lib/reminder-scheduler";
 import { startRepeatScheduler } from "./lib/repeat-scheduler";
 import { startWeeklyDigestScheduler } from "./lib/weekly-digest-scheduler";
 import { startKekaScheduler } from "./lib/keka-scheduler";
+import { startAttendanceScheduler } from "./lib/attendance-scheduler";
 
 const rawPort = process.env["PORT"];
 
@@ -61,4 +62,5 @@ app.listen(port, (err) => {
   startReminderScheduler();
   startWeeklyDigestScheduler();
   startKekaScheduler();
+  startAttendanceScheduler();
 });
