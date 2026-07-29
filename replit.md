@@ -153,6 +153,17 @@ The Keka API key is stored server-side in `.secrets/keka-api-key` (mode 0o600) a
 ## Azure AD App Registration Requirements
 
 - **Supported account types:** Single tenant (`@ethinos.com` directory only)
-- **API permissions:** `Mail.Send` (Application permission) — requires admin consent
 - **Redirect URI:** Set to the Replit app's origin (for MSAL popup)
 - **Client secret:** Create under Certificates & secrets, store as `AZURE_CLIENT_SECRET`
+
+### Required API permissions (all Application permissions — require admin consent)
+
+| Permission | Used for |
+|---|---|
+| `Mail.Send` | Sending transactional emails (assignment, mention, digest, password reset) via Microsoft Graph |
+| `TeamsActivity.Send` | Sending activity-feed pings to staff when they are @mentioned in task chat |
+| `User.Read.All` | Resolving a user's Entra Object ID from their `@ethinos.com` email (required for Teams pings) |
+
+All three are **Application permissions** (not Delegated). After adding them, click **Grant admin consent for [your tenant]** in the Azure Portal.
+
+> **Teams pings are optional.** If `TeamsActivity.Send` and `User.Read.All` are not granted, the `TEAMS_APP_ID` secret should be left unset. The server will log a warning at startup and silently skip Teams notifications; all email notifications continue to work normally. See `teams-app/README.md` for full Teams setup instructions.
