@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, Search, ShieldCheck, Edit2, X, ChevronUp, ChevronDown, Lock, Users, Crown, Check, Star, UserCheck, UserPlus, Edit3, Mail, MessageSquare, Bug, Lightbulb, AlertCircle, CheckCircle2, Clock, Filter, Eye, EyeOff, FlaskConical, Archive, ArchiveRestore, ChevronRight, CornerDownLeft, Send, Upload, Pencil, Link2, RefreshCw, AlertTriangle, CalendarOff } from 'lucide-react';
+import { Plus, Trash2, Search, ShieldCheck, Edit2, X, ChevronUp, ChevronDown, Lock, Users, Crown, Check, Star, UserCheck, UserPlus, Edit3, Mail, MessageSquare, Bell, Bug, Lightbulb, AlertCircle, CheckCircle2, Clock, Filter, Eye, EyeOff, FlaskConical, Archive, ArchiveRestore, ChevronRight, CornerDownLeft, Send, Upload, Pencil, Link2, RefreshCw, AlertTriangle, CalendarOff } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 import UserPickerModal from './UserPickerModal';
 import CsvImportModal from './CsvImportModal';
@@ -63,6 +63,7 @@ const CC_TABS = [
   { id: 'checklistTemplates', label: 'Checklist Templates' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'integrations', label: 'Integrations' },
+  { id: 'teams', label: 'Microsoft Teams' },
   { id: 'feedback', label: 'Feedback' },
   { id: 'archive', label: 'Archive' },
 ];
@@ -128,6 +129,7 @@ const MasterDataView = ({
     const accessible = CC_TABS.filter(tab => {
       if (tab.id === 'notifications') return currentUser?.role === 'Super Admin';
       if (tab.id === 'archive') return ['Super Admin', 'Director'].includes(currentUser?.role);
+      if (tab.id === 'teams') return true; // all users can connect their Teams account
       if (currentUser?.role === 'Super Admin') return true;
       if (tab.id === 'integrations') return canSeeIntegrations;
       if (tab.id === 'conditions') return false;
@@ -442,7 +444,7 @@ const MasterDataView = ({
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'integrations') checkTeamsStatus();
+    if (activeTab === 'teams') checkTeamsStatus();
   }, [activeTab, checkTeamsStatus]);
 
   const connectTeams = async () => {
@@ -1374,6 +1376,7 @@ const MasterDataView = ({
         {CC_TABS.filter(tab => {
           if (tab.id === 'notifications') return currentUser?.role === 'Super Admin';
           if (tab.id === 'archive') return ['Super Admin', 'Director'].includes(currentUser?.role);
+          if (tab.id === 'teams') return true; // all users
           if (currentUser?.role === 'Super Admin') return true;
           if (tab.id === 'integrations') return canSeeIntegrations;
           if (tab.id === 'conditions') return false;
@@ -4033,41 +4036,59 @@ const MasterDataView = ({
             </ul>
           </div>
 
-          {/* ─── Microsoft Teams DM ─── */}
-          <div className="border border-slate-200 rounded-2xl bg-white shadow-sm p-6">
-            <div className="flex items-start gap-3 mb-5">
-              <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0">
-                <MessageSquare size={18} className="text-blue-600" />
+        </div>
+      )}
+
+      {/* ─── MICROSOFT TEAMS TAB ─── */}
+      {activeTab === 'teams' && (
+        <div className="space-y-5">
+
+          {/* Header */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-6">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-[#464EB8]/10 flex items-center justify-center flex-shrink-0">
+                <svg viewBox="0 0 24 24" className="w-7 h-7" fill="none">
+                  <path d="M20.625 7.5h-5.25A1.125 1.125 0 0014.25 8.625v6.75a1.125 1.125 0 001.125 1.125h5.25A1.125 1.125 0 0021.75 15.375v-6.75A1.125 1.125 0 0020.625 7.5z" fill="#464EB8"/>
+                  <path d="M13.5 4.5a3 3 0 11-6 0 3 3 0 016 0zM3 18.75A6.75 6.75 0 0115.513 13.5H3V18.75z" fill="#464EB8"/>
+                  <circle cx="17.25" cy="5.25" r="2.25" fill="#464EB8"/>
+                </svg>
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h4 className="text-base font-bold text-slate-900">Teams Direct Messages</h4>
-                  {teamsConnected === true && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-semibold">
-                      <Check size={10} /> Connected
-                    </span>
-                  )}
-                  {teamsConnected === false && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[11px] font-semibold">
-                      Not connected
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Connect your Microsoft account so @mentions in task chats send a personal Teams DM — the message appears from <b>you</b>, not a bot.
-                </p>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Microsoft Teams</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Connect your account and install the Teams app to receive real-time task notifications directly in Teams.</p>
               </div>
             </div>
+          </div>
+
+          {/* Step 1 — Connect Microsoft Account */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-[11px] font-bold flex items-center justify-center flex-shrink-0">1</span>
+              <h4 className="text-sm font-bold text-slate-900">Connect your Microsoft account</h4>
+              {teamsConnected === true && (
+                <span className="ml-auto inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-semibold">
+                  <Check size={10} /> Connected
+                </span>
+              )}
+              {teamsConnected === false && (
+                <span className="ml-auto inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[11px] font-semibold">
+                  Not connected
+                </span>
+              )}
+            </div>
+
+            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+              This allows Flow Pro to send Teams DMs <b>from your account</b> when you @mention a teammate in a task — so messages arrive as a personal chat, not from a bot.
+            </p>
 
             {teamsConnected === false && (
               <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-xl text-[11px] text-blue-800 leading-relaxed">
-                <span className="font-bold">One-time setup:</span> Click "Connect" below. A Microsoft login window will open — sign in with your Ethinos Microsoft account and approve the permissions. Done.
+                <span className="font-bold">One-time setup:</span> Click Connect below. A Microsoft sign-in window opens — log in with your Ethinos account and approve the permissions. The window closes automatically when done.
               </div>
             )}
-
             {teamsConnected === true && (
               <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-[11px] text-emerald-800 leading-relaxed">
-                ✅ Your Microsoft account is connected. When you @mention someone in a task, they'll receive a personal Teams DM from you with a link to the task.
+                ✅ Your Microsoft account is connected. When you @mention someone in a task, they receive a Teams DM from you with a direct link to the task.
               </div>
             )}
 
@@ -4095,6 +4116,82 @@ const MasterDataView = ({
               )}
             </div>
           </div>
+
+          {/* Step 2 — Install the Teams app */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-[11px] font-bold flex items-center justify-center flex-shrink-0">2</span>
+              <h4 className="text-sm font-bold text-slate-900">Install the Flow Pro app in Microsoft Teams</h4>
+            </div>
+            <p className="text-xs text-slate-500 mb-5 leading-relaxed">
+              Installing the app in Teams enables activity notifications — a banner appears when you're assigned a task or @mentioned, with a deep link straight to the task. Only needs to be done once per user.
+            </p>
+
+            {/* Install steps */}
+            <div className="space-y-3">
+              {[
+                {
+                  n: 1,
+                  title: 'Open Microsoft Teams',
+                  detail: 'Open the Teams desktop app or go to teams.microsoft.com in your browser.',
+                },
+                {
+                  n: 2,
+                  title: 'Go to the Apps section',
+                  detail: 'Click the "Apps" icon (grid/puzzle piece) in the left-hand sidebar.',
+                },
+                {
+                  n: 3,
+                  title: 'Search for Flow Pro',
+                  detail: 'Type "Flow Pro" in the search box at the top of the Apps panel. The Ethinos Flow Pro app will appear in the results.',
+                },
+                {
+                  n: 4,
+                  title: 'Click Add',
+                  detail: 'Select the app and click the "Add" button. No extra configuration needed — the app installs instantly.',
+                },
+                {
+                  n: 5,
+                  title: 'Done',
+                  detail: 'You\'ll now receive Teams activity notifications (banners + bell alerts) whenever you\'re assigned a task or mentioned, in addition to the DM.',
+                },
+              ].map(step => (
+                <div key={step.n} className="flex gap-3">
+                  <div className="w-5 h-5 rounded-full bg-slate-100 border border-slate-200 text-slate-600 text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{step.n}</div>
+                  <div>
+                    <p className="text-xs font-semibold text-slate-800">{step.title}</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">{step.detail}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-5 p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 leading-relaxed">
+              <span className="font-bold">Can't find the app?</span> Ask your Teams admin to approve and publish "Flow Pro" from the Teams Admin Centre, or contact support so they can push it to your account directly.
+            </div>
+          </div>
+
+          {/* What you get */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-6">
+            <h4 className="text-xs font-bold text-slate-700 mb-3">What you get after both steps</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {[
+                { icon: MessageSquare, color: 'text-blue-600 bg-blue-50', title: 'Personal DMs', desc: 'When a teammate @mentions you in a task, you get a 1:1 Teams message from them with a link to the task.' },
+                { icon: Bell, color: 'text-purple-600 bg-purple-50', title: 'Activity Notifications', desc: 'Teams banners fire when you\'re assigned a new task or a deadline is approaching.' },
+              ].map(item => (
+                <div key={item.title} className="flex gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/50">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${item.color}`}>
+                    <item.icon size={15} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-slate-800">{item.title}</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">{item.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
         </div>
       )}
 
