@@ -42,13 +42,22 @@ if (!hasTenantId || !hasClientId || !hasClientSecret || !hasSenderEmail) {
 
 logger.info("Microsoft Graph email service configured");
 
-if (!process.env.TEAMS_APP_ID) {
+const isDev = process.env.NODE_ENV !== "production";
+const teamsAppId = isDev
+  ? (process.env.TEAMS_APP_ID_TEST || process.env.TEAMS_APP_ID)
+  : process.env.TEAMS_APP_ID;
+
+if (!teamsAppId) {
   logger.warn(
-    "TEAMS_APP_ID is not set — Teams activity notifications for @mentions will be silently skipped. " +
-    "See teams-app/README.md for setup instructions."
+    isDev
+      ? "TEAMS_APP_ID_TEST is not set — Teams activity notifications will be skipped in dev. See teams-app/README.md."
+      : "TEAMS_APP_ID is not set — Teams activity notifications will be skipped in production. See teams-app/README.md."
   );
 } else {
-  logger.info("Teams activity notifications configured");
+  logger.info(
+    { env: isDev ? "development" : "production", appId: teamsAppId },
+    `Teams activity notifications configured (${isDev ? "TEST" : "LIVE"} package)`
+  );
 }
 
 app.listen(port, (err) => {

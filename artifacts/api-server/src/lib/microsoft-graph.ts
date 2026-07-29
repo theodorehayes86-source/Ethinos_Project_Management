@@ -125,8 +125,31 @@ export function isEmailConfigured(): boolean {
 
 /* ─── Teams activity notifications ─── */
 
+/**
+ * Returns the correct Teams App ID for the current environment.
+ * Development → TEAMS_APP_ID_TEST (test package, Replit preview URL)
+ * Production  → TEAMS_APP_ID      (live package, project.ethinos.com)
+ */
+export function getTeamsAppId(): string | undefined {
+  if (process.env.NODE_ENV !== "production") {
+    return process.env.TEAMS_APP_ID_TEST || process.env.TEAMS_APP_ID;
+  }
+  return process.env.TEAMS_APP_ID;
+}
+
+/**
+ * Returns the base URL for Teams deep-links, matching the environment.
+ */
+export function getTeamsBaseUrl(): string {
+  if (process.env.NODE_ENV !== "production") {
+    const devDomain = process.env.REPLIT_DEV_DOMAIN;
+    return devDomain ? `https://${devDomain}` : "https://project.ethinos.com";
+  }
+  return "https://project.ethinos.com";
+}
+
 export function isTeamsConfigured(): boolean {
-  return !!(process.env.TEAMS_APP_ID && isEmailConfigured());
+  return !!(getTeamsAppId() && isEmailConfigured());
 }
 
 const objectIdMemoryCache = new Map<string, string>();
@@ -203,12 +226,12 @@ export async function sendTeamsActivityNotification(params: {
   previewText: string;
   taskId?: string;
 }): Promise<void> {
-  const teamsAppId = process.env.TEAMS_APP_ID;
+  const teamsAppId = getTeamsAppId();
   if (!teamsAppId) return;
 
   try {
     const token = await getAccessToken();
-    const baseUrl = "https://pmt.ethinos.com";
+    const baseUrl = getTeamsBaseUrl();
     const deepLinkUrl = params.taskId
       ? `${baseUrl}/?task=${encodeURIComponent(params.taskId)}`
       : baseUrl;
