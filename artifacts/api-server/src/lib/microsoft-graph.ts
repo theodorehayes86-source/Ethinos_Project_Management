@@ -123,6 +123,41 @@ export function isEmailConfigured(): boolean {
   );
 }
 
+/* ─── Delegated token exchange ─── */
+
+/**
+ * Exchange a stored refresh token for a fresh delegated access token.
+ * Used to send 1:1 Teams DMs as the user (not the app).
+ */
+export async function getUserDelegatedToken(refreshToken: string): Promise<string | null> {
+  try {
+    const { tenantId, clientId, clientSecret } = getAzureConfig();
+    const resp = await fetch(
+      `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          client_id: clientId,
+          client_secret: clientSecret,
+          refresh_token: refreshToken,
+          scope: "Chat.Create ChatMessage.Send offline_access",
+        }),
+      }
+    );
+    if (!resp.ok) {
+      logger.warn({ status: resp.status }, "[Teams Auth] Refresh token exchange failed");
+      return null;
+    }
+    const data = (await resp.json()) as { access_token?: string };
+    return data.access_token ?? null;
+  } catch (err) {
+    logger.warn({ err }, "[Teams Auth] getUserDelegatedToken threw");
+    return null;
+  }
+}
+
 /* ─── Teams 1:1 direct messages ─── */
 
 /**
@@ -138,9 +173,12 @@ export async function sendTeamsDirectMessage(params: {
   clientName?: string;
   messageText?: string;
   taskId?: string;
+  /** When provided, sends the DM as the mentioner (appears from their Teams account) */
+  delegatedToken?: string;
 }): Promise<void> {
   try {
-    const token = await getAccessToken();
+    // Use delegated token (sends as the user) if available, otherwise fall back to app token
+    const token = params.delegatedToken ?? await getAccessToken();
     const baseUrl = getTeamsBaseUrl();
     const taskUrl = params.taskId
       ? `${baseUrl}/?task=${encodeURIComponent(params.taskId)}`

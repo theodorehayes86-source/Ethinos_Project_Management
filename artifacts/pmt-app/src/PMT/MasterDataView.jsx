@@ -340,6 +340,11 @@ const MasterDataView = ({
   const [kekaSyncResult, setKekaSyncResult] = useState(null);
   const [kekaTesting, setKekaTesting] = useState(false);
   const [kekaTestResult, setKekaTestResult] = useState(null);
+
+  // Teams DM OAuth state
+  const [teamsConnected, setTeamsConnected] = useState(null); // null = loading
+  const [teamsConnecting, setTeamsConnecting] = useState(false);
+  const [teamsDisconnecting, setTeamsDisconnecting] = useState(false);
   const [kekaLoaded, setKekaLoaded] = useState(false);
 
   // ── Archive tab ──
@@ -424,6 +429,59 @@ const MasterDataView = ({
       setKekaSyncResult({ success: false, error: String(e) });
     }
     setKekaSyncing(false);
+  };
+
+  // ── Teams DM OAuth handlers ──
+  const checkTeamsStatus = useCallback(async () => {
+    try {
+      const data = await kekaAuthFetch('/teams/status');
+      setTeamsConnected(data.connected === true);
+    } catch {
+      setTeamsConnected(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'integrations') checkTeamsStatus();
+  }, [activeTab, checkTeamsStatus]);
+
+  const connectTeams = async () => {
+    setTeamsConnecting(true);
+    try {
+      const data = await kekaAuthFetch('/teams/auth-url', { method: 'POST' });
+      if (!data.url) throw new Error('No URL returned');
+      const popup = window.open(data.url, 'TeamsOAuth', 'width=520,height=640,popup=1');
+      const onMessage = (e) => {
+        if (e.data?.type === 'teamsAuthResult') {
+          window.removeEventListener('message', onMessage);
+          if (e.data.status === 'success') setTeamsConnected(true);
+          setTeamsConnecting(false);
+        }
+      };
+      window.addEventListener('message', onMessage);
+      // Fallback: poll for popup close
+      const poll = setInterval(() => {
+        if (popup?.closed) {
+          clearInterval(poll);
+          window.removeEventListener('message', onMessage);
+          checkTeamsStatus();
+          setTeamsConnecting(false);
+        }
+      }, 800);
+    } catch (e) {
+      setTeamsConnecting(false);
+    }
+  };
+
+  const disconnectTeams = async () => {
+    setTeamsDisconnecting(true);
+    try {
+      await kekaAuthFetch('/teams/disconnect', { method: 'DELETE' });
+      setTeamsConnected(false);
+    } catch {
+      // ignore
+    }
+    setTeamsDisconnecting(false);
   };
 
   const DIGEST_TIMEZONES = [
@@ -3973,6 +4031,69 @@ const MasterDataView = ({
               <li>Leave data is used to warn managers when assigning tasks on leave days.</li>
               <li>Overdue notifications and digest emails automatically respect leave days.</li>
             </ul>
+          </div>
+
+          {/* ─── Microsoft Teams DM ─── */}
+          <div className="border border-slate-200 rounded-2xl bg-white shadow-sm p-6">
+            <div className="flex items-start gap-3 mb-5">
+              <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0">
+                <MessageSquare size={18} className="text-blue-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="text-base font-bold text-slate-900">Teams Direct Messages</h4>
+                  {teamsConnected === true && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-semibold">
+                      <Check size={10} /> Connected
+                    </span>
+                  )}
+                  {teamsConnected === false && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[11px] font-semibold">
+                      Not connected
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Connect your Microsoft account so @mentions in task chats send a personal Teams DM — the message appears from <b>you</b>, not a bot.
+                </p>
+              </div>
+            </div>
+
+            {teamsConnected === false && (
+              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-xl text-[11px] text-blue-800 leading-relaxed">
+                <span className="font-bold">One-time setup:</span> Click "Connect" below. A Microsoft login window will open — sign in with your Ethinos Microsoft account and approve the permissions. Done.
+              </div>
+            )}
+
+            {teamsConnected === true && (
+              <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-[11px] text-emerald-800 leading-relaxed">
+                ✅ Your Microsoft account is connected. When you @mention someone in a task, they'll receive a personal Teams DM from you with a link to the task.
+              </div>
+            )}
+
+            <div className="flex items-center gap-3">
+              {teamsConnected !== true ? (
+                <button
+                  type="button"
+                  onClick={connectTeams}
+                  disabled={teamsConnecting || teamsConnected === null}
+                  className="px-4 py-2 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-2"
+                >
+                  <MessageSquare size={12} />
+                  {teamsConnecting ? 'Connecting…' : teamsConnected === null ? 'Checking…' : 'Connect Microsoft Account'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={disconnectTeams}
+                  disabled={teamsDisconnecting}
+                  className="px-4 py-2 rounded-lg text-xs font-semibold bg-white border border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-2"
+                >
+                  <X size={12} />
+                  {teamsDisconnecting ? 'Disconnecting…' : 'Disconnect'}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

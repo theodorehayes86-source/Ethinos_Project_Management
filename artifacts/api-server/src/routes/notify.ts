@@ -8,6 +8,7 @@ import {
   resolveEntraObjectId,
   sendTeamsActivityNotification,
   sendTeamsDirectMessage,
+  getUserDelegatedToken,
 } from "../lib/microsoft-graph";
 import { readFirebasePath } from "../lib/firebase-admin";
 import { logger } from "../lib/logger";
@@ -554,7 +555,7 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
                 taskId: taskId || undefined,
               });
 
-              // 1:1 DM — send if we can resolve the mentioner's object ID
+              // 1:1 DM — send on behalf of the mentioner if they have a stored delegated token
               if (mentionerId) {
                 type FirebaseUser = { id?: string; email?: string; emailAddress?: string };
                 const mentionerRecord = usersArr.find(
@@ -564,6 +565,15 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
                 if (mentionerEmail) {
                   const mentionerObjectId = await resolveEntraObjectId(mentionerEmail, mentionerId);
                   if (mentionerObjectId) {
+                    // Try to get a delegated token so DM appears from the mentioner's account
+                    const storedRefreshToken = await readFirebasePath<string | null>(
+                      `userMeta/${mentionerId}/msRefreshToken`
+                    );
+                    let delegatedToken: string | undefined;
+                    if (storedRefreshToken) {
+                      const tok = await getUserDelegatedToken(storedRefreshToken).catch(() => null);
+                      if (tok) delegatedToken = tok;
+                    }
                     await sendTeamsDirectMessage({
                       mentionerObjectId,
                       recipientObjectId: objectId,
@@ -572,6 +582,7 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
                       clientName: clientName || "",
                       messageText: messageText || "",
                       taskId: taskId || undefined,
+                      delegatedToken,
                     });
                   }
                 }
