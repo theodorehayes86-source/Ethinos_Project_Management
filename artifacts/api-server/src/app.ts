@@ -32,7 +32,9 @@ const allowedOrigins = rawOrigins
   .map((o) => o.trim())
   .filter(Boolean);
 
-if (allowedOrigins.length === 0) {
+const isDev = process.env.NODE_ENV !== "production";
+
+if (allowedOrigins.length === 0 && !isDev) {
   logger.warn(
     "CORS_ORIGINS is not set — all origins will be blocked in production. " +
     "Set it to a comma-separated list of allowed origins (e.g. https://pmt.ethinos.com)."
@@ -42,15 +44,22 @@ if (allowedOrigins.length === 0) {
 app.use(
   cors({
     origin(origin, callback) {
+      // Server-to-server or same-origin requests (no Origin header)
       if (!origin) {
         callback(null, true);
         return;
       }
+      // Always allow *.replit.dev in development (preview pane domains change per session)
+      if (isDev && origin.endsWith(".replit.dev")) {
+        callback(null, true);
+        return;
+      }
+      // Always allow explicitly configured origins
       if (allowedOrigins.includes(origin)) {
         callback(null, true);
-      } else {
-        callback(new Error(`CORS: origin '${origin}' is not allowed`));
+        return;
       }
+      callback(new Error(`CORS: origin '${origin}' is not allowed`));
     },
     credentials: true,
   }),
