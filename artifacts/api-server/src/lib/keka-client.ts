@@ -264,6 +264,7 @@ interface KekaApiResponse<T> {
 
 interface PMTUser {
   id: string | number;
+  name?: string;
   email?: string;
   kekaEmployeeId?: string;
 }
