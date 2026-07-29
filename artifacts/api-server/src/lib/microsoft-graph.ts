@@ -251,10 +251,11 @@ export async function sendTeamsActivityNotification(params: {
       previewText: {
         content: params.previewText,
       },
+      // templateParameters must exactly match the activityTypes definition in the Teams app manifest.
+      // Manifest templateText: "{mentionerName} mentioned you in \"{taskName}\""
       templateParameters: [
         { name: "mentionerName", value: params.mentionerName || "A teammate" },
         { name: "taskName", value: params.taskName || "a task" },
-        { name: "clientName", value: params.clientName || "" },
       ],
     };
 
