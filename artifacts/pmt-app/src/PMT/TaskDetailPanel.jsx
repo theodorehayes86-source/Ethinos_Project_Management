@@ -221,6 +221,7 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
           recipientEmail,
           recipientId: mentioned.id,
           recipientName: mentioned.name,
+          mentionerId: currentUser?.id,
           mentionerName: currentUser?.name,
           taskName: task.name || task.comment,
           clientName: task.clientName || task.cid || '',

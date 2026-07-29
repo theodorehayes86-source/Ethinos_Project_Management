@@ -123,6 +123,94 @@ export function isEmailConfigured(): boolean {
   );
 }
 
+/* ─── Teams 1:1 direct messages ─── */
+
+/**
+ * Send a 1:1 Teams direct message from the mentioner to the recipient.
+ * Requires Chat.Create application permission in Azure.
+ * Failures are caught and logged — never throws.
+ */
+export async function sendTeamsDirectMessage(params: {
+  mentionerObjectId: string;
+  recipientObjectId: string;
+  mentionerName: string;
+  taskName: string;
+  clientName?: string;
+  messageText?: string;
+  taskId?: string;
+}): Promise<void> {
+  try {
+    const token = await getAccessToken();
+    const baseUrl = getTeamsBaseUrl();
+    const taskUrl = params.taskId
+      ? `${baseUrl}/?task=${encodeURIComponent(params.taskId)}`
+      : baseUrl;
+
+    // Step 1: Create or retrieve a 1:1 chat between the two users
+    const chatResp = await fetch("https://graph.microsoft.com/v1.0/chats", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chatType: "oneOnOne",
+        members: [
+          {
+            "@odata.type": "#microsoft.graph.aadUserConversationMember",
+            roles: ["owner"],
+            "user@odata.bind": `https://graph.microsoft.com/v1.0/users('${params.mentionerObjectId}')`,
+          },
+          {
+            "@odata.type": "#microsoft.graph.aadUserConversationMember",
+            roles: ["owner"],
+            "user@odata.bind": `https://graph.microsoft.com/v1.0/users('${params.recipientObjectId}')`,
+          },
+        ],
+      }),
+    });
+
+    if (!chatResp.ok) {
+      const text = await chatResp.text();
+      logger.warn({ status: chatResp.status, body: text }, "[Teams DM] Chat create/retrieve failed");
+      return;
+    }
+
+    const chatData = (await chatResp.json()) as { id: string };
+    const chatId = chatData.id;
+
+    // Step 2: Send the message
+    const taskLabel = params.taskName ? `<b>${params.taskName}</b>` : "a task";
+    const clientLabel = params.clientName ? ` (${params.clientName})` : "";
+    const preview = params.messageText
+      ? `<blockquote>${params.messageText}</blockquote>`
+      : "";
+
+    const msgResp = await fetch(`https://graph.microsoft.com/v1.0/chats/${chatId}/messages`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        body: {
+          contentType: "html",
+          content:
+            `<p>👋 <b>${params.mentionerName}</b> mentioned you in ${taskLabel}${clientLabel}.</p>` +
+            preview +
+            `<p><a href="${taskUrl}">Open in Flow Pro →</a></p>`,
+        },
+      }),
+    });
+
+    if (!msgResp.ok) {
+      const text = await msgResp.text();
+      logger.warn({ status: msgResp.status, body: text }, "[Teams DM] Message send failed");
+    } else {
+      logger.info(
+        { chatId, mentionerObjectId: params.mentionerObjectId, recipientObjectId: params.recipientObjectId },
+        "[Teams DM] Direct message sent"
+      );
+    }
+  } catch (err) {
+    logger.warn({ err }, "[Teams DM] sendTeamsDirectMessage threw — skipping");
+  }
+}
+
 /* ─── Teams activity notifications ─── */
 
 /**

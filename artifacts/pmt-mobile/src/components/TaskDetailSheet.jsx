@@ -192,6 +192,7 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
           recipientEmail,
           recipientId: mentioned.id,
           recipientName: mentioned.name,
+          mentionerId: currentUser.id,
           mentionerName: currentUser.name,
           taskName: task.name || task.comment || 'Task',
           clientName: task._clientName || '',

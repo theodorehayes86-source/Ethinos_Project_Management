@@ -7,6 +7,7 @@ import {
   isTeamsConfigured,
   resolveEntraObjectId,
   sendTeamsActivityNotification,
+  sendTeamsDirectMessage,
 } from "../lib/microsoft-graph";
 import { readFirebasePath } from "../lib/firebase-admin";
 import { logger } from "../lib/logger";
@@ -510,7 +511,7 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
       }
 
       case "mention": {
-        const { recipientEmail, recipientId, recipientName, mentionerName, taskName, clientName, messageText, taskId } = data as Record<string, string>;
+        const { recipientEmail, recipientId, recipientName, mentionerId, mentionerName, taskName, clientName, messageText, taskId } = data as Record<string, string>;
         if (!recipientEmail) return res.json({ sent: false, reason: "no_email" });
         const to = resolveRecipient(recipientEmail);
         const subject = applyCustomSubject(
@@ -552,6 +553,29 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
                 previewText: preview.length > 150 ? preview.slice(0, 147) + "…" : preview,
                 taskId: taskId || undefined,
               });
+
+              // 1:1 DM — send if we can resolve the mentioner's object ID
+              if (mentionerId) {
+                type FirebaseUser = { id?: string; email?: string; emailAddress?: string };
+                const mentionerRecord = usersArr.find(
+                  (u) => u && String((u as FirebaseUser).id) === String(mentionerId)
+                ) as FirebaseUser | undefined;
+                const mentionerEmail = mentionerRecord?.email || mentionerRecord?.emailAddress;
+                if (mentionerEmail) {
+                  const mentionerObjectId = await resolveEntraObjectId(mentionerEmail, mentionerId);
+                  if (mentionerObjectId) {
+                    await sendTeamsDirectMessage({
+                      mentionerObjectId,
+                      recipientObjectId: objectId,
+                      mentionerName: mentionerName || "Someone",
+                      taskName: taskName || "",
+                      clientName: clientName || "",
+                      messageText: messageText || "",
+                      taskId: taskId || undefined,
+                    });
+                  }
+                }
+              }
             } catch (err) {
               logger.warn({ err }, "[Teams] Async ping failed — email was already sent");
             }
