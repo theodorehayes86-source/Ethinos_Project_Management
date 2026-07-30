@@ -625,23 +625,147 @@ export async function getChatMessage(chatId: string, messageId: string): Promise
   }
 }
 
-/** Send a plain-text message to a 1:1 chat. Returns the new message Graph ID. */
-export async function sendPlainChatMessage(chatId: string, messageText: string): Promise<string> {
-  const token = await getAccessToken();
+// ── Bot Connector ────────────────────────────────────────────────────────────
+
+let cachedBotToken: { token: string; expiresAt: number } | null = null;
+
+/** Get a Bot Framework token (different audience from Graph). */
+async function getBotFrameworkToken(): Promise<string> {
+  if (cachedBotToken && Date.now() < cachedBotToken.expiresAt) {
+    return cachedBotToken.token;
+  }
+  const { clientId, clientSecret } = getAzureConfig();
   const resp = await fetch(
-    `https://graph.microsoft.com/v1.0/chats/${encodeURIComponent(chatId)}/messages`,
+    "https://login.microsoftonline.com/botframework.com/oauth2/v2.0/token",
     {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ body: { contentType: "text", content: messageText } }),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "client_credentials",
+        client_id: clientId,
+        client_secret: clientSecret,
+        scope: "https://api.botframework.com/.default",
+      }).toString(),
     }
   );
   if (!resp.ok) {
     const text = await resp.text();
-    throw new Error(`[Graph] sendPlainChatMessage: ${resp.status} ${text}`);
+    throw new Error(`[Bot] Token fetch failed: ${resp.status} ${text}`);
   }
-  const data = (await resp.json()) as { id: string };
-  return data.id;
+  const data = (await resp.json()) as GraphTokenResponse;
+  cachedBotToken = {
+    token: data.access_token,
+    expiresAt: Date.now() + (data.expires_in - 60) * 1000,
+  };
+  return cachedBotToken.token;
+}
+
+/**
+ * Get the Graph chat ID for the bot's 1:1 with a user.
+ * Uses the installation record already fetched by getTeamsAppInstallationId().
+ */
+async function getBotUserChatId(userObjectId: string): Promise<string | null> {
+  const installationId = await getTeamsAppInstallationId(userObjectId);
+  if (!installationId) return null;
+
+  const token = await getAccessToken();
+  const resp = await fetch(
+    `https://graph.microsoft.com/v1.0/users/${userObjectId}/teamwork/installedApps/${installationId}/chat`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!resp.ok) {
+    const text = await resp.text();
+    logger.warn({ status: resp.status, text }, "[Bot] getBotUserChatId failed");
+    return null;
+  }
+  const data = (await resp.json()) as { id?: string };
+  return data.id ?? null;
+}
+
+// Regional service URLs in preference order (India tenant → AMER → EMEA → APAC)
+const BOT_SERVICE_URLS = [
+  "https://smba.trafficmanager.net/in/",
+  "https://smba.trafficmanager.net/amer/",
+  "https://smba.trafficmanager.net/emea/",
+  "https://smba.trafficmanager.net/apac/",
+];
+
+/**
+ * Send a proactive Bot Connector message to a user's 1:1 bot chat.
+ * The message appears in Teams as a message from the Flow Pro bot.
+ */
+export async function sendBotProactiveMessage(
+  recipientAadId: string,
+  senderDisplayName: string,
+  messageText: string
+): Promise<void> {
+  const { clientId } = getAzureConfig();
+
+  const conversationId = await getBotUserChatId(recipientAadId);
+  if (!conversationId) {
+    throw new Error(`[Bot] No bot-user chat found for recipient ${recipientAadId} — app may not be installed`);
+  }
+
+  const botToken = await getBotFrameworkToken();
+  const activity = {
+    type: "message",
+    text: `**${senderDisplayName}** (via Flow Pro):\n\n${messageText}`,
+    from: { id: `28:${clientId}`, name: "Flow Pro" },
+    recipient: { id: `29:${recipientAadId}` },
+    channelData: { notification: { alert: true } },
+  };
+
+  let lastErr: Error = new Error("[Bot] No service URLs tried");
+  for (const serviceUrl of BOT_SERVICE_URLS) {
+    try {
+      const sendResp = await fetch(
+        `${serviceUrl}v3/conversations/${encodeURIComponent(conversationId)}/activities`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${botToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(activity),
+        }
+      );
+      if (sendResp.ok) {
+        logger.info({ serviceUrl, recipientAadId }, "[Bot] Proactive message sent");
+        return;
+      }
+      const text = await sendResp.text();
+      lastErr = new Error(`[Bot] ${serviceUrl}: ${sendResp.status} ${text}`);
+      logger.warn({ serviceUrl, status: sendResp.status, text }, "[Bot] Service URL failed, trying next");
+    } catch (err) {
+      lastErr = err as Error;
+      logger.warn({ serviceUrl, err }, "[Bot] Service URL threw, trying next");
+    }
+  }
+  throw lastErr;
+}
+
+/**
+ * Get the two members of a 1:1 chat.
+ * Returns array of { aadObjectId, displayName } — useful to find the recipient from rawChatId.
+ */
+export async function getChatMembers(
+  chatId: string
+): Promise<{ aadObjectId: string; displayName: string }[]> {
+  const token = await getAccessToken();
+  const resp = await fetch(
+    `https://graph.microsoft.com/v1.0/chats/${encodeURIComponent(chatId)}/members`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`[Graph] getChatMembers: ${resp.status} ${text}`);
+  }
+  const data = (await resp.json()) as {
+    value: { userId?: string; displayName?: string }[];
+  };
+  return data.value
+    .filter((m) => m.userId)
+    .map((m) => ({ aadObjectId: m.userId!, displayName: m.displayName ?? "" }));
 }
 
 /**

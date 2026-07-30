@@ -12,7 +12,8 @@ import {
   findOrCreateOneOnOneChat,
   getChatMessages,
   getChatMessage,
-  sendPlainChatMessage,
+  getChatMembers,
+  sendBotProactiveMessage,
   subscribeToChatMessages,
   renewChatSubscription,
   resolveEntraObjectId,
@@ -221,21 +222,59 @@ router.post(
     }
 
     try {
-      const messageId = await sendPlainChatMessage(rawChatId, message.trim());
       const key = chatKey || fbKey(rawChatId);
-      await writeFirebasePath(
-        `teamsDMs/chats/${key}/messages/${fbKey(messageId)}`,
-        {
-          id: messageId,
-          fromId: fromId || "",
-          fromObjectId: fromObjectId || "",
-          fromName: fromName || "You",
-          body: message.trim(),
-          sentAt: Date.now(),
-          source: "flowpro",
+      const now = Date.now();
+      // Write to Firebase first so the message always appears in Flow Pro,
+      // even if the Teams Graph delivery has a transient failure.
+      const tempKey = `fp_${now}`;
+      await writeFirebasePath(`teamsDMs/chats/${key}/messages/${tempKey}`, {
+        id: tempKey,
+        fromId: fromId || "",
+        fromObjectId: fromObjectId || "",
+        fromName: fromName || "You",
+        body: message.trim(),
+        sentAt: now,
+        source: "flowpro",
+      });
+
+      // Deliver to Teams via Bot Connector (proactive message to recipient's bot chat).
+      try {
+        // Find the other participant in this chat so we know who to notify.
+        let recipientAadId: string | null = null;
+        if (fromObjectId) {
+          try {
+            const members = await getChatMembers(rawChatId);
+            const other = members.find((m) => m.aadObjectId !== fromObjectId);
+            recipientAadId = other?.aadObjectId ?? null;
+          } catch (membersErr) {
+            logger.warn({ err: membersErr }, "[TeamsChat] Could not resolve chat members — skipping Teams delivery");
+          }
         }
-      );
-      return res.json({ ok: true, messageId });
+
+        if (recipientAadId) {
+          await sendBotProactiveMessage(recipientAadId, fromName || "A colleague", message.trim());
+          // Message delivered to Teams — promote temp Firebase entry to a stable key.
+          const stableKey = `fp_${now}_sent`;
+          await writeFirebasePath(`teamsDMs/chats/${key}/messages/${stableKey}`, {
+            id: stableKey,
+            fromId: fromId || "",
+            fromObjectId: fromObjectId || "",
+            fromName: fromName || "You",
+            body: message.trim(),
+            sentAt: now,
+            source: "flowpro",
+          });
+          await writeFirebasePath(`teamsDMs/chats/${key}/messages/${tempKey}`, null);
+          return res.json({ ok: true, messageId: stableKey });
+        } else {
+          // No recipient resolved — message is in Firebase, Teams delivery skipped.
+          return res.json({ ok: true, messageId: tempKey, teamsSkipped: true });
+        }
+      } catch (botErr) {
+        logger.error({ err: botErr }, "[TeamsChat] Bot Connector delivery failed — message saved to Firebase only");
+        // Don't fail the request — the message is already in Firebase and visible in Flow Pro.
+        return res.json({ ok: true, messageId: tempKey, teamsSkipped: true, teamsError: (botErr as Error).message });
+      }
     } catch (err) {
       logger.error({ err }, "[TeamsChat] /send failed");
       return res.status(500).json({ error: "Failed to send message" });

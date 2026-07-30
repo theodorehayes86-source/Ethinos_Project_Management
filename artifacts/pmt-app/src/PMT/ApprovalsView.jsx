@@ -965,6 +965,12 @@ const ApprovalsView = ({ clientLogs, clients, syntheticClients = [], users, curr
     updateTask(task, { approvalArchived: true, approvalArchivedAt: Date.now() });
   };
 
+  const handleArchiveAllReviewed = () => {
+    if (reviewedTasks.length === 0) return;
+    if (!window.confirm(`Archive all ${reviewedTasks.length} reviewed task${reviewedTasks.length !== 1 ? 's' : ''}? They'll be removed from this list but restorable from the Control Center Archive tab.`)) return;
+    bulkUpdateTasks(reviewedTasks, { approvalArchived: true, approvalArchivedAt: Date.now() });
+  };
+
   const handleSendBack = (task) => {
     updateTask(task, { qcStatus: null });
   };
@@ -1033,17 +1039,28 @@ const ApprovalsView = ({ clientLogs, clients, syntheticClients = [], users, curr
             <p className="text-xs text-slate-400">
               {reviewedTasksAll.length} reviewed task{reviewedTasksAll.length !== 1 ? 's' : ''} total
             </p>
-            <button
-              onClick={() => setHideDone(v => !v)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
-                hideDone
-                  ? 'bg-indigo-600 border-indigo-600 text-white'
-                  : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-600'
-              }`}
-            >
-              <CheckCircle size={12} />
-              {hideDone ? 'Showing active only' : 'Hide Done tasks'}
-            </button>
+            <div className="flex items-center gap-2">
+              {reviewedTasks.length > 0 && (
+                <button
+                  onClick={handleArchiveAllReviewed}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 text-xs font-semibold transition-all whitespace-nowrap"
+                >
+                  <Archive size={12} />
+                  Archive All ({reviewedTasks.length})
+                </button>
+              )}
+              <button
+                onClick={() => setHideDone(v => !v)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
+                  hideDone
+                    ? 'bg-indigo-600 border-indigo-600 text-white'
+                    : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-600'
+                }`}
+              >
+                <CheckCircle size={12} />
+                {hideDone ? 'Showing active only' : 'Hide Done tasks'}
+              </button>
+            </div>
           </div>
         )}
 
