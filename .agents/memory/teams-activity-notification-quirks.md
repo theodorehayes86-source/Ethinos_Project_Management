@@ -7,9 +7,9 @@ description: Known Graph API pitfalls for sendActivityNotification — teamsAppI
 
 **Rule:** The `activityType` string in the Graph API call must match the Teams app manifest definition exactly, including case.
 
-**Why:** Graph silently drops the notification (returns 202 OK but nothing appears in Teams) when the activityType casing doesn't match. Our manifest defines `"taskmention"` (all lowercase). Using `"taskMention"` (camelCase) caused silent failures.
+**Why:** Graph silently drops the notification when the casing doesn't match. The manifest defines `"taskMention"` (camelCase). Confirmed by user July 2026.
 
-**How to apply:** In `microsoft-graph.ts → sendTeamsActivityNotification()`, `activityType` is set to `"taskmention"`. Never change the casing without also updating the manifest. When adding new activity types, copy the string directly from the manifest.
+**How to apply:** In `microsoft-graph.ts → sendTeamsActivityNotification()`, `activityType` is set to `"taskMention"`. Never change the casing without also updating the manifest.
 
 ---
 
