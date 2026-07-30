@@ -564,6 +564,19 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
           )
         );
         logger.info({ recipients: dedupedTo.length, taskName, testMode }, "[Notify] approval-required emails sent");
+        // Teams activity ping — fire for each manager recipient
+        if (isTeamsConfigured() && isTeamsActivityEnabled(setting, "approval-required") && recipientEmails?.length) {
+          for (const email of recipientEmails) {
+            void fireTeamsActivityPing({
+              recipientEmail: email,
+              taskName,
+              clientName,
+              previewText: `${requesterName} requested assignment to "${taskName}"`,
+              actorName: requesterName,
+              eventType: "approval-required",
+            });
+          }
+        }
         break;
       }
 
@@ -579,6 +592,16 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
         html = applyCustomIntroText(html, setting.customIntroText);
         await sendEmail({ to, subject, bodyHtml: html, bcc: testMode ? [] : firebaseBcc });
         logger.info({ to, original: recipientEmail, testMode }, "[Notify] feedback-response email sent");
+        // Teams activity ping
+        if (isTeamsConfigured() && isTeamsActivityEnabled(setting, "feedback-response") && recipientEmail) {
+          void fireTeamsActivityPing({
+            recipientEmail,
+            taskName: "Feedback",
+            previewText: `${adminName || "Admin"} responded to your feedback`,
+            actorName: adminName,
+            eventType: "feedback-response",
+          });
+        }
         break;
       }
 
@@ -739,6 +762,16 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
         html = applyCustomIntroText(html, setting.customIntroText);
         await sendEmail({ to, subject, bodyHtml: html, bcc: testMode ? [] : firebaseBcc });
         logger.info({ to, original: recipientEmail, clientName, testMode }, "[Notify] client-added email sent");
+        // Teams activity ping
+        if (isTeamsConfigured() && isTeamsActivityEnabled(setting, "client-added") && recipientEmail) {
+          void fireTeamsActivityPing({
+            recipientEmail,
+            taskName: clientName,
+            previewText: `You've been added to "${clientName}"`,
+            actorName: approverName,
+            eventType: "client-added",
+          });
+        }
         break;
       }
 
@@ -754,6 +787,18 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
         html = applyCustomIntroText(html, setting.customIntroText);
         await sendEmail({ to, subject, bodyHtml: html, bcc: testMode ? [] : firebaseBcc });
         logger.info({ to, original: recipientEmail, taskName, testMode }, "[Notify] assignment-accepted email sent");
+        // Teams activity ping
+        if (isTeamsConfigured() && isTeamsActivityEnabled(setting, "assignment-accepted") && recipientEmail) {
+          void fireTeamsActivityPing({
+            recipientEmail,
+            taskName,
+            clientName,
+            taskId: data.taskId as string | undefined,
+            previewText: `${approverName || "Manager"} approved your assignment to "${taskName}"`,
+            actorName: approverName,
+            eventType: "assignment-accepted",
+          });
+        }
         break;
       }
 
@@ -775,6 +820,18 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
         html = applyCustomIntroText(html, setting.customIntroText);
         await sendEmail({ to, subject, bodyHtml: html, bcc: testMode ? [] : firebaseBcc });
         logger.info({ to, original: assigneeEmail, taskName, testMode }, "[Notify] qc-approved email sent");
+        // Teams activity ping
+        if (isTeamsConfigured() && isTeamsActivityEnabled(setting, "qc-approved") && assigneeEmail) {
+          void fireTeamsActivityPing({
+            recipientEmail: assigneeEmail as string,
+            taskName: taskName as string,
+            clientName: clientName as string | undefined,
+            taskId: data.taskId as string | undefined,
+            previewText: `${(reviewerName as string) || "QC"} approved your work on "${taskName}"`,
+            actorName: reviewerName as string | undefined,
+            eventType: "qc-approved",
+          });
+        }
         break;
       }
 
@@ -790,6 +847,17 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
         html = applyCustomIntroText(html, setting.customIntroText);
         await sendEmail({ to, subject, bodyHtml: html, bcc: testMode ? [] : firebaseBcc });
         logger.info({ to, original: assigneeEmail, taskName, testMode }, "[Notify] task-overdue email sent");
+        // Teams activity ping
+        if (isTeamsConfigured() && isTeamsActivityEnabled(setting, "task-overdue") && assigneeEmail) {
+          void fireTeamsActivityPing({
+            recipientEmail: assigneeEmail,
+            taskName,
+            clientName,
+            taskId: data.taskId as string | undefined,
+            previewText: `"${taskName}" is overdue — please update the status`,
+            eventType: "task-overdue",
+          });
+        }
         break;
       }
 
@@ -805,6 +873,17 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
         html = applyCustomIntroText(html, setting.customIntroText);
         await sendEmail({ to, subject, bodyHtml: html, bcc: testMode ? [] : firebaseBcc });
         logger.info({ to, original: assigneeEmail, taskName, testMode }, "[Notify] task-due-soon email sent");
+        // Teams activity ping
+        if (isTeamsConfigured() && isTeamsActivityEnabled(setting, "task-due-soon") && assigneeEmail) {
+          void fireTeamsActivityPing({
+            recipientEmail: assigneeEmail,
+            taskName,
+            clientName,
+            taskId: data.taskId as string | undefined,
+            previewText: `"${taskName}" is due in 2 days`,
+            eventType: "task-due-soon",
+          });
+        }
         break;
       }
 
@@ -820,6 +899,18 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
         html = applyCustomIntroText(html, setting.customIntroText);
         await sendEmail({ to, subject, bodyHtml: html, bcc: testMode ? [] : firebaseBcc });
         logger.info({ to, original: assigneeEmail, taskName, newStatus, testMode }, "[Notify] task-status-changed email sent");
+        // Teams activity ping
+        if (isTeamsConfigured() && isTeamsActivityEnabled(setting, "task-status-changed") && assigneeEmail) {
+          void fireTeamsActivityPing({
+            recipientEmail: assigneeEmail,
+            taskName,
+            clientName,
+            taskId: data.taskId as string | undefined,
+            previewText: `${changerName || "Someone"} changed "${taskName}" to ${newStatus}`,
+            actorName: changerName,
+            eventType: "task-status-changed",
+          });
+        }
         break;
       }
 

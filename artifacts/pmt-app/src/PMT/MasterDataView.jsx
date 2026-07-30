@@ -521,7 +521,11 @@ const MasterDataView = ({
   const DIGEST_HOURS = [5,6,7,8,9,10,11,12];
 
   // Events that support Teams activity pings (managed per-event via teamsActivityEnabled setting)
-  const TEAMS_PING_EVENTS = new Set(['mention', 'task-assigned', 'qc-submitted', 'qc-returned']);
+  const TEAMS_PING_EVENTS = new Set([
+    'mention', 'task-assigned', 'qc-submitted', 'qc-returned',
+    'approval-required', 'feedback-response', 'client-added',
+    'assignment-accepted', 'qc-approved', 'task-overdue', 'task-due-soon', 'task-status-changed',
+  ]);
 
   const NOTIFICATION_EVENTS = [
     { id: 'task-assigned', label: 'Task Assigned', description: 'Sent to the assignee when a task is created and assigned to them.', when: 'On task creation / assignment', defaultOn: true },
