@@ -729,6 +729,7 @@ const ApprovalsView = ({ clientLogs, clients, syntheticClients = [], users, curr
   const [returningTask, setReturningTask] = useState(null);
   const [hideDone, setHideDone] = useState(false);
   const [collapsedApprovers, setCollapsedApprovers] = useState(new Set());
+  const [bulkConfirm, setBulkConfirm] = useState(null); // { action, approverKey, approverName, tasks }
 
   const allClients = [...(clients || []), ...(syntheticClients || [])];
 
@@ -866,6 +867,31 @@ const ApprovalsView = ({ clientLogs, clients, syntheticClients = [], users, curr
       String(t.id) === String(task.id) ? { ...t, ...updates } : t
     );
     persistClientLogs(updatedLogs);
+  };
+
+  const bulkUpdateTasks = (tasks, updates) => {
+    const updatedLogs = { ...clientLogs };
+    tasks.forEach(task => {
+      const clientId = task._clientId;
+      if (!updatedLogs[clientId]) return;
+      updatedLogs[clientId] = updatedLogs[clientId].map(t =>
+        String(t.id) === String(task.id) ? { ...t, ...updates } : t
+      );
+    });
+    persistClientLogs(updatedLogs);
+  };
+
+  const handleBulkAction = ({ action, tasks }) => {
+    const now = Date.now();
+    const reviewerName = currentUser?.name || '';
+    if (action === 'approve') {
+      bulkUpdateTasks(tasks, { qcStatus: 'approved', qcReviewerName: reviewerName, qcReviewedAt: now });
+    } else if (action === 'reject') {
+      bulkUpdateTasks(tasks, { qcStatus: 'rejected', qcFeedback: 'Bulk rejected', qcReviewerName: reviewerName, qcReviewedAt: now });
+    } else if (action === 'skip') {
+      bulkUpdateTasks(tasks, { qcStatus: null });
+    }
+    setBulkConfirm(null);
   };
 
   const handleApproveConfirm = ({ rating, comment }) => {
@@ -1136,6 +1162,28 @@ const ApprovalsView = ({ clientLogs, clients, syntheticClients = [], users, curr
               </button>
               {isOpen && (
                 <div className="border-t border-slate-100 px-5 pt-4 pb-5 space-y-3">
+                  {/* Bulk action bar */}
+                  <div className="flex items-center gap-2 pb-1">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mr-1">Bulk:</span>
+                    <button
+                      onClick={() => setBulkConfirm({ action: 'approve', approverKey, approverName, tasks })}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold hover:bg-emerald-100 transition-colors"
+                    >
+                      <CheckCircle size={11} /> Approve All
+                    </button>
+                    <button
+                      onClick={() => setBulkConfirm({ action: 'reject', approverKey, approverName, tasks })}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-50 border border-red-200 text-red-600 text-xs font-bold hover:bg-red-100 transition-colors"
+                    >
+                      <XCircle size={11} /> Reject All
+                    </button>
+                    <button
+                      onClick={() => setBulkConfirm({ action: 'skip', approverKey, approverName, tasks })}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-100 transition-colors"
+                    >
+                      <RotateCcw size={11} /> Skip QC
+                    </button>
+                  </div>
                   {tasks.map(task => (
                     <TaskCard
                       key={task.id}
@@ -1310,6 +1358,52 @@ const ApprovalsView = ({ clientLogs, clients, syntheticClients = [], users, curr
           onConfirm={handleReturnConfirm}
           onClose={() => setReturningTask(null)}
         />
+      )}
+      {bulkConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-80 mx-4 space-y-4">
+            <div className="text-center">
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-3 ${
+                bulkConfirm.action === 'approve' ? 'bg-emerald-100' :
+                bulkConfirm.action === 'reject'  ? 'bg-red-100'     : 'bg-slate-100'
+              }`}>
+                {bulkConfirm.action === 'approve' && <CheckCircle size={22} className="text-emerald-600" />}
+                {bulkConfirm.action === 'reject'  && <XCircle     size={22} className="text-red-500" />}
+                {bulkConfirm.action === 'skip'    && <RotateCcw   size={22} className="text-slate-500" />}
+              </div>
+              <h3 className="font-black text-slate-900 text-base">
+                {bulkConfirm.action === 'approve' ? 'Approve All' :
+                 bulkConfirm.action === 'reject'  ? 'Reject All'  : 'Skip QC'}
+              </h3>
+              <p className="text-sm text-slate-500 mt-1.5">
+                {bulkConfirm.action === 'approve' && `Mark all ${bulkConfirm.tasks.length} tasks approved for ${bulkConfirm.approverName}?`}
+                {bulkConfirm.action === 'reject'  && `Reject all ${bulkConfirm.tasks.length} tasks assigned to ${bulkConfirm.approverName}?`}
+                {bulkConfirm.action === 'skip'    && `Remove all ${bulkConfirm.tasks.length} tasks from the QC queue for ${bulkConfirm.approverName}?`}
+              </p>
+              {bulkConfirm.action !== 'skip' && (
+                <p className="text-xs text-slate-400 mt-1">No individual ratings will be recorded.</p>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setBulkConfirm(null)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleBulkAction(bulkConfirm)}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-all ${
+                  bulkConfirm.action === 'approve' ? 'bg-emerald-600 hover:bg-emerald-700' :
+                  bulkConfirm.action === 'reject'  ? 'bg-red-500 hover:bg-red-600'         :
+                                                     'bg-slate-600 hover:bg-slate-700'
+                }`}
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

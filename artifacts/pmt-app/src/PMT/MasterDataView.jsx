@@ -358,6 +358,8 @@ const MasterDataView = ({
   // ── Archive tab ──
   const [archiveDateFrom, setArchiveDateFrom] = useState('');
   const [archiveDateTo, setArchiveDateTo] = useState('');
+  const [archiveEmployee, setArchiveEmployee] = useState('');
+  const [archiveClient, setArchiveClient] = useState('');
   const [archiveCollapsed, setArchiveCollapsed] = useState({ tasks: false, approvals: false, feedback: false });
   const toggleArchiveSection = (key) => setArchiveCollapsed(prev => ({ ...prev, [key]: !prev[key] }));
 
@@ -4318,7 +4320,15 @@ const MasterDataView = ({
           });
         });
         allArchivedTasks.sort((a, b) => (b.archivedAt || b.id || 0) - (a.archivedAt || a.id || 0));
-        const archivedTasks = allArchivedTasks.filter(t => inRange(t.archivedAt));
+
+        const uniqueEmployees = [...new Set(allArchivedTasks.map(t => t.assigneeName).filter(Boolean))].sort();
+        const uniqueClients   = [...new Set(allArchivedTasks.map(t => t._clientName).filter(Boolean))].sort();
+
+        const archivedTasks = allArchivedTasks.filter(t =>
+          inRange(t.archivedAt) &&
+          (!archiveEmployee || t.assigneeName === archiveEmployee) &&
+          (!archiveClient   || t._clientName  === archiveClient)
+        );
 
         const allArchivedApprovals = [];
         Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
@@ -4379,6 +4389,7 @@ const MasterDataView = ({
         );
 
         const hasDateFilter = !!(archiveDateFrom || archiveDateTo);
+        const hasAnyFilter = !!(archiveDateFrom || archiveDateTo || archiveEmployee || archiveClient);
 
         return (
           <div className="space-y-6">
@@ -4408,9 +4419,35 @@ const MasterDataView = ({
                     className="text-xs text-slate-700 bg-transparent outline-none cursor-pointer"
                   />
                 </div>
-                {hasDateFilter && (
+                {uniqueEmployees.length > 0 && (
+                  <div className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl shadow-sm">
+                    <label className="text-xs text-slate-500 font-medium">Employee</label>
+                    <select
+                      value={archiveEmployee}
+                      onChange={e => setArchiveEmployee(e.target.value)}
+                      className="text-xs text-slate-700 bg-transparent outline-none cursor-pointer max-w-[140px]"
+                    >
+                      <option value="">All</option>
+                      {uniqueEmployees.map(e => <option key={e} value={e}>{e}</option>)}
+                    </select>
+                  </div>
+                )}
+                {uniqueClients.length > 0 && (
+                  <div className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl shadow-sm">
+                    <label className="text-xs text-slate-500 font-medium">Client</label>
+                    <select
+                      value={archiveClient}
+                      onChange={e => setArchiveClient(e.target.value)}
+                      className="text-xs text-slate-700 bg-transparent outline-none cursor-pointer max-w-[140px]"
+                    >
+                      <option value="">All</option>
+                      {uniqueClients.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                )}
+                {hasAnyFilter && (
                   <button
-                    onClick={() => { setArchiveDateFrom(''); setArchiveDateTo(''); }}
+                    onClick={() => { setArchiveDateFrom(''); setArchiveDateTo(''); setArchiveEmployee(''); setArchiveClient(''); }}
                     className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold text-slate-500 border border-slate-200 bg-white hover:bg-slate-50 transition-all shadow-sm"
                   >
                     <X size={12} /> Clear
