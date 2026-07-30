@@ -384,7 +384,7 @@ export async function sendTeamsActivityNotification(params: {
         value: params.taskName ? `Task: ${params.taskName}` : "Flow Pro Task",
         webUrl: teamsDeepLink,
       },
-      activityType: "taskMention",
+      activityType: "taskmention",
       previewText: {
         content: params.previewText,
       },
