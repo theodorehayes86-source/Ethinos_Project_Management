@@ -741,17 +741,18 @@ const ApprovalsView = ({ clientLogs, clients, syntheticClients = [], users, curr
   }
 
   const isCrossDept = CROSS_DEPT_ROLES.includes(currentUser?.role) || currentUser?.department === 'All';
+  const isSuperAdmin = currentUser?.role === 'Super Admin';
   const userDept = currentUser?.department;
 
   // --- QC tasks ---
+  // Super Admins see every pending QC task org-wide (not just ones assigned to them).
   const allTasksFlat = [];
   Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
     const client = allClients.find(c => String(c.id) === String(clientId));
     (logs || []).forEach(task => {
-      if (String(task.qcAssigneeId) === String(currentUser.id)) {
-        if (!isCrossDept && Array.isArray(task.departments) && !task.departments.includes(userDept)) return;
-        allTasksFlat.push({ ...task, _clientId: clientId, _client: client });
-      }
+      if (!isSuperAdmin && String(task.qcAssigneeId) !== String(currentUser.id)) return;
+      if (!isCrossDept && Array.isArray(task.departments) && !task.departments.includes(userDept)) return;
+      allTasksFlat.push({ ...task, _clientId: clientId, _client: client });
     });
   });
 

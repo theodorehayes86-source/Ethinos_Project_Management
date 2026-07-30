@@ -660,6 +660,7 @@ function ApprovalsTab({ pendingApprovals, clientLogs, onApprove }) {
               <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-xs text-slate-500">
                 {task._clientName && <span className="flex items-center gap-1"><Tag size={10} />{task._clientName}</span>}
                 {task.dueDate && <span className="flex items-center gap-1"><Calendar size={10} />{task.dueDate}</span>}
+                {task.assigneeName && <span className="flex items-center gap-1"><Users size={10} />{task.assigneeName}</span>}
               </div>
             </div>
           </div>

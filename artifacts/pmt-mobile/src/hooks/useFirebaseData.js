@@ -186,13 +186,15 @@ export function useMyTasks(currentUser, clientLogs, clients) {
 
 export function usePendingApprovals(currentUser, clientLogs, clients) {
   if (!currentUser) return [];
+  // Super Admins see every pending QC task org-wide, not just ones assigned to them.
+  const isSuperAdmin = currentUser.role === 'Super Admin';
   const pending = [];
   Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
     const client = clients.find(c => String(c.id) === String(clientId));
     (logs || []).forEach(task => {
-      if (String(task.qcAssigneeId) === String(currentUser.id) && task.qcStatus === 'sent') {
-        pending.push({ ...task, _clientId: clientId, _clientName: client?.name || clientId });
-      }
+      if (task.qcStatus !== 'sent') return;
+      if (!isSuperAdmin && String(task.qcAssigneeId) !== String(currentUser.id)) return;
+      pending.push({ ...task, _clientId: clientId, _clientName: client?.name || clientId });
     });
   });
   return pending;
