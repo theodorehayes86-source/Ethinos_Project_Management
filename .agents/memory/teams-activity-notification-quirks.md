@@ -1,0 +1,28 @@
+---
+name: Teams activity notification quirks
+description: Known Graph API pitfalls for sendActivityNotification — teamsAppId disambiguation, 403 app-install requirement
+---
+
+## teamsAppId must be in the request body
+
+**Rule:** Always include `teamsAppId` at the top level of the `sendActivityNotification` request body.
+
+**Why:** When multiple Teams apps share the same Azure AD app ID (e.g. a TEST package and a LIVE package both registered under the same `879dea7e-...` AAD app), Graph returns `409 Conflict: Found multiple applications with the same AAD App ID — a Teams Application ID is required`.
+
+**How to apply:** In `microsoft-graph.ts → sendTeamsActivityNotification()`, the body already includes `teamsAppId` (fixed July 2026). Never remove it.
+
+---
+
+## 403 "app not installed in target scope"
+
+**Rule:** Activity notifications silently fail with 403 if the recipient hasn't installed the Teams app in their client.
+
+**Why:** Microsoft requires the recipient to have the app installed for `sendActivityNotification` to work. This is user-side — no code fix possible.
+
+**How to apply:** The 403 is expected for users who haven't installed the app. The DM still goes through independently. Tell users to install the app via Teams → Apps → search "Flow Pro".
+
+---
+
+## Two-channel design
+
+Activity notifications (banner/bell) and 1:1 DMs are independent. A 403 on activity notification does NOT prevent the DM from sending. Both are attempted in sequence; the DM path does not depend on the activity notification succeeding.

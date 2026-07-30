@@ -1,0 +1,1 @@
+- [Teams activity notification quirks](teams-activity-notification-quirks.md) — teamsAppId required in body to avoid 409; 403 means recipient hasn't installed the app
