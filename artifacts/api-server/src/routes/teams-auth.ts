@@ -335,11 +335,14 @@ router.post("/teams/test-ping", requireFirebaseAuth, async (req: Request, res: R
       taskId: undefined,
     });
 
+    const { getTeamsAppId: resolveId } = await import("../lib/microsoft-graph");
+    const resolvedId = resolveId();
     const debug = {
       nodeEnv: process.env.NODE_ENV ?? "(not set)",
-      hasTeamsAppId: !!(process.env.TEAMS_APP_ID) && process.env.TEAMS_APP_ID.length > 0,
-      hasTeamsAppIdTest: !!(process.env.TEAMS_APP_ID_TEST) && process.env.TEAMS_APP_ID_TEST.length > 0,
-      teamsAppIdLen: process.env.TEAMS_APP_ID?.length ?? 0,
+      resolvedLen: resolvedId?.length ?? 0,
+      liveLen: process.env.TEAMS_APP_ID_LIVE?.length ?? 0,
+      appIdLen: process.env.TEAMS_APP_ID?.length ?? 0,
+      testLen: process.env.TEAMS_APP_ID_TEST?.length ?? 0,
     };
 
     if (!pingResult.ok) {
