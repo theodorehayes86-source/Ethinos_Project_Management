@@ -699,7 +699,7 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
           )}
         </div>
 
-        <div className="px-5 py-4 border-t border-slate-100 flex gap-3">
+        <div className="px-5 pt-4 border-t border-slate-100 flex gap-3" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 56px)' }}>
           {stepIdx > 0 && (
             <button
               onClick={goBack}
