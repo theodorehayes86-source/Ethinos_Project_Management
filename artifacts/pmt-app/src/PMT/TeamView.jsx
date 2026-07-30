@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Users, ChevronRight, ChevronLeft, Plus, X, Search, Star, ArrowUp, ArrowDown, Filter, CalendarClock, CalendarCheck2, CalendarX2, AlertTriangle, BarChart2, ClipboardCheck, Clock } from 'lucide-react';
+import { Users, ChevronRight, ChevronLeft, Plus, X, Search, Star, ArrowUp, ArrowDown, Filter, CalendarClock, CalendarCheck2, CalendarX2, AlertTriangle, BarChart2, ClipboardCheck, Clock, Link2, Link2Off } from 'lucide-react';
 import { format, isBefore, isAfter, startOfWeek, endOfWeek, startOfMonth, endOfMonth, parse } from 'date-fns';
 import TaskDetailPanel from './TaskDetailPanel';
 import { sendNotification } from '../utils/notify';
@@ -607,6 +607,30 @@ const MemberCard = ({ member, isSelected, onClick, leaveStatus, attendanceStatus
         <div className="flex-1 min-w-0">
           <p className={`text-xs font-bold truncate ${isSelected ? 'text-white' : 'text-slate-800'}`}>{member.name}</p>
           {member.department && <p className={`text-[10px] truncate ${isSelected ? 'text-blue-100' : 'text-slate-500'}`}>{member.department}</p>}
+          {/* Keka + attendance row */}
+          <div className="flex items-center gap-1 mt-1 flex-wrap">
+            {member.kekaEmployeeId ? (
+              <span className={`inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isSelected ? 'bg-white/20 text-teal-100' : 'bg-teal-50 text-teal-600 border border-teal-200'}`}>
+                <Link2 size={8} strokeWidth={2.5} /> Keka
+              </span>
+            ) : (
+              <span className={`inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isSelected ? 'bg-white/10 text-blue-200' : 'bg-slate-100 text-slate-400 border border-slate-200'}`}>
+                <Link2Off size={8} strokeWidth={2.5} /> No Keka
+              </span>
+            )}
+            {as?.clockIn && !ls.onLeaveToday && (() => {
+              const fmt = (iso) => new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+              return as.isInOffice ? (
+                <span className={`inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full ${isSelected ? 'bg-emerald-400/80 text-white' : 'bg-emerald-500 text-white'}`}>
+                  ● IN {fmt(as.clockIn)}
+                </span>
+              ) : (
+                <span className={`inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full ${isSelected ? 'bg-white/20 text-blue-100' : 'bg-slate-200 text-slate-600'}`}>
+                  ● OUT {fmt(as.clockOut ?? as.clockIn)}
+                </span>
+              );
+            })()}
+          </div>
         </div>
         <div className="flex flex-col gap-0.5 items-end flex-shrink-0">
           {todayBadge && (
