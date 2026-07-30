@@ -50,3 +50,6 @@ timeoutMs = 20000
 [userenv.shared]
 
 [userenv.development]
+
+[userenv.production]
+TEAMS_APP_ID = "357151d3-0f6a-4270-a942-0bdf9202fc05"
