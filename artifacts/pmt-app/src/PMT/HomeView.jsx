@@ -838,6 +838,33 @@ const HomeView = ({
     setSelectMode(false);
   };
 
+  const handleBatchArchive = () => {
+    if (selectedTaskIds.size === 0) return;
+    const updated = {};
+    Object.keys(clientLogs).forEach(cid => {
+      updated[cid] = (clientLogs[cid] || []).map(t =>
+        selectedTaskIds.has(t.id) ? { ...t, archived: true } : t
+      );
+    });
+    setClientLogs({ ...clientLogs, ...updated });
+    setSelectedTaskIds(new Set());
+    setSelectMode(false);
+  };
+
+  const handleArchiveAllDone = () => {
+    const doneIds = new Set(myDone.map(t => t.id));
+    if (doneIds.size === 0) return;
+    if (!window.confirm(`Archive all ${doneIds.size} completed task${doneIds.size > 1 ? 's' : ''}?`)) return;
+    const updated = {};
+    Object.keys(clientLogs).forEach(cid => {
+      updated[cid] = (clientLogs[cid] || []).map(t =>
+        doneIds.has(t.id) ? { ...t, archived: true } : t
+      );
+    });
+    setClientLogs({ ...clientLogs, ...updated });
+    setStatusFilter('all');
+  };
+
   const hvTryParse = (str) => {
     if (!str) return null;
     try { const d = parse(str, 'do MMM yyyy', new Date()); return isNaN(d) ? null : d; } catch { return null; }
@@ -1415,6 +1442,12 @@ const HomeView = ({
               </button>
             ))}
           </div>
+          <button
+            onClick={handleBatchArchive}
+            className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-400 transition-all whitespace-nowrap"
+          >
+            <Archive size={11} /> Archive
+          </button>
           {isManagement && (
             <button
               onClick={handleBatchDelete}
@@ -1429,6 +1462,18 @@ const HomeView = ({
             title="Cancel selection"
           >
             <X size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* ARCHIVE ALL DONE shortcut */}
+      {!showArchived && statusFilter === 'done' && myDone.length > 0 && !selectMode && (
+        <div className="flex items-center justify-end">
+          <button
+            onClick={handleArchiveAllDone}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-all whitespace-nowrap"
+          >
+            <Archive size={12} /> Archive all Done ({myDone.length})
           </button>
         </div>
       )}
