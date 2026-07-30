@@ -14,7 +14,7 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import { createHmac, timingSafeEqual } from "crypto";
 import { getAdminAuth } from "../lib/firebase-admin";
 import { readFirebasePath, writeFirebasePath } from "../lib/firebase-admin";
-import { getUserDelegatedToken, resolveEntraObjectId, sendTeamsActivityNotification } from "../lib/microsoft-graph";
+import { getUserDelegatedToken, resolveEntraObjectId, sendTeamsActivityNotification, checkTeamsAppInstalled, installTeamsAppForUser } from "../lib/microsoft-graph";
 import { logger } from "../lib/logger";
 import { GIT_SHA } from "../lib/version";
 
@@ -303,6 +303,46 @@ function closePopupHtml(status: "success" | "error", message: string): string {
 </body>
 </html>`;
 }
+
+/* ─── Install app endpoint ─── */
+
+/**
+ * POST /api/teams/install-app
+ * Admin: programmatically installs the Teams app for the calling user's personal scope.
+ * Requires TeamsAppInstallation.ReadWriteForUser.All in Azure AD.
+ */
+router.post("/teams/install-app", requireFirebaseAuth, async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization!;
+    const decoded = await getAdminAuth().verifyIdToken(authHeader.slice(7));
+    const email = decoded.email;
+    if (!email) { res.status(400).json({ error: "No email in token" }); return; }
+
+    const objectId = await resolveEntraObjectId(email);
+    if (!objectId) {
+      res.status(404).json({ error: "Could not resolve your Teams user ID." });
+      return;
+    }
+
+    const alreadyInstalled = await checkTeamsAppInstalled(objectId);
+    if (alreadyInstalled) {
+      res.json({ installed: true, alreadyInstalled: true, build: GIT_SHA });
+      return;
+    }
+
+    const result = await installTeamsAppForUser(objectId);
+    if (!result.ok) {
+      res.status(200).json({ installed: false, error: result.error, build: GIT_SHA });
+      return;
+    }
+
+    logger.info({ email }, "[Teams] App installed for user via admin endpoint");
+    res.json({ installed: true, alreadyInstalled: false, build: GIT_SHA });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: msg, build: GIT_SHA });
+  }
+});
 
 /* ─── Test ping endpoint ─── */
 

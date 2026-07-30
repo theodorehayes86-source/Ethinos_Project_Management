@@ -348,6 +348,80 @@ export async function resolveEntraObjectId(
   }
 }
 
+/* ─── Teams app installation ─── */
+
+/**
+ * Check whether the Flow Pro Teams app is installed for a user (personal scope).
+ * Requires TeamsAppInstallation.ReadWriteForUser.All application permission.
+ */
+export async function checkTeamsAppInstalled(userObjectId: string): Promise<boolean> {
+  const teamsAppId = getTeamsAppId();
+  if (!teamsAppId) return false;
+  const token = await getAccessToken();
+  const resp = await fetch(
+    `https://graph.microsoft.com/v1.0/users/${userObjectId}/teamwork/installedApps?$filter=teamsApp/externalId eq '${teamsAppId}'&$select=id`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!resp.ok) return false;
+  const data = (await resp.json()) as { value?: unknown[] };
+  return Array.isArray(data.value) && data.value.length > 0;
+}
+
+/**
+ * Programmatically install the Flow Pro Teams app for a user (personal scope).
+ * Returns { ok, error? }.
+ * Requires TeamsAppInstallation.ReadWriteForUser.All application permission in Azure AD.
+ */
+export async function installTeamsAppForUser(
+  userObjectId: string
+): Promise<{ ok: boolean; error?: string }> {
+  const teamsAppId = getTeamsAppId();
+  if (!teamsAppId) return { ok: false, error: "Teams app ID not configured on server." };
+
+  try {
+    const token = await getAccessToken();
+
+    // Step 1: resolve the Graph-internal app catalog ID from the external manifest ID
+    const catalogResp = await fetch(
+      `https://graph.microsoft.com/v1.0/appCatalogs/teamsApps?$filter=externalId eq '${teamsAppId}'&$select=id`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!catalogResp.ok) {
+      const text = await catalogResp.text();
+      return { ok: false, error: `App catalog lookup failed (${catalogResp.status}): ${text.slice(0, 200)}` };
+    }
+    const catalogData = (await catalogResp.json()) as { value?: { id: string }[] };
+    const catalogAppId = catalogData.value?.[0]?.id;
+    if (!catalogAppId) {
+      return { ok: false, error: "App not found in org app catalog. Make sure it has been uploaded and approved in Teams Admin Center." };
+    }
+
+    // Step 2: install for the user
+    const installResp = await fetch(
+      `https://graph.microsoft.com/v1.0/users/${userObjectId}/teamwork/installedApps`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          "teamsApp@odata.bind": `https://graph.microsoft.com/v1.0/appCatalogs/teamsApps/${catalogAppId}`,
+        }),
+      }
+    );
+
+    if (!installResp.ok) {
+      const text = await installResp.text();
+      // 409 = already installed — treat as success
+      if (installResp.status === 409) return { ok: true };
+      return { ok: false, error: `Install failed (${installResp.status}): ${text.slice(0, 200)}` };
+    }
+
+    return { ok: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: msg };
+  }
+}
+
 export interface TeamsNotificationResult {
   ok: boolean;
   status?: number;

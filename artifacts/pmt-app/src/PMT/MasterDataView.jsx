@@ -351,6 +351,8 @@ const MasterDataView = ({
   // Teams test-ping state (Notifications tab)
   const [teamsPingTesting, setTeamsPingTesting] = useState(false);
   const [teamsPingResult, setTeamsPingResult] = useState(null); // null | 'success' | string(error)
+  const [teamsInstalling, setTeamsInstalling] = useState(false);
+  const [teamsInstallResult, setTeamsInstallResult] = useState(null); // null | 'installed' | 'already' | string(error)
   const [kekaLoaded, setKekaLoaded] = useState(false);
 
   // ── Archive tab ──
@@ -540,6 +542,22 @@ const MasterDataView = ({
     const setting = notificationSettings[eventId];
     if (setting && typeof setting.teamsActivityEnabled === 'boolean') return setting.teamsActivityEnabled;
     return eventId === 'mention'; // mention defaults ON, everything else defaults OFF
+  };
+
+  const installTeamsApp = async () => {
+    setTeamsInstalling(true);
+    setTeamsInstallResult(null);
+    try {
+      const result = await kekaAuthFetch('/teams/install-app', { method: 'POST' });
+      if (result.installed) {
+        setTeamsInstallResult(result.alreadyInstalled ? 'already' : 'installed');
+      } else {
+        setTeamsInstallResult(result.error || 'Install failed — check server logs.');
+      }
+    } catch (e) {
+      setTeamsInstallResult(String(e));
+    }
+    setTeamsInstalling(false);
   };
 
   const sendTestTeamsPing = async () => {
@@ -2752,32 +2770,59 @@ const MasterDataView = ({
                 })}
               </div>
 
-              {/* Test ping button */}
-              <div className="flex items-center gap-3 pt-1 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={sendTestTeamsPing}
-                  disabled={teamsPingTesting || teamsConnected === null}
-                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#464EB8] text-white hover:bg-[#3d44a5] disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-2"
-                >
-                  <Bell size={11} />
-                  {teamsPingTesting ? 'Sending…' : 'Send test ping to myself'}
-                </button>
-                {teamsPingResult?.startsWith('success') && (
-                  <span className="text-[11px] font-semibold text-emerald-600 inline-flex items-center gap-1" title={teamsPingResult}>
-                    <Check size={11} /> Ping sent — check Teams {teamsPingResult.includes('[build:') && <span className="text-slate-400 font-mono">{teamsPingResult.match(/\[build: ([^\]]+)\]/)?.[1]}</span>}
-                  </span>
-                )}
-                {teamsPingResult && !teamsPingResult.startsWith('success') && (
-                  <span className="text-[11px] text-red-600 font-semibold" title={teamsPingResult}>
-                    ❌ {teamsPingResult}
-                  </span>
-                )}
-                {teamsConnected === false && (
-                  <span className="text-[11px] text-slate-400">
-                    Set up in the <b>Microsoft Teams</b> tab first
-                  </span>
-                )}
+              {/* Install app + test ping buttons */}
+              <div className="flex flex-col gap-2 pt-1 border-t border-slate-100">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={installTeamsApp}
+                    disabled={teamsInstalling}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-700 text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-2"
+                  >
+                    {teamsInstalling ? 'Installing…' : 'Install Teams app for me'}
+                  </button>
+                  {teamsInstallResult === 'installed' && (
+                    <span className="text-[11px] font-semibold text-emerald-600 inline-flex items-center gap-1">
+                      <Check size={11} /> App installed — try the test ping now
+                    </span>
+                  )}
+                  {teamsInstallResult === 'already' && (
+                    <span className="text-[11px] font-semibold text-emerald-600 inline-flex items-center gap-1">
+                      <Check size={11} /> Already installed
+                    </span>
+                  )}
+                  {teamsInstallResult && teamsInstallResult !== 'installed' && teamsInstallResult !== 'already' && (
+                    <span className="text-[11px] text-red-600 font-semibold">
+                      ❌ {teamsInstallResult}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={sendTestTeamsPing}
+                    disabled={teamsPingTesting || teamsConnected === null}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#464EB8] text-white hover:bg-[#3d44a5] disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-2"
+                  >
+                    <Bell size={11} />
+                    {teamsPingTesting ? 'Sending…' : 'Send test ping to myself'}
+                  </button>
+                  {teamsPingResult?.startsWith('success') && (
+                    <span className="text-[11px] font-semibold text-emerald-600 inline-flex items-center gap-1" title={teamsPingResult}>
+                      <Check size={11} /> Ping sent — check Teams
+                    </span>
+                  )}
+                  {teamsPingResult && !teamsPingResult.startsWith('success') && (
+                    <span className="text-[11px] text-red-600 font-semibold" title={teamsPingResult}>
+                      ❌ {teamsPingResult}
+                    </span>
+                  )}
+                  {teamsConnected === false && (
+                    <span className="text-[11px] text-slate-400">
+                      Set up in the <b>Microsoft Teams</b> tab first
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
