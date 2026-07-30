@@ -444,10 +444,11 @@ const TaskCard = ({ task, client, users, onApprove, onReturn, isReviewed, curren
                 <Pencil size={12} /> Edit Review
               </button>
             )}
-            {isReviewed && task.qcStatus === 'approved' && onArchive && (
+            {isReviewed && (task.qcStatus === 'approved' || task.qcStatus === 'rejected') && onArchive && (
               <button
                 onClick={() => {
-                  if (window.confirm('Archive this approved task? It will be removed from the Reviewed list but can be restored from the Control Center Archive tab.')) {
+                  const label = task.qcStatus === 'approved' ? 'approved' : 'returned';
+                  if (window.confirm(`Archive this ${label} task? It will be removed from the Reviewed list but can be restored from the Control Center Archive tab.`)) {
                     onArchive(task);
                   }
                 }}
