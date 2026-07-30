@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ChevronRight, ChevronLeft, AlertTriangle, CheckCircle, Star, Users, Plus, Tag, Calendar, Clock, X, ChevronDown, ChevronUp, ShieldCheck, Info } from 'lucide-react';
+import { ChevronRight, ChevronLeft, AlertTriangle, CheckCircle, Star, Users, Plus, Tag, Calendar, Clock, X, ChevronDown, ChevronUp, ShieldCheck, Info, Link2, LinkOff } from 'lucide-react';
 import ApproveSheet from './ApproveSheet.jsx';
 import TaskDetailSheet from './TaskDetailSheet.jsx';
 import AddTaskSheet from './AddTaskSheet.jsx';
@@ -247,7 +247,18 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-400">{user.role}</p>
+              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                <p className="text-xs text-slate-400">{user.role}</p>
+                {user.kekaEmployeeId ? (
+                  <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-teal-50 text-teal-600 border border-teal-200">
+                    <Link2 size={8} strokeWidth={2.5} /> Keka
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400 border border-slate-200">
+                    <LinkOff size={8} strokeWidth={2.5} /> No Keka
+                  </span>
+                )}
+              </div>
               {overridePersonal.avgRating && (
                 <span className="flex items-center gap-0.5 text-[11px] text-amber-500 font-bold mt-0.5">
                   <Star size={10} className="fill-amber-400" /> {overridePersonal.avgRating.toFixed(1)}/10
