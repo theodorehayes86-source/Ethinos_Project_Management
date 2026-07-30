@@ -662,24 +662,45 @@ async function getBotFrameworkToken(): Promise<string> {
 
 /**
  * Get the Graph chat ID for the bot's 1:1 with a user.
- * Uses the installation record already fetched by getTeamsAppInstallationId().
+ * Tries every known app external ID so dev/prod mismatches don't block delivery.
  */
 async function getBotUserChatId(userObjectId: string): Promise<string | null> {
-  const installationId = await getTeamsAppInstallationId(userObjectId);
-  if (!installationId) return null;
-
   const token = await getAccessToken();
-  const resp = await fetch(
-    `https://graph.microsoft.com/v1.0/users/${userObjectId}/teamwork/installedApps/${installationId}/chat`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  if (!resp.ok) {
-    const text = await resp.text();
-    logger.warn({ status: resp.status, text }, "[Bot] getBotUserChatId failed");
-    return null;
+
+  // Collect all distinct app external IDs across env vars + hardcoded prod default.
+  const candidates = [
+    process.env.TEAMS_APP_ID_LIVE,
+    process.env.TEAMS_APP_ID,
+    process.env.TEAMS_APP_ID_TEST,
+    TEAMS_APP_ID_PROD_DEFAULT,
+  ].filter((id, i, arr): id is string => !!id && arr.indexOf(id) === i);
+
+  for (const externalId of candidates) {
+    try {
+      const listResp = await fetch(
+        `https://graph.microsoft.com/v1.0/users/${userObjectId}/teamwork/installedApps?$filter=teamsApp/externalId eq '${externalId}'&$select=id`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!listResp.ok) continue;
+      const listData = (await listResp.json()) as { value?: { id: string }[] };
+      const installationId = listData.value?.[0]?.id;
+      if (!installationId) continue;
+
+      const chatResp = await fetch(
+        `https://graph.microsoft.com/v1.0/users/${userObjectId}/teamwork/installedApps/${installationId}/chat`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!chatResp.ok) continue;
+      const chatData = (await chatResp.json()) as { id?: string };
+      if (chatData.id) {
+        logger.info({ externalId, userObjectId }, "[Bot] Found bot-user chat via app ID");
+        return chatData.id;
+      }
+    } catch {
+      // try next candidate
+    }
   }
-  const data = (await resp.json()) as { id?: string };
-  return data.id ?? null;
+  return null;
 }
 
 // Regional service URLs in preference order (India tenant → AMER → EMEA → APAC)
