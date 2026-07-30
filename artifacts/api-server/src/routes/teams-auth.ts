@@ -335,14 +335,21 @@ router.post("/teams/test-ping", requireFirebaseAuth, async (req: Request, res: R
       taskId: undefined,
     });
 
+    const debug = {
+      nodeEnv: process.env.NODE_ENV ?? "(not set)",
+      hasTeamsAppId: !!(process.env.TEAMS_APP_ID) && process.env.TEAMS_APP_ID.length > 0,
+      hasTeamsAppIdTest: !!(process.env.TEAMS_APP_ID_TEST) && process.env.TEAMS_APP_ID_TEST.length > 0,
+      teamsAppIdLen: process.env.TEAMS_APP_ID?.length ?? 0,
+    };
+
     if (!pingResult.ok) {
-      logger.warn({ email, error: pingResult.error, status: pingResult.status }, "[Teams] Test ping failed to reach Teams");
-      res.status(200).json({ sent: false, build: GIT_SHA, error: pingResult.error ?? "Teams notification failed — check server logs." });
+      logger.warn({ email, error: pingResult.error, status: pingResult.status, debug }, "[Teams] Test ping failed to reach Teams");
+      res.status(200).json({ sent: false, build: GIT_SHA, error: pingResult.error ?? "Teams notification failed — check server logs.", debug });
       return;
     }
 
     logger.info({ email }, "[Teams] Test ping sent successfully");
-    res.json({ sent: true, build: GIT_SHA });
+    res.json({ sent: true, build: GIT_SHA, debug });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.warn({ err }, "[Teams] Test ping failed");

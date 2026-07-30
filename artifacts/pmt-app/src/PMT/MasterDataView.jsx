@@ -548,7 +548,8 @@ const MasterDataView = ({
     try {
       const result = await kekaAuthFetch('/teams/test-ping', { method: 'POST' });
       const build = result.build ? ` [build: ${result.build}]` : '';
-      setTeamsPingResult(result.sent ? `success${build}` : `${result.error || 'Unknown error'}${build}`);
+      const dbg = result.debug ? ` | NODE_ENV:${result.debug.nodeEnv} APP_ID_len:${result.debug.teamsAppIdLen} TEST:${result.debug.hasTeamsAppIdTest}` : '';
+      setTeamsPingResult(result.sent ? `success${build}` : `${result.error || 'Unknown error'}${build}${dbg}`);
     } catch (e) {
       setTeamsPingResult(String(e));
     }
