@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { ChevronRight, ChevronLeft, AlertTriangle, CheckCircle, Star, Users, Plus, Tag, Calendar, Clock, X, ChevronDown, ChevronUp, ShieldCheck, Info, Link2, Link2Off, LogIn, LogOut, MessageSquare } from 'lucide-react';
+import { sendNotification } from '../utils/notify';
 import ApproveSheet from './ApproveSheet.jsx';
 import TaskDetailSheet from './TaskDetailSheet.jsx';
 import AddTaskSheet from './AddTaskSheet.jsx';
@@ -55,7 +56,12 @@ const TASK_STATUS_COLORS = {
   Done: 'bg-emerald-100 text-emerald-700',
 };
 
-function PersonTaskSheet({ user, tasks, onClose, onTaskClick }) {
+function PersonTaskSheet({ user, tasks, onClose, onTaskClick, currentUser }) {
+  const [showCompose, setShowCompose] = useState(false);
+  const [dmMessage, setDmMessage] = useState('');
+  const [dmSending, setDmSending] = useState(false);
+  const [dmResult, setDmResult] = useState(null); // 'sent' | 'error' | null
+  const closeDm = () => { setShowCompose(false); setDmMessage(''); setDmResult(null); };
   const today = tasks.filter(t => {
     const d = new Date(t.dueDate);
     const now = new Date(); now.setHours(0,0,0,0);
@@ -87,21 +93,72 @@ function PersonTaskSheet({ user, tasks, onClose, onTaskClick }) {
           </div>
           <div className="flex items-center gap-2">
             {(user.email || user.emailAddress) && (
-              <a
-                href={`https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(user.email || user.emailAddress)}`}
-                target="_blank"
-                rel="noreferrer"
-                title="DM on Teams"
-                className="w-9 h-9 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center active:bg-indigo-100 transition-colors"
+              <button
+                onClick={() => setShowCompose(v => !v)}
+                title="Mention via Teams"
+                className={`w-9 h-9 rounded-full border flex items-center justify-center transition-colors ${showCompose ? 'bg-indigo-100 border-indigo-200' : 'bg-indigo-50 border-indigo-100 active:bg-indigo-100'}`}
               >
                 <MessageSquare size={16} className="text-indigo-600" />
-              </a>
+              </button>
             )}
             <button onClick={onClose} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
               <X size={16} className="text-slate-600" />
             </button>
           </div>
         </div>
+        {showCompose && (
+          <div className="px-5 py-4 border-b border-indigo-100 bg-indigo-50/60 space-y-3">
+            {dmResult === 'sent' ? (
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                  <CheckCircle size={16} className="text-emerald-600" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-slate-800">Mention sent!</p>
+                  <p className="text-xs text-slate-500">{user.name} will get a Teams notification.</p>
+                </div>
+                <button onClick={closeDm} className="text-xs text-slate-400 underline">Close</button>
+              </div>
+            ) : (
+              <>
+                <textarea
+                  value={dmMessage}
+                  onChange={e => setDmMessage(e.target.value)}
+                  placeholder={`Message to ${user.name}…`}
+                  rows={2}
+                  autoFocus
+                  className="w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-indigo-400 resize-none"
+                />
+                {dmResult === 'error' && <p className="text-xs text-red-500">Failed to send — please try again.</p>}
+                <div className="flex gap-2">
+                  <button onClick={closeDm} className="flex-1 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-600">Cancel</button>
+                  <button
+                    disabled={!dmMessage.trim() || dmSending}
+                    onClick={async () => {
+                      setDmSending(true); setDmResult(null);
+                      try {
+                        await sendNotification('mention', {
+                          recipientEmail: user.email || user.emailAddress,
+                          recipientId: String(user.id),
+                          recipientName: user.name,
+                          mentionerId: String(currentUser?.id),
+                          mentionerName: currentUser?.name || '',
+                          taskName: 'Direct Message',
+                          messageText: dmMessage.trim(),
+                        });
+                        setDmResult('sent'); setDmMessage('');
+                      } catch { setDmResult('error'); }
+                      finally { setDmSending(false); }
+                    }}
+                    className="flex-1 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold disabled:opacity-40 min-h-[36px]"
+                  >
+                    {dmSending ? 'Sending…' : 'Send'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
           {tasks.length === 0 && (
             <div className="text-center py-12">
@@ -183,7 +240,7 @@ function TaskRow({ task, onTaskClick }) {
   );
 }
 
-function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onTaskClick, attendanceStatus }) {
+function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onTaskClick, attendanceStatus, currentUser }) {
   const personal = getUserTaskStats(user.id, clientLogs, clients);
   const team     = getSubtreeStats(user.id, allUsers, clientLogs, clients);
   const reports  = getDirectReports(user.id, allUsers);
@@ -367,6 +424,7 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
           tasks={overridePersonal.allTasks}
           onClose={() => setShowTaskSheet(false)}
           onTaskClick={onTaskClick}
+          currentUser={currentUser}
         />
       )}
     </>
@@ -1127,6 +1185,7 @@ export default function ManagerDashboard({
                     onDrillIn={drillIn}
                     onTaskClick={setSelectedTask}
                     attendanceStatus={attendanceByUser[String(u.id)] ?? null}
+                    currentUser={currentUser}
                   />
                 ))}
               </>
