@@ -257,10 +257,12 @@ export async function sendTeamsDirectMessage(params: {
  * Production  → TEAMS_APP_ID      (live package, project.ethinos.com)
  */
 export function getTeamsAppId(): string | undefined {
+  // In production prefer TEAMS_APP_ID (live package), fall back to TEST if not set.
+  // In dev prefer TEAMS_APP_ID_TEST, fall back to TEAMS_APP_ID.
   if (process.env.NODE_ENV !== "production") {
     return process.env.TEAMS_APP_ID_TEST || process.env.TEAMS_APP_ID;
   }
-  return process.env.TEAMS_APP_ID;
+  return process.env.TEAMS_APP_ID || process.env.TEAMS_APP_ID_TEST;
 }
 
 /**
