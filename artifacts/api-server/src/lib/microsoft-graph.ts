@@ -362,7 +362,12 @@ export async function sendTeamsActivityNotification(params: {
 }): Promise<TeamsNotificationResult> {
   const teamsAppId = getTeamsAppId();
   if (!teamsAppId) {
-    return { ok: false, error: "Teams app ID is not configured on the server." };
+    return {
+      ok: false,
+      error:
+        "Teams app ID is not configured on the server. " +
+        "Set TEAMS_APP_ID (live) or TEAMS_APP_ID_TEST (dev) in your environment secrets and redeploy.",
+    };
   }
 
   try {
