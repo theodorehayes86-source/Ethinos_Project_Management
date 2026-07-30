@@ -79,7 +79,7 @@ function PersonTaskSheet({ user, tasks, onClose, onTaskClick }) {
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-t-3xl max-h-[80vh] flex flex-col">
+      <div className="relative bg-white rounded-t-3xl max-h-[80vh] flex flex-col" style={{ marginBottom: 'calc(env(safe-area-inset-bottom, 0px) + 56px)' }}>
         <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
           <div>
             <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Tasks</p>
@@ -89,7 +89,7 @@ function PersonTaskSheet({ user, tasks, onClose, onTaskClick }) {
             <X size={16} className="text-slate-600" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 72px)' }}>
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
           {tasks.length === 0 && (
             <div className="text-center py-12">
               <CheckCircle size={32} className="text-slate-300 mx-auto mb-2" />

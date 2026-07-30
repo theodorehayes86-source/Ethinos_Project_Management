@@ -358,7 +358,7 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-t-3xl max-h-[92vh] flex flex-col">
+      <div className="relative bg-white rounded-t-3xl max-h-[92vh] flex flex-col" style={{ marginBottom: 'calc(env(safe-area-inset-bottom, 0px) + 56px)' }}>
         <div className="px-5 pt-4 pb-0 flex items-center justify-between">
           <h2 className="text-base font-bold text-slate-900">
             {personalMode ? 'Add Personal Task' : 'Add Task'}
@@ -699,7 +699,7 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
           )}
         </div>
 
-        <div className="px-5 pt-4 border-t border-slate-100 flex gap-3" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 56px)' }}>
+        <div className="px-5 py-4 border-t border-slate-100 flex gap-3">
           {stepIdx > 0 && (
             <button
               onClick={goBack}

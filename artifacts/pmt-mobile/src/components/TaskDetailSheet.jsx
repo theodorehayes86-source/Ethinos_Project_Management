@@ -229,7 +229,7 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end" onClick={() => { setActiveMenu(null); setShowEmojiPicker(false); }}>
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-t-3xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="relative bg-white rounded-t-3xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()} style={{ marginBottom: 'calc(env(safe-area-inset-bottom, 0px) + 56px)' }}>
 
         <div className="sticky top-0 bg-white border-b border-slate-100 px-5 py-4 flex items-start justify-between rounded-t-3xl">
           <div className="flex-1 min-w-0 pr-4">
@@ -282,7 +282,7 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
         <div className="flex-1 overflow-y-auto min-h-0">
 
           {activeSection === 'details' && (
-            <div className="px-5 py-4 space-y-5" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 72px)' }}>
+            <div className="px-5 py-4 space-y-5">
               <div className="flex flex-wrap gap-2">
                 <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${STATUS_COLORS[status] || 'bg-slate-100 text-slate-600'}`}>
                   {status}
@@ -375,7 +375,7 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
           )}
 
           {activeSection === 'steps' && (
-            <div className="px-5 py-4" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 72px)' }}>
+            <div className="px-5 py-4">
               {steps.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <ListChecks size={32} className="text-slate-200 mx-auto mb-2" />
@@ -601,7 +601,7 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
                     </div>
                   )}
 
-                  <div className="px-4 flex gap-2 items-end" style={{ paddingTop: '0.75rem', paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 60px)' }}>
+                  <div className="px-4 py-3 flex gap-2 items-end">
                     <button
                       onClick={() => { setShowEmojiPicker(p => !p); setShowMentionMenu(false); }}
                       className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 border transition-colors ${showEmojiPicker ? 'bg-indigo-50 border-indigo-200 text-indigo-500' : 'bg-slate-50 border-slate-200 text-slate-400'}`}
