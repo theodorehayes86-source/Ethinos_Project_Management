@@ -928,9 +928,9 @@ export default function ManagerDashboard({
             {/* Department filter — only at top level and when multiple depts exist */}
             {drillStack.length === 0 && departments.length > 2 && (
               <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 flex-shrink-0" style={{ scrollbarWidth: 'none' }}>
-                {departments.map(dept => (
+                {departments.map((dept, i) => (
                   <button
-                    key={dept}
+                    key={`dept-${i}-${dept}`}
                     onClick={() => setSelectedDept(dept)}
                     className={`flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded-full whitespace-nowrap transition-colors ${
                       selectedDept === dept
