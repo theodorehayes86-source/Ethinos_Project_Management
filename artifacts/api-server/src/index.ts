@@ -1,5 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { GIT_SHA } from "./lib/version";
 import { startReminderScheduler } from "./lib/reminder-scheduler";
 import { startRepeatScheduler } from "./lib/repeat-scheduler";
 import { startWeeklyDigestScheduler } from "./lib/weekly-digest-scheduler";
@@ -66,7 +67,7 @@ app.listen(port, (err) => {
     process.exit(1);
   }
 
-  logger.info({ port }, "Server listening");
+  logger.info({ port, build: GIT_SHA }, "Server listening");
   startRepeatScheduler();
   startReminderScheduler();
   startWeeklyDigestScheduler();

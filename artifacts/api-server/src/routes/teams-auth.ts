@@ -16,6 +16,7 @@ import { getAdminAuth } from "../lib/firebase-admin";
 import { readFirebasePath, writeFirebasePath } from "../lib/firebase-admin";
 import { getUserDelegatedToken, resolveEntraObjectId, sendTeamsActivityNotification } from "../lib/microsoft-graph";
 import { logger } from "../lib/logger";
+import { GIT_SHA } from "../lib/version";
 
 async function requireFirebaseAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers.authorization;
@@ -336,16 +337,16 @@ router.post("/teams/test-ping", requireFirebaseAuth, async (req: Request, res: R
 
     if (!pingResult.ok) {
       logger.warn({ email, error: pingResult.error, status: pingResult.status }, "[Teams] Test ping failed to reach Teams");
-      res.status(200).json({ sent: false, error: pingResult.error ?? "Teams notification failed — check server logs." });
+      res.status(200).json({ sent: false, build: GIT_SHA, error: pingResult.error ?? "Teams notification failed — check server logs." });
       return;
     }
 
     logger.info({ email }, "[Teams] Test ping sent successfully");
-    res.json({ sent: true });
+    res.json({ sent: true, build: GIT_SHA });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.warn({ err }, "[Teams] Test ping failed");
-    res.status(500).json({ error: msg });
+    res.status(500).json({ error: msg, build: GIT_SHA });
   }
 });
 

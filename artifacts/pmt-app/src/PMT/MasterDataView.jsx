@@ -547,7 +547,8 @@ const MasterDataView = ({
     setTeamsPingResult(null);
     try {
       const result = await kekaAuthFetch('/teams/test-ping', { method: 'POST' });
-      setTeamsPingResult(result.sent ? 'success' : (result.error || 'Unknown error'));
+      const build = result.build ? ` [build: ${result.build}]` : '';
+      setTeamsPingResult(result.sent ? `success${build}` : `${result.error || 'Unknown error'}${build}`);
     } catch (e) {
       setTeamsPingResult(String(e));
     }
@@ -2762,12 +2763,12 @@ const MasterDataView = ({
                   <Bell size={11} />
                   {teamsPingTesting ? 'Sending…' : 'Send test ping to myself'}
                 </button>
-                {teamsPingResult === 'success' && (
-                  <span className="text-[11px] font-semibold text-emerald-600 inline-flex items-center gap-1">
-                    <Check size={11} /> Ping sent — check Teams
+                {teamsPingResult?.startsWith('success') && (
+                  <span className="text-[11px] font-semibold text-emerald-600 inline-flex items-center gap-1" title={teamsPingResult}>
+                    <Check size={11} /> Ping sent — check Teams {teamsPingResult.includes('[build:') && <span className="text-slate-400 font-mono">{teamsPingResult.match(/\[build: ([^\]]+)\]/)?.[1]}</span>}
                   </span>
                 )}
-                {teamsPingResult && teamsPingResult !== 'success' && (
+                {teamsPingResult && !teamsPingResult.startsWith('success') && (
                   <span className="text-[11px] text-red-600 font-semibold" title={teamsPingResult}>
                     ❌ {teamsPingResult.length > 80 ? teamsPingResult.slice(0, 80) + '…' : teamsPingResult}
                   </span>
