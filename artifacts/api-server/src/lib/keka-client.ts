@@ -257,6 +257,10 @@ interface KekaApiResponse<T> {
   pageSize?: number;
   totalPages?: number;
   totalRecords?: number;
+  firstPage?: boolean;
+  lastPage?: boolean;
+  nextPage?: string | null;
+  previousPage?: string | null;
   succeeded?: boolean;
   // Legacy HRIS envelope
   pageInfo?: { totalCount?: number };
@@ -896,21 +900,26 @@ export async function syncAttendanceToday(): Promise<AttendanceSyncResult> {
       return { success: true, recordsWritten: 0, date: today, syncedAt, totalArrived: 0, totalNotArrived: 0 };
     }
 
-    // ── Step 2: Fetch today's attendance records from Keka ───────────────────
-    // Use from/to date params so Keka returns only today's records.
-    // Use a large pageSize to capture all employees in one call.
-    const url = `${baseUrl}/api/v1/time/attendance?from=${today}&to=${today}&pageNumber=1&pageSize=500`;
-    const resp = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-    });
-
-    if (!resp.ok) {
-      const body = await resp.text().catch(() => "");
-      throw new Error(`Keka attendance API HTTP ${resp.status}: ${body.slice(0, 200)}`);
+    // ── Step 2: Fetch today's attendance records from Keka (paginated) ──────
+    // Keka caps each page at 200. We page until lastPage = true or no more records.
+    const PAGE_SIZE = 200;
+    const records: KekaAttendanceRecord[] = [];
+    let pageNumber = 1;
+    while (true) {
+      const url = `${baseUrl}/api/v1/time/attendance?from=${today}&to=${today}&pageNumber=${pageNumber}&pageSize=${PAGE_SIZE}`;
+      const resp = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      });
+      if (!resp.ok) {
+        const errBody = await resp.text().catch(() => "");
+        throw new Error(`Keka attendance API HTTP ${resp.status}: ${errBody.slice(0, 200)}`);
+      }
+      const body = (await resp.json()) as KekaApiResponse<KekaAttendanceRecord>;
+      const page = (body.data ?? body.response ?? []) as KekaAttendanceRecord[];
+      records.push(...page);
+      if (body.lastPage || page.length < PAGE_SIZE) break;
+      pageNumber++;
     }
-
-    const body = (await resp.json()) as KekaApiResponse<KekaAttendanceRecord>;
-    const records = (body.data ?? body.response ?? []) as KekaAttendanceRecord[];
 
     // ── Step 3: Index records by kekaEmployeeId ──────────────────────────────
     const attendanceByKekaId: Record<string, KekaAttendanceRecord> = {};
