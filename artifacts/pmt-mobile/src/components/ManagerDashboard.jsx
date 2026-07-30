@@ -650,6 +650,8 @@ function ApprovalsTab({ pendingApprovals, clientLogs, onApprove }) {
   );
 }
 
+const GLOBAL_ROLES = ['Super Admin', 'Director', 'Business Head'];
+
 export default function ManagerDashboard({
   currentUser, users, clients, clientLogs, categories,
   pendingApprovals, activeTab, onTabChange,
@@ -661,6 +663,9 @@ export default function ManagerDashboard({
   const [showAllDrillTasks, setShowAllDrillTasks] = useState(false);
   const [leaveByUser, setLeaveByUser] = useState({});
   const [attendanceByUser, setAttendanceByUser] = useState({});
+  const [selectedDept, setSelectedDept] = useState('All');
+
+  const isSuperAdmin = GLOBAL_ROLES.includes(currentUser?.role);
 
   const scrollContainerRef = useRef(null);
   const atRiskRef = useRef(null);
@@ -668,18 +673,51 @@ export default function ManagerDashboard({
 
   const viewUser = drillStack.length > 0 ? drillStack[drillStack.length - 1] : null;
   const displayUser = viewUser || currentUser;
-  const directReports = getDirectReports(displayUser.id, users);
 
-  const drillIn  = (user) => { setDrillStack(s => [...s, user]); setShowAllDrillTasks(false); };
-  const drillOut = () => { setDrillStack(s => s.slice(0, -1)); setShowAllDrillTasks(false); };
+  // Super Admins at the top level see every user; drilled-in view always uses direct reports
+  const directReports = useMemo(() => {
+    if (isSuperAdmin && drillStack.length === 0) {
+      return users.filter(u => String(u.id) !== String(currentUser.id));
+    }
+    return getDirectReports(displayUser.id, users);
+  }, [isSuperAdmin, drillStack.length, displayUser.id, users, currentUser.id]);
+
+  // Departments derived from visible pool
+  const departments = useMemo(() => {
+    const pool = isSuperAdmin && drillStack.length === 0 ? directReports : users;
+    const depts = [...new Set(pool.map(u => u.department).filter(Boolean))].sort();
+    return ['All', ...depts];
+  }, [directReports, users, isSuperAdmin, drillStack.length]);
+
+  // Cards shown after department filter
+  const visibleReports = useMemo(() => {
+    if (selectedDept === 'All') return directReports;
+    return directReports.filter(u => u.department === selectedDept);
+  }, [directReports, selectedDept]);
+
+  const drillIn = (user) => {
+    setDrillStack(s => [...s, user]);
+    setShowAllDrillTasks(false);
+    setSelectedDept('All'); // reset filter when drilling in
+  };
+  const drillOut = () => {
+    setDrillStack(s => s.slice(0, -1));
+    setShowAllDrillTasks(false);
+    setSelectedDept('All');
+  };
 
   const drillPersonalStats = viewUser ? getUserTaskStats(viewUser.id, clientLogs, clients) : null;
 
   const subtreeIds = useMemo(() => {
+    if (isSuperAdmin) {
+      const ids = new Set(users.map(u => String(u.id)));
+      ids.delete(String(currentUser.id));
+      return ids;
+    }
     const ids = getSubtreeIds(currentUser.id, users);
     ids.delete(String(currentUser.id));
     return ids;
-  }, [currentUser.id, users]);
+  }, [currentUser.id, users, isSuperAdmin]);
 
   useEffect(() => {
     if (drillStack.length > 0 || subtreeIds.size === 0) return;
@@ -887,22 +925,55 @@ export default function ManagerDashboard({
               </div>
             )}
 
-            {directReports.length === 0 ? (
+            {/* Department filter — only at top level and when multiple depts exist */}
+            {drillStack.length === 0 && departments.length > 2 && (
+              <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 flex-shrink-0" style={{ scrollbarWidth: 'none' }}>
+                {departments.map(dept => (
+                  <button
+                    key={dept}
+                    onClick={() => setSelectedDept(dept)}
+                    className={`flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded-full whitespace-nowrap transition-colors ${
+                      selectedDept === dept
+                        ? 'bg-indigo-600 text-white shadow-sm'
+                        : 'bg-slate-100 text-slate-500'
+                    }`}
+                  >
+                    {dept}
+                    {dept !== 'All' && (
+                      <span className={`ml-1 text-[10px] ${selectedDept === dept ? 'text-indigo-200' : 'text-slate-400'}`}>
+                        {directReports.filter(u => u.department === dept).length}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {visibleReports.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
                   <Users size={28} className="text-slate-300" />
                 </div>
-                <p className="text-slate-500 font-semibold">No direct reports</p>
-                <p className="text-xs text-slate-400 mt-1">No team members linked to this person</p>
+                <p className="text-slate-500 font-semibold">
+                  {directReports.length === 0 ? 'No team members' : 'No members in this department'}
+                </p>
+                <p className="text-xs text-slate-400 mt-1">
+                  {directReports.length === 0 ? 'No team members linked to this person' : 'Try selecting a different department'}
+                </p>
               </div>
             ) : (
               <>
                 {drillStack.length > 0 && (
                   <p className="text-xs font-black text-slate-400 uppercase tracking-widest px-1">
-                    {viewUser.name.split(' ')[0]}'s Team ({directReports.length})
+                    {viewUser.name.split(' ')[0]}'s Team ({visibleReports.length})
                   </p>
                 )}
-                {directReports.map(u => (
+                {isSuperAdmin && drillStack.length === 0 && (
+                  <p className="text-xs font-black text-slate-400 uppercase tracking-widest px-1">
+                    All Members ({visibleReports.length}{selectedDept !== 'All' ? ` · ${selectedDept}` : ''})
+                  </p>
+                )}
+                {visibleReports.map(u => (
                   <PersonCard
                     key={u.id}
                     user={u}
