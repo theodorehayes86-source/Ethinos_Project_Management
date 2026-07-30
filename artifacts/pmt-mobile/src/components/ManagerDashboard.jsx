@@ -675,6 +675,7 @@ export default function ManagerDashboard({
   const [leaveByUser, setLeaveByUser] = useState({});
   const [attendanceByUser, setAttendanceByUser] = useState({});
   const [selectedDept, setSelectedDept] = useState('All');
+  const [attendanceFilter, setAttendanceFilter] = useState('all');
 
   const isSuperAdmin = GLOBAL_ROLES.includes(currentUser?.role);
 
@@ -693,28 +694,40 @@ export default function ManagerDashboard({
     return getDirectReports(displayUser.id, users);
   }, [isSuperAdmin, drillStack.length, displayUser.id, users, currentUser.id]);
 
-  // Departments derived from visible pool
+  // Departments derived from visible pool — exclude 'All' as a real dept name
   const departments = useMemo(() => {
     const pool = isSuperAdmin && drillStack.length === 0 ? directReports : users;
-    const depts = [...new Set(pool.map(u => u.department).filter(Boolean))].sort();
+    const depts = [...new Set(pool.map(u => u.department).filter(d => d && d !== 'All'))].sort();
     return ['All', ...depts];
   }, [directReports, users, isSuperAdmin, drillStack.length]);
 
-  // Cards shown after department filter
+  // Cards shown after department + attendance filter
   const visibleReports = useMemo(() => {
-    if (selectedDept === 'All') return directReports;
-    return directReports.filter(u => u.department === selectedDept);
-  }, [directReports, selectedDept]);
+    let list = selectedDept === 'All' ? directReports : directReports.filter(u => u.department === selectedDept);
+    if (attendanceFilter !== 'all') {
+      list = list.filter(u => {
+        const as = attendanceByUser[String(u.id)];
+        const arrived = as ? (as.hasArrived ?? (as.clockIn !== null)) : false;
+        if (attendanceFilter === 'in_office')   return as?.isInOffice === true;
+        if (attendanceFilter === 'left')        return arrived && !as?.isInOffice;
+        if (attendanceFilter === 'not_arrived') return !arrived && !!as;
+        return true;
+      });
+    }
+    return list;
+  }, [directReports, selectedDept, attendanceFilter, attendanceByUser]);
 
   const drillIn = (user) => {
     setDrillStack(s => [...s, user]);
     setShowAllDrillTasks(false);
-    setSelectedDept('All'); // reset filter when drilling in
+    setSelectedDept('All');
+    setAttendanceFilter('all');
   };
   const drillOut = () => {
     setDrillStack(s => s.slice(0, -1));
     setShowAllDrillTasks(false);
     setSelectedDept('All');
+    setAttendanceFilter('all');
   };
 
   const drillPersonalStats = viewUser ? getUserTaskStats(viewUser.id, clientLogs, clients) : null;
@@ -957,6 +970,35 @@ export default function ManagerDashboard({
                     )}
                   </button>
                 ))}
+              </div>
+            )}
+
+            {/* Attendance filter — shown when any data has loaded */}
+            {Object.keys(attendanceByUser).length > 0 && (
+              <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 flex-shrink-0" style={{ scrollbarWidth: 'none' }}>
+                {[
+                  { value: 'all',         label: 'All' },
+                  { value: 'in_office',   label: '● In Office' },
+                  { value: 'left',        label: '● Left' },
+                  { value: 'not_arrived', label: '✕ Not Arrived' },
+                ].map(({ value, label }) => {
+                  const active = attendanceFilter === value;
+                  const activeCls = value === 'in_office'   ? 'bg-emerald-500 text-white'
+                                  : value === 'left'        ? 'bg-slate-500 text-white'
+                                  : value === 'not_arrived' ? 'bg-red-500 text-white'
+                                  :                          'bg-indigo-600 text-white';
+                  return (
+                    <button
+                      key={value}
+                      onClick={() => setAttendanceFilter(value)}
+                      className={`flex-shrink-0 text-[10px] font-bold px-2.5 py-1 rounded-full whitespace-nowrap transition-colors ${
+                        active ? activeCls : 'bg-slate-100 text-slate-500'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
               </div>
             )}
 
