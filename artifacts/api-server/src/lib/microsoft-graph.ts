@@ -431,8 +431,8 @@ export async function sendTeamsActivityNotification(params: {
 
       // Map well-known Graph error codes to user-friendly messages
       let friendlyError: string;
-      if (resp.status === 403) {
-        friendlyError = "Teams app not installed — install it in Teams first.";
+      if (resp.status === 403 || (resp.status === 400 && text.includes("installed applications"))) {
+        friendlyError = "Teams app not installed in your personal scope — open Teams → Apps, find Flow Pro, and click Add for yourself.";
       } else if (resp.status === 409) {
         friendlyError = "Multiple Teams apps share the same AAD App ID — check your TEAMS_APP_ID configuration.";
       } else if (resp.status === 404) {
