@@ -256,13 +256,20 @@ export async function sendTeamsDirectMessage(params: {
  * Development → TEAMS_APP_ID_TEST (test package, Replit preview URL)
  * Production  → TEAMS_APP_ID      (live package, project.ethinos.com)
  */
+// The live Teams app manifest ID — not sensitive (it's in the public manifest).
+// Overridable via env var; hardcoded here as a reliable production fallback.
+const TEAMS_APP_ID_PROD_DEFAULT = "357151d3-0f6a-4270-a942-0bdf9202fc05";
+
 export function getTeamsAppId(): string | undefined {
-  // TEAMS_APP_ID_LIVE is a plain env var (no secret conflict) — preferred in production.
-  // TEAMS_APP_ID / TEAMS_APP_ID_TEST are kept as fallbacks.
   if (process.env.NODE_ENV !== "production") {
     return process.env.TEAMS_APP_ID_TEST || process.env.TEAMS_APP_ID || process.env.TEAMS_APP_ID_LIVE;
   }
-  return process.env.TEAMS_APP_ID_LIVE || process.env.TEAMS_APP_ID || process.env.TEAMS_APP_ID_TEST;
+  return (
+    process.env.TEAMS_APP_ID_LIVE ||
+    process.env.TEAMS_APP_ID ||
+    process.env.TEAMS_APP_ID_TEST ||
+    TEAMS_APP_ID_PROD_DEFAULT
+  );
 }
 
 /**
