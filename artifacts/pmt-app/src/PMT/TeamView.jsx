@@ -681,6 +681,7 @@ const TeamView = ({
   const [drillStack, setDrillStack] = useState([]);
   const [selectedMember, setSelectedMember] = useState(null);
   const [deptFilter, setDeptFilter] = useState('all');
+  const [attendanceFilter, setAttendanceFilter] = useState('all');
   const [leaveStatuses, setLeaveStatuses] = useState({});
   const [leaveLoaded, setLeaveLoaded] = useState(false);
   const [upcomingHolidays, setUpcomingHolidays] = useState(new Set());
@@ -815,11 +816,13 @@ const TeamView = ({
     if (!selectedMember || !canDrillSelected) return;
     setDrillStack(prev => [...prev, selectedMember]);
     setSelectedMember(null);
+    setAttendanceFilter('all');
   };
 
   const drillBack = (idx) => {
     setDrillStack(prev => prev.slice(0, idx));
     setSelectedMember(null);
+    setAttendanceFilter('all');
   };
 
   const memberTasks = useMemo(() => {
@@ -995,6 +998,24 @@ const TeamView = ({
   if (!currentUser) return null;
 
   const showDeptFilter = allDepartments.length > 1;
+  const hasAnyAttendance = Object.keys(attendanceStatuses).length > 0;
+
+  const ATTENDANCE_FILTERS = [
+    { value: 'all',         label: 'All' },
+    { value: 'in_office',   label: '● In Office' },
+    { value: 'left',        label: '● Left' },
+    { value: 'not_arrived', label: '✕ Not Arrived' },
+  ];
+
+  const matchesAttendanceFilter = (memberId) => {
+    if (attendanceFilter === 'all') return true;
+    const as = attendanceStatuses[String(memberId)];
+    const arrived = as ? (as.hasArrived ?? (as.clockIn !== null)) : false;
+    if (attendanceFilter === 'in_office')   return as?.isInOffice === true;
+    if (attendanceFilter === 'left')        return arrived && !as?.isInOffice;
+    if (attendanceFilter === 'not_arrived') return !arrived && !!as; // only Keka-linked
+    return true;
+  };
 
   return (
     <div className="flex gap-4 h-full">
@@ -1028,6 +1049,28 @@ const TeamView = ({
               </select>
             </div>
           )}
+          {hasAnyAttendance && (
+            <div className="flex items-center gap-1 flex-wrap">
+              {ATTENDANCE_FILTERS.map(({ value, label }) => {
+                const active = attendanceFilter === value;
+                const colorCls = active
+                  ? value === 'in_office'   ? 'bg-emerald-500 text-white border-emerald-500'
+                  : value === 'left'        ? 'bg-slate-500 text-white border-slate-500'
+                  : value === 'not_arrived' ? 'bg-red-500 text-white border-red-500'
+                  :                          'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300';
+                return (
+                  <button
+                    key={value}
+                    onClick={() => { setAttendanceFilter(value); setSelectedMember(null); }}
+                    className={`text-[9px] font-bold px-2 py-0.5 rounded-full border transition-colors ${colorCls}`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
@@ -1040,12 +1083,14 @@ const TeamView = ({
           {leftPanelGroups.map(({ role, members }) => (
             <div key={role} className="space-y-1.5">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">{role}</p>
-              {members.length === 0
-                ? <EmptyLevelRow role={role}/>
-                : members.map(member => (
-                    <MemberCard key={member.id} member={member} isSelected={selectedMember?.id === member.id} onClick={() => setSelectedMember(member)} leaveStatus={leaveStatuses[String(member.id)]} attendanceStatus={attendanceStatuses[String(member.id)]}/>
-                  ))
-              }
+              {(() => {
+                const filtered = members.filter(m => matchesAttendanceFilter(m.id));
+                return filtered.length === 0
+                  ? <EmptyLevelRow role={role}/>
+                  : filtered.map(member => (
+                      <MemberCard key={member.id} member={member} isSelected={selectedMember?.id === member.id} onClick={() => setSelectedMember(member)} leaveStatus={leaveStatuses[String(member.id)]} attendanceStatus={attendanceStatuses[String(member.id)]}/>
+                    ));
+              })()}
             </div>
           ))}
         </div>
