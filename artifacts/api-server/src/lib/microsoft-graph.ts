@@ -368,6 +368,9 @@ export async function sendTeamsActivityNotification(params: {
     const teamsDeepLink = `https://teams.microsoft.com/l/entity/${teamsAppId}/home`;
 
     const body = {
+      // teamsAppId disambiguates when multiple Teams apps share the same AAD app ID (e.g. TEST + LIVE).
+      // Without it, Graph returns 409 "Found multiple applications with the same AAD App ID".
+      teamsAppId,
       topic: {
         source: "text",
         value: params.taskName ? `Task: ${params.taskName}` : "Flow Pro Task",
