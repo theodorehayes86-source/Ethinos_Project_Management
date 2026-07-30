@@ -2407,44 +2407,72 @@ const MasterDataView = ({
 
         const renderEventCard = (event) => {
           const isEnabled = getEventEnabled(event.id);
+          const teamsSupported = TEAMS_PING_EVENTS.has(event.id);
+          const teamsEnabled = getTeamsActivityEnabled(event.id);
           const setting = notificationSettings[event.id] || {};
           const bccList = Array.isArray(setting.bccEmails) ? setting.bccEmails : [];
           const isExpanded = !!expandedEvents[event.id];
           const bccInput = bccInputs[event.id] || '';
+          const isMention = event.id === 'mention';
 
           return (
-            <div key={event.id} className={`rounded-lg border ${isEnabled ? 'border-emerald-200 bg-white' : 'border-slate-200 bg-slate-50'}`}>
-              <div className="flex items-start gap-3 p-3">
+            <div key={event.id} className={`rounded-lg border transition-colors ${isEnabled || teamsEnabled ? 'border-slate-200 bg-white' : 'border-slate-100 bg-slate-50'}`}>
+              <div className="flex items-center gap-3 px-3 py-2.5">
+                {/* Event info */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-semibold text-slate-800">{event.label}</p>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-slate-100 text-slate-500">{event.when}</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-slate-100 text-slate-500 hidden sm:inline">{event.when}</span>
                   </div>
-                  <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">{event.description}</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">{event.description}</p>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <button
-                    onClick={() => setExpandedEvents(prev => ({ ...prev, [event.id]: !prev[event.id] }))}
-                    className="text-[11px] text-slate-400 hover:text-slate-600 px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 transition-all"
-                    title="Customise"
-                  >
-                    <Edit2 size={11} />
-                  </button>
+
+                {/* Email column */}
+                <div className="flex flex-col items-center gap-0.5 flex-shrink-0 w-14">
+                  <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wide">Email</span>
                   <button
                     onClick={() => onUpdateNotificationSetting && onUpdateNotificationSetting(event.id, { enabled: !isEnabled })}
                     disabled={!onUpdateNotificationSetting}
-                    title={isEnabled ? 'Disable' : 'Enable'}
-                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:opacity-50 ${isEnabled ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                    title={isEnabled ? 'Disable email' : 'Enable email'}
+                    className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:opacity-50 ${isEnabled ? 'bg-emerald-500' : 'bg-slate-200'}`}
                   >
-                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${isEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ${isEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
                   </button>
                 </div>
+
+                {/* Teams column */}
+                <div className="flex flex-col items-center gap-0.5 flex-shrink-0 w-14">
+                  <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wide">
+                    {isMention ? '@mention' : 'Teams'}
+                  </span>
+                  {teamsSupported ? (
+                    <button
+                      onClick={() => onUpdateNotificationSetting && onUpdateNotificationSetting(event.id, { teamsActivityEnabled: !teamsEnabled })}
+                      disabled={!onUpdateNotificationSetting}
+                      title={teamsEnabled ? 'Disable Teams ping' : 'Enable Teams ping'}
+                      className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:opacity-50 ${teamsEnabled ? 'bg-[#464EB8]' : 'bg-slate-200'}`}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ${teamsEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
+                    </button>
+                  ) : (
+                    <span className="text-slate-300 text-sm leading-none mt-0.5">—</span>
+                  )}
+                </div>
+
+                {/* Expand */}
+                <button
+                  onClick={() => setExpandedEvents(prev => ({ ...prev, [event.id]: !prev[event.id] }))}
+                  className="text-slate-400 hover:text-slate-600 p-1.5 rounded border border-slate-200 bg-white hover:bg-slate-50 transition-all flex-shrink-0"
+                  title="Customise"
+                >
+                  <Edit2 size={11} />
+                </button>
               </div>
 
               {isExpanded && (
                 <div className="border-t border-slate-100 p-3 space-y-3 bg-slate-50 rounded-b-lg">
                   <div>
-                    <label className="text-[11px] font-semibold text-slate-600 block mb-1">Subject prefix</label>
+                    <label className="text-[11px] font-semibold text-slate-600 block mb-1">Email subject prefix</label>
                     <input
                       type="text"
                       placeholder="Optional — prepended to the email subject"
@@ -2454,7 +2482,7 @@ const MasterDataView = ({
                     />
                   </div>
                   <div>
-                    <label className="text-[11px] font-semibold text-slate-600 block mb-1">Intro text override</label>
+                    <label className="text-[11px] font-semibold text-slate-600 block mb-1">Email intro text override</label>
                     <textarea
                       placeholder="Optional — inserted at the top of the email body"
                       defaultValue={setting.customIntroText || ''}
@@ -2463,22 +2491,6 @@ const MasterDataView = ({
                       className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white outline-none focus:ring-2 ring-blue-500/20 resize-none"
                     />
                   </div>
-                  {/* Teams ping toggle — only shown for supported events */}
-                  {TEAMS_PING_EVENTS.has(event.id) && (
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <label className="text-[11px] font-semibold text-slate-600 block">Teams activity ping</label>
-                        <p className="text-[10px] text-slate-400 mt-0.5">Send a Teams notification banner in addition to the email</p>
-                      </div>
-                      <button
-                        onClick={() => onUpdateNotificationSetting && onUpdateNotificationSetting(event.id, { teamsActivityEnabled: !getTeamsActivityEnabled(event.id) })}
-                        disabled={!onUpdateNotificationSetting}
-                        className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:opacity-50 ${getTeamsActivityEnabled(event.id) ? 'bg-[#464EB8]' : 'bg-slate-300'}`}
-                      >
-                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ${getTeamsActivityEnabled(event.id) ? 'translate-x-4' : 'translate-x-0'}`} />
-                      </button>
-                    </div>
-                  )}
                   <div>
                     <label className="text-[11px] font-semibold text-slate-600 block mb-1">BCC addresses</label>
                     <div className="flex gap-1.5 mb-1.5">
@@ -2724,129 +2736,53 @@ const MasterDataView = ({
               );
             })()}
 
-            {/* Microsoft Teams activity pings */}
-            <div className="bg-white border border-slate-200 rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <svg viewBox="0 0 24 24" className="w-4 h-4 flex-shrink-0" fill="none">
-                  <path d="M20.625 7.5h-5.25A1.125 1.125 0 0014.25 8.625v6.75a1.125 1.125 0 001.125 1.125h5.25A1.125 1.125 0 0021.75 15.375v-6.75A1.125 1.125 0 0020.625 7.5z" fill="#464EB8"/>
-                  <path d="M13.5 4.5a3 3 0 11-6 0 3 3 0 016 0zM3 18.75A6.75 6.75 0 0115.513 13.5H3V18.75z" fill="#464EB8"/>
-                  <circle cx="17.25" cy="5.25" r="2.25" fill="#464EB8"/>
-                </svg>
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Microsoft Teams Activity Pings</p>
-                {teamsConnected === true && (
-                  <span className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-semibold">
-                    <Check size={10} /> Configured
-                  </span>
-                )}
-                {teamsConnected === false && (
-                  <span className="ml-auto text-[11px] text-slate-400 font-medium">Not configured</span>
-                )}
-              </div>
-
-              <p className="text-[11px] text-slate-500 mb-3 leading-relaxed">
-                When enabled, Flow Pro sends a Teams activity notification (banner + bell) in addition to the email. Each event below can be toggled independently. Users must have the Teams app installed and <b>Teams Pings</b> enabled on their profile.
-              </p>
-
-              {/* Per-event toggles grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
-                {NOTIFICATION_EVENTS.filter(e => TEAMS_PING_EVENTS.has(e.id)).map(event => {
-                  const pingEnabled = getTeamsActivityEnabled(event.id);
-                  return (
-                    <div key={event.id} className={`flex items-center gap-3 p-2.5 rounded-lg border ${pingEnabled ? 'border-[#464EB8]/30 bg-[#464EB8]/5' : 'border-slate-200 bg-slate-50'}`}>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-slate-800 truncate">{event.label}</p>
-                        <p className="text-[10px] text-slate-400 truncate">{event.when}</p>
-                      </div>
-                      <button
-                        onClick={() => onUpdateNotificationSetting && onUpdateNotificationSetting(event.id, { teamsActivityEnabled: !pingEnabled })}
-                        disabled={!onUpdateNotificationSetting}
-                        title={pingEnabled ? 'Disable Teams ping' : 'Enable Teams ping'}
-                        className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:opacity-50 ${pingEnabled ? 'bg-[#464EB8]' : 'bg-slate-300'}`}
-                      >
-                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ${pingEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Install app + test ping buttons */}
-              <div className="flex flex-col gap-2 pt-1 border-t border-slate-100">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={installTeamsApp}
-                    disabled={teamsInstalling}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-700 text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-2"
-                  >
-                    {teamsInstalling ? 'Installing…' : 'Install Teams app for me'}
-                  </button>
-                  {teamsInstallResult === 'installed' && (
-                    <span className="text-[11px] font-semibold text-emerald-600 inline-flex items-center gap-1">
-                      <Check size={11} /> App installed — try the test ping now
-                    </span>
-                  )}
-                  {teamsInstallResult === 'already' && (
-                    <span className="text-[11px] font-semibold text-emerald-600 inline-flex items-center gap-1">
-                      <Check size={11} /> Already installed
-                    </span>
-                  )}
-                  {teamsInstallResult && teamsInstallResult !== 'installed' && teamsInstallResult !== 'already' && (
-                    <span className="text-[11px] text-red-600 font-semibold">
-                      ❌ {teamsInstallResult}
-                    </span>
-                  )}
+            {/* Notification events table */}
+            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+              {/* Column header */}
+              <div className="flex items-center gap-3 px-3 py-2 border-b border-slate-100 bg-slate-50">
+                <p className="flex-1 text-[10px] font-bold text-slate-400 uppercase tracking-wide">Event</p>
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <span className="w-14 text-center text-[10px] font-bold text-slate-400 uppercase tracking-wide">Email</span>
+                  <span className="w-14 text-center text-[10px] font-bold text-[#464EB8] uppercase tracking-wide">Teams</span>
+                  <span className="w-7" />
                 </div>
-                <div className="flex items-center gap-3 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={sendTestTeamsPing}
-                    disabled={teamsPingTesting || teamsConnected === null}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#464EB8] text-white hover:bg-[#3d44a5] disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-2"
-                  >
-                    <Bell size={11} />
-                    {teamsPingTesting ? 'Sending…' : 'Send test ping to myself'}
-                  </button>
-                  {teamsPingResult?.startsWith('success') && (
-                    <span className="text-[11px] font-semibold text-emerald-600 inline-flex items-center gap-1" title={teamsPingResult}>
-                      <Check size={11} /> Ping sent — check Teams
-                    </span>
-                  )}
-                  {teamsPingResult && !teamsPingResult.startsWith('success') && (
-                    <span className="text-[11px] text-red-600 font-semibold" title={teamsPingResult}>
-                      ❌ {teamsPingResult}
-                    </span>
-                  )}
-                  {teamsConnected === false && (
-                    <span className="text-[11px] text-slate-400">
-                      Set up in the <b>Microsoft Teams</b> tab first
-                    </span>
-                  )}
-                </div>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {NOTIFICATION_EVENTS.map(renderEventCard)}
               </div>
             </div>
 
-            {/* Active events */}
-            {activeEvents.length > 0 && (
-              <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Active</p>
-                  <span className="text-[11px] bg-emerald-100 text-emerald-700 font-semibold px-2 py-0.5 rounded-full">{activeEvents.length}</span>
-                </div>
-                {activeEvents.map(renderEventCard)}
-              </div>
-            )}
-
-            {/* Inactive events */}
-            {inactiveEvents.length > 0 && (
-              <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Available</p>
-                  <span className="text-[11px] bg-slate-100 text-slate-500 font-semibold px-2 py-0.5 rounded-full">{inactiveEvents.length}</span>
-                </div>
-                {inactiveEvents.map(renderEventCard)}
-              </div>
-            )}
+            {/* Teams tools bar */}
+            <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center gap-3 flex-wrap">
+              <svg viewBox="0 0 24 24" className="w-4 h-4 flex-shrink-0" fill="none">
+                <path d="M20.625 7.5h-5.25A1.125 1.125 0 0014.25 8.625v6.75a1.125 1.125 0 001.125 1.125h5.25A1.125 1.125 0 0021.75 15.375v-6.75A1.125 1.125 0 0020.625 7.5z" fill="#464EB8"/>
+                <path d="M13.5 4.5a3 3 0 11-6 0 3 3 0 016 0zM3 18.75A6.75 6.75 0 0115.513 13.5H3V18.75z" fill="#464EB8"/>
+                <circle cx="17.25" cy="5.25" r="2.25" fill="#464EB8"/>
+              </svg>
+              <span className="text-[11px] font-semibold text-slate-500 mr-1">Teams setup:</span>
+              <button
+                type="button"
+                onClick={installTeamsApp}
+                disabled={teamsInstalling}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-700 text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-1.5"
+              >
+                {teamsInstalling ? 'Installing…' : 'Install app for me'}
+              </button>
+              <button
+                type="button"
+                onClick={sendTestTeamsPing}
+                disabled={teamsPingTesting}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#464EB8] text-white hover:bg-[#3d44a5] disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-1.5"
+              >
+                <Bell size={11} />
+                {teamsPingTesting ? 'Sending…' : 'Test ping'}
+              </button>
+              {teamsInstallResult === 'installed' && <span className="text-[11px] font-semibold text-emerald-600 inline-flex items-center gap-1"><Check size={11} /> Installed</span>}
+              {teamsInstallResult === 'already' && <span className="text-[11px] font-semibold text-emerald-600 inline-flex items-center gap-1"><Check size={11} /> Already installed</span>}
+              {teamsInstallResult && teamsInstallResult !== 'installed' && teamsInstallResult !== 'already' && <span className="text-[11px] text-red-600 font-semibold">❌ {teamsInstallResult}</span>}
+              {teamsPingResult?.startsWith('success') && <span className="text-[11px] font-semibold text-emerald-600 inline-flex items-center gap-1"><Check size={11} /> Ping sent — check Teams</span>}
+              {teamsPingResult && !teamsPingResult.startsWith('success') && <span className="text-[11px] text-red-600 font-semibold" title={teamsPingResult}>❌ {teamsPingResult.slice(0, 80)}{teamsPingResult.length > 80 ? '…' : ''}</span>}
+            </div>
           </div>
         );
       })()}
