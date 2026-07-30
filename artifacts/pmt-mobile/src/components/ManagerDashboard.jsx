@@ -492,8 +492,11 @@ function AtRiskSection({ currentUser, users, clientLogs, clients, onTaskClick, l
   );
 }
 
+const MISSING_INFO_PAGE = 20;
+
 function MissingInfoSection({ subtreeTasks, unassignedTasks, onTaskClick, sectionRef }) {
   const [open, setOpen] = useState(true);
+  const [showAll, setShowAll] = useState(false);
 
   const missingTasks = useMemo(() => {
     const noAssignee = unassignedTasks;
@@ -504,8 +507,11 @@ function MissingInfoSection({ subtreeTasks, unassignedTasks, onTaskClick, sectio
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
-    }).slice(0, 20);
+    });
   }, [subtreeTasks, unassignedTasks]);
+
+  const visibleTasks = showAll ? missingTasks : missingTasks.slice(0, MISSING_INFO_PAGE);
+  const hiddenCount = missingTasks.length - MISSING_INFO_PAGE;
 
   return (
     <div ref={sectionRef}>
@@ -526,7 +532,7 @@ function MissingInfoSection({ subtreeTasks, unassignedTasks, onTaskClick, sectio
           </div>
         ) : (
           <div className="space-y-1.5">
-            {missingTasks.map(t => (
+            {visibleTasks.map(t => (
               <button
                 key={`${t._clientId}-${t.id}`}
                 onClick={() => onTaskClick(t)}
@@ -539,6 +545,14 @@ function MissingInfoSection({ subtreeTasks, unassignedTasks, onTaskClick, sectio
                 {t._clientName && <span className="text-[10px] text-slate-400 flex-shrink-0 truncate max-w-[70px]">{t._clientName}</span>}
               </button>
             ))}
+            {!showAll && hiddenCount > 0 && (
+              <button
+                onClick={() => setShowAll(true)}
+                className="w-full py-2.5 text-xs font-bold text-amber-600 bg-amber-50 border border-amber-100 rounded-xl active:bg-amber-100 transition-colors min-h-[44px]"
+              >
+                Show {hiddenCount} more
+              </button>
+            )}
           </div>
         )
       )}
@@ -790,16 +804,22 @@ export default function ManagerDashboard({
   const kpiCounts = useMemo(() => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const todayEnd = new Date(today); todayEnd.setHours(23, 59, 59, 999);
-    let overdue = 0, dueToday = 0, awaitingQC = 0, missingInfo = 0;
+    let overdue = 0, dueToday = 0, awaitingQC = 0;
     subtreeTasks.forEach(t => {
       if (t.archived || t.status === 'Done') return;
       const due = parseDueDateLocal(t.dueDate);
       if (due && due < today) overdue++;
       if (due && due >= today && due <= todayEnd) dueToday++;
       if (t.qcEnabled && t.qcStatus === 'sent') awaitingQC++;
-      if (!t.dueDate) missingInfo++;
     });
-    missingInfo += unassignedTasks.length;
+    // Compute missingInfo with the same dedup as MissingInfoSection so chip matches list
+    const noDueDate = subtreeTasks.filter(t => !t.archived && t.status !== 'Done' && !t.dueDate);
+    const seen = new Set();
+    const missingInfo = [...unassignedTasks, ...noDueDate].filter(t => {
+      const key = `${t._clientId}-${t.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key); return true;
+    }).length;
     return { overdue, dueToday, awaitingQC, missingInfo };
   }, [subtreeTasks, unassignedTasks]);
 
