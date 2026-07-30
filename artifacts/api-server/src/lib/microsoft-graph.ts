@@ -352,19 +352,25 @@ export async function resolveEntraObjectId(
 
 /**
  * Check whether the Flow Pro Teams app is installed for a user (personal scope).
+ * Returns the installation record ID if found, or null.
  * Requires TeamsAppInstallation.ReadWriteForUser.All application permission.
  */
-export async function checkTeamsAppInstalled(userObjectId: string): Promise<boolean> {
+export async function getTeamsAppInstallationId(userObjectId: string): Promise<string | null> {
   const teamsAppId = getTeamsAppId();
-  if (!teamsAppId) return false;
+  if (!teamsAppId) return null;
   const token = await getAccessToken();
   const resp = await fetch(
     `https://graph.microsoft.com/v1.0/users/${userObjectId}/teamwork/installedApps?$filter=teamsApp/externalId eq '${teamsAppId}'&$select=id`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
-  if (!resp.ok) return false;
-  const data = (await resp.json()) as { value?: unknown[] };
-  return Array.isArray(data.value) && data.value.length > 0;
+  if (!resp.ok) return null;
+  const data = (await resp.json()) as { value?: { id: string }[] };
+  return data.value?.[0]?.id ?? null;
+}
+
+/** @deprecated Use getTeamsAppInstallationId */
+export async function checkTeamsAppInstalled(userObjectId: string): Promise<boolean> {
+  return (await getTeamsAppInstallationId(userObjectId)) !== null;
 }
 
 /**
@@ -453,36 +459,50 @@ export async function sendTeamsActivityNotification(params: {
 
   try {
     const token = await getAccessToken();
-    const baseUrl = getTeamsBaseUrl();
-    const deepLinkUrl = params.taskId
-      ? `${baseUrl}/?task=${encodeURIComponent(params.taskId)}`
-      : baseUrl;
 
-    // Teams activity notification topic:
-    // source "text" with a Teams deep-link webUrl is required for user-level notifications.
-    // The webUrl must start with https://teams.microsoft.com/l/
-    const teamsDeepLink = `https://teams.microsoft.com/l/entity/${teamsAppId}/home`;
+    // Resolve the installation record ID so we can use entityUrl topic format.
+    // entityUrl references the install directly — bypasses the internal catalog-ID lookup
+    // that causes "Failed to find Teams application within installed applications" when
+    // the external manifest ID is passed as teamsAppId.
+    const installationId = await getTeamsAppInstallationId(params.recipientObjectId);
 
-    const body = {
-      // teamsAppId disambiguates when multiple Teams apps share the same AAD app ID (e.g. TEST + LIVE).
-      // Without it, Graph returns 409 "Found multiple applications with the same AAD App ID".
-      teamsAppId,
-      topic: {
+    let topic: Record<string, string>;
+    if (installationId) {
+      topic = {
+        source: "entityUrl",
+        value: `https://graph.microsoft.com/v1.0/users/${params.recipientObjectId}/teamwork/installedApps/${installationId}`,
+      };
+    } else {
+      // Fallback: text topic with Teams deep-link (requires teamsAppId to resolve via catalog ID).
+      const teamsDeepLink = `https://teams.microsoft.com/l/entity/${teamsAppId}/home`;
+      topic = {
         source: "text",
         value: params.taskName ? `Task: ${params.taskName}` : "Flow Pro Task",
         webUrl: teamsDeepLink,
-      },
+      };
+    }
+
+    const body: Record<string, unknown> = {
+      topic,
       activityType: "taskMention",
-      previewText: {
-        content: params.previewText,
-      },
-      // templateParameters must exactly match the activityTypes definition in the Teams app manifest.
+      previewText: { content: params.previewText },
+      // templateParameters must match the activityTypes in the Teams app manifest.
       // Manifest templateText: "{mentionerName} mentioned you in \"{taskName}\""
       templateParameters: [
         { name: "mentionerName", value: params.mentionerName || "A teammate" },
         { name: "taskName", value: params.taskName || "a task" },
       ],
     };
+
+    // teamsAppId only needed for text-topic fallback to disambiguate apps sharing the same AAD ID.
+    if (!installationId) {
+      body.teamsAppId = teamsAppId;
+    }
+
+    logger.info(
+      { recipientObjectId: params.recipientObjectId, installationId, topicSource: topic.source },
+      "[Teams] Sending activity notification"
+    );
 
     const resp = await fetch(
       `https://graph.microsoft.com/v1.0/users/${params.recipientObjectId}/teamwork/sendActivityNotification`,
