@@ -549,3 +549,147 @@ export async function sendTeamsActivityNotification(params: {
     return { ok: false, error: msg };
   }
 }
+
+/* ─── Teams 1:1 Chat (direct messaging via Graph) ─── */
+
+export interface GraphChatMessage {
+  id: string;
+  from?: { user?: { id: string; displayName: string } };
+  body: { content: string; contentType: string };
+  createdDateTime: string;
+}
+
+/**
+ * Find an existing 1:1 chat between two users, or create one.
+ * Uses POST /chats which is idempotent for oneOnOne chats.
+ */
+export async function findOrCreateOneOnOneChat(
+  user1ObjectId: string,
+  user2ObjectId: string
+): Promise<string> {
+  const token = await getAccessToken();
+  const resp = await fetch("https://graph.microsoft.com/v1.0/chats", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chatType: "oneOnOne",
+      members: [
+        {
+          "@odata.type": "#microsoft.graph.aadUserConversationMember",
+          roles: ["owner"],
+          "user@odata.bind": `https://graph.microsoft.com/v1.0/users('${user1ObjectId}')`,
+        },
+        {
+          "@odata.type": "#microsoft.graph.aadUserConversationMember",
+          roles: ["owner"],
+          "user@odata.bind": `https://graph.microsoft.com/v1.0/users('${user2ObjectId}')`,
+        },
+      ],
+    }),
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`[Graph] findOrCreateOneOnOneChat: ${resp.status} ${text}`);
+  }
+  const data = (await resp.json()) as { id: string };
+  return data.id;
+}
+
+/** Fetch recent messages from a 1:1 chat (returned oldest to newest). */
+export async function getChatMessages(chatId: string, top = 50): Promise<GraphChatMessage[]> {
+  const token = await getAccessToken();
+  const resp = await fetch(
+    `https://graph.microsoft.com/v1.0/chats/${encodeURIComponent(chatId)}/messages?$top=${top}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`[Graph] getChatMessages: ${resp.status} ${text}`);
+  }
+  const data = (await resp.json()) as { value: GraphChatMessage[] };
+  return (data.value || []).reverse();
+}
+
+/** Fetch a single message from a chat by its Graph message ID. */
+export async function getChatMessage(chatId: string, messageId: string): Promise<GraphChatMessage | null> {
+  try {
+    const token = await getAccessToken();
+    const resp = await fetch(
+      `https://graph.microsoft.com/v1.0/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!resp.ok) return null;
+    return (await resp.json()) as GraphChatMessage;
+  } catch {
+    return null;
+  }
+}
+
+/** Send a plain-text message to a 1:1 chat. Returns the new message Graph ID. */
+export async function sendPlainChatMessage(chatId: string, messageText: string): Promise<string> {
+  const token = await getAccessToken();
+  const resp = await fetch(
+    `https://graph.microsoft.com/v1.0/chats/${encodeURIComponent(chatId)}/messages`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ body: { contentType: "text", content: messageText } }),
+    }
+  );
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`[Graph] sendPlainChatMessage: ${resp.status} ${text}`);
+  }
+  const data = (await resp.json()) as { id: string };
+  return data.id;
+}
+
+/**
+ * Subscribe to new messages in a 1:1 chat via Graph change notifications.
+ * Maximum expiry for app-only chat subscriptions is 60 min; we use 55 min as a buffer.
+ */
+export async function subscribeToChatMessages(
+  chatId: string,
+  notificationUrl: string,
+  clientState: string
+): Promise<{ id: string; expiresDateTime: string }> {
+  const token = await getAccessToken();
+  const expiresDateTime = new Date(Date.now() + 55 * 60 * 1000).toISOString();
+  const resp = await fetch("https://graph.microsoft.com/v1.0/subscriptions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      changeType: "created",
+      notificationUrl,
+      resource: `/chats/${chatId}/messages`,
+      expirationDateTime: expiresDateTime,
+      clientState,
+      latestSupportedTlsVersion: "v1_2",
+    }),
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`[Graph] subscribeToChatMessages: ${resp.status} ${text}`);
+  }
+  const data = (await resp.json()) as { id: string; expirationDateTime: string };
+  return { id: data.id, expiresDateTime: data.expirationDateTime };
+}
+
+/** Renew an existing Graph change-notification subscription. Returns the new expiry ISO string. */
+export async function renewChatSubscription(subscriptionId: string): Promise<string> {
+  const token = await getAccessToken();
+  const expiresDateTime = new Date(Date.now() + 55 * 60 * 1000).toISOString();
+  const resp = await fetch(
+    `https://graph.microsoft.com/v1.0/subscriptions/${subscriptionId}`,
+    {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ expirationDateTime: expiresDateTime }),
+    }
+  );
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`[Graph] renewChatSubscription: ${resp.status} ${text}`);
+  }
+  return expiresDateTime;
+}

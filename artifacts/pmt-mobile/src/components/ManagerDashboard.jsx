@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ChevronRight, ChevronLeft, AlertTriangle, CheckCircle, Star, Users, Plus, Tag, Calendar, Clock, X, ChevronDown, ChevronUp, ShieldCheck, Info, Link2, Link2Off, LogIn, LogOut, MessageSquare } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { ChevronRight, ChevronLeft, AlertTriangle, CheckCircle, Star, Users, Plus, Tag, Calendar, Clock, X, ChevronDown, ChevronUp, ShieldCheck, Info, Link2, Link2Off, LogIn, LogOut, MessageSquare, Send, ArrowLeft, RefreshCw } from 'lucide-react';
 import { sendNotification } from '../utils/notify';
+import { ref, onValue } from 'firebase/database';
+import { db, auth } from '../firebase.js';
 import ApproveSheet from './ApproveSheet.jsx';
 import TaskDetailSheet from './TaskDetailSheet.jsx';
 import AddTaskSheet from './AddTaskSheet.jsx';
@@ -56,12 +58,115 @@ const TASK_STATUS_COLORS = {
   Done: 'bg-emerald-100 text-emerald-700',
 };
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
+
+async function getIdToken() {
+  return auth.currentUser?.getIdToken() ?? '';
+}
+
 function PersonTaskSheet({ user, tasks, onClose, onTaskClick, currentUser }) {
-  const [showCompose, setShowCompose] = useState(false);
-  const [dmMessage, setDmMessage] = useState('');
-  const [dmSending, setDmSending] = useState(false);
-  const [dmResult, setDmResult] = useState(null); // 'sent' | 'error' | null
-  const closeDm = () => { setShowCompose(false); setDmMessage(''); setDmResult(null); };
+  const [showChat, setShowChat] = useState(false);
+
+  // ── Chat state ────────────────────────────────────────────────────────────
+  const [chatKey, setChatKey] = useState(null);
+  const [rawChatId, setRawChatId] = useState(null);
+  const [senderObjectId, setSenderObjectId] = useState(null);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatError, setChatError] = useState(null);
+  const [chatText, setChatText] = useState('');
+  const [chatSending, setChatSending] = useState(false);
+  const chatBottomRef = useRef(null);
+
+  const userEmail = user.email || user.emailAddress;
+  const senderEmail = currentUser?.email || currentUser?.emailAddress;
+
+  // Open chat (resolve/create via API)
+  const openChat = useCallback(async () => {
+    setChatLoading(true);
+    setChatError(null);
+    try {
+      const token = await getIdToken();
+      const resp = await fetch(`${API_BASE}/teams-chat/open`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          senderId: String(currentUser.id),
+          senderEmail,
+          senderName: currentUser.name,
+          recipientId: String(user.id),
+          recipientEmail: userEmail,
+          recipientName: user.name,
+        }),
+      });
+      if (!resp.ok) {
+        const d = await resp.json().catch(() => ({}));
+        throw new Error(d.error || `Server error ${resp.status}`);
+      }
+      const data = await resp.json();
+      setChatKey(data.chatKey);
+      setRawChatId(data.rawChatId);
+      setSenderObjectId(data.senderObjectId || null);
+    } catch (err) {
+      setChatError(err.message || 'Failed to open chat');
+    } finally {
+      setChatLoading(false);
+    }
+  }, [user.id, userEmail, currentUser?.id, senderEmail, currentUser?.name, user.name]);
+
+  // Trigger open when chat tab is shown
+  useEffect(() => {
+    if (showChat && !chatKey && !chatLoading) openChat();
+  }, [showChat]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Firebase listener
+  useEffect(() => {
+    if (!chatKey) return;
+    const msgRef = ref(db, `teamsDMs/chats/${chatKey}/messages`);
+    const unsub = onValue(msgRef, snap => {
+      const val = snap.val();
+      setChatMessages(val ? Object.values(val).sort((a, b) => a.sentAt - b.sentAt) : []);
+    });
+    return () => unsub();
+  }, [chatKey]);
+
+  // Auto-scroll
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
+
+  // Send
+  const sendChatMessage = useCallback(async () => {
+    const msg = chatText.trim();
+    if (!msg || !rawChatId || chatSending) return;
+    setChatText('');
+    setChatSending(true);
+    try {
+      const token = await getIdToken();
+      await fetch(`${API_BASE}/teams-chat/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          rawChatId,
+          chatKey,
+          message: msg,
+          fromId: String(currentUser.id),
+          fromObjectId: senderObjectId || '',
+          fromName: currentUser.name,
+        }),
+      });
+    } catch {
+      setChatText(msg);
+    } finally {
+      setChatSending(false);
+    }
+  }, [chatText, rawChatId, chatKey, currentUser, senderObjectId, chatSending]);
+
+  const isMine = msg =>
+    (msg.source === 'flowpro' && String(msg.fromId) === String(currentUser?.id)) ||
+    (msg.source === 'teams' && senderObjectId && msg.fromObjectId === senderObjectId);
+
+  const fmtTime = ts => new Date(ts).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
   const today = tasks.filter(t => {
     const d = new Date(t.dueDate);
     const now = new Date(); now.setHours(0,0,0,0);
@@ -86,17 +191,31 @@ function PersonTaskSheet({ user, tasks, onClose, onTaskClick, currentUser }) {
     <div className="fixed inset-0 z-50 flex flex-col justify-end">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-white rounded-t-3xl max-h-[80vh] flex flex-col" style={{ marginBottom: 'calc(env(safe-area-inset-bottom, 0px) + 56px)' }}>
-        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-          <div>
-            <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Tasks</p>
-            <h2 className="text-base font-bold text-slate-900">{user.name}</h2>
+
+        {/* ── Header ── */}
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            {showChat && (
+              <button
+                onClick={() => setShowChat(false)}
+                className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0"
+              >
+                <ArrowLeft size={14} className="text-slate-600" />
+              </button>
+            )}
+            <div className="min-w-0">
+              <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide">
+                {showChat ? 'Teams Chat' : 'Tasks'}
+              </p>
+              <h2 className="text-base font-bold text-slate-900 truncate">{user.name}</h2>
+            </div>
           </div>
           <div className="flex items-center gap-2">
-            {(user.email || user.emailAddress) && (
+            {!showChat && (user.email || user.emailAddress) && (
               <button
-                onClick={() => setShowCompose(v => !v)}
-                title="Mention via Teams"
-                className={`w-9 h-9 rounded-full border flex items-center justify-center transition-colors ${showCompose ? 'bg-indigo-100 border-indigo-200' : 'bg-indigo-50 border-indigo-100 active:bg-indigo-100'}`}
+                onClick={() => setShowChat(true)}
+                title="Open Teams chat"
+                className="w-9 h-9 rounded-full border bg-indigo-50 border-indigo-100 active:bg-indigo-100 flex items-center justify-center transition-colors"
               >
                 <MessageSquare size={16} className="text-indigo-600" />
               </button>
@@ -106,59 +225,85 @@ function PersonTaskSheet({ user, tasks, onClose, onTaskClick, currentUser }) {
             </button>
           </div>
         </div>
-        {showCompose && (
-          <div className="px-5 py-4 border-b border-indigo-100 bg-indigo-50/60 space-y-3">
-            {dmResult === 'sent' ? (
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                  <CheckCircle size={16} className="text-emerald-600" />
+
+        {/* ── Chat view ── */}
+        {showChat ? (
+          <div className="flex flex-col flex-1 overflow-hidden">
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2.5 bg-slate-50/40">
+              {chatLoading ? (
+                <div className="flex flex-col items-center justify-center h-full gap-3">
+                  <div className="w-6 h-6 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin" />
+                  <p className="text-xs text-slate-400">Opening conversation…</p>
                 </div>
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-slate-800">Mention sent!</p>
-                  <p className="text-xs text-slate-500">{user.name} will get a Teams notification.</p>
-                </div>
-                <button onClick={closeDm} className="text-xs text-slate-400 underline">Close</button>
-              </div>
-            ) : (
-              <>
-                <textarea
-                  value={dmMessage}
-                  onChange={e => setDmMessage(e.target.value)}
-                  placeholder={`Message to ${user.name}…`}
-                  rows={2}
-                  autoFocus
-                  className="w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-indigo-400 resize-none"
-                />
-                {dmResult === 'error' && <p className="text-xs text-red-500">Failed to send — please try again.</p>}
-                <div className="flex gap-2">
-                  <button onClick={closeDm} className="flex-1 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-600">Cancel</button>
+              ) : chatError ? (
+                <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-4">
+                  <AlertTriangle size={24} className="text-amber-400" />
+                  <p className="text-sm font-semibold text-slate-700">Couldn't open chat</p>
+                  <p className="text-xs text-slate-400">{chatError}</p>
                   <button
-                    disabled={!dmMessage.trim() || dmSending}
-                    onClick={async () => {
-                      setDmSending(true); setDmResult(null);
-                      try {
-                        await sendNotification('mention', {
-                          recipientEmail: user.email || user.emailAddress,
-                          recipientId: String(user.id),
-                          recipientName: user.name,
-                          mentionerId: String(currentUser?.id),
-                          mentionerName: currentUser?.name || '',
-                          taskName: 'Direct Message',
-                          messageText: dmMessage.trim(),
-                        });
-                        setDmResult('sent'); setDmMessage('');
-                      } catch { setDmResult('error'); }
-                      finally { setDmSending(false); }
-                    }}
-                    className="flex-1 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold disabled:opacity-40 min-h-[36px]"
+                    onClick={openChat}
+                    className="mt-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-xs font-semibold text-slate-600"
                   >
-                    {dmSending ? 'Sending…' : 'Send'}
+                    <RefreshCw size={11} /> Retry
                   </button>
                 </div>
-              </>
-            )}
+              ) : chatMessages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full gap-2 text-center">
+                  <MessageSquare size={28} className="text-slate-200" />
+                  <p className="text-sm text-slate-400">No messages yet</p>
+                  <p className="text-xs text-slate-300">Replies from Teams appear here instantly</p>
+                </div>
+              ) : (
+                chatMessages.map(msg => {
+                  const mine = isMine(msg);
+                  return (
+                    <div key={msg.id || msg.sentAt} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-sm leading-snug ${
+                        mine
+                          ? 'bg-indigo-600 text-white rounded-br-sm'
+                          : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm shadow-sm'
+                      }`}>
+                        {!mine && (
+                          <p className="text-[10px] font-bold text-indigo-500 mb-0.5 truncate">{msg.fromName}</p>
+                        )}
+                        <p className="whitespace-pre-wrap break-words">{msg.body}</p>
+                        <p className={`text-[9px] mt-1 text-right ${mine ? 'text-indigo-200' : 'text-slate-400'}`}>
+                          {fmtTime(msg.sentAt)}
+                          {msg.source === 'teams' && !mine && <span className="ml-1 opacity-70">· Teams</span>}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+              <div ref={chatBottomRef} />
+            </div>
+            {/* Compose bar */}
+            <div className="px-4 py-3 border-t border-slate-100 bg-white flex items-end gap-2 flex-shrink-0">
+              <textarea
+                value={chatText}
+                onChange={e => setChatText(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } }}
+                placeholder={chatLoading ? 'Opening chat…' : `Message ${user.name}…`}
+                rows={1}
+                disabled={chatLoading || !!chatError}
+                className="flex-1 resize-none rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-indigo-300 disabled:opacity-40"
+                style={{ lineHeight: '1.4', maxHeight: 96, overflowY: 'auto' }}
+              />
+              <button
+                onClick={sendChatMessage}
+                disabled={!chatText.trim() || chatSending || chatLoading || !!chatError}
+                className="w-9 h-9 flex items-center justify-center rounded-xl bg-indigo-600 text-white disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+              >
+                {chatSending
+                  ? <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  : <Send size={14} />
+                }
+              </button>
+            </div>
           </div>
-        )}
+        ) : (
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
           {tasks.length === 0 && (
             <div className="text-center py-12">
@@ -207,6 +352,7 @@ function PersonTaskSheet({ user, tasks, onClose, onTaskClick, currentUser }) {
             </div>
           ))}
         </div>
+        )}
       </div>
     </div>
   );

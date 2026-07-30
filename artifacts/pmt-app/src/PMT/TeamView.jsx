@@ -6,6 +6,7 @@ import { sendNotification } from '../utils/notify';
 import DueDateInput from './DueDateInput';
 import { getUserLeaveStatus, getUserLeaveData, getUserLeaveAndHolidayData, checkLeaveConflict, toDateKey, isFullDayLeaveOrHoliday, getUpcomingHolidays, getTodayAttendanceMap } from '../utils/leaveConflict';
 import LeaveConflictModal from './LeaveConflictModal';
+import TeamsChatModal from './TeamsChatModal';
 
 const DEFAULT_STANDARD_TRACK = ['Director', 'Snr Manager', 'Manager', 'Asst Manager', 'Snr Executive', 'Executive', 'Employee', 'Intern'];
 const CS_REPORT_ROLES = new Set(['CSM', 'Project Manager', 'PM/CSM']);
@@ -277,10 +278,6 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
   const [selectedTask, setSelectedTask] = useState(null);
   const [showAddTask, setShowAddTask] = useState(false);
   const [showDm, setShowDm] = useState(false);
-  const [dmMessage, setDmMessage] = useState('');
-  const [dmSending, setDmSending] = useState(false);
-  const [dmResult, setDmResult] = useState(null); // 'sent' | 'error' | null
-  const closeDm = () => { setShowDm(false); setDmMessage(''); setDmResult(null); };
   const [memberLeaveByDate, setMemberLeaveByDate] = useState({});
   const [leaveOpen, setLeaveOpen] = useState(true);
 
@@ -565,67 +562,11 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
         <AddTaskModal prefilledAssignee={member} clients={clients} syntheticClients={syntheticClients} taskCategories={taskCategories} currentUser={currentUser} clientLogs={clientLogs} setClientLogs={setClientLogs} onClose={() => setShowAddTask(false)}/>
       )}
       {showDm && (
-        <div className="fixed inset-0 z-[900] flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={closeDm}>
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-96 mx-4 space-y-4" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center gap-3">
-              <div className={`w-9 h-9 rounded-full ${avatarColor(member.name)} flex items-center justify-center text-white font-bold text-sm flex-shrink-0`}>{initials(member.name)}</div>
-              <div className="flex-1 min-w-0">
-                <p className="font-bold text-slate-900 text-sm">{member.name}</p>
-                <p className="text-xs text-slate-400">@mention via Teams</p>
-              </div>
-              <button onClick={closeDm} className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-colors flex-shrink-0">
-                <X size={13} className="text-slate-600" />
-              </button>
-            </div>
-            {dmResult === 'sent' ? (
-              <div className="flex flex-col items-center py-4 gap-2 text-center">
-                <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center">
-                  <CheckCircle size={20} className="text-emerald-600" />
-                </div>
-                <p className="text-sm font-semibold text-slate-700">Mention sent!</p>
-                <p className="text-xs text-slate-400">{member.name} will receive a Teams notification.</p>
-                <button onClick={closeDm} className="mt-1 px-4 py-1.5 rounded-lg bg-slate-100 text-xs font-semibold text-slate-600 hover:bg-slate-200 transition-colors">Close</button>
-              </div>
-            ) : (
-              <>
-                <textarea
-                  value={dmMessage}
-                  onChange={e => setDmMessage(e.target.value)}
-                  placeholder={`Message to ${member.name}…`}
-                  rows={3}
-                  autoFocus
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-indigo-300 resize-none"
-                />
-                {dmResult === 'error' && <p className="text-xs text-red-500">Failed to send — please try again.</p>}
-                <div className="flex gap-2">
-                  <button onClick={closeDm} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all">Cancel</button>
-                  <button
-                    disabled={!dmMessage.trim() || dmSending}
-                    onClick={async () => {
-                      setDmSending(true); setDmResult(null);
-                      try {
-                        await sendNotification('mention', {
-                          recipientEmail: member.email || member.emailAddress,
-                          recipientId: String(member.id),
-                          recipientName: member.name,
-                          mentionerId: String(currentUser.id),
-                          mentionerName: currentUser.name,
-                          taskName: 'Direct Message',
-                          messageText: dmMessage.trim(),
-                        });
-                        setDmResult('sent'); setDmMessage('');
-                      } catch { setDmResult('error'); }
-                      finally { setDmSending(false); }
-                    }}
-                    className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                  >
-                    {dmSending ? 'Sending…' : 'Send'}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+        <TeamsChatModal
+          member={member}
+          currentUser={currentUser}
+          onClose={() => setShowDm(false)}
+        />
       )}
     </div>
   );
