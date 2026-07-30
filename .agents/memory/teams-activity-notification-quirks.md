@@ -1,15 +1,25 @@
 ---
 name: Teams activity notification quirks
-description: Known Graph API pitfalls for sendActivityNotification — teamsAppId disambiguation, 403 app-install requirement
+description: Known Graph API pitfalls for sendActivityNotification — teamsAppId disambiguation, 403 app-install requirement, activityType case sensitivity
+---
+
+## activityType must match manifest EXACTLY (case-sensitive)
+
+**Rule:** The `activityType` string in the Graph API call must match the Teams app manifest definition exactly, including case.
+
+**Why:** Graph silently drops the notification (returns 202 OK but nothing appears in Teams) when the activityType casing doesn't match. Our manifest defines `"taskmention"` (all lowercase). Using `"taskMention"` (camelCase) caused silent failures.
+
+**How to apply:** In `microsoft-graph.ts → sendTeamsActivityNotification()`, `activityType` is set to `"taskmention"`. Never change the casing without also updating the manifest. When adding new activity types, copy the string directly from the manifest.
+
 ---
 
 ## teamsAppId must be in the request body
 
 **Rule:** Always include `teamsAppId` at the top level of the `sendActivityNotification` request body.
 
-**Why:** When multiple Teams apps share the same Azure AD app ID (e.g. a TEST package and a LIVE package both registered under the same `879dea7e-...` AAD app), Graph returns `409 Conflict: Found multiple applications with the same AAD App ID — a Teams Application ID is required`.
+**Why:** When multiple Teams apps share the same Azure AD app ID (e.g. a TEST package and a LIVE package both registered under the same AAD app), Graph returns `409 Conflict: Found multiple applications with the same AAD App ID — a Teams Application ID is required`.
 
-**How to apply:** In `microsoft-graph.ts → sendTeamsActivityNotification()`, the body already includes `teamsAppId` (fixed July 2026). Never remove it.
+**How to apply:** In `microsoft-graph.ts → sendTeamsActivityNotification()`, the body already includes `teamsAppId`. Never remove it.
 
 ---
 
