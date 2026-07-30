@@ -69,21 +69,32 @@ function UserPickerSheet({ users, taskCount, onClose, onSelect }) {
 function TaskCard({ task, onClick, onLongPress, selected, selectMode }) {
   const overdue = isTaskOverdue(task);
   const pressTimer = useRef(null);
+  const didLongPress = useRef(false);
 
-  const handlePointerDown = () => {
+  const handleTouchStart = () => {
+    didLongPress.current = false;
     pressTimer.current = setTimeout(() => {
+      didLongPress.current = true;
       onLongPress?.(task);
-    }, 500);
+    }, 600);
   };
   const clearPress = () => clearTimeout(pressTimer.current);
 
+  const handleClick = () => {
+    if (didLongPress.current) {
+      didLongPress.current = false;
+      return; // swallow the click that follows a long press
+    }
+    onClick(task);
+  };
+
   return (
     <button
-      onClick={() => onClick(task)}
-      onPointerDown={handlePointerDown}
-      onPointerUp={clearPress}
-      onPointerLeave={clearPress}
-      onPointerCancel={clearPress}
+      onClick={handleClick}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={clearPress}
+      onTouchMove={clearPress}
+      onTouchCancel={clearPress}
       className={`w-full rounded-2xl border shadow-sm p-4 text-left active:scale-[0.98] transition-all ${
         selected
           ? 'bg-indigo-50 border-indigo-400 ring-1 ring-indigo-300'
