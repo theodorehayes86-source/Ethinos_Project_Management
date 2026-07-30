@@ -89,7 +89,7 @@ function PersonTaskSheet({ user, tasks, onClose, onTaskClick }) {
             <X size={16} className="text-slate-600" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 72px)' }}>
           {tasks.length === 0 && (
             <div className="text-center py-12">
               <CheckCircle size={32} className="text-slate-300 mx-auto mb-2" />
@@ -744,7 +744,7 @@ export default function ManagerDashboard({
             </div>
           )}
           <div className="flex-1 overflow-y-auto" ref={scrollContainerRef}>
-          <div className="p-4 space-y-4">
+          <div className="p-4 space-y-4" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 72px)' }}>
             {drillStack.length === 0 && (
               <KpiChipRow
                 overdue={kpiCounts.overdue}
@@ -923,7 +923,7 @@ export default function ManagerDashboard({
       )}
 
       {activeTab === 'approvals' && (
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-4" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 72px)' }}>
           <ApprovalsTab
             pendingApprovals={pendingApprovals}
             clientLogs={clientLogs}

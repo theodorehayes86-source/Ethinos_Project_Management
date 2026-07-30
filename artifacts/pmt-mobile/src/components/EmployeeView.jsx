@@ -144,7 +144,7 @@ export default function EmployeeView({ myTasks, taskGroups = [], clientLogs, cur
 
   return (
     <div className="flex-1 overflow-y-auto relative">
-      <div className="p-4 pb-6 space-y-6">
+      <div className="p-4 space-y-6" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 72px)' }}>
 
         {/* STAT CARDS */}
         <div className="grid grid-cols-2 gap-3">
