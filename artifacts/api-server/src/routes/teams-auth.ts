@@ -305,7 +305,7 @@ function closePopupHtml(status: "success" | "error", message: string): string {
 
 /* ─── Test ping endpoint ─── */
 
-router.post("/test-ping", requireFirebaseAuth, async (req: Request, res: Response) => {
+router.post("/teams/test-ping", requireFirebaseAuth, async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization!;
     const decoded = await getAdminAuth().verifyIdToken(authHeader.slice(7));
