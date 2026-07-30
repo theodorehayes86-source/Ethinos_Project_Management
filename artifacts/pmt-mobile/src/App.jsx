@@ -325,7 +325,7 @@ function MainApp() {
   const initials = (currentUser?.name || '').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
   return (
-    <div className="flex flex-col h-screen max-w-[430px] mx-auto bg-slate-50 overflow-hidden">
+    <div className="flex flex-col h-[100dvh] max-w-[430px] mx-auto bg-slate-50 overflow-hidden">
       <header className="bg-white border-b border-slate-200 px-4 py-3 flex items-center gap-3 safe-top sticky top-0 z-20">
         <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center flex-shrink-0">
           <span className="text-white font-black text-sm">{initials}</span>
@@ -355,7 +355,7 @@ function MainApp() {
         </div>
       </header>
 
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden min-h-0 pb-14">
         {(activeTab === 'team' || activeTab === 'approvals') && isManager && (
           <ManagerDashboard
             currentUser={currentUser}

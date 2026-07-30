@@ -15,7 +15,8 @@ export default function BottomNav({ activeTab, onTabChange, isManager, approvalC
       ];
 
   return (
-    <div className="bg-white border-t border-slate-200 safe-bottom">
+    <div className="fixed bottom-0 inset-x-0 z-[60]">
+    <div className="max-w-[430px] mx-auto bg-white border-t border-slate-200 safe-bottom">
       <div className="flex">
         {tabs.map(tab => {
           const Icon = tab.icon;
@@ -44,6 +45,7 @@ export default function BottomNav({ activeTab, onTabChange, isManager, approvalC
           );
         })}
       </div>
+    </div>
     </div>
   );
 }
