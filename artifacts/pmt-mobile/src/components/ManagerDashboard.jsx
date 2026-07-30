@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ChevronRight, ChevronLeft, AlertTriangle, CheckCircle, Star, Users, Plus, Tag, Calendar, Clock, X, ChevronDown, ChevronUp, ShieldCheck, Info, Link2, Link2Off, LogIn, LogOut } from 'lucide-react';
+import { ChevronRight, ChevronLeft, AlertTriangle, CheckCircle, Star, Users, Plus, Tag, Calendar, Clock, X, ChevronDown, ChevronUp, ShieldCheck, Info, Link2, Link2Off, LogIn, LogOut, MessageSquare } from 'lucide-react';
 import ApproveSheet from './ApproveSheet.jsx';
 import TaskDetailSheet from './TaskDetailSheet.jsx';
 import AddTaskSheet from './AddTaskSheet.jsx';
@@ -85,9 +85,22 @@ function PersonTaskSheet({ user, tasks, onClose, onTaskClick }) {
             <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Tasks</p>
             <h2 className="text-base font-bold text-slate-900">{user.name}</h2>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
-            <X size={16} className="text-slate-600" />
-          </button>
+          <div className="flex items-center gap-2">
+            {(user.email || user.emailAddress) && (
+              <a
+                href={`https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(user.email || user.emailAddress)}`}
+                target="_blank"
+                rel="noreferrer"
+                title="DM on Teams"
+                className="w-9 h-9 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center active:bg-indigo-100 transition-colors"
+              >
+                <MessageSquare size={16} className="text-indigo-600" />
+              </a>
+            )}
+            <button onClick={onClose} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
+              <X size={16} className="text-slate-600" />
+            </button>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
           {tasks.length === 0 && (

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Users, ChevronRight, ChevronLeft, Plus, X, Search, Star, ArrowUp, ArrowDown, Filter, CalendarClock, CalendarCheck2, CalendarX2, AlertTriangle, BarChart2, ClipboardCheck, Clock, Link2, Link2Off } from 'lucide-react';
+import { Users, ChevronRight, ChevronLeft, Plus, X, Search, Star, ArrowUp, ArrowDown, Filter, CalendarClock, CalendarCheck2, CalendarX2, AlertTriangle, BarChart2, ClipboardCheck, Clock, Link2, Link2Off, MessageSquare } from 'lucide-react';
 import { format, isBefore, isAfter, startOfWeek, endOfWeek, startOfMonth, endOfMonth, parse } from 'date-fns';
 import TaskDetailPanel from './TaskDetailPanel';
 import { sendNotification } from '../utils/notify';
@@ -396,9 +396,22 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
             <p className="text-xs text-slate-500">{member.role}{member.department ? ` · ${member.department}` : ''}</p>
           </div>
         </div>
-        <button onClick={() => setShowAddTask(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition-all shadow-sm">
-          <Plus size={13}/> Add Task
-        </button>
+        <div className="flex items-center gap-2">
+          {(member.email || member.emailAddress) && (
+            <a
+              href={`https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(member.email || member.emailAddress)}`}
+              target="_blank"
+              rel="noreferrer"
+              title="DM on Teams"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-600 text-xs font-semibold rounded-lg hover:border-indigo-300 hover:text-indigo-600 transition-all shadow-sm"
+            >
+              <MessageSquare size={13}/> DM
+            </a>
+          )}
+          <button onClick={() => setShowAddTask(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition-all shadow-sm">
+            <Plus size={13}/> Add Task
+          </button>
+        </div>
       </div>
       <div className="p-4 overflow-y-auto flex-1 space-y-4">
         <div className="grid grid-cols-4 gap-2">
