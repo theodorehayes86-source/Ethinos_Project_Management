@@ -1,0 +1,13 @@
+# Allow the app to be embedded inside Microsoft Teams iframes.
+# Apache sends X-Frame-Options: SAMEORIGIN by default (or via a global config),
+# which blocks the Teams client from loading the tab.  We unset that blanket
+# header here and replace it with a tighter Content-Security-Policy that only
+# permits framing by Teams / Skype origins.
+#
+# Requires: mod_headers enabled and AllowOverride FileInfo (or AllowOverride All)
+# in the VirtualHost block.  If AllowOverride is not available, copy these two
+# Header directives into the <VirtualHost> block directly.
+<IfModule mod_headers.c>
+    Header always unset X-Frame-Options
+    Header always set Content-Security-Policy "frame-ancestors 'self' https://teams.microsoft.com https://*.teams.microsoft.com https://*.skype.com"
+</IfModule>

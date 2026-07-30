@@ -65,6 +65,19 @@ app.use(
   }),
 );
 
+// Allow Microsoft Teams to embed the app in an iframe.
+// Apache may add X-Frame-Options: SAMEORIGIN at the proxy layer; we clear it
+// here and replace it with a CSP frame-ancestors directive that restricts
+// framing to Teams / Skype origins only.
+app.use((_req, res, next) => {
+  res.removeHeader("X-Frame-Options");
+  res.setHeader(
+    "Content-Security-Policy",
+    "frame-ancestors 'self' https://teams.microsoft.com https://*.teams.microsoft.com https://*.skype.com",
+  );
+  next();
+});
+
 app.use(express.json({ limit: "256kb" }));
 app.use(express.urlencoded({ extended: true, limit: "64kb" }));
 
