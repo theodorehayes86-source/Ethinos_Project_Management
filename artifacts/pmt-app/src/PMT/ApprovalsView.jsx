@@ -728,6 +728,7 @@ const ApprovalsView = ({ clientLogs, clients, syntheticClients = [], users, curr
   const [approvingTask, setApprovingTask] = useState(null);
   const [returningTask, setReturningTask] = useState(null);
   const [hideDone, setHideDone] = useState(false);
+  const [collapsedApprovers, setCollapsedApprovers] = useState(new Set());
 
   const allClients = [...(clients || []), ...(syntheticClients || [])];
 
@@ -836,6 +837,27 @@ const ApprovalsView = ({ clientLogs, clients, syntheticClients = [], users, curr
 
   const pendingGroups = groupByClient(pendingTasks);
   const reviewedGroups = groupByClient(reviewedTasks);
+
+  const groupByApprover = (tasks) => {
+    const groups = {};
+    tasks.forEach(task => {
+      const key = String(task.qcAssigneeId || '__unassigned__');
+      if (!groups[key]) groups[key] = {
+        approverKey: key,
+        approverName: task.qcAssigneeName || 'Unassigned',
+        tasks: [],
+      };
+      groups[key].tasks.push(task);
+    });
+    return Object.values(groups).sort((a, b) => b.tasks.length - a.tasks.length);
+  };
+  const approverGroups = isSuperAdmin ? groupByApprover(pendingTasks) : [];
+
+  const toggleApprover = (key) => setCollapsedApprovers(prev => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
 
   const updateTask = (task, updates) => {
     const updatedLogs = { ...clientLogs };
@@ -1077,6 +1099,65 @@ const ApprovalsView = ({ clientLogs, clients, syntheticClients = [], users, curr
     );
   };
 
+  const renderApproverGroups = (groups) => {
+    if (groups.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
+            <Clock size={24} className="text-slate-400" />
+          </div>
+          <p className="text-sm font-semibold text-slate-500">No tasks awaiting review</p>
+          <p className="text-xs text-slate-400 mt-1">Tasks sent for QC will appear here.</p>
+        </div>
+      );
+    }
+    return (
+      <div className="space-y-4">
+        {groups.map(({ approverKey, approverName, tasks }) => {
+          const isOpen = !collapsedApprovers.has(approverKey);
+          const initial = (approverName || '?')[0].toUpperCase();
+          return (
+            <div key={approverKey} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+              <button
+                onClick={() => toggleApprover(approverKey)}
+                className="w-full flex items-center gap-3 px-5 py-4 hover:bg-slate-50 transition-colors text-left"
+              >
+                <div className="w-8 h-8 rounded-xl bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                  <span className="text-xs font-black text-indigo-700">{initial}</span>
+                </div>
+                <span className="flex-1 text-sm font-bold text-slate-800">{approverName}</span>
+                <span className="text-xs font-bold text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full mr-2">
+                  {tasks.length} pending
+                </span>
+                {isOpen
+                  ? <ChevronUp size={16} className="text-slate-400 flex-shrink-0" />
+                  : <ChevronDown size={16} className="text-slate-400 flex-shrink-0" />
+                }
+              </button>
+              {isOpen && (
+                <div className="border-t border-slate-100 px-5 pt-4 pb-5 space-y-3">
+                  {tasks.map(task => (
+                    <TaskCard
+                      key={task.id}
+                      task={task}
+                      client={task._client}
+                      users={users}
+                      onApprove={setApprovingTask}
+                      onReturn={setReturningTask}
+                      isReviewed={false}
+                      currentUser={currentUser}
+                      onAddComment={handleAddFeedbackComment}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   const renderAssignmentRequests = () => {
     const hasTaskRequests = assignmentRequestItems.length > 0;
     const hasClientRequests = clientJoinRequestItems.length > 0;
@@ -1212,7 +1293,7 @@ const ApprovalsView = ({ clientLogs, clients, syntheticClients = [], users, curr
         </button>
       </div>
 
-      {activeSubTab === 'pending' && renderGroups(pendingGroups, false)}
+      {activeSubTab === 'pending' && (isSuperAdmin ? renderApproverGroups(approverGroups) : renderGroups(pendingGroups, false))}
       {activeSubTab === 'reviewed' && renderGroups(reviewedGroups, true)}
       {activeSubTab === 'assignments' && renderAssignmentRequests()}
 

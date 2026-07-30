@@ -636,7 +636,35 @@ function LeaveConflictsSection({ subtreeTasks, leaveByUser, users, onTaskClick, 
   );
 }
 
-function ApprovalsTab({ pendingApprovals, clientLogs, onApprove }) {
+function ApprovalTaskCard({ task, onApprove }) {
+  return (
+    <div className="bg-white rounded-2xl border border-amber-100 shadow-sm p-4">
+      <div className="flex items-start gap-3">
+        <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+          <Star size={16} className="text-amber-500" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-slate-900 truncate">{task.name || task.comment}</p>
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-xs text-slate-500">
+            {task._clientName && <span className="flex items-center gap-1"><Tag size={10} />{task._clientName}</span>}
+            {task.dueDate && <span className="flex items-center gap-1"><Calendar size={10} />{task.dueDate}</span>}
+            {task.assigneeName && <span className="flex items-center gap-1"><Users size={10} />{task.assigneeName}</span>}
+          </div>
+        </div>
+      </div>
+      <button
+        onClick={() => onApprove(task)}
+        className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-bold min-h-[44px]"
+      >
+        <Star size={14} /> Review & Rate
+      </button>
+    </div>
+  );
+}
+
+function ApprovalsTab({ pendingApprovals, isSuperAdmin, onApprove }) {
+  const [collapsed, setCollapsed] = useState({});
+
   if (pendingApprovals.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
@@ -647,31 +675,59 @@ function ApprovalsTab({ pendingApprovals, clientLogs, onApprove }) {
     );
   }
 
+  if (!isSuperAdmin) {
+    return (
+      <div className="space-y-3">
+        {pendingApprovals.map((task, i) => (
+          <ApprovalTaskCard key={`${task._clientId}-${task.id}-${i}`} task={task} onApprove={onApprove} />
+        ))}
+      </div>
+    );
+  }
+
+  // Super Admin: group by approver
+  const groups = {};
+  pendingApprovals.forEach(task => {
+    const key = String(task.qcAssigneeId || '__unassigned__');
+    if (!groups[key]) groups[key] = { name: task.qcAssigneeName || 'Unassigned', tasks: [] };
+    groups[key].tasks.push(task);
+  });
+  const groupList = Object.entries(groups).sort((a, b) => b[1].tasks.length - a[1].tasks.length);
+
+  const toggle = (key) => setCollapsed(prev => ({ ...prev, [key]: !prev[key] }));
+
   return (
     <div className="space-y-3">
-      {pendingApprovals.map((task, i) => (
-        <div key={`${task._clientId}-${task.id}-${i}`} className="bg-white rounded-2xl border border-amber-100 shadow-sm p-4">
-          <div className="flex items-start gap-3">
-            <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
-              <Star size={16} className="text-amber-500" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-slate-900 truncate">{task.name || task.comment}</p>
-              <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-xs text-slate-500">
-                {task._clientName && <span className="flex items-center gap-1"><Tag size={10} />{task._clientName}</span>}
-                {task.dueDate && <span className="flex items-center gap-1"><Calendar size={10} />{task.dueDate}</span>}
-                {task.assigneeName && <span className="flex items-center gap-1"><Users size={10} />{task.assigneeName}</span>}
+      {groupList.map(([key, { name, tasks }]) => {
+        const isOpen = !collapsed[key];
+        return (
+          <div key={key} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <button
+              onClick={() => toggle(key)}
+              className="w-full flex items-center gap-3 px-4 py-3.5 min-h-[52px] active:bg-slate-50 transition-colors text-left"
+            >
+              <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                <span className="text-xs font-black text-indigo-700">{(name || '?')[0].toUpperCase()}</span>
               </div>
-            </div>
+              <span className="flex-1 text-sm font-bold text-slate-800 truncate">{name}</span>
+              <span className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full mr-1">
+                {tasks.length}
+              </span>
+              {isOpen
+                ? <ChevronUp size={14} className="text-slate-400 flex-shrink-0" />
+                : <ChevronDown size={14} className="text-slate-400 flex-shrink-0" />
+              }
+            </button>
+            {isOpen && (
+              <div className="border-t border-slate-100 p-3 space-y-2.5">
+                {tasks.map((task, i) => (
+                  <ApprovalTaskCard key={`${task._clientId}-${task.id}-${i}`} task={task} onApprove={onApprove} />
+                ))}
+              </div>
+            )}
           </div>
-          <button
-            onClick={() => onApprove(task)}
-            className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-bold min-h-[44px]"
-          >
-            <Star size={14} /> Review & Rate
-          </button>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -1099,7 +1155,7 @@ export default function ManagerDashboard({
         <div className="flex-1 overflow-y-auto p-4" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 72px)' }}>
           <ApprovalsTab
             pendingApprovals={pendingApprovals}
-            clientLogs={clientLogs}
+            isSuperAdmin={isSuperAdmin}
             onApprove={setApprovingTask}
           />
         </div>
