@@ -325,7 +325,7 @@ router.post("/teams/test-ping", requireFirebaseAuth, async (req: Request, res: R
       return;
     }
 
-    await sendTeamsActivityNotification({
+    const pingResult = await sendTeamsActivityNotification({
       recipientObjectId: objectId,
       mentionerName: "Flow Pro",
       taskName: "Test Notification",
@@ -333,6 +333,12 @@ router.post("/teams/test-ping", requireFirebaseAuth, async (req: Request, res: R
       previewText: "✅ Teams activity notifications are working.",
       taskId: undefined,
     });
+
+    if (!pingResult.ok) {
+      logger.warn({ email, error: pingResult.error, status: pingResult.status }, "[Teams] Test ping failed to reach Teams");
+      res.status(200).json({ sent: false, error: pingResult.error ?? "Teams notification failed — check server logs." });
+      return;
+    }
 
     logger.info({ email }, "[Teams] Test ping sent successfully");
     res.json({ sent: true });

@@ -339,10 +339,16 @@ export async function resolveEntraObjectId(
   }
 }
 
+export interface TeamsNotificationResult {
+  ok: boolean;
+  status?: number;
+  error?: string;
+}
+
 /**
  * Send a Teams activity-feed notification to a user.
  * Requires TEAMS_APP_ID env var and TeamsActivity.Send Graph permission.
- * Failures are caught and logged — never throws, never blocks the email path.
+ * Never throws — returns { ok: false, error } on failure so callers can report it.
  */
 export async function sendTeamsActivityNotification(params: {
   recipientObjectId: string;
@@ -351,9 +357,11 @@ export async function sendTeamsActivityNotification(params: {
   clientName?: string;
   previewText: string;
   taskId?: string;
-}): Promise<void> {
+}): Promise<TeamsNotificationResult> {
   const teamsAppId = getTeamsAppId();
-  if (!teamsAppId) return;
+  if (!teamsAppId) {
+    return { ok: false, error: "Teams app ID is not configured on the server." };
+  }
 
   try {
     const token = await getAccessToken();
@@ -406,13 +414,30 @@ export async function sendTeamsActivityNotification(params: {
         { status: resp.status, body: text, recipientObjectId: params.recipientObjectId },
         "[Teams] sendActivityNotification failed"
       );
-    } else {
-      logger.info(
-        { recipientObjectId: params.recipientObjectId, taskName: params.taskName },
-        "[Teams] Activity notification sent"
-      );
+
+      // Map well-known Graph error codes to user-friendly messages
+      let friendlyError: string;
+      if (resp.status === 403) {
+        friendlyError = "Teams app not installed — install it in Teams first.";
+      } else if (resp.status === 409) {
+        friendlyError = "Multiple Teams apps share the same AAD App ID — check your TEAMS_APP_ID configuration.";
+      } else if (resp.status === 404) {
+        friendlyError = "Teams user not found — make sure the recipient has a Teams account.";
+      } else {
+        friendlyError = `Graph API error ${resp.status}: ${text.slice(0, 200)}`;
+      }
+
+      return { ok: false, status: resp.status, error: friendlyError };
     }
+
+    logger.info(
+      { recipientObjectId: params.recipientObjectId, taskName: params.taskName },
+      "[Teams] Activity notification sent"
+    );
+    return { ok: true };
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
     logger.warn({ err }, "[Teams] sendActivityNotification threw — skipping");
+    return { ok: false, error: msg };
   }
 }

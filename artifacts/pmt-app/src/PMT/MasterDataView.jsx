@@ -2768,8 +2768,8 @@ const MasterDataView = ({
                   </span>
                 )}
                 {teamsPingResult && teamsPingResult !== 'success' && (
-                  <span className="text-[11px] text-red-600 font-semibold">
-                    Error: {teamsPingResult.includes("Teams app") ? "Teams app not installed" : teamsPingResult.slice(0, 60)}
+                  <span className="text-[11px] text-red-600 font-semibold" title={teamsPingResult}>
+                    ❌ {teamsPingResult.length > 80 ? teamsPingResult.slice(0, 80) + '…' : teamsPingResult}
                   </span>
                 )}
                 {teamsConnected === false && (
