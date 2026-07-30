@@ -1893,9 +1893,9 @@ const ClientView = ({
 
                       {/* Edit / Delete / Archive */}
                       <td className="px-2 py-2 text-center" onClick={(e) => e.stopPropagation()}>
-                        {canFullyEditTask(log) && (
+                        {(canFullyEditTask(log) || String(log.assigneeId) === String(currentUser?.id)) && (
                           <div className="flex items-center justify-center gap-1">
-                            {!log.archived && (
+                            {!log.archived && canFullyEditTask(log) && (
                               <button
                                 onClick={() => openEditModal(log)}
                                 className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-all"
@@ -1904,7 +1904,7 @@ const ClientView = ({
                                 <Edit2 size={12}/>
                               </button>
                             )}
-                            {canModifyTaskMeta() && (
+                            {(canModifyTaskMeta() || String(log.assigneeId) === String(currentUser?.id)) && (
                               <button
                                 onClick={() => {
                                   const upd = (clientLogs[selectedClient.id] || []).map(l =>
