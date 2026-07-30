@@ -842,18 +842,27 @@ export interface AttendanceSyncResult {
   date: string;
   syncedAt: string;
   error?: string;
+  totalArrived?: number;
+  totalNotArrived?: number;
 }
 
 /**
- * Fetch today's attendance from Keka and write clock-in/out status to Firebase.
+ * Fetch today's attendance from Keka and write arrival status to Firebase
+ * for EVERY Keka-linked PMT user — including those who have not yet arrived.
+ *
+ * Algorithm:
+ *   1. Load all PMT users that have a kekaEmployeeId.
+ *   2. GET /api/v1/time/attendance?from=TODAY&to=TODAY — records only exist
+ *      for employees who have clocked in.
+ *   3. Build a map: kekaEmployeeId → attendance record.
+ *   4. For every Keka-linked user write:
+ *        hasArrived  = whether a clock-in record exists
+ *        clockIn     = first punch timestamp (null if not arrived)
+ *        clockOut    = last punch timestamp (null if still in or not arrived)
+ *        isInOffice  = arrived AND not yet clocked out
  *
  * Firebase path: attendanceData/{yyyy-MM-dd}/{pmtUserId}
- * Fields: clockIn (ISO|null), clockOut (ISO|null), isInOffice (bool),
- *         grossHours, effectiveHours, syncedAt
- *
- * Rate limit: Keka allows 50 req/min. This function makes 1 API call (today's
- * data ≤ 200 employees per page). At 10-minute scheduler intervals that is
- * 6 calls/hour — well within budget.
+ * Rate limit: 2 Keka API calls per run, every 10 min → well within 50 req/min.
  */
 export async function syncAttendanceToday(): Promise<AttendanceSyncResult> {
   const syncedAt = new Date().toISOString();
@@ -866,12 +875,31 @@ export async function syncAttendanceToday(): Promise<AttendanceSyncResult> {
 
   try {
     const token = await getKekaAccessToken(creds.baseUrl);
-    // Note: Keka's attendance API often ignores fromDate/toDate and returns
-    // the most recently processed batch regardless. We query without date
-    // constraints and use the attendanceDate field on each record to key the
-    // Firebase path, so data is always stored under the correct date.
-    const url = `${creds.baseUrl.replace(/\/$/, "")}/api/v1/time/attendance?pageNumber=1&pageSize=200`;
+    const baseUrl = creds.baseUrl.replace(/\/$/, "");
 
+    // ── Step 1: Load all PMT users with a kekaEmployeeId ─────────────────────
+    const usersRaw = await readFirebasePath<unknown>("users");
+    // kekaEmployeeId → pmtUserId
+    const kekaIdToUserId: Record<string, string> = {};
+    if (usersRaw) {
+      const userList: PMTUser[] = Array.isArray(usersRaw)
+        ? (usersRaw as PMTUser[]).filter(Boolean)
+        : Object.values(usersRaw as Record<string, PMTUser>).filter(Boolean);
+      for (const u of userList) {
+        if (u.kekaEmployeeId && u.id != null) {
+          kekaIdToUserId[u.kekaEmployeeId] = String(u.id);
+        }
+      }
+    }
+    const totalKekaUsers = Object.keys(kekaIdToUserId).length;
+    if (totalKekaUsers === 0) {
+      return { success: true, recordsWritten: 0, date: today, syncedAt, totalArrived: 0, totalNotArrived: 0 };
+    }
+
+    // ── Step 2: Fetch today's attendance records from Keka ───────────────────
+    // Use from/to date params so Keka returns only today's records.
+    // Use a large pageSize to capture all employees in one call.
+    const url = `${baseUrl}/api/v1/time/attendance?from=${today}&to=${today}&pageNumber=1&pageSize=500`;
     const resp = await fetch(url, {
       headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
     });
@@ -884,62 +912,54 @@ export async function syncAttendanceToday(): Promise<AttendanceSyncResult> {
     const body = (await resp.json()) as KekaApiResponse<KekaAttendanceRecord>;
     const records = (body.data ?? body.response ?? []) as KekaAttendanceRecord[];
 
-    // Build kekaEmployeeId → pmtUserId map from Firebase users
-    const usersRaw = await readFirebasePath<unknown>("users");
-    const kekaIdToUserId: Record<string, string> = {};
-    if (usersRaw) {
-      const userList: PMTUser[] = Array.isArray(usersRaw)
-        ? (usersRaw as PMTUser[]).filter(Boolean)
-        : Object.values(usersRaw as Record<string, PMTUser>).filter(Boolean);
-      for (const u of userList) {
-        if (u.kekaEmployeeId && u.id != null) {
-          kekaIdToUserId[u.kekaEmployeeId] = String(u.id);
-        }
+    // ── Step 3: Index records by kekaEmployeeId ──────────────────────────────
+    const attendanceByKekaId: Record<string, KekaAttendanceRecord> = {};
+    for (const rec of records) {
+      if (rec.employeeIdentifier) {
+        attendanceByKekaId[rec.employeeIdentifier] = rec;
       }
     }
 
+    // ── Step 4: Write a record for every Keka-linked user ────────────────────
     const nowStr = new Date().toISOString();
     let recordsWritten = 0;
+    let totalArrived = 0;
+    let totalNotArrived = 0;
 
-    for (const rec of records) {
-      const empId = rec.employeeIdentifier;
-      if (!empId) continue;
-      const pmtUserId = kekaIdToUserId[empId];
-      if (!pmtUserId) continue;
-
-      const clockIn = rec.firstInOfTheDay?.timestamp ?? null;
-      const clockOut = rec.lastOutOfTheDay?.timestamp ?? null;
-      // isInOffice = clocked in today and not yet clocked out
-      const isInOffice = clockIn !== null && clockOut === null;
+    for (const [kekaEmployeeId, pmtUserId] of Object.entries(kekaIdToUserId)) {
+      const rec = attendanceByKekaId[kekaEmployeeId];
+      const clockIn = rec?.firstInOfTheDay?.timestamp ?? null;
+      const clockOut = rec?.lastOutOfTheDay?.timestamp ?? null;
+      const hasArrived = clockIn !== null;
+      const isInOffice = hasArrived && clockOut === null;
 
       await writeFirebasePath(`attendanceData/${today}/${pmtUserId}`, {
         clockIn,
         clockOut,
+        hasArrived,
         isInOffice,
-        grossHours: rec.totalGrossHours ?? 0,
-        effectiveHours: rec.totalEffectiveHours ?? 0,
+        grossHours: rec?.totalGrossHours ?? 0,
+        effectiveHours: rec?.totalEffectiveHours ?? 0,
         syncedAt: nowStr,
       });
+
       recordsWritten++;
+      if (hasArrived) totalArrived++; else totalNotArrived++;
     }
 
     await writeFirebasePath("settings/integrations/keka/lastAttendanceSync", {
       syncedAt: nowStr,
       recordsWritten,
+      totalArrived,
+      totalNotArrived,
       date: today,
     });
 
-    logger.info({ recordsWritten, date: today }, "[Keka] Attendance sync complete");
-    return { success: true, recordsWritten, date: today, syncedAt };
+    logger.info({ recordsWritten, totalArrived, totalNotArrived, date: today }, "[Keka] Attendance sync complete");
+    return { success: true, recordsWritten, date: today, syncedAt, totalArrived, totalNotArrived };
   } catch (err) {
     logger.error({ err }, "[Keka] Attendance sync failed");
-    return {
-      success: false,
-      recordsWritten: 0,
-      date: today,
-      syncedAt,
-      error: String(err),
-    };
+    return { success: false, recordsWritten: 0, date: today, syncedAt, error: String(err) };
   }
 }
 

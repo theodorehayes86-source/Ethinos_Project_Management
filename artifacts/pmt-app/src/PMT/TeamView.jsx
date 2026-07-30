@@ -586,13 +586,17 @@ const MemberCard = ({ member, isSelected, onClick, leaveStatus, attendanceStatus
         : null
     : null;
 
-  // Attendance dot on avatar: green = currently in office, slate = clocked out today
-  // Only show when data exists — absence of data means no biometric / weekend / not yet synced
-  const attendanceDot = as?.clockIn
-    ? as.isInOffice
-      ? 'bg-emerald-400'   // clocked in, not yet out = in office right now
-      : 'bg-slate-400'     // clocked in and out = was in today, left
+  // Attendance dot on avatar
+  // green = in office, slate = left for day, red = not yet arrived, null = no Keka data
+  const arrived = as ? (as.hasArrived ?? (as.clockIn !== null)) : null;
+  const attendanceDot = as
+    ? as.isInOffice ? 'bg-emerald-400'
+      : arrived ? 'bg-slate-400'
+      : 'bg-red-400'
     : null;
+  const attendanceDotTitle = as?.isInOffice ? 'In office'
+    : arrived ? 'Left for day'
+    : 'Not arrived';
 
   return (
     <button onClick={onClick}
@@ -601,7 +605,7 @@ const MemberCard = ({ member, isSelected, onClick, leaveStatus, attendanceStatus
         <div className="relative flex-shrink-0">
           <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-[11px] ${isSelected ? 'bg-white/20 text-white' : `${avatarColor(member.name)} text-white`}`}>{initials(member.name)}</div>
           {attendanceDot && !ls.onLeaveToday && (
-            <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${attendanceDot}`} title={as.isInOffice ? 'In office' : 'Left for day'} />
+            <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${attendanceDot}`} title={attendanceDotTitle} />
           )}
         </div>
         <div className="flex-1 min-w-0">
@@ -618,8 +622,15 @@ const MemberCard = ({ member, isSelected, onClick, leaveStatus, attendanceStatus
                 <Link2Off size={8} strokeWidth={2.5} /> No Keka
               </span>
             )}
-            {as?.clockIn && !ls.onLeaveToday && (() => {
+            {as && !ls.onLeaveToday && (() => {
               const fmt = (iso) => new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+              if (!arrived) {
+                return (
+                  <span className={`inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full ${isSelected ? 'bg-red-400/70 text-white' : 'bg-red-100 text-red-600'}`}>
+                    ✕ NOT IN
+                  </span>
+                );
+              }
               return as.isInOffice ? (
                 <span className={`inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full ${isSelected ? 'bg-emerald-400/80 text-white' : 'bg-emerald-500 text-white'}`}>
                   ● IN {fmt(as.clockIn)}

@@ -227,13 +227,17 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
               {leaveStatus === 'leave_soon' && (
                 <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-amber-300 border-2 border-white" title="Leave Soon" />
               )}
-              {/* Attendance dot: only show when not on leave and clock-in data exists */}
-              {leaveStatus !== 'on_leave' && attendanceStatus?.clockIn && (
-                <span
-                  className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${attendanceStatus.isInOffice ? 'bg-emerald-400' : 'bg-slate-400'}`}
-                  title={attendanceStatus.isInOffice ? 'In office' : 'Left for day'}
-                />
-              )}
+              {/* Attendance dot: green=in office, slate=left, red=not arrived, hidden=no Keka data */}
+              {leaveStatus !== 'on_leave' && attendanceStatus && (() => {
+                const arrived = attendanceStatus.hasArrived ?? (attendanceStatus.clockIn !== null);
+                const dotClass = attendanceStatus.isInOffice ? 'bg-emerald-400'
+                  : arrived ? 'bg-slate-400'
+                  : 'bg-red-400';
+                const dotTitle = attendanceStatus.isInOffice ? 'In office'
+                  : arrived ? 'Left for day'
+                  : 'Not arrived';
+                return <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${dotClass}`} title={dotTitle} />;
+              })()}
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5 flex-wrap">
@@ -258,23 +262,30 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
                     <Link2Off size={8} strokeWidth={2.5} /> No Keka
                   </span>
                 )}
-                {leaveStatus !== 'on_leave' && attendanceStatus?.clockIn && (
-                  <span className={`inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${
-                    attendanceStatus.isInOffice
-                      ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
-                      : 'bg-slate-100 text-slate-500 border-slate-200'
-                  }`}>
-                    <LogIn size={8} strokeWidth={2.5} />
-                    {new Date(attendanceStatus.clockIn).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
-                    {!attendanceStatus.isInOffice && attendanceStatus.clockOut && (
-                      <>
-                        {' · '}
-                        <LogOut size={8} strokeWidth={2.5} className="ml-0.5" />
-                        {new Date(attendanceStatus.clockOut).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
-                      </>
-                    )}
-                  </span>
-                )}
+                {leaveStatus !== 'on_leave' && attendanceStatus && (() => {
+                  const arrived = attendanceStatus.hasArrived ?? (attendanceStatus.clockIn !== null);
+                  const fmt = (iso) => new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+                  if (!arrived) {
+                    return (
+                      <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-50 text-red-500 border border-red-200">
+                        ✕ Not Arrived
+                      </span>
+                    );
+                  }
+                  return (
+                    <span className={`inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${
+                      attendanceStatus.isInOffice
+                        ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                        : 'bg-slate-100 text-slate-500 border-slate-200'
+                    }`}>
+                      <LogIn size={8} strokeWidth={2.5} />
+                      {fmt(attendanceStatus.clockIn)}
+                      {!attendanceStatus.isInOffice && attendanceStatus.clockOut && (
+                        <>{' · '}<LogOut size={8} strokeWidth={2.5} className="ml-0.5" />{fmt(attendanceStatus.clockOut)}</>
+                      )}
+                    </span>
+                  );
+                })()}
               </div>
               {overridePersonal.avgRating && (
                 <span className="flex items-center gap-0.5 text-[11px] text-amber-500 font-bold mt-0.5">
