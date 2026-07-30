@@ -2770,7 +2770,7 @@ const MasterDataView = ({
                 )}
                 {teamsPingResult && !teamsPingResult.startsWith('success') && (
                   <span className="text-[11px] text-red-600 font-semibold" title={teamsPingResult}>
-                    ❌ {teamsPingResult.length > 80 ? teamsPingResult.slice(0, 80) + '…' : teamsPingResult}
+                    ❌ {teamsPingResult}
                   </span>
                 )}
                 {teamsConnected === false && (
