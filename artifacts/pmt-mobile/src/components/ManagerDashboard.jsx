@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ChevronRight, ChevronLeft, AlertTriangle, CheckCircle, Star, Users, Plus, Tag, Calendar, Clock, X, ChevronDown, ChevronUp, ShieldCheck, Info, Link2, LinkOff } from 'lucide-react';
+import { ChevronRight, ChevronLeft, AlertTriangle, CheckCircle, Star, Users, Plus, Tag, Calendar, Clock, X, ChevronDown, ChevronUp, ShieldCheck, Info, Link2, Link2Off } from 'lucide-react';
 import ApproveSheet from './ApproveSheet.jsx';
 import TaskDetailSheet from './TaskDetailSheet.jsx';
 import AddTaskSheet from './AddTaskSheet.jsx';
@@ -255,7 +255,7 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400 border border-slate-200">
-                    <LinkOff size={8} strokeWidth={2.5} /> No Keka
+                    <Link2Off size={8} strokeWidth={2.5} /> No Keka
                   </span>
                 )}
               </div>
