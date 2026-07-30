@@ -15,7 +15,7 @@ import {
   getSubtreeIds,
 } from './hooks/useFirebaseData.js';
 import ChecklistDashboardScreen from './components/ChecklistDashboardScreen.jsx';
-import { Bell, LogOut, Loader2 } from 'lucide-react';
+import { Bell, LogOut, Loader2, Maximize2, Minimize2 } from 'lucide-react';
 
 const MANAGEMENT_ROLES = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
 const GLOBAL_ROLES = ['Super Admin', 'Director', 'Business Head'];
@@ -103,6 +103,29 @@ function MainApp() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [userLoading, setUserLoading] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const onFsChange = () => {
+      setIsFullscreen(!!(document.fullscreenElement || document.webkitFullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.removeEventListener('webkitfullscreenchange', onFsChange);
+    };
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      (document.exitFullscreen || document.webkitExitFullscreen || (() => {})).call(document);
+    } else {
+      const el = document.documentElement;
+      const fn = el.requestFullscreen || el.webkitRequestFullscreen;
+      if (fn) fn.call(el).catch(() => {});
+    }
+  };
 
   const { users, clients, clientLogs, categories, loading: dataLoading } = useAppData(!authLoading && !!firebaseUser);
   const { taskGroups, checklistTemplates, checklistAccess } = useChecklistDashboardData(!authLoading && !!firebaseUser);
@@ -335,6 +358,13 @@ function MainApp() {
           <p className="text-[10px] text-slate-400 truncate">{currentUser?.role} · {currentUser?.department}</p>
         </div>
         <div className="flex items-center gap-1">
+          <button
+            onClick={toggleFullscreen}
+            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-400 hover:bg-slate-50 transition-colors"
+            title={isFullscreen ? 'Exit full screen' : 'Enter full screen'}
+          >
+            {isFullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+          </button>
           <button
             onClick={handleOpenNotifications}
             className="relative w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 hover:bg-slate-50 transition-colors"
