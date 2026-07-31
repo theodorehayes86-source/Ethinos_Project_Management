@@ -328,9 +328,14 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
           ...baseTask,
           dueDate: formatDate(dt.toISOString().split('T')[0]),
         }));
-        const { set, ref } = await import('firebase/database');
+        // Use push() for each recurring task so keys are stable and collision-free.
+        // This also avoids overwriting the full client task list.
+        const { push, set, ref } = await import('firebase/database');
         const { db } = await import('../firebase.js');
-        await set(ref(db, `clientLogs/${String(client.id)}`), [...existing, ...newTasks]);
+        for (const task of newTasks) {
+          const newRef = push(ref(db, `clientLogs/${String(client.id)}`));
+          await set(newRef, { ...task, id: newRef.key });
+        }
       } else {
         await createTaskInFirebase(String(client.id), baseTask, clientLogs);
       }

@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { ref, onValue, set, get } from 'firebase/database';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ref, onValue, set, update, get } from 'firebase/database';
 import { signInWithEmailAndPassword, signInWithCustomToken, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, updateProfile, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
 import { db, auth } from './firebase.js';
 // MSAL import removed — we use a direct PKCE+postMessage popup flow instead.
@@ -1104,11 +1104,14 @@ const App = () => {
   useEffect(() => {
     if (!firebaseUser) return;
 
-    const syncRef = (path, setter) => {
+    // syncRef: subscribes to a Firebase path and always updates local state,
+    // including when the node is null (deleted). Pass `emptyVal` for the
+    // correct empty state so deleted nodes clear the UI immediately.
+    const syncRef = (path, setter, emptyVal = null) => {
       const dbRef = ref(db, path);
       return onValue(dbRef, (snapshot) => {
         const val = snapshot.val();
-        if (val !== null && val !== undefined) setter(val);
+        setter(val !== null && val !== undefined ? val : emptyVal);
       });
     };
 
@@ -1264,8 +1267,22 @@ const App = () => {
   };
   const persistClientLogs = (nextLogs) => {
     setClientLogs(nextLogs);
-    if (firebaseUser) set(ref(db, 'clientLogs'), sanitizeForFirebase(nextLogs));
+    // Use update() instead of set() so only the supplied client buckets are
+    // touched. Two users editing different clients will no longer overwrite
+    // each other. (Two users editing the SAME client's tasks still need
+    // task-level writes via persistTaskUpdate — use that for single-task ops.)
+    if (firebaseUser) update(ref(db, 'clientLogs'), sanitizeForFirebase(nextLogs));
   };
+
+  /**
+   * Write a single task's fields atomically without touching any other task.
+   * Preferred over persistClientLogs for single-task operations (status
+   * changes, archiving, QC updates) once the task has a stable Firebase key.
+   */
+  const persistTaskUpdate = useCallback((clientId, taskKey, updates) => {
+    if (!firebaseUser) return;
+    update(ref(db, `clientLogs/${clientId}/${taskKey}`), sanitizeForFirebase(updates));
+  }, [firebaseUser]); // eslint-disable-line react-hooks/exhaustive-deps
   const persistTaskCategories = (val) => {
     setTaskCategories(val);
     if (firebaseUser) set(ref(db, 'taskCategories'), sanitizeForFirebase(val));

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ref, onValue, set } from 'firebase/database';
+import { ref, onValue, set, update, push, runTransaction } from 'firebase/database';
 import { db } from '../firebase.js';
 
 const MANAGEMENT_ROLES = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
@@ -285,22 +285,59 @@ export function useChecklistDashboardData(isAuthed) {
   return { taskGroups, checklistTemplates, checklistAccess };
 }
 
-export async function updateTaskInFirebase(clientId, taskId, updates, clientLogs) {
-  const currentLogs = clientLogs[clientId] || [];
-  const updated = currentLogs.map(t => String(t.id) === String(taskId) ? { ...t, ...updates } : t);
-  await set(ref(db, `clientLogs/${clientId}`), updated);
+/**
+ * Atomically update a single task within a client's task list.
+ *
+ * Uses runTransaction to read-modify-write so concurrent edits from other
+ * sessions are never lost. Handles both legacy array-shaped data (integer
+ * Firebase keys from old `set(array)` calls) and new push-key-shaped data.
+ *
+ * The `clientLogs` parameter is no longer required and is ignored; callers
+ * may omit it.
+ */
+export async function updateTaskInFirebase(clientId, taskId, updates) {
+  await runTransaction(ref(db, `clientLogs/${clientId}`), (current) => {
+    if (!current) return current; // no data → nothing to update
+
+    if (Array.isArray(current)) {
+      // Legacy array shape
+      return current.map(t =>
+        t && String(t.id) === String(taskId) ? { ...t, ...updates } : t
+      );
+    }
+
+    // Object / push-key shape
+    const result = { ...current };
+    for (const key of Object.keys(result)) {
+      const task = result[key];
+      if (task && String(task.id) === String(taskId)) {
+        result[key] = { ...task, ...updates };
+        break;
+      }
+    }
+    return result;
+  });
 }
 
-export async function createTaskInFirebase(clientId, taskData, clientLogs) {
-  const existing = Array.isArray(clientLogs[clientId]) ? clientLogs[clientId] : [];
+/**
+ * Create a task using Firebase push() so the key is stable and collision-free.
+ * The task's `id` is set to the generated push key so future task-level writes
+ * can use it directly via `clientLogs/${clientId}/${task.id}`.
+ *
+ * The `clientLogs` parameter is no longer required and is ignored; callers
+ * may omit it.
+ */
+export async function createTaskInFirebase(clientId, taskData) {
+  const listRef = ref(db, `clientLogs/${clientId}`);
+  const newRef = push(listRef);
   const newTask = {
-    id: Date.now(),
     status: 'Pending',
     createdAt: Date.now(),
     elapsedMs: 0,
     timerState: 'stopped',
     ...taskData,
+    id: newRef.key, // stable Firebase push key — use as the write path from now on
   };
-  await set(ref(db, `clientLogs/${clientId}`), [...existing, newTask]);
+  await set(newRef, newTask);
   return newTask;
 }

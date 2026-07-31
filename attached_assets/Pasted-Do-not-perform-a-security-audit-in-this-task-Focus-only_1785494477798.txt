@@ -1,0 +1,244 @@
+Do not perform a security audit in this task. Focus only on bugs, data reliability, error handling, timer behaviour, Firebase synchronisation, and production stability.
+
+Primary objective
+
+Make the application reliable for multiple employees using the web app, mobile app, and timer widget at the same time.
+
+There is only one developer, but there may be many concurrent application users. Therefore, concurrency refers to employees updating tasks simultaneously, not developers editing the code.
+
+Priority 1: Prevent lost task updates
+
+The application currently appears to save entire Firebase collections or entire client task lists when a single task changes.
+
+Examples include patterns similar to:
+
+set(ref(db, 'clientLogs'), nextLogs);
+
+and:
+
+set(ref(db, `clientLogs/${clientId}`), updatedTasks);
+
+This can cause one employee’s update to overwrite another employee’s more recent update.
+
+Please:
+
+Identify every place where the entire clientLogs tree or a complete client task list is written.
+Replace whole-collection writes with task-level Firebase update(), set(), push(), or runTransaction() operations.
+Use stable Firebase task keys or permanent task IDs.
+Do not use array positions as database identifiers.
+Preserve backward compatibility with existing task data where possible.
+Add clear comments around the new task-write logic.
+
+Preferred data shape:
+
+clientLogs/
+  clientId/
+    taskId/
+      name
+      status
+      assignee
+      timeSpent
+      updatedAt
+Priority 2: Fix timer widget task identification
+
+Review:
+
+artifacts/pmt-timer-widget/src/context/TasksContext.tsx
+
+The widget may convert task objects using Object.values() and then assign a new array index as taskIndex.
+
+This is unsafe because the generated index may not match the original Firebase key, especially after deletions or when data is stored as an object.
+
+Please:
+
+Preserve the actual Firebase task key using Object.entries().
+Store it as taskKey or an equivalent field.
+Use that key for every timer and status update.
+Remove database writes based on derived display-array indexes.
+Confirm that starting, pausing, resuming, stopping, and completing a task all update the correct task.
+
+Example:
+
+const tasks = Object.entries(allLogs || {}).map(([taskKey, task]) => ({
+  ...task,
+  taskKey,
+}));
+
+Then write to:
+
+update(ref(db, `clientLogs/${clientId}/${taskKey}`), payload);
+Priority 3: Fix stale offline timer writes
+
+The timer widget appears to race Firebase updates against a short timeout and queue failed writes locally.
+
+A timed-out Firebase request may still complete later. The same older payload may then remain in the offline queue and overwrite newer timer data after reconnection.
+
+Please redesign this flow.
+
+Preferred approach:
+
+Do not assume a timed-out request failed.
+Track Firebase connectivity using .info/connected.
+Queue writes only when genuinely offline or when Firebase explicitly rejects the write.
+Add an updatedAt, revision number, or sequence number to queued timer updates.
+Reject or skip queued updates that are older than the task’s current server state.
+Merge pending status and timer updates for the same task rather than replaying conflicting entries separately.
+Do not silently discard queue-storage failures.
+
+Test these scenarios:
+
+Start timer while online.
+Pause while online.
+Lose connection while running.
+Pause while offline.
+Resume while offline.
+Reconnect.
+Close and reopen the widget.
+Put the computer to sleep and wake it.
+Stop a timer after an old queued write exists.
+Confirm elapsed time never moves backwards.
+Priority 4: Handle failed Firebase saves visibly
+
+Identify every Firebase set(), update(), push(), remove(), and transaction that is not awaited or does not have error handling.
+
+Replace silent or fire-and-forget writes with reliable asynchronous operations.
+
+Required behaviour:
+
+Await each user-triggered save.
+Show a loading or saving state where appropriate.
+Show a clear toast or error message when a save fails.
+Do not tell the user that an action succeeded before Firebase confirms it.
+Where optimistic updates are used, roll back local state if the save fails.
+Log enough context for debugging without exposing sensitive data.
+Avoid unhandled promise rejections.
+
+Example pattern:
+
+const previousValue = currentValue;
+setCurrentValue(optimisticValue);
+
+try {
+  await update(ref(db, path), changes);
+  showSuccessToast();
+} catch (error) {
+  setCurrentValue(previousValue);
+  showErrorToast('The change could not be saved. Please try again.');
+  console.error('Firebase update failed', {
+    path,
+    error,
+  });
+}
+Priority 5: Correct stale state after Firebase deletions
+
+Review generic Firebase listeners in the web and mobile applications.
+
+A listener must update local state even when snapshot.val() is null.
+
+Current logic may ignore null values, leaving deleted records visible until refresh.
+
+Please:
+
+Find listeners that only call their setter when Firebase returns a non-null value.
+Set the correct empty state when the node does not exist.
+Use {} for keyed objects and [] for list-based state as appropriate.
+Verify that deleting a task, client, user, template, group, or feedback item removes it immediately from all relevant views.
+
+Suggested helper:
+
+const subscribeToPath = (path, setter, emptyValue) => {
+  return onValue(ref(db, path), snapshot => {
+    setter(snapshot.exists() ? snapshot.val() : emptyValue);
+  });
+};
+Priority 6: Standardise Firebase collection handling
+
+The codebase appears to treat Firebase collections inconsistently as both arrays and keyed objects.
+
+Some components use:
+
+Object.values(logs)
+
+while others use:
+
+logs.map(...)
+logs.filter(...)
+logs.forEach(...)
+
+This can cause runtime crashes when Firebase returns an object.
+
+Please:
+
+Create shared normalisation helpers.
+Replace direct .map(), .filter(), and .forEach() calls on uncertain Firebase values.
+Preserve the Firebase key when task mutations require it.
+Use the same helper across web, mobile, reports, approvals, dashboards, checklists, and timer code.
+
+Suggested utilities:
+
+export function collectionValues(value) {
+  if (!value) return [];
+
+  return Array.isArray(value)
+    ? value.filter(Boolean)
+    : Object.values(value).filter(Boolean);
+}
+
+export function collectionEntries(value) {
+  if (!value) return [];
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item, index) => item ? [String(index), item] : null)
+      .filter(Boolean);
+  }
+
+  return Object.entries(value);
+}
+Priority 7: Replace weak task ID generation
+
+Find task IDs generated using:
+
+Date.now()
+
+Replace them with Firebase push keys or crypto.randomUUID().
+
+Use one consistent task identity approach across web, mobile, and timer applications.
+
+Do not use timestamps or array positions as permanent identifiers.
+
+Priority 8: Improve offline queue reliability
+
+Review:
+
+artifacts/pmt-timer-widget/src/offlineQueue.ts
+
+Please:
+
+Return success or failure when saving the queue.
+Do not silently swallow localStorage errors.
+Notify the user when an offline update cannot be safely stored.
+Ensure duplicate pending operations for the same task are merged or correctly ordered.
+Prevent an older queued update from overwriting a newer server update.
+Remove queue entries only after Firebase confirms successful persistence.
+Priority 9: Audit runtime stability
+
+Search the entire repository for:
+
+unhandled promises;
+missing try/catch;
+Firebase calls without await;
+loading states that never clear;
+nullable values used without checks;
+stale useEffect dependencies;
+effects that create duplicate Firebase subscriptions;
+subscriptions that are not unsubscribed;
+timers and intervals that are not cleared;
+state updates after component unmount;
+array methods called on possible objects;
+.find() results used without checking for undefined;
+dates parsed without validation;
+invalid or inconsistent status values;
+UI actions that succeed visually before persistence succeeds.
+
+Fix confirmed bugs. Avoid broad speculative refactoring.

@@ -26,13 +26,13 @@ interface TasksContextValue {
   syncStatus: SyncStatus;
   updateTaskTimer: (
     clientId: number | string,
-    taskIndex: number,
+    taskKey: string,
     taskId: string,
     payload: Partial<TaskLog>
   ) => Promise<void>;
   updateTaskStatus: (
     clientId: number | string,
-    taskIndex: number,
+    taskKey: string,
     taskId: string,
     fields: { status?: string; qcStatus?: string | null }
   ) => Promise<void>;
@@ -62,12 +62,21 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 export function TasksProvider({ children }: { children: React.ReactNode }) {
   const { pmtUser } = useAuth();
   const [clients, setClients] = useState<Client[]>([]);
-  const [rawLogs, setRawLogs] = useState<Record<string, TaskLog[]>>({});
+  // rawLogs keys: clientId → (Firebase-key → TaskLog).
+  // We store it as a plain object to match what onValue returns.
+  const [rawLogs, setRawLogs] = useState<Record<string, Record<string, TaskLog>>>({});
   const [loading, setLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => ({
     state: loadQueue().length > 0 ? "pending" : "synced",
     pendingCount: loadQueue().length,
   }));
+
+  /**
+   * Always-current snapshot of rawLogs used by the flush logic to detect
+   * stale queued writes without causing extra re-renders.
+   */
+  const rawLogsRef = useRef(rawLogs);
+  useEffect(() => { rawLogsRef.current = rawLogs; }, [rawLogs]);
 
   /**
    * Tracks whether Firebase's own WebSocket is connected.
@@ -82,23 +91,24 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
    */
   const flushQueueRef = useRef<() => Promise<void>>(async () => {});
 
-  // ─── Write helper ───────────────────────────────────────────────────────
+  // ─── Write helper ────────────────────────────────────────────────────────
+  // Always writes to the stable Firebase key (taskKey), never a derived index.
 
   const doWrite = useCallback(
     async (
       clientId: number | string,
-      taskIndex: number,
+      taskKey: string,
       payload: Record<string, unknown>
     ) => {
       await withTimeout(
-        update(ref(db, `clientLogs/${clientId}/${taskIndex}`), payload),
+        update(ref(db, `clientLogs/${clientId}/${taskKey}`), payload),
         WRITE_TIMEOUT_MS
       );
     },
     []
   );
 
-  // ─── Queue flush ─────────────────────────────────────────────────────────
+  // ─── Queue flush ──────────────────────────────────────────────────────────
 
   const flushQueueInternal = useCallback(async () => {
     const queue = loadQueue();
@@ -109,11 +119,29 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
     setSyncStatus({ state: "pending", pendingCount: queue.length });
 
     for (const item of queue) {
+      // Staleness check: if the server already has a newer updatedAt for this
+      // task, this queued write is outdated — drop it rather than overwrite.
+      const clientLogs = rawLogsRef.current;
+      const serverTask = clientLogs[String(item.clientId)]?.[item.taskKey];
+      if (
+        serverTask?.updatedAt != null &&
+        typeof serverTask.updatedAt === "number" &&
+        serverTask.updatedAt > item.timestamp
+      ) {
+        console.info(
+          `[PMT Timer] Dropping stale queued write for task ${item.taskKey} ` +
+          `(queued at ${item.timestamp}, server updatedAt ${serverTask.updatedAt})`
+        );
+        dequeueByKey(item);
+        continue;
+      }
+
       try {
-        await doWrite(item.clientId, item.taskIndex, item.payload);
+        await doWrite(item.clientId, item.taskKey, item.payload);
+        // Only remove from queue after Firebase confirms the write
         dequeueByKey(item);
       } catch {
-        // Leave it — will retry on next reconnect
+        // Leave in queue — will retry on next reconnect
       }
     }
 
@@ -129,7 +157,7 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
     flushQueueRef.current = flushQueueInternal;
   }, [flushQueueInternal]);
 
-  // ─── Firebase connection sentinel ────────────────────────────────────────
+  // ─── Firebase connection sentinel ─────────────────────────────────────────
 
   useEffect(() => {
     const unsub = onValue(connectedRef, (snap) => {
@@ -152,7 +180,7 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
     return unsub;
   }, []); // empty — stable ref handles the callback update
 
-  // ─── Data listeners ──────────────────────────────────────────────────────
+  // ─── Data listeners ───────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!pmtUser) return;
@@ -160,15 +188,20 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
 
     const u1 = onValue(ref(db, "clients"), (snap) => {
       const val = snap.val();
-      if (!val) return;
-      const list: Client[] = Array.isArray(val) ? val : Object.values(val);
+      // Always update state, including when the node is deleted (val === null)
+      if (!val) {
+        setClients([]);
+        return;
+      }
+      const list: Client[] = Array.isArray(val) ? val.filter(Boolean) : Object.values(val);
       setClients(list);
     });
     unsubs.push(u1);
 
     const u2 = onValue(ref(db, "clientLogs"), (snap) => {
-      const val = snap.val();
-      setRawLogs(val || {});
+      // snap.val() is an object of { clientId: { taskKey: TaskLog } } or null.
+      // We keep it as-is so groupedTasks can use Object.entries() for stable keys.
+      setRawLogs((snap.val() as Record<string, Record<string, TaskLog>>) || {});
       setLoading(false);
     });
     unsubs.push(u2);
@@ -176,7 +209,7 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
     return () => unsubs.forEach((u) => u());
   }, [pmtUser]);
 
-  // ─── Grouped tasks ───────────────────────────────────────────────────────
+  // ─── Grouped tasks ────────────────────────────────────────────────────────
 
   const groupedTasks = React.useMemo<GroupedTasks[]>(() => {
     if (!pmtUser) return [];
@@ -200,13 +233,24 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
 
     return allClients
       .map((client) => {
-        const allLogs = rawLogs[String(client.id)] || [];
-        const arr: TaskLog[] = Array.isArray(allLogs)
-          ? allLogs
-          : Object.values(allLogs);
+        const allLogs = rawLogs[String(client.id)];
 
-        const tasks = arr
-          .map((log, idx) => ({ ...log, clientId: client.id, taskIndex: idx }))
+        // Use Object.entries() to preserve the real Firebase key for every task.
+        // This is critical: the taskKey is used for all writes — never derive it
+        // from an array position, which would be wrong after any deletion.
+        const entries: [string, TaskLog][] = !allLogs
+          ? []
+          : Array.isArray(allLogs)
+          ? (allLogs as TaskLog[]).map((log, idx) => [String(idx), log] as [string, TaskLog])
+          : Object.entries(allLogs) as [string, TaskLog][];
+
+        const tasks = entries
+          .filter(([, log]) => log != null)
+          .map(([taskKey, log]) => ({
+            ...log,
+            clientId: client.id,
+            taskKey, // stable Firebase key — safe to use as write path
+          }))
           .filter(
             (log) =>
               String(log.assigneeId) === String(pmtUser.id) &&
@@ -222,21 +266,25 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
       .filter((g) => g.tasks.length > 0);
   }, [clients, rawLogs, pmtUser]);
 
-  // ─── Write helpers ───────────────────────────────────────────────────────
+  // ─── Write helpers ────────────────────────────────────────────────────────
 
   const updateTaskTimer = useCallback(
     async (
       clientId: number | string,
-      taskIndex: number,
+      taskKey: string,
       taskId: string,
       partial: Partial<TaskLog>
     ) => {
       const elapsedMs = partial.elapsedMs ?? 0;
+      // updatedAt is included in every write so the flush logic can detect
+      // stale queued entries that should not overwrite newer server state.
+      const updatedAt = Date.now();
       const payload: Record<string, unknown> = {
         elapsedMs,
         timeTaken: formatDuration(elapsedMs),
         timerState: partial.timerState ?? "idle",
         timerStartedAt: partial.timerStartedAt ?? null,
+        updatedAt,
       };
       if (partial.status !== undefined) {
         payload.status = partial.status;
@@ -245,9 +293,9 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
       const queueItem: QueuedWrite = {
         id: taskId,
         clientId,
-        taskIndex,
+        taskKey,
         payload,
-        timestamp: Date.now(),
+        timestamp: updatedAt,
       };
 
       // If Firebase is known offline, skip the attempt — queue immediately
@@ -258,13 +306,15 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        await doWrite(clientId, taskIndex, payload);
+        await doWrite(clientId, taskKey, payload);
         setSyncStatus((prev) => ({
           state: prev.pendingCount > 0 ? "pending" : "synced",
           pendingCount: prev.pendingCount,
         }));
       } catch {
-        // Timed out or network error — save locally, sync on reconnect
+        // Timed out or network error — save locally, sync on reconnect.
+        // The write may still complete server-side; updatedAt lets the flush
+        // logic detect and skip this entry if the server is already newer.
         enqueue(queueItem);
         setSyncStatus({ state: "pending", pendingCount: loadQueue().length });
       }
@@ -275,20 +325,21 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
   const updateTaskStatus = useCallback(
     async (
       clientId: number | string,
-      taskIndex: number,
+      taskKey: string,
       taskId: string,
       fields: { status?: string; qcStatus?: string | null }
     ) => {
-      const payload: Record<string, unknown> = {};
+      const updatedAt = Date.now();
+      const payload: Record<string, unknown> = { updatedAt };
       if (fields.status !== undefined) payload.status = fields.status;
       if ("qcStatus" in fields) payload.qcStatus = fields.qcStatus ?? null;
 
       const queueItem: QueuedWrite = {
         id: `status-${taskId}`,
         clientId,
-        taskIndex,
+        taskKey,
         payload,
-        timestamp: Date.now(),
+        timestamp: updatedAt,
       };
 
       if (!firebaseConnectedRef.current) {
@@ -298,7 +349,7 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        await doWrite(clientId, taskIndex, payload);
+        await doWrite(clientId, taskKey, payload);
         setSyncStatus((prev) => ({
           state: prev.pendingCount > 0 ? "pending" : "synced",
           pendingCount: prev.pendingCount,

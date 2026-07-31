@@ -24,7 +24,12 @@ export interface TaskLog {
   timerState?: "idle" | "running" | "paused" | "stopped";
   timerStartedAt?: number | null;
   clientId: number | string;
-  taskIndex: number;
+  /**
+   * The actual Firebase key for this task within clientLogs/${clientId}.
+   * Populated from Object.entries() so it is always stable, even after
+   * deletions or reorders. Replaces the old derived `taskIndex`.
+   */
+  taskKey: string;
   description?: string;
   category?: string;
   /** Created date — format: "1st Apr 2024" (do MMM yyyy) */
@@ -34,6 +39,11 @@ export interface TaskLog {
   qcEnabled?: boolean;
   qcStatus?: string | null;
   qcAssigneeName?: string | null;
+  /**
+   * Server-side last-write timestamp (ms since epoch). Written with every
+   * Firebase update so the offline queue can detect and discard stale entries.
+   */
+  updatedAt?: number;
 }
 
 export interface GroupedTasks {

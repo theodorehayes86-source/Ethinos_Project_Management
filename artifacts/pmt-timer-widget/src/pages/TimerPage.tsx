@@ -87,7 +87,7 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
     }
 
     syncIntervalRef.current = setInterval(() => {
-      void updateTaskTimer(task.clientId, task.taskIndex, task.id, {
+      void updateTaskTimer(task.clientId, task.taskKey, task.id, {
         elapsedMs: baseElapsedRef.current,
         timerState: "running",
         timerStartedAt: startedAtRef.current,
@@ -131,7 +131,7 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
       setTimerState("paused");
 
       // Sync to Firebase (fire-and-forget)
-      void updateTaskTimer(task.clientId, task.taskIndex, task.id, {
+      void updateTaskTimer(task.clientId, task.taskKey, task.id, {
         elapsedMs: snapped,
         timerState: "paused",
         timerStartedAt: null,
@@ -150,7 +150,7 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
     setAutoPaused(false);
     setTimerState("running");
     setLiveStatus("WIP");
-    void updateTaskTimer(task.clientId, task.taskIndex, task.id, {
+    void updateTaskTimer(task.clientId, task.taskKey, task.id, {
       elapsedMs: baseElapsedRef.current,
       timerState: "running",
       timerStartedAt: now,
@@ -169,7 +169,7 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
     setElapsedMs(snapped);
     setTimerState("paused");
     // Fire-and-forget — UI is already updated
-    void updateTaskTimer(task.clientId, task.taskIndex, task.id, {
+    void updateTaskTimer(task.clientId, task.taskKey, task.id, {
       elapsedMs: snapped,
       timerState: "paused",
       timerStartedAt: null,
@@ -188,7 +188,7 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
     setElapsedMs(snapped);
     setTimerState("stopped");
     // Fire-and-forget — UI is already updated
-    void updateTaskTimer(task.clientId, task.taskIndex, task.id, {
+    void updateTaskTimer(task.clientId, task.taskKey, task.id, {
       elapsedMs: snapped,
       timerState: "stopped",
       timerStartedAt: null,
@@ -209,7 +209,7 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
 
     if (task.qcEnabled) {
       // Stop the timer first, then ask about QC
-      void updateTaskTimer(task.clientId, task.taskIndex, task.id, {
+      void updateTaskTimer(task.clientId, task.taskKey, task.id, {
         elapsedMs: snapped,
         timerState: "stopped",
         timerStartedAt: null,
@@ -219,7 +219,7 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
     } else {
       // No QC — mark done immediately
       setLiveStatus("Done");
-      void updateTaskTimer(task.clientId, task.taskIndex, task.id, {
+      void updateTaskTimer(task.clientId, task.taskKey, task.id, {
         elapsedMs: snapped,
         timerState: "stopped",
         timerStartedAt: null,
@@ -232,7 +232,7 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
   const handleMarkDoneSkipQC = useCallback(() => {
     setShowQcPrompt(false);
     setLiveStatus("Done");
-    void updateTaskStatus(task.clientId, task.taskIndex, task.id, {
+    void updateTaskStatus(task.clientId, task.taskKey, task.id, {
       status: "Done",
       qcStatus: null,
     });
@@ -244,7 +244,7 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
     setLiveStatus("Done");
     setLiveQcStatus("sent");
     setQcSent(true);
-    void updateTaskStatus(task.clientId, task.taskIndex, task.id, {
+    void updateTaskStatus(task.clientId, task.taskKey, task.id, {
       status: "Done",
       qcStatus: "sent",
     });
@@ -254,7 +254,7 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
   const handleResetToWIP = useCallback(() => {
     setLiveStatus("WIP");
     setLiveQcStatus(null);
-    void updateTaskStatus(task.clientId, task.taskIndex, task.id, {
+    void updateTaskStatus(task.clientId, task.taskKey, task.id, {
       status: "WIP",
       qcStatus: null,
     });

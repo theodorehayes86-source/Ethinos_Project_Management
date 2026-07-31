@@ -1,1 +1,2 @@
 - [Teams activity notification quirks](teams-activity-notification-quirks.md) — teamsAppId required in body to avoid 409; 403 means recipient hasn't installed the app
+- [Firebase write safety rules](firebase-write-safety.md) — task writes must use stable push keys + update(); never set() whole collections

@@ -238,7 +238,7 @@ function ClientGroup({
         <div className="space-y-1.5">
           {group.tasks.map((task) => (
             <TaskRow
-              key={task.id || `${group.clientId}-${task.taskIndex}`}
+              key={task.id || `${group.clientId}-${task.taskKey}`}
               task={task}
               onSelect={() => onSelectTask(task, group.clientName)}
             />
