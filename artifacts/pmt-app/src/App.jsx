@@ -1055,6 +1055,9 @@ const App = () => {
   /** Surfaced when a Firebase multi-path write fails — shows a dismissible toast. */
   const [saveError, setSaveError] = useState(null); // { message: string, time: number } | null
   const DEFAULT_HIERARCHY_ORDER = ['Director', 'Snr Manager', 'Manager', 'Asst Manager', 'Snr Executive', 'Executive', 'Employee', 'Intern'];
+  // Named defaults restored when Firebase returns null for these settings (P7).
+  const DEFAULT_HIERARCHY = DEFAULT_HIERARCHY_ORDER;
+  const DEFAULT_CHECKLIST_ACCESS_ROLES = ['Super Admin', 'Director'];
   const [hierarchyOrder, setHierarchyOrder] = useState(DEFAULT_HIERARCHY_ORDER);
   const [notifications, setNotifications] = useState([
     { id: 1, text: "Permissions system active", time: "Just now", read: false },
@@ -1226,7 +1229,19 @@ const App = () => {
         // Enrich every task with its Firebase push key so all writes can use
         // the stable path clientLogs/{clientId}/{taskKey}.
         const enriched = val ? Object.fromEntries(
-          Object.entries(val).map(([cid, tasks]) => [cid, tasksWithKeys(tasks)])
+          Object.entries(val).map(([cid, tasks]) => {
+            const withKeys = tasksWithKeys(tasks);
+            // Deduplication guard: if a task key appears more than once (rare
+            // race between manual insertion and listener), keep only the first
+            // occurrence so local state never holds duplicates.
+            const seen = new Set();
+            return [cid, withKeys.filter(t => {
+              if (!t?.taskKey) return true;
+              if (seen.has(t.taskKey)) return false;
+              seen.add(t.taskKey);
+              return true;
+            })];
+          })
         ) : {};
         clientLogsRef.current = enriched;
         setClientLogs(enriched);
@@ -1252,12 +1267,15 @@ const App = () => {
       syncRef('feedbackItems', (val) => setFeedbackItems(val && typeof val === 'object' ? (Array.isArray(val) ? val : Object.values(val)) : [])),
       syncRef('checklistTemplates', (val) => setChecklistTemplates(!val ? [] : Array.isArray(val) ? val : Object.values(val))),
       syncRef('settings/conditions/checklistAccess', (val) => {
-        // null means the setting was removed; keep previous value rather than
-        // locking out all checklist-capable users.
-        if (Array.isArray(val) && val.length > 0) setChecklistAccessRoles(val);
+        // Restore the named default when the Firebase node is null/empty so
+        // checklist-capable users are never silently locked out (P7).
+        setChecklistAccessRoles(Array.isArray(val) && val.length > 0 ? val : DEFAULT_CHECKLIST_ACCESS_ROLES);
       }),
       syncRef('taskGroups', (val) => setTaskGroups(!val ? [] : Array.isArray(val) ? val : Object.values(val))),
-      syncRef('settings/hierarchyOrder', (val) => { if (Array.isArray(val) && val.length > 0) setHierarchyOrder(val); }),
+      syncRef('settings/hierarchyOrder', (val) => {
+        // Restore the named default when the Firebase node is null/empty (P7).
+        setHierarchyOrder(Array.isArray(val) && val.length > 0 ? val : DEFAULT_HIERARCHY);
+      }),
       syncRef('settings/notifications', (val) => {
         if (!val || typeof val !== 'object' || Array.isArray(val)) {
           setNotificationSettings({});
@@ -1310,7 +1328,7 @@ const App = () => {
       const nextLogs = typeof nextLogsInput === 'function' ? nextLogsInput(prev) : nextLogsInput;
       clientLogsRef.current = nextLogs;
       setClientLogs(nextLogs);
-      return;
+      return Promise.resolve();
     }
 
     // Delegate pure diff logic to the extracted, unit-tested utility.
@@ -1326,12 +1344,33 @@ const App = () => {
     clientLogsRef.current = finalLogs;
     setClientLogs(finalLogs);
 
-    if (Object.keys(multiPathUpdate).length > 0) {
-      update(ref(db), multiPathUpdate).catch(err => {
-        console.error('[PMT] Firebase multi-path write failed:', err);
-        setSaveError({ message: 'Could not save changes — check your connection and retry.', time: Date.now() });
+    if (Object.keys(multiPathUpdate).length === 0) return Promise.resolve();
+
+    // Return the Firebase promise so callers can await confirmation (P3).
+    // On failure, restore only the client buckets that were part of this write
+    // (not a wholesale replace of all clientLogs) so concurrent successful
+    // writes are not clobbered (P2).
+    return update(ref(db), multiPathUpdate).catch(err => {
+      console.error('[PMT] Firebase multi-path write failed:', err);
+      const affectedCids = new Set(
+        Object.keys(multiPathUpdate).map(p => p.split('/')[1])
+      );
+      setClientLogs(current => {
+        const restored = { ...current };
+        for (const cid of affectedCids) {
+          if (cid in prev) {
+            restored[cid] = prev[cid];
+          } else {
+            delete restored[cid];
+          }
+        }
+        clientLogsRef.current = restored;
+        return restored;
       });
-    }
+      // P8: message matches actual rollback behaviour — no retry implied.
+      setSaveError({ message: 'Could not save changes. The change was reverted.', time: Date.now() });
+      throw err;
+    });
   };
 
   /**
@@ -1355,22 +1394,16 @@ const App = () => {
     const pushKey = newRef.key;
     const task = sanitizeForFirebase({ ...taskData, id: pushKey, taskKey: pushKey });
     await set(newRef, task);
-    setClientLogs(prev => {
-      const prevArr = Array.isArray(prev[clientId]) ? prev[clientId]
-        : prev[clientId] ? Object.values(prev[clientId]) : [];
-      const updated = {
-        ...prev,
-        [clientId]: [{ ...taskData, id: pushKey, taskKey: pushKey }, ...prevArr],
-      };
-      clientLogsRef.current = updated;
-      return updated;
-    });
+    // P1: Do NOT manually insert into local state here. The onValue listener
+    // is the sole source for local-state updates, preventing duplicates when
+    // the listener fires before or after set() resolves.
     return { ...taskData, id: pushKey, taskKey: pushKey };
   }, [firebaseUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Remove a single task from Firebase by its stable push key. */
   const persistTaskDelete = useCallback(async (clientId, taskKey) => {
-    if (!firebaseUser) return;
+    // P4: throw instead of silently returning — callers must handle auth absence.
+    if (!firebaseUser) throw new Error('No authenticated user — cannot write to Firebase');
     await remove(ref(db, `clientLogs/${clientId}/${taskKey}`));
   }, [firebaseUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1380,7 +1413,8 @@ const App = () => {
    * e.g. `clientLogs/${clientId}/${taskKey}/qcStatus`.
    */
   const persistBulkUpdate = useCallback(async (multiPathObj) => {
-    if (!firebaseUser) return;
+    // P4: throw instead of silently returning — callers must handle auth absence.
+    if (!firebaseUser) throw new Error('No authenticated user — cannot write to Firebase');
     await update(ref(db), sanitizeForFirebase(multiPathObj));
   }, [firebaseUser]); // eslint-disable-line react-hooks/exhaustive-deps
   const persistTaskCategories = (val) => {

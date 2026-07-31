@@ -425,3 +425,67 @@ describe('edge cases', () => {
     expect(() => diff(prev, next)).not.toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// P9 — null position filtering (P6 fix)
+// ---------------------------------------------------------------------------
+
+describe('null position filtering (P6)', () => {
+  it('null array position generates no Firebase write path', () => {
+    const tA = { taskKey: '-Ka', id: '-Ka', title: 'A' };
+    const prev = { c1: [tA] };
+    // null in next bucket alongside an unchanged task
+    const next = { c1: [null, tA] };
+    const { multiPathUpdate } = diff(prev, next);
+    // tA is unchanged — no writes; null generates no path
+    expect(Object.keys(multiPathUpdate)).toHaveLength(0);
+    // Guard: no path that encodes 'null' as a segment
+    expect(Object.keys(multiPathUpdate).some(p => p.includes('/null'))).toBe(false);
+  });
+
+  it('null position is absent from finalLogs', () => {
+    const tA = { taskKey: '-Ka', id: '-Ka', title: 'A' };
+    const prev = { c1: [tA] };
+    const next = { c1: [null, tA] };
+    const { finalLogs } = diff(prev, next);
+    expect(finalLogs.c1).not.toContain(null);
+    expect(finalLogs.c1).toHaveLength(1);
+    expect(finalLogs.c1[0].taskKey).toBe('-Ka');
+  });
+
+  it('deleting a real keyed task alongside null positions still generates deletion path', () => {
+    const tA = { taskKey: '-Ka', id: '-Ka', title: 'A' };
+    const tB = { taskKey: '-Kb', id: '-Kb', title: 'B' };
+    const prev = { c1: [tA, tB] };
+    // null + keep tA, remove tB
+    const next = { c1: [null, tA] };
+    const { multiPathUpdate, finalLogs } = diff(prev, next);
+    // tB was deleted — must generate a null write path
+    expect(multiPathUpdate['clientLogs/c1/-Kb']).toBe(null);
+    // finalLogs must not contain the null slot
+    expect(finalLogs.c1).not.toContain(null);
+    expect(finalLogs.c1).toHaveLength(1);
+    expect(finalLogs.c1[0].taskKey).toBe('-Ka');
+  });
+
+  it('filtering nulls does not alter valid task keys or their write paths', () => {
+    const tA = { taskKey: '-Ka', id: '-Ka', title: 'Old' };
+    const prev = { c1: [tA] };
+    // null before a changed tA
+    const next = { c1: [null, { taskKey: '-Ka', id: '-Ka', title: 'New' }] };
+    const { multiPathUpdate } = diff(prev, next);
+    // The title field changed — exactly one write path
+    expect(multiPathUpdate['clientLogs/c1/-Ka/title']).toBe('New');
+    // No path that encodes null
+    expect(Object.keys(multiPathUpdate).every(p => !p.includes('/null'))).toBe(true);
+  });
+
+  it('multiple null positions in a bucket produce no writes and empty finalLogs bucket', () => {
+    const prev = {};
+    const next = { c1: [null, null, null] };
+    const { multiPathUpdate, finalLogs } = diff(prev, next);
+    // No task writes — no new tasks were created
+    expect(Object.keys(multiPathUpdate)).toHaveLength(0);
+    expect(finalLogs.c1).toHaveLength(0);
+  });
+});

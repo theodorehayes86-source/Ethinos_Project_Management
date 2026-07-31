@@ -73,6 +73,8 @@ const ClientView = ({
   const { toast } = useToast();
 
   const taskListRef = useRef(null);
+  // P3: guards the high-value persist callers against double-submit.
+  const savingRef = useRef(false);
   const checklistGroupsRef = useRef(null);
   const [showClientAddMenu, setShowClientAddMenu] = useState(false);
   const [showCsvImport, setShowCsvImport] = useState(false);
@@ -135,22 +137,36 @@ const ClientView = ({
     setSelectedTaskIds(new Set());
   };
 
-  const handleBatchArchive = (clientId) => {
-    if (selectedTaskIds.size === 0 || !clientId) return;
-    const updated = (clientLogs[clientId] || []).map(t =>
-      selectedTaskIds.has(String(t.id)) ? { ...t, archived: true } : t
-    );
-    setClientLogs({ ...clientLogs, [clientId]: updated });
-    setSelectedTaskIds(new Set());
+  const handleBatchArchive = async (clientId) => {
+    if (selectedTaskIds.size === 0 || !clientId || savingRef.current) return;
+    savingRef.current = true;
+    try {
+      const updated = (clientLogs[clientId] || []).map(t =>
+        selectedTaskIds.has(String(t.id)) ? { ...t, archived: true } : t
+      );
+      await setClientLogs({ ...clientLogs, [clientId]: updated });
+      setSelectedTaskIds(new Set());
+    } catch (err) {
+      console.error('[PMT] handleBatchArchive: Firebase write failed', err);
+    } finally {
+      savingRef.current = false;
+    }
   };
 
-  const handleBatchStatus = (clientId, newStatus) => {
-    if (selectedTaskIds.size === 0 || !clientId) return;
-    const updated = (clientLogs[clientId] || []).map(t =>
-      selectedTaskIds.has(String(t.id)) ? { ...t, status: newStatus } : t
-    );
-    setClientLogs({ ...clientLogs, [clientId]: updated });
-    setSelectedTaskIds(new Set());
+  const handleBatchStatus = async (clientId, newStatus) => {
+    if (selectedTaskIds.size === 0 || !clientId || savingRef.current) return;
+    savingRef.current = true;
+    try {
+      const updated = (clientLogs[clientId] || []).map(t =>
+        selectedTaskIds.has(String(t.id)) ? { ...t, status: newStatus } : t
+      );
+      await setClientLogs({ ...clientLogs, [clientId]: updated });
+      setSelectedTaskIds(new Set());
+    } catch (err) {
+      console.error('[PMT] handleBatchStatus: Firebase write failed', err);
+    } finally {
+      savingRef.current = false;
+    }
   };
 
   const handleBulkCopy = (sourceClientId, targetClientId, assigneeOverrideId) => {
@@ -160,9 +176,12 @@ const ClientView = ({
     const overrideUser = assigneeOverrideId && assigneeOverrideId !== 'keep'
       ? (users || []).find(u => String(u.id) === String(assigneeOverrideId))
       : null;
-    const copies = sourceTasks.map((t, i) => ({
+    const copies = sourceTasks.map((t) => ({
       ...t,
-      id: Date.now() + i + Math.random(),
+      // P5: clear id and taskKey so the diff writer assigns fresh push keys
+      // instead of treating the copies as updates to the source tasks.
+      id: undefined,
+      taskKey: undefined,
       status: 'Pending',
       timerState: 'idle',
       timerStartedAt: null,
@@ -190,7 +209,7 @@ const ClientView = ({
 
   const handleCreateTaskFromGroupItem = ({ taskName, category, dueDate, comment, clientId, clientName, assigneeId, assigneeName }) => {
     const newTask = {
-      id: Date.now(),
+      // P5: no id/taskKey — the diff writer assigns a stable push key.
       name: taskName,
       date: format(new Date(), 'do MMM yyyy'),
       comment: comment || '',
@@ -823,7 +842,7 @@ const ClientView = ({
       ? `rg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
       : undefined;
     const newLog = {
-      id: Date.now(),
+      // P5: no id/taskKey — the diff writer assigns a stable push key.
       name: newTaskName.trim(),
       date: format(selectedDate, 'do MMM yyyy'),
       dueDate: taskDueDate ? format(taskDueDate, 'do MMM yyyy') : null,
@@ -886,9 +905,9 @@ const ClientView = ({
         newTaskRepeatDays, newTaskRepeatMonthlyWeek, newTaskRepeatMonthlyDay
       );
       if (dates.length > 1) {
-        logsToAdd = dates.map((dt, i) => ({
+        logsToAdd = dates.map((dt) => ({
           ...newLog,
-          id: Date.now() + i + Math.random(),
+          // P5: no id/taskKey — diff writer assigns push keys per occurrence.
           date: format(dt, 'do MMM yyyy'),
           dueDate: dueDateOffsetDays !== null ? format(addDays(dt, dueDateOffsetDays), 'do MMM yyyy') : null,
         }));
@@ -3095,7 +3114,7 @@ const ClientView = ({
         {qcReviewingTaskId && (() => {
           const reviewingTask = (clientLogs[selectedClient.id] || []).find(l => l.id === qcReviewingTaskId);
           if (!reviewingTask) return null;
-          const handleSubmitReview = () => {
+          const handleSubmitReview = async () => {
             const ratingNum = parseInt(qcReviewRating, 10);
             const validRating = !isNaN(ratingNum) && ratingNum >= 1 && ratingNum <= 10 ? ratingNum : null;
             if (qcReviewDecision === 'rejected' && !qcReviewFeedback.trim()) return;
@@ -3122,7 +3141,14 @@ const ClientView = ({
                 feedbackThread: entry ? [...existing, entry] : existing,
               };
             });
-            setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
+            // P3: await Firebase confirmation before sending notifications or
+            // closing the modal. On failure the rollback toast is shown and we
+            // return early — no notifications, modal stays open.
+            try {
+              await setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
+            } catch {
+              return; // Write failed and rolled back — keep modal open.
+            }
             const taskAssignee = reviewingTask.assigneeId
               ? (users || []).find(u => String(u.id) === String(reviewingTask.assigneeId))
               : null;

@@ -197,7 +197,9 @@ it('null array positions in nextLogs are skipped', () => {
   const next = { c1: [null, tA] }; // null slot at index 0
   const { multiPathUpdate, finalLogs } = computeClientLogsDiff(previous, next, makeKey);
   expect(Object.keys(multiPathUpdate)).toHaveLength(0); // tA unchanged
-  expect(finalLogs.c1).toContain(null);
+  // P6 fix: null positions are filtered out — finalLogs must not contain null.
+  expect(finalLogs.c1).not.toContain(null);
+  expect(finalLogs.c1).toHaveLength(1);
 });
 
 // ─── 15. Unchanged task fields generate no writes ────────────────────────────

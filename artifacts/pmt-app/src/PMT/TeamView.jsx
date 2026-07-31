@@ -159,7 +159,9 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
       if (persistTaskCreate) {
         await persistTaskCreate(selectedClientId, taskData);
       } else {
-        setClientLogs({ ...clientLogs, [selectedClientId]: [{ ...taskData, id: Date.now() }, ...(clientLogs[selectedClientId] || [])] });
+        // P5: persistTaskCreate is required — throw rather than fall back to
+        // a temporary Date.now() id that would bypass the stable push-key system.
+        throw new Error('Task creation service is unavailable');
       }
       // Notify the assignee by email — skip if creator is assigning to themselves
       if (prefilledAssignee?.email && String(prefilledAssignee.id) !== String(currentUser?.id)) {
@@ -435,11 +437,21 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
     return Object.entries(seen).map(([id, name]) => ({ id, name }));
   }, [allMemberTasks]);
 
-  const handleUpdateTask = useCallback((task, changes) => {
-    if (!task.cid) return;
-    const updated = (clientLogs[task.cid] || []).map(t => t.id === task.id ? { ...t, ...changes } : t);
-    setClientLogs({ ...clientLogs, [task.cid]: updated });
-    if (selectedTask?.id === task.id) setSelectedTask(prev => ({ ...prev, ...changes }));
+  // P3: async so task-status changes are confirmed in Firebase before the UI
+  // moves on. savingGuard prevents a second update while one is in-flight.
+  const savingGuard = useRef(false);
+  const handleUpdateTask = useCallback(async (task, changes) => {
+    if (!task.cid || savingGuard.current) return;
+    savingGuard.current = true;
+    try {
+      const updated = (clientLogs[task.cid] || []).map(t => t.id === task.id ? { ...t, ...changes } : t);
+      await setClientLogs({ ...clientLogs, [task.cid]: updated });
+      if (selectedTask?.id === task.id) setSelectedTask(prev => ({ ...prev, ...changes }));
+    } catch (err) {
+      console.error('[PMT] TeamView handleUpdateTask: Firebase write failed', err);
+    } finally {
+      savingGuard.current = false;
+    }
   }, [clientLogs, setClientLogs, selectedTask]);
 
   return (

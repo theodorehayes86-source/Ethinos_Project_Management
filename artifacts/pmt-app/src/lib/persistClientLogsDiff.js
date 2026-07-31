@@ -97,7 +97,9 @@ export function computeClientLogsDiff(prev, nextLogsInput, generatePushKey) {
     const finalTasks = [];
 
     for (const task of nextArr) {
-      if (!task) { finalTasks.push(task); continue; }
+      // P6: skip null slots entirely — they generate no Firebase write path
+      // and must not appear in finalLogs.
+      if (!task) continue;
 
       if (!task.taskKey) {
         // NEW task — generate a push key synchronously (no network round-trip).

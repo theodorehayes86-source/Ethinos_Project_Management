@@ -144,6 +144,8 @@ const HomeView = ({
   const [taskBillable, setTaskBillable] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
   const taskListRef = useRef(null);
+  // P3: guards the 8 high-value persist callers against double-submit.
+  const savingRef = useRef(false);
   const [estimatedHrs, setEstimatedHrs] = useState('');
   const [estimatedMins, setEstimatedMins] = useState('');
   const [taskReminders, setTaskReminders] = useState([]);
@@ -272,8 +274,7 @@ const HomeView = ({
     const tpl = roleHomeTemplates.find(t => t.id === selectedHomeTemplateId);
     if (!tpl) return;
     const today = format(new Date(), 'do MMM yyyy');
-    const newTasks = (tpl.tasks || []).map((taskItem, i) => ({
-      id: Date.now() + Math.random() + i,
+    const newTasks = (tpl.tasks || []).map((taskItem, _i) => ({
       name: taskItem.name || taskItem.comment,
       comment: taskItem.comment || '',
       status: 'Pending',
@@ -397,7 +398,7 @@ const HomeView = ({
   const openNewChecklistModal = () => { resetClModal(); setShowNewChecklistModal(true); };
   const closeNewChecklistModal = () => { setShowNewChecklistModal(false); resetClModal(); };
 
-  const handleCreateChecklistGroup = () => {
+  const handleCreateChecklistGroup = async () => {
     if (!clSelectedTemplateId) { setClError('Please select a checklist template.'); return; }
     if (!clSelectedClientId) { setClError('Please select a client.'); return; }
     const effectiveAssigneeId = isManagement ? clAssigneeId : (currentUser?.id || '');
@@ -472,9 +473,17 @@ const HomeView = ({
       ...clientLogs,
       [clSelectedClientId]: [...childTasks, ...(clientLogs[clSelectedClientId] || [])],
     };
-    setClientLogs(nextLogs);
+    // P3: await so checklist tasks are confirmed in Firebase before modal closes.
+    try {
+      await setClientLogs(nextLogs);
+    } catch (err) {
+      console.error('[PMT] handleCreateChecklistGroup: Firebase write failed', err);
+      // Abort — do not persist the group or close the modal when the task
+      // write failed. The rollback toast has already been shown to the user.
+      return;
+    }
+    // Only reach here when Firebase confirmed the task write.
     setTaskGroups([newGroup, ...taskGroups]);
-
     closeNewChecklistModal();
   };
 
@@ -530,8 +539,9 @@ const HomeView = ({
       if (persistTaskCreate) {
         await persistTaskCreate(targetClientId, taskData);
       } else {
-        // Fallback for contexts that don't yet pass persistTaskCreate
-        setClientLogs({ ...clientLogs, [targetClientId]: [{ ...taskData, id: Date.now() }, ...(clientLogs[targetClientId] || [])] });
+        // P5: persistTaskCreate is required — throw rather than fall back to
+        // a temporary Date.now() id that would bypass the stable push-key system.
+        throw new Error('Task creation service is unavailable');
       }
       // Notify assignee if different from creator
       const assigneeUser = users.find(u => String(u.id) === String(assigneeId));
@@ -657,7 +667,8 @@ const HomeView = ({
       ? `rg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
       : undefined;
     const newTask = {
-      id: Date.now(),
+      // No id/taskKey — the diff writer in persistClientLogs (passed as
+      // setClientLogs) assigns a stable Firebase push key synchronously (P5).
       name: taskName.trim(),
       date: formattedDate,
       comment: taskComment.trim(),
@@ -707,9 +718,9 @@ const HomeView = ({
         taskRepeatWeekendRule
       );
       if (dates.length > 1) {
-        logsToAdd = dates.map((dt, i) => ({
+        logsToAdd = dates.map((dt) => ({
           ...newTask,
-          id: Date.now() + i,
+          // No id/taskKey — push keys are assigned by the diff writer (P5).
           date: format(dt, 'do MMM yyyy'),
           dueDate: dueDateOffsetDays !== null ? format(addDays(dt, dueDateOffsetDays), 'do MMM yyyy') : null,
         }));
@@ -845,22 +856,41 @@ const HomeView = ({
     return myTasks.filter(t => t.status === statusFilter);
   }, [myTasks, myDone, myArchivedTasks, myOverdue, myDueToday, my48Plus, myAwaitingQC, statusFilter, showArchived]);
 
-  const handleArchiveTask = (task) => {
+  // P3: async so callers can await Firebase confirmation.
+  // savingRef prevents a second write from racing in before the first resolves.
+  const handleArchiveTask = async (task) => {
     const cid = task.cid;
-    if (!cid) return;
-    const updated = (clientLogs[cid] || []).map(t =>
-      t.id === task.id ? { ...t, archived: !t.archived } : t
-    );
-    setClientLogs({ ...clientLogs, [cid]: updated });
+    if (!cid || savingRef.current) return;
+    savingRef.current = true;
+    try {
+      const updated = (clientLogs[cid] || []).map(t =>
+        t.id === task.id ? { ...t, archived: !t.archived } : t
+      );
+      await setClientLogs({ ...clientLogs, [cid]: updated });
+    } catch (err) {
+      console.error('[PMT] handleArchiveTask: Firebase write failed', err);
+    } finally {
+      savingRef.current = false;
+    }
   };
 
-  const handleUpdateTask = (task, changes) => {
+  const handleUpdateTask = async (task, changes) => {
     const cid = task.cid;
-    if (!cid) return;
-    const updated = (clientLogs[cid] || []).map(t =>
-      t.id === task.id ? { ...t, ...changes } : t
-    );
-    setClientLogs({ ...clientLogs, [cid]: updated });
+    if (!cid || savingRef.current) return;
+    savingRef.current = true;
+    try {
+      const updated = (clientLogs[cid] || []).map(t =>
+        t.id === task.id ? { ...t, ...changes } : t
+      );
+      await setClientLogs({ ...clientLogs, [cid]: updated });
+    } catch (err) {
+      console.error('[PMT] handleUpdateTask: Firebase write failed', err);
+      // Rethrow so callers (e.g. QC review submit) can detect failure and
+      // block any modal-close / success-UI from proceeding.
+      throw err;
+    } finally {
+      savingRef.current = false;
+    }
   };
 
   const handleBatchDelete = () => {
@@ -875,44 +905,65 @@ const HomeView = ({
     setSelectMode(false);
   };
 
-  const handleBatchStatus = (newStatus) => {
-    if (selectedTaskIds.size === 0) return;
-    const updated = {};
-    Object.keys(clientLogs).forEach(cid => {
-      updated[cid] = (clientLogs[cid] || []).map(t =>
-        selectedTaskIds.has(t.id) ? { ...t, status: newStatus } : t
-      );
-    });
-    setClientLogs({ ...clientLogs, ...updated });
-    setSelectedTaskIds(new Set());
-    setSelectMode(false);
+  const handleBatchStatus = async (newStatus) => {
+    if (selectedTaskIds.size === 0 || savingRef.current) return;
+    savingRef.current = true;
+    try {
+      const updated = {};
+      Object.keys(clientLogs).forEach(cid => {
+        updated[cid] = (clientLogs[cid] || []).map(t =>
+          selectedTaskIds.has(t.id) ? { ...t, status: newStatus } : t
+        );
+      });
+      await setClientLogs({ ...clientLogs, ...updated });
+      setSelectedTaskIds(new Set());
+      setSelectMode(false);
+    } catch (err) {
+      console.error('[PMT] handleBatchStatus: Firebase write failed', err);
+    } finally {
+      savingRef.current = false;
+    }
   };
 
-  const handleBatchArchive = () => {
-    if (selectedTaskIds.size === 0) return;
-    const updated = {};
-    Object.keys(clientLogs).forEach(cid => {
-      updated[cid] = (clientLogs[cid] || []).map(t =>
-        selectedTaskIds.has(t.id) ? { ...t, archived: true } : t
-      );
-    });
-    setClientLogs({ ...clientLogs, ...updated });
-    setSelectedTaskIds(new Set());
-    setSelectMode(false);
+  const handleBatchArchive = async () => {
+    if (selectedTaskIds.size === 0 || savingRef.current) return;
+    savingRef.current = true;
+    try {
+      const updated = {};
+      Object.keys(clientLogs).forEach(cid => {
+        updated[cid] = (clientLogs[cid] || []).map(t =>
+          selectedTaskIds.has(t.id) ? { ...t, archived: true } : t
+        );
+      });
+      await setClientLogs({ ...clientLogs, ...updated });
+      setSelectedTaskIds(new Set());
+      setSelectMode(false);
+    } catch (err) {
+      console.error('[PMT] handleBatchArchive: Firebase write failed', err);
+    } finally {
+      savingRef.current = false;
+    }
   };
 
-  const handleArchiveAllDone = () => {
+  const handleArchiveAllDone = async () => {
     const doneIds = new Set(myDone.map(t => t.id));
-    if (doneIds.size === 0) return;
+    if (doneIds.size === 0 || savingRef.current) return;
     if (!window.confirm(`Archive all ${doneIds.size} completed task${doneIds.size > 1 ? 's' : ''}?`)) return;
-    const updated = {};
-    Object.keys(clientLogs).forEach(cid => {
-      updated[cid] = (clientLogs[cid] || []).map(t =>
-        doneIds.has(t.id) ? { ...t, archived: true } : t
-      );
-    });
-    setClientLogs({ ...clientLogs, ...updated });
-    setStatusFilter('all');
+    savingRef.current = true;
+    try {
+      const updated = {};
+      Object.keys(clientLogs).forEach(cid => {
+        updated[cid] = (clientLogs[cid] || []).map(t =>
+          doneIds.has(t.id) ? { ...t, archived: true } : t
+        );
+      });
+      await setClientLogs({ ...clientLogs, ...updated });
+      setStatusFilter('all');
+    } catch (err) {
+      console.error('[PMT] handleArchiveAllDone: Firebase write failed', err);
+    } finally {
+      savingRef.current = false;
+    }
   };
 
   const hvTryParse = (str) => {
@@ -2523,7 +2574,7 @@ const HomeView = ({
       )}
 
       {qcReviewingTask && (() => {
-        const handleSubmitQcReview = () => {
+        const handleSubmitQcReview = async () => {
           const ratingNum = parseInt(qcReviewRating, 10);
           const validRating = !isNaN(ratingNum) && ratingNum >= 1 && ratingNum <= 10 ? ratingNum : null;
           if (qcReviewDecision === 'rejected' && !qcReviewFeedback.trim()) return;
@@ -2537,15 +2588,23 @@ const HomeView = ({
             type: qcReviewDecision,
             timestamp: new Date().toISOString(),
           } : null;
-          handleUpdateTask(qcReviewingTask, {
-            ...(qcReviewDecision === 'rejected' ? { status: 'Pending' } : {}),
-            qcStatus: qcReviewDecision,
-            qcRating: validRating,
-            qcFeedback: feedbackText || null,
-            qcReviewedAt: new Date().toISOString(),
-            qcReviewerName: currentUser?.name || null,
-            feedbackThread: entry ? [...existing, entry] : existing,
-          });
+          // P3: await so the modal stays open until Firebase confirms.
+          // handleUpdateTask rethrows on failure — catch here to keep the
+          // modal open and let the rollback toast inform the user.
+          try {
+            await handleUpdateTask(qcReviewingTask, {
+              ...(qcReviewDecision === 'rejected' ? { status: 'Pending' } : {}),
+              qcStatus: qcReviewDecision,
+              qcRating: validRating,
+              qcFeedback: feedbackText || null,
+              qcReviewedAt: new Date().toISOString(),
+              qcReviewerName: currentUser?.name || null,
+              feedbackThread: entry ? [...existing, entry] : existing,
+            });
+          } catch {
+            // Write failed and rolled back — keep modal open so the user can retry.
+            return;
+          }
           setQcReviewingTask(null);
           setQcReviewRating('');
           setQcReviewFeedback('');
