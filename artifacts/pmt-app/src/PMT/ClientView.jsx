@@ -8,6 +8,7 @@ import "react-datepicker/dist/react-datepicker.css";
 import TaskDetailPanel from './TaskDetailPanel';
 import ChecklistGroupDetailPanel from './ChecklistGroupDetailPanel';
 import { sendNotification } from '../utils/notify';
+import { formatRepeatLabel, formatWeekendRuleLabel, repeatBadgeColor } from '../utils/repeatLabel';
 import { ReminderPills } from './ReminderPills';
 import DueDateInput from './DueDateInput';
 import LeaveConflictModal from './LeaveConflictModal';
@@ -76,6 +77,17 @@ const ClientView = ({
   // P3: guards the high-value persist callers against double-submit.
   const savingRef = useRef(false);
   const checklistGroupsRef = useRef(null);
+
+  /** Wraps a fire-and-forget setClientLogs call so its rejection is captured
+   *  rather than propagating as an unhandled promise rejection. The save-error
+   *  toast is displayed by the persistence layer; this just prevents the
+   *  browser from treating the rejection as unhandled. */
+  const runTaskMutation = (mutation) => {
+    Promise.resolve().then(mutation).catch(err => {
+      console.error('[PMT] Task mutation failed', err);
+    });
+  };
+
   const [showClientAddMenu, setShowClientAddMenu] = useState(false);
   const [showCsvImport, setShowCsvImport] = useState(false);
   const clientAddMenuRef = useRef(null);
@@ -106,7 +118,7 @@ const ClientView = ({
     const updated = (clientLogs[cid] || []).map(t =>
       t.id === updatedTask.id ? { ...t, ...updatedTask } : t
     );
-    setClientLogs({ ...clientLogs, [cid]: updated });
+    runTaskMutation(() => setClientLogs({ ...clientLogs, [cid]: updated }));
   };
 
   const handleUpdateGroup = (updatedGroup) => {
@@ -118,7 +130,7 @@ const ClientView = ({
     const cid = group.clientId;
     if (cid) {
       const remaining = (clientLogs[cid] || []).filter(t => t.taskGroupId !== group.id);
-      setClientLogs({ ...clientLogs, [cid]: remaining });
+      runTaskMutation(() => setClientLogs({ ...clientLogs, [cid]: remaining }));
     }
   };
 
@@ -129,7 +141,7 @@ const ClientView = ({
     const updated = (clientLogs[clientId] || []).filter(t => !selectedTaskIds.has(String(t.id)));
     const affectedGroupIds = new Set(toDelete.filter(t => t.taskGroupId).map(t => t.taskGroupId));
     // Optimistic update — Firebase write handled by diff writer inside persistClientLogs
-    setClientLogs({ ...clientLogs, [clientId]: updated });
+    runTaskMutation(() => setClientLogs({ ...clientLogs, [clientId]: updated }));
     if (affectedGroupIds.size > 0) {
       const emptyGroupIds = [...affectedGroupIds].filter(gid => !updated.some(t => t.taskGroupId === gid));
       if (emptyGroupIds.length > 0) setTaskGroups(taskGroups.filter(g => !emptyGroupIds.includes(g.id)));
@@ -199,10 +211,10 @@ const ClientView = ({
       date: format(new Date(), 'do MMM yyyy'),
       ...(overrideUser ? { assigneeId: overrideUser.id, assigneeName: overrideUser.name, assigneeEmail: overrideUser.email || '' } : {}),
     }));
-    setClientLogs({
+    runTaskMutation(() => setClientLogs({
       ...clientLogs,
       [targetClientId]: [...copies, ...(clientLogs[targetClientId] || [])],
-    });
+    }));
     setSelectedTaskIds(new Set());
     setShowBulkCopyModal(false);
   };
@@ -230,7 +242,7 @@ const ClientView = ({
       timeTaken: null,
     };
     const targetClientId = clientId || selectedClient.id;
-    setClientLogs({ ...clientLogs, [targetClientId]: [newTask, ...(clientLogs[targetClientId] || [])] });
+    runTaskMutation(() => setClientLogs({ ...clientLogs, [targetClientId]: [newTask, ...(clientLogs[targetClientId] || [])] }));
   };
 
   const [showTaskForm, setShowTaskForm] = useState(false);
@@ -454,7 +466,7 @@ const ClientView = ({
     const updated = (clientLogs[selectedClient.id] || []).map(l =>
       l.id === log.id ? { ...l, assignmentRequests: [...(l.assignmentRequests || []), request] } : l
     );
-    setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
+    runTaskMutation(() => setClientLogs({ ...clientLogs, [selectedClient.id]: updated }));
 
     // Fire a notification visible to client leadership
     const leaders = getProjectStaff(selectedClient.name).admins;
@@ -622,7 +634,7 @@ const ClientView = ({
       }
       return l;
     });
-    setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
+    runTaskMutation(() => setClientLogs({ ...clientLogs, [selectedClient.id]: updated }));
     setEditingTask(null);
     setEditDraft(null);
   };
@@ -649,7 +661,7 @@ const ClientView = ({
     const updatedLogs = (clientLogs[selectedClient.id] || []).map(log =>
       log.id === logId ? updater(log) : log
     );
-    setClientLogs({ ...clientLogs, [selectedClient.id]: updatedLogs });
+    runTaskMutation(() => setClientLogs({ ...clientLogs, [selectedClient.id]: updatedLogs }));
   };
 
   const startTaskTimer = (logId) => {
@@ -701,7 +713,7 @@ const ClientView = ({
     const updated = (clientLogs[selectedClient.id] || []).map(l =>
       l.id === logId ? { ...l, [editField]: tempValue } : l
     );
-    setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
+    runTaskMutation(() => setClientLogs({ ...clientLogs, [selectedClient.id]: updated }));
     setEditingId(null);
   };
 
@@ -913,10 +925,10 @@ const ClientView = ({
         }));
       }
     }
-    setClientLogs({
+    runTaskMutation(() => setClientLogs({
       ...clientLogs,
       [selectedClient.id]: [...logsToAdd, ...(clientLogs[selectedClient.id] || [])]
-    });
+    }));
 
     if (selectedAssignee.email && String(selectedAssignee.id) !== String(currentUser?.id)) {
       sendNotification('task-assigned', {
@@ -1025,7 +1037,6 @@ const ClientView = ({
     };
 
     const childTasks = (template.questions || []).map((q, i) => ({
-      id: `${groupId}-q${i}-${Date.now() + i}`,
       taskGroupId: groupId,
       taskType: 'checklist',
       questionText: q.text,
@@ -1051,10 +1062,10 @@ const ClientView = ({
       departments: currentUser?.department ? [currentUser.department] : [],
     }));
 
-    setClientLogs({
+    runTaskMutation(() => setClientLogs({
       ...clientLogs,
       [clientId]: [...childTasks, ...(clientLogs[clientId] || [])],
-    });
+    }));
     setTaskGroups([newGroup, ...taskGroups]);
     closeNewChecklistModal();
   };
@@ -1161,7 +1172,6 @@ const ClientView = ({
         dates.forEach((dt, i) => {
           newTasks.push({
             ...baseTask,
-            id: Date.now() + newTasks.length + i + Math.random(),
             date: format(dt, 'do MMM yyyy'),
             dueDate: tplDueDateOffset !== null ? format(addDays(dt, tplDueDateOffset), 'do MMM yyyy') : null,
           });
@@ -1169,16 +1179,15 @@ const ClientView = ({
       } else {
         newTasks.push({
           ...baseTask,
-          id: Date.now() + newTasks.length + Math.random(),
           date: cfg.startDate ? format(cfg.startDate, 'do MMM yyyy') : format(new Date(), 'do MMM yyyy'),
         });
       }
     });
 
-    setClientLogs({
+    runTaskMutation(() => setClientLogs({
       ...clientLogs,
       [selectedClient.id]: [...newTasks, ...(clientLogs[selectedClient.id] || [])],
-    });
+    }));
 
     setNotifications(prev => [
       {
@@ -1868,6 +1877,16 @@ const ClientView = ({
                             ))}
                           </div>
                         )}
+                        {log.repeatFrequency && log.repeatFrequency !== 'Once' && log.repeatFrequency !== 'One-time' && (
+                          <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                            <span className={`text-[8px] font-semibold px-1.5 py-0.5 rounded-full flex items-center gap-0.5 ${repeatBadgeColor(log.repeatFrequency)}`}>
+                              <RotateCcw size={7} /> {formatRepeatLabel(log)}
+                            </span>
+                            {formatWeekendRuleLabel(log) && (
+                              <span className="text-[8px] font-medium text-slate-400">{formatWeekendRuleLabel(log)}</span>
+                            )}
+                          </div>
+                        )}
                       </td>
 
                       {/* Category */}
@@ -1931,7 +1950,7 @@ const ClientView = ({
                                   const upd = (clientLogs[selectedClient.id] || []).map(l =>
                                     l.id === log.id ? { ...l, archived: !l.archived } : l
                                   );
-                                  setClientLogs({ ...clientLogs, [selectedClient.id]: upd });
+                                  runTaskMutation(() => setClientLogs({ ...clientLogs, [selectedClient.id]: upd }));
                                 }}
                                 className={`p-1.5 rounded-md transition-all ${
                                   log.archived
@@ -1965,7 +1984,7 @@ const ClientView = ({
                                   } else {
                                     // Fallback for legacy tasks without push key
                                     const upd = (clientLogs[selectedClient.id] || []).filter(l => l.id !== log.id);
-                                    setClientLogs({ ...clientLogs, [selectedClient.id]: upd });
+                                    runTaskMutation(() => setClientLogs({ ...clientLogs, [selectedClient.id]: upd }));
                                     if (log.taskGroupId && !upd.some(t => t.taskGroupId === log.taskGroupId)) {
                                       setTaskGroups(taskGroups.filter(g => g.id !== log.taskGroupId));
                                     }
@@ -2029,7 +2048,7 @@ const ClientView = ({
                                     ...timerUpdate
                                   };
                                 });
-                                setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
+                                runTaskMutation(() => setClientLogs({ ...clientLogs, [selectedClient.id]: updated }));
                                 if ((newStatus === 'WIP' || newStatus === 'Done') && newStatus !== log.status) {
                                   const assignee = log.assigneeId
                                     ? (users || []).find(u => String(u.id) === String(log.assigneeId))
@@ -2064,7 +2083,7 @@ const ClientView = ({
                                 const updated = (clientLogs[selectedClient.id] || []).map(l =>
                                   l.id === log.id ? { ...l, qcStatus: 'sent' } : l
                                 );
-                                setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
+                                runTaskMutation(() => setClientLogs({ ...clientLogs, [selectedClient.id]: updated }));
                                 const qcReviewer = log.qcAssigneeId ? (users || []).find(u => String(u.id) === String(log.qcAssigneeId)) : null;
                                 if (qcReviewer?.email) {
                                   sendNotification('qc-submitted', {
@@ -2112,7 +2131,7 @@ const ClientView = ({
                                 const updated = (clientLogs[selectedClient.id] || []).map(l =>
                                   l.id === log.id ? { ...l, qcStatus: 'sent' } : l
                                 );
-                                setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
+                                runTaskMutation(() => setClientLogs({ ...clientLogs, [selectedClient.id]: updated }));
                               }}
                               className="flex items-center gap-0.5 text-[9px] font-semibold bg-red-50 text-red-600 border border-red-200 rounded px-1 py-0.5 hover:bg-red-100 transition-all whitespace-nowrap"
                               title="Resubmit for QC"
@@ -3298,7 +3317,7 @@ const ClientView = ({
               const updatedLogs = (clientLogs[selectedClient.id] || []).map(l =>
                 l.id === updatedTask.id ? { ...l, ...updatedTask } : l
               );
-              setClientLogs({ ...clientLogs, [selectedClient.id]: updatedLogs });
+              runTaskMutation(() => setClientLogs({ ...clientLogs, [selectedClient.id]: updatedLogs }));
               setDetailTask(updatedTask);
             }}
           />
@@ -3419,8 +3438,8 @@ const ClientView = ({
                                   {task.category && (
                                     <span className="text-[9px] font-medium text-slate-500 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded-full">{task.category}</span>
                                   )}
-                                  <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${repeatBadge(task.repeatFrequency)}`}>
-                                    {task.repeatFrequency}
+                                  <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${repeatBadgeColor(task.repeatFrequency)}`}>
+                                    {formatRepeatLabel(task) || task.repeatFrequency}
                                   </span>
                                 </div>
                               </div>
@@ -3569,7 +3588,9 @@ const ClientView = ({
                                   {taskItem.category && (
                                     <span className="text-[9px] font-medium text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded-full">{taskItem.category}</span>
                                   )}
-                                  <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${repeatBadge(taskItem.repeatFrequency)}`}>{taskItem.repeatFrequency}</span>
+                                  <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${repeatBadgeColor(taskItem.repeatFrequency)}`}>
+                                    {formatRepeatLabel(taskItem) || taskItem.repeatFrequency}
+                                  </span>
                                 </div>
                               </div>
                             </div>
@@ -4040,7 +4061,6 @@ const ClientView = ({
               const statusMap = { 'in progress': 'WIP', 'wip': 'WIP', 'pending': 'Pending', 'done': 'Done', 'completed': 'Done', 'rejected': 'Rejected' };
               const taskStatus = statusMap[(row.status || '').toLowerCase()] || 'Pending';
               const newTask = {
-                id: Date.now() + Math.random(),
                 name: row.taskName.trim(),
                 date: format(new Date(), 'do MMM yyyy'),
                 dueDate: parsedDueDate,
@@ -4080,10 +4100,10 @@ const ClientView = ({
               results.push({ success: true, label: `${row.taskName.trim()} → ${assignee.name}` });
             }
             if (newTasks.length > 0) {
-              setClientLogs({
+              runTaskMutation(() => setClientLogs({
                 ...clientLogs,
                 [selectedClient.id]: [...newTasks, ...(clientLogs[selectedClient.id] || [])],
-              });
+              }));
               for (const task of newTasks) {
                 if (task.assigneeEmail && String(task.assigneeId) !== String(currentUser?.id)) {
                   sendNotification('task-assigned', {

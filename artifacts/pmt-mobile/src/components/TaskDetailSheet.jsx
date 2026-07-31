@@ -368,9 +368,33 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
                 </div>
               )}
 
-              {task.repeatFrequency && task.repeatFrequency !== 'Once' && (
-                <p className="text-xs text-slate-400">Repeats: {task.repeatFrequency}</p>
-              )}
+              {task.repeatFrequency && task.repeatFrequency !== 'Once' && task.repeatFrequency !== 'One-time' && (() => {
+                const dom = task.repeatDayOfMonth;
+                const freq = task.repeatFrequency;
+                // Build label
+                const ORDINALS = ['1st','2nd','3rd','4th'];
+                const DAYS_SHORT = ['Mon','Tue','Wed','Thu','Fri'];
+                let label = freq;
+                if (freq === 'Monthly' && dom) {
+                  const suffix = dom === 1 ? 'st' : dom === 2 ? 'nd' : dom === 3 ? 'rd' : 'th';
+                  label = `Monthly · ${dom}${suffix}`;
+                } else if (freq === 'Monthly' && task.repeatMonthlyWeek != null && task.repeatMonthlyDay != null) {
+                  label = `Monthly · ${ORDINALS[task.repeatMonthlyWeek - 1] || ''} ${DAYS_SHORT[task.repeatMonthlyDay] || ''}`.trim();
+                }
+                const weekendRule = dom && task.repeatWeekendRule && task.repeatWeekendRule !== 'none'
+                  ? (task.repeatWeekendRule === 'prev-friday' ? '← Fri if weekend' : 'Mon if weekend →')
+                  : null;
+                return (
+                  <div className="flex items-center gap-2 flex-wrap mt-1">
+                    <span style={{ fontSize: 10, fontWeight: 600, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999, backgroundColor: '#f3e8ff', color: '#7c3aed' }}>
+                      ↻ {label}
+                    </span>
+                    {weekendRule && (
+                      <span style={{ fontSize: 9, color: '#94a3b8', fontWeight: 500 }}>{weekendRule}</span>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           )}
 

@@ -1045,6 +1045,9 @@ const App = () => {
   const [clientLogs, setClientLogs] = useState({});
   /** Always-current snapshot of clientLogs — used for task-level diff writes. */
   const clientLogsRef = useRef({});
+  /** Serial write queue — ensures compatibility writes execute in order.
+   *  A failed write cannot roll back a later successful write. */
+  const clientLogsWriteChainRef = useRef(Promise.resolve());
   const [taskTemplates, setTaskTemplates] = useState(DEFAULT_TASK_TEMPLATES);
   const [checklistTemplates, setChecklistTemplates] = useState([]);
   const [checklistAccessRoles, setChecklistAccessRoles] = useState(['Super Admin', 'Director']);
@@ -1296,13 +1299,35 @@ const App = () => {
   // (imported from lib/persistClientLogsDiff.js to keep the logic testable)
   const sanitizeForFirebase = sanitizeForFirebaseUtil;
 
-  const persistUsers = (nextUsers) => {
+  const persistUsers = async (nextUsers) => {
+    if (!firebaseUser) {
+      setSaveError({ message: 'Your session is not ready. The change was not saved.', time: Date.now() });
+      throw new Error('No authenticated user — changes cannot be saved');
+    }
+    const prev = users;
     setUsers(nextUsers);
-    if (firebaseUser) set(ref(db, 'users'), sanitizeForFirebase(nextUsers));
+    try {
+      await set(ref(db, 'users'), sanitizeForFirebase(nextUsers));
+    } catch (err) {
+      setUsers(prev);
+      setSaveError({ message: 'Could not save changes. The change was reverted.', time: Date.now() });
+      throw err;
+    }
   };
-  const persistClients = (nextClients) => {
+  const persistClients = async (nextClients) => {
+    if (!firebaseUser) {
+      setSaveError({ message: 'Your session is not ready. The change was not saved.', time: Date.now() });
+      throw new Error('No authenticated user — changes cannot be saved');
+    }
+    const prev = clients;
     setClients(nextClients);
-    if (firebaseUser) set(ref(db, 'clients'), sanitizeForFirebase(nextClients));
+    try {
+      await set(ref(db, 'clients'), sanitizeForFirebase(nextClients));
+    } catch (err) {
+      setClients(prev);
+      setSaveError({ message: 'Could not save changes. The change was reverted.', time: Date.now() });
+      throw err;
+    }
   };
   /**
    * Smart task-level diff writer.
@@ -1322,55 +1347,56 @@ const App = () => {
    *   persistClientLogs(prev => ({ ...prev, [cid]: updated }))
    */
   const persistClientLogs = (nextLogsInput) => {
-    const prev = clientLogsRef.current;
+    // Each call is enqueued after the previous write settles.
+    // Functional updaters are evaluated inside executeWrite so they always see
+    // the latest state at the moment their queued turn begins (P2/P5).
+    const executeWrite = async () => {
+      const prev = clientLogsRef.current;
 
-    if (!firebaseUser) {
-      const nextLogs = typeof nextLogsInput === 'function' ? nextLogsInput(prev) : nextLogsInput;
-      clientLogsRef.current = nextLogs;
-      setClientLogs(nextLogs);
-      return Promise.resolve();
-    }
+      if (!firebaseUser) {
+        setSaveError({
+          message: 'Your session is not ready. The change was not saved.',
+          time: Date.now(),
+        });
+        throw new Error('No authenticated user — changes cannot be saved');
+      }
 
-    // Delegate pure diff logic to the extracted, unit-tested utility.
-    // All creates, updates, and deletes go into one multiPathUpdate for a
-    // single atomic Firebase update() call — no separate set() calls needed.
-    const { multiPathUpdate, finalLogs } = computeClientLogsDiff(
-      prev,
-      nextLogsInput,
-      (cid) => push(ref(db, `clientLogs/${cid}`)).key,
-    );
-
-    // Optimistic local update first so the UI feels instant.
-    clientLogsRef.current = finalLogs;
-    setClientLogs(finalLogs);
-
-    if (Object.keys(multiPathUpdate).length === 0) return Promise.resolve();
-
-    // Return the Firebase promise so callers can await confirmation (P3).
-    // On failure, restore only the client buckets that were part of this write
-    // (not a wholesale replace of all clientLogs) so concurrent successful
-    // writes are not clobbered (P2).
-    return update(ref(db), multiPathUpdate).catch(err => {
-      console.error('[PMT] Firebase multi-path write failed:', err);
-      const affectedCids = new Set(
-        Object.keys(multiPathUpdate).map(p => p.split('/')[1])
+      // Delegate pure diff logic to the extracted, unit-tested utility.
+      // All creates, updates, and deletes go into one multiPathUpdate for a
+      // single atomic Firebase update() call — no separate set() calls needed.
+      const { multiPathUpdate, finalLogs } = computeClientLogsDiff(
+        prev,
+        nextLogsInput,
+        (cid) => push(ref(db, `clientLogs/${cid}`)).key,
       );
-      setClientLogs(current => {
-        const restored = { ...current };
-        for (const cid of affectedCids) {
-          if (cid in prev) {
-            restored[cid] = prev[cid];
-          } else {
-            delete restored[cid];
-          }
-        }
-        clientLogsRef.current = restored;
-        return restored;
-      });
-      // P8: message matches actual rollback behaviour — no retry implied.
-      setSaveError({ message: 'Could not save changes. The change was reverted.', time: Date.now() });
-      throw err;
-    });
+
+      // Optimistic local update first so the UI feels instant.
+      clientLogsRef.current = finalLogs;
+      setClientLogs(finalLogs);
+
+      if (Object.keys(multiPathUpdate).length === 0) return;
+
+      try {
+        await update(ref(db), multiPathUpdate);
+      } catch (err) {
+        console.error('[PMT] Firebase multi-path write failed:', err);
+        // Restore to state captured at start of THIS write (safe because
+        // writes are serialised — no concurrent write can have modified it).
+        clientLogsRef.current = prev;
+        setClientLogs(prev);
+        setSaveError({ message: 'Could not save changes. The change was reverted.', time: Date.now() });
+        throw err;
+      }
+    };
+
+    // Queue this write after the current chain tail.
+    // .then(fn, fn) runs fn whether the previous link resolved or rejected,
+    // so a prior failure never permanently stalls the queue (P4).
+    const queuedWrite = clientLogsWriteChainRef.current.then(executeWrite, executeWrite);
+    // Silence the tail so an unhandled rejection doesn't bubble globally.
+    clientLogsWriteChainRef.current = queuedWrite.catch(() => undefined);
+    // Return this write's own promise so callers can await / catch it (P3).
+    return queuedWrite;
   };
 
   /**
@@ -1417,9 +1443,20 @@ const App = () => {
     if (!firebaseUser) throw new Error('No authenticated user — cannot write to Firebase');
     await update(ref(db), sanitizeForFirebase(multiPathObj));
   }, [firebaseUser]); // eslint-disable-line react-hooks/exhaustive-deps
-  const persistTaskCategories = (val) => {
+  const persistTaskCategories = async (val) => {
+    if (!firebaseUser) {
+      setSaveError({ message: 'Your session is not ready. The change was not saved.', time: Date.now() });
+      throw new Error('No authenticated user — changes cannot be saved');
+    }
+    const prev = taskCategories;
     setTaskCategories(val);
-    if (firebaseUser) set(ref(db, 'taskCategories'), sanitizeForFirebase(val));
+    try {
+      await set(ref(db, 'taskCategories'), sanitizeForFirebase(val));
+    } catch (err) {
+      setTaskCategories(prev);
+      setSaveError({ message: 'Could not save changes. The change was reverted.', time: Date.now() });
+      throw err;
+    }
   };
   const persistTaskTemplates = (val) => {
     setTaskTemplates(val);
@@ -1494,9 +1531,20 @@ const App = () => {
     setFeedbackItems(val);
     if (firebaseUser) set(ref(db, 'feedbackItems'), sanitizeForFirebase(val));
   };
-  const persistHierarchyOrder = (val) => {
+  const persistHierarchyOrder = async (val) => {
+    if (!firebaseUser) {
+      setSaveError({ message: 'Your session is not ready. The change was not saved.', time: Date.now() });
+      throw new Error('No authenticated user — changes cannot be saved');
+    }
+    const prev = hierarchyOrder;
     setHierarchyOrder(val);
-    if (firebaseUser) set(ref(db, 'settings/hierarchyOrder'), val);
+    try {
+      await set(ref(db, 'settings/hierarchyOrder'), val);
+    } catch (err) {
+      setHierarchyOrder(prev);
+      setSaveError({ message: 'Could not save changes. The change was reverted.', time: Date.now() });
+      throw err;
+    }
   };
   const persistChecklistTemplates = (val) => {
     setChecklistTemplates(val);
@@ -1505,9 +1553,20 @@ const App = () => {
         .catch(err => console.error('[PMT] Failed to save checklist templates to Firebase:', err));
     }
   };
-  const persistChecklistAccessRoles = (val) => {
+  const persistChecklistAccessRoles = async (val) => {
+    if (!firebaseUser) {
+      setSaveError({ message: 'Your session is not ready. The change was not saved.', time: Date.now() });
+      throw new Error('No authenticated user — changes cannot be saved');
+    }
+    const prev = checklistAccessRoles;
     setChecklistAccessRoles(val);
-    if (firebaseUser) set(ref(db, 'settings/conditions/checklistAccess'), val);
+    try {
+      await set(ref(db, 'settings/conditions/checklistAccess'), val);
+    } catch (err) {
+      setChecklistAccessRoles(prev);
+      setSaveError({ message: 'Could not save changes. The change was reverted.', time: Date.now() });
+      throw err;
+    }
   };
   const persistTaskGroups = (val) => {
     setTaskGroups(val);

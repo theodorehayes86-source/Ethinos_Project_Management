@@ -7,6 +7,7 @@ import UserPickerModal from './UserPickerModal';
 import TaskDetailPanel from './TaskDetailPanel';
 import ChecklistGroupDetailPanel from './ChecklistGroupDetailPanel';
 import { sendNotification } from '../utils/notify';
+import { formatRepeatLabel, formatWeekendRuleLabel, repeatBadgeColor } from '../utils/repeatLabel';
 import { ReminderPills } from './ReminderPills';
 import DueDateInput from './DueDateInput';
 import LeaveConflictModal from './LeaveConflictModal';
@@ -1775,10 +1776,17 @@ const HomeView = ({
                                   <Calendar size={9} /> {task.dueDate}
                                 </span>
                               )}
-                              {task.repeatGroupId && (
+                              {task.repeatFrequency && task.repeatFrequency !== 'Once' && task.repeatFrequency !== 'One-time' ? (
+                                <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-violet-50 text-violet-600">
+                                  <RotateCcw size={9} /> {formatRepeatLabel(task)}
+                                </span>
+                              ) : task.repeatGroupId ? (
                                 <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-violet-50 text-violet-600">
                                   <RotateCcw size={9} /> Series
                                 </span>
+                              ) : null}
+                              {formatWeekendRuleLabel(task) && (
+                                <span className="text-[9px] font-medium text-slate-400">{formatWeekendRuleLabel(task)}</span>
                               )}
                               {(task.elapsedMs > 0 || isRunning) && (
                                 <span className={`flex items-center gap-1 text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full ${
@@ -2036,12 +2044,9 @@ const HomeView = ({
                                   <div className="flex items-center gap-1.5 justify-between">
                                     <p className="text-[11px] font-semibold text-slate-800 leading-snug">{task.name || task.comment}</p>
                                     <div className="flex items-center gap-1 flex-shrink-0">
-                                      <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
-                                        task.repeatFrequency === 'Daily' ? 'bg-emerald-100 text-emerald-700' :
-                                        task.repeatFrequency === 'Weekly' ? 'bg-blue-100 text-blue-700' :
-                                        task.repeatFrequency === 'Monthly' ? 'bg-purple-100 text-purple-700' :
-                                        'bg-slate-100 text-slate-600'
-                                      }`}>{task.repeatFrequency}</span>
+                                      <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${repeatBadgeColor(task.repeatFrequency)}`}>
+                                        {formatRepeatLabel(task) || task.repeatFrequency}
+                                      </span>
                                       {(task.steps || []).length > 0 && (
                                         <ChevronDown size={11} className={`text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                                       )}

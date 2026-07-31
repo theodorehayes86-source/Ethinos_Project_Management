@@ -1,0 +1,328 @@
+Please perform a final, tightly scoped reliability pass.
+
+Do not perform a security audit, visual redesign, or architectural rewrite. Preserve the current task diff planner, atomic Firebase updates, Firebase push-key model, timer queue changes, rollback error message, null filtering, settings defaults, and existing tests.
+
+## Priority 1: reject compatibility writes when Firebase authentication is unavailable
+
+Review `persistClientLogs()` in:
+
+```text
+artifacts/pmt-app/src/App.jsx
+```
+
+The current unauthenticated branch updates local state and returns a resolved promise even though no Firebase write occurs.
+
+Current pattern:
+
+```js
+if (!firebaseUser) {
+  const nextLogs =
+    typeof nextLogsInput === 'function'
+      ? nextLogsInput(prev)
+      : nextLogsInput;
+
+  clientLogsRef.current = nextLogs;
+  setClientLogs(nextLogs);
+
+  return Promise.resolve();
+}
+```
+
+This can leave unsaved changes visible as though they succeeded.
+
+Replace it with failure behaviour:
+
+```js
+if (!firebaseUser) {
+  const error = new Error(
+    'No authenticated user — changes cannot be saved'
+  );
+
+  setSaveError({
+    message:
+      'Your session is not ready. The change was not saved.',
+    time: Date.now(),
+  });
+
+  return Promise.reject(error);
+}
+```
+
+Requirements:
+
+1. Do not modify `clientLogsRef.current`.
+2. Do not modify React task state.
+3. Return a rejected promise.
+4. Display a visible error.
+5. Ensure callers do not generate unhandled promise rejections.
+6. Disable task mutation controls while authentication is unresolved where practical.
+
+Add tests proving:
+
+* no local task state changes when unauthenticated;
+* the returned promise rejects;
+* the visible error state is set;
+* the task remains unchanged.
+
+## Priority 2: prevent overlapping compatibility-write rollback races
+
+The compatibility writer applies optimistic state and restores complete affected client buckets after failure.
+
+Two overlapping writes affecting the same client can produce this sequence:
+
+1. Write A modifies Task 1.
+2. Write B modifies Task 2.
+3. Write B succeeds.
+4. Write A fails.
+5. Write A restores the old client bucket and temporarily removes B from the UI.
+
+Prevent compatibility writes from overlapping.
+
+Preferred solution: serialize `persistClientLogs()` operations through a promise chain.
+
+Example:
+
+```js
+const clientLogsWriteChainRef =
+  useRef(Promise.resolve());
+
+const persistClientLogs = nextLogsInput => {
+  const executeWrite = async () => {
+    const prev = clientLogsRef.current;
+
+    if (!firebaseUser) {
+      throw new Error(
+        'No authenticated user — changes cannot be saved'
+      );
+    }
+
+    const {
+      multiPathUpdate,
+      finalLogs,
+    } = computeClientLogsDiff(
+      prev,
+      nextLogsInput,
+      cid =>
+        push(
+          ref(db, `clientLogs/${cid}`)
+        ).key
+    );
+
+    clientLogsRef.current = finalLogs;
+    setClientLogs(finalLogs);
+
+    if (!Object.keys(multiPathUpdate).length) {
+      return;
+    }
+
+    try {
+      await update(ref(db), multiPathUpdate);
+    } catch (error) {
+      clientLogsRef.current = prev;
+      setClientLogs(prev);
+
+      setSaveError({
+        message:
+          'Could not save changes. The change was reverted.',
+        time: Date.now(),
+      });
+
+      throw error;
+    }
+  };
+
+  const queuedWrite =
+    clientLogsWriteChainRef.current.then(
+      executeWrite,
+      executeWrite
+    );
+
+  clientLogsWriteChainRef.current =
+    queuedWrite.catch(() => undefined);
+
+  return queuedWrite;
+};
+```
+
+Adjust this design as necessary, but preserve these guarantees:
+
+1. Compatibility writes execute in order.
+2. A failed earlier write cannot roll back a later successful write.
+3. The returned promise represents that specific operation.
+4. A rejected operation does not permanently break the queue.
+5. Functional updater inputs are evaluated when their queued operation begins, using the latest state.
+6. Firebase writes remain atomic.
+
+Add tests covering:
+
+* two successful sequential writes;
+* first fails and second succeeds;
+* first succeeds and second fails;
+* both fail;
+* both affect the same client;
+* writes affect different clients;
+* functional updater uses the latest state;
+* queue continues after a rejection.
+
+## Priority 3: remove temporary task IDs from ClientView creation flows
+
+Search:
+
+```text
+artifacts/pmt-app/src/PMT/ClientView.jsx
+```
+
+for new task objects using:
+
+```js
+id: Date.now() + Math.random()
+```
+
+These appear in recurring-task, template and import flows.
+
+The smart diff writer currently replaces these IDs with Firebase push keys, but temporary IDs are unnecessary and can be used by UI logic before persistence.
+
+For unsaved tasks, omit both `id` and `taskKey`:
+
+```js
+const newTask = {
+  name,
+  status,
+  // no id
+  // no taskKey
+};
+```
+
+The diff planner must remain responsible for assigning:
+
+```js
+id === taskKey === Firebase push key
+```
+
+Do not remove `Date.now()` IDs used for notifications, feedback messages, timer timestamps, user records or other unrelated entities. Only remove temporary IDs from newly constructed task objects.
+
+Add tests confirming:
+
+* recurring task creation generates unique push keys;
+* imported tasks generate unique push keys;
+* no unsaved task requires a temporary ID;
+* final task IDs equal their Firebase keys.
+
+## Priority 4: ensure compatibility callers handle rejected promises
+
+Once `persistClientLogs()` rejects on authentication failure and Firebase failure, audit all callers.
+
+Find calls to:
+
+```js
+setClientLogs(...)
+persistClientLogs(...)
+```
+
+that do not:
+
+* await the promise;
+* return it;
+* attach `.catch()`;
+* or run inside a safe event handler wrapper.
+
+Avoid unhandled promise rejections.
+
+For low-risk legacy actions that cannot yet become asynchronous, use a shared wrapper:
+
+```js
+const runTaskMutation = mutation => {
+  Promise.resolve()
+    .then(mutation)
+    .catch(error => {
+      console.error(
+        '[PMT] Task mutation failed',
+        error
+      );
+    });
+};
+```
+
+The visible application error should still come from the persistence layer.
+
+For high-value actions, await the result directly.
+
+## Priority 5: improve administrative persistence after task release
+
+Do not turn this into a broad rewrite, but add visible failure handling to the highest-value non-task helpers:
+
+```text
+persistUsers
+persistClients
+persistTaskCategories
+persistHierarchyOrder
+persistChecklistAccessRoles
+```
+
+Each should:
+
+1. Return a promise.
+2. Reject when no authenticated user exists.
+3. Await Firebase.
+4. Restore its previous local value on failure.
+5. Display a visible error.
+6. Avoid silent fire-and-forget writes.
+
+This is lower priority than the compatibility task-write fixes.
+
+## Tests to add
+
+Add tests for:
+
+1. Unauthenticated compatibility writes reject.
+2. Unauthenticated writes do not update local state.
+3. Sequential compatibility writes preserve order.
+4. An earlier failed write cannot revert a later successful write.
+5. The write queue continues after failure.
+6. Functional updaters see the latest state.
+7. Task imports do not assign temporary timestamp IDs.
+8. Recurring task creation does not assign temporary timestamp IDs.
+9. Generated task IDs equal Firebase task keys.
+10. Important non-task helpers report failed persistence.
+
+Run:
+
+```bash
+pnpm test
+pnpm run typecheck
+pnpm run build
+```
+
+Provide the exact results.
+
+## Required report
+
+Before editing, list:
+
+1. Every unauthenticated compatibility behaviour.
+2. Every unhandled compatibility caller.
+3. Each temporary task-ID creation site.
+4. The chosen write-serialization design.
+5. Tests to be added.
+
+After editing, provide:
+
+1. Modified files.
+2. Authentication-failure behaviour.
+3. Write-queue behaviour.
+4. Temporary task IDs removed.
+5. Callers updated to handle rejection.
+6. Non-task persistence improvements.
+7. Test output.
+8. Typecheck output.
+9. Build output.
+10. Any exact failures.
+
+## Completion rule
+
+Do not report completion unless:
+
+* compatibility writes cannot appear successful without Firebase authentication;
+* overlapping writes cannot roll back a later successful action;
+* temporary timestamp IDs are no longer assigned to newly created tasks;
+* and the new tests run successfully.
