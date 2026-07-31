@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { ChevronRight, ChevronLeft, AlertTriangle, CheckCircle, Star, Users, Plus, Tag, Calendar, Clock, X, ChevronDown, ChevronUp, ShieldCheck, Info, Link2, Link2Off, LogIn, LogOut, MessageSquare, Send, ArrowLeft, RefreshCw } from 'lucide-react';
+import { ChevronRight, ChevronLeft, AlertTriangle, CheckCircle, Star, Users, Plus, Tag, Calendar, Clock, X, ChevronDown, ChevronUp, ShieldCheck, Info, Link2, Link2Off, LogIn, LogOut, MessageSquare, Send, ArrowLeft, RefreshCw, Search } from 'lucide-react';
 import { sendNotification } from '../utils/notify';
 import { ref, onValue } from 'firebase/database';
 import { db, auth } from '../firebase.js';
@@ -964,6 +964,7 @@ export default function ManagerDashboard({
   const [attendanceByUser, setAttendanceByUser] = useState({});
   const [selectedDept, setSelectedDept] = useState('All');
   const [attendanceFilter, setAttendanceFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const isSuperAdmin = GLOBAL_ROLES.includes(currentUser?.role);
 
@@ -989,9 +990,13 @@ export default function ManagerDashboard({
     return ['All', ...depts];
   }, [directReports, users, isSuperAdmin, drillStack.length]);
 
-  // Cards shown after department + attendance filter
+  // Cards shown after search + department + attendance filter
   const visibleReports = useMemo(() => {
     let list = selectedDept === 'All' ? directReports : directReports.filter(u => u.department === selectedDept);
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      list = list.filter(u => u.name?.toLowerCase().includes(q) || u.role?.toLowerCase().includes(q));
+    }
     if (attendanceFilter !== 'all') {
       list = list.filter(u => {
         const as = attendanceByUser[String(u.id)];
@@ -1003,19 +1008,21 @@ export default function ManagerDashboard({
       });
     }
     return list;
-  }, [directReports, selectedDept, attendanceFilter, attendanceByUser]);
+  }, [directReports, selectedDept, searchQuery, attendanceFilter, attendanceByUser]);
 
   const drillIn = (user) => {
     setDrillStack(s => [...s, user]);
     setShowAllDrillTasks(false);
     setSelectedDept('All');
     setAttendanceFilter('all');
+    setSearchQuery('');
   };
   const drillOut = () => {
     setDrillStack(s => s.slice(0, -1));
     setShowAllDrillTasks(false);
     setSelectedDept('All');
     setAttendanceFilter('all');
+    setSearchQuery('');
   };
 
   const drillPersonalStats = viewUser ? getUserTaskStats(viewUser.id, clientLogs, clients) : null;
@@ -1243,6 +1250,26 @@ export default function ManagerDashboard({
               </div>
             )}
 
+            {/* Search bar */}
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search employees…"
+                className="w-full pl-8 pr-8 py-2.5 text-sm rounded-xl border border-slate-200 bg-white text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center"
+                >
+                  <X size={10} className="text-slate-600" />
+                </button>
+              )}
+            </div>
+
             {/* Department filter — only at top level and when multiple depts exist */}
             {drillStack.length === 0 && departments.length > 2 && (
               <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 flex-shrink-0" style={{ scrollbarWidth: 'none' }}>
@@ -1299,14 +1326,26 @@ export default function ManagerDashboard({
             {visibleReports.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
-                  <Users size={28} className="text-slate-300" />
+                  {searchQuery.trim() ? <Search size={28} className="text-slate-300" /> : <Users size={28} className="text-slate-300" />}
                 </div>
                 <p className="text-slate-500 font-semibold">
-                  {directReports.length === 0 ? 'No team members' : 'No members in this department'}
+                  {searchQuery.trim()
+                    ? 'No employees found'
+                    : directReports.length === 0 ? 'No team members' : 'No members match this filter'}
                 </p>
                 <p className="text-xs text-slate-400 mt-1">
-                  {directReports.length === 0 ? 'No team members linked to this person' : 'Try selecting a different department'}
+                  {searchQuery.trim()
+                    ? `No results for "${searchQuery.trim()}"`
+                    : directReports.length === 0 ? 'No team members linked to this person' : 'Try selecting a different department'}
                 </p>
+                {searchQuery.trim() && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="mt-3 text-xs font-bold text-indigo-600 px-3 py-1.5 rounded-lg bg-indigo-50"
+                  >
+                    Clear search
+                  </button>
+                )}
               </div>
             ) : (
               <>
