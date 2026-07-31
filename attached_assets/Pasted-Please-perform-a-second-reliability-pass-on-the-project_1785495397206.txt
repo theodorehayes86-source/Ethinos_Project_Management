@@ -1,0 +1,471 @@
+Please perform a second reliability pass on the project management tool.
+
+The previous changes successfully improved mobile Firebase writes, stable timer task keys, deletion handling, and offline queue persistence. Do not undo those improvements.
+
+Do not perform a security audit. Focus only on functional correctness, data integrity, web/mobile compatibility, Firebase synchronisation, error handling, and automated tests.
+
+## Main finding
+
+The core web application still performs broad writes through `persistClientLogs()`.
+
+The current implementation resembles:
+
+```js
+const persistClientLogs = (nextLogs) => {
+  setClientLogs(nextLogs);
+
+  if (firebaseUser) {
+    update(
+      ref(db, 'clientLogs'),
+      sanitizeForFirebase(nextLogs)
+    );
+  }
+};
+```
+
+Changing `set()` to root-level `update()` does not solve the overwrite problem when `nextLogs` contains the complete local `clientLogs` state.
+
+Most views still call patterns such as:
+
+```js
+setClientLogs({
+  ...clientLogs,
+  [clientId]: updatedTasks,
+});
+```
+
+Because `setClientLogs` is passed from `App.jsx` as `persistClientLogs`, these calls send stale copies of other clients and tasks back to Firebase.
+
+The newly added `persistTaskUpdate()` helper is currently not integrated into the task views.
+
+## Priority 1: replace web task mutations with keyed Firebase operations
+
+Audit every task mutation in:
+
+```text
+artifacts/pmt-app/src/PMT/HomeView.jsx
+artifacts/pmt-app/src/PMT/ClientView.jsx
+artifacts/pmt-app/src/PMT/TeamView.jsx
+artifacts/pmt-app/src/PMT/ApprovalsView.jsx
+artifacts/pmt-app/src/PMT/MasterDataView.jsx
+artifacts/pmt-app/src/PMT/SettingsView.jsx
+artifacts/pmt-app/src/App.jsx
+```
+
+Identify every operation that:
+
+* creates a task;
+* updates a task;
+* starts, pauses or stops a timer;
+* changes status;
+* assigns a user;
+* updates QC or approval state;
+* archives a task;
+* deletes a task;
+* updates checklist steps;
+* changes feedback;
+* performs bulk updates;
+* moves or duplicates tasks.
+
+Replace broad `setClientLogs()` operations with specific Firebase mutations.
+
+### Single-task update
+
+Use:
+
+```js
+await update(
+  ref(db, `clientLogs/${clientId}/${taskKey}`),
+  sanitizeForFirebase(changes)
+);
+```
+
+### Task creation
+
+Use:
+
+```js
+const newTaskRef = push(
+  ref(db, `clientLogs/${clientId}`)
+);
+
+await set(newTaskRef, {
+  ...task,
+  id: newTaskRef.key,
+});
+```
+
+### Task deletion
+
+Use:
+
+```js
+await remove(
+  ref(db, `clientLogs/${clientId}/${taskKey}`)
+);
+```
+
+### Bulk updates
+
+Use one root-level multi-path update containing only the fields that changed:
+
+```js
+const updates = {};
+
+tasks.forEach(task => {
+  updates[
+    `clientLogs/${task.clientId}/${task.taskKey}/qcStatus`
+  ] = 'approved';
+
+  updates[
+    `clientLogs/${task.clientId}/${task.taskKey}/qcReviewedAt`
+  ] = reviewedAt;
+});
+
+await update(ref(db), updates);
+```
+
+Do not send complete task collections or complete `clientLogs` state for ordinary task operations.
+
+## Priority 2: define and use a canonical task identity
+
+The canonical Firebase task path must be:
+
+```text
+clientLogs/{clientId}/{taskKey}
+```
+
+Every task passed to a component should have:
+
+```js
+{
+  ...task,
+  taskKey
+}
+```
+
+Do not use:
+
+* array indexes;
+* display positions;
+* `Date.now()` values;
+* task list indexes;
+
+as Firebase paths.
+
+For newly created tasks:
+
+```js
+task.id === taskKey
+```
+
+Legacy tasks may temporarily have a different `id`, but all mutations must use the Firebase `taskKey`.
+
+## Priority 3: standardise array and object task handling
+
+The repository currently contains many expressions such as:
+
+```js
+(clientLogs[clientId] || []).map(...)
+```
+
+This crashes when the client bucket is a Firebase push-key object.
+
+Create shared utilities, for example:
+
+```text
+artifacts/pmt-app/src/lib/firebaseCollections.js
+```
+
+Suggested implementation:
+
+```js
+export function collectionEntries(value) {
+  if (!value) return [];
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item, index) =>
+        item ? [String(index), item] : null
+      )
+      .filter(Boolean);
+  }
+
+  return Object.entries(value);
+}
+
+export function collectionValues(value) {
+  return collectionEntries(value).map(
+    ([, item]) => item
+  );
+}
+
+export function tasksWithKeys(value) {
+  return collectionEntries(value).map(
+    ([taskKey, task]) => ({
+      ...task,
+      taskKey,
+    })
+  );
+}
+```
+
+Replace unsafe direct calls to:
+
+```js
+.map()
+.filter()
+.forEach()
+.find()
+```
+
+on uncertain Firebase values.
+
+Apply this across the web application, reports, approvals, dashboards, checklists, mobile code, and timer code.
+
+## Priority 4: ensure web and mobile use the same data model
+
+The mobile application now creates push-key task objects. The web application must be able to:
+
+* display mobile-created tasks;
+* edit mobile-created tasks;
+* start their timers;
+* approve them;
+* archive them;
+* delete them;
+* include them in reports.
+
+The mobile application must also support web-created tasks.
+
+Stop creating new array-based task lists in the web application.
+
+All newly created web tasks must use Firebase `push()`.
+
+Maintain read compatibility with legacy array-shaped data.
+
+Do not perform a destructive all-at-once migration.
+
+## Priority 5: make persistence functions asynchronous and observable
+
+Change task persistence helpers to return promises.
+
+Example:
+
+```js
+const persistTaskUpdate = useCallback(
+  async (clientId, taskKey, changes) => {
+    if (!firebaseUser) {
+      throw new Error(
+        'Cannot save without an authenticated user.'
+      );
+    }
+
+    await update(
+      ref(db, `clientLogs/${clientId}/${taskKey}`),
+      sanitizeForFirebase(changes)
+    );
+  },
+  [firebaseUser]
+);
+```
+
+For every user-triggered task mutation:
+
+1. Await the Firebase operation.
+2. Show an appropriate saving state where needed.
+3. Show a visible error message when persistence fails.
+4. Do not show success before Firebase confirms it.
+5. Roll back optimistic local state if the write fails.
+6. Avoid unhandled promise rejections.
+7. Return errors to callers instead of swallowing them.
+
+Do the same for critical user, client and master-data saves where practical, but prioritise task workflows first.
+
+## Priority 6: redesign the timer offline queue merge key
+
+The queue currently separates timer and status items using IDs such as:
+
+```js
+taskId
+status-${taskId}
+```
+
+This allows conflicting pending records for one Firebase task.
+
+Deduplicate by:
+
+```text
+clientId + taskKey
+```
+
+When another queued write for the same task arrives, merge its payload into the existing entry:
+
+```js
+existing.payload = {
+  ...existing.payload,
+  ...incoming.payload,
+};
+
+existing.timestamp = Math.max(
+  existing.timestamp,
+  incoming.timestamp
+);
+```
+
+The newest field value should win.
+
+Only remove a queue item after Firebase confirms the merged payload was saved.
+
+## Priority 7: remove or redesign the two-second Firebase timeout
+
+The timer still interprets a write taking more than two seconds as a failure even when Firebase remains connected.
+
+Preferred behaviour:
+
+```js
+if (!firebaseConnectedRef.current) {
+  queueWrite();
+  return;
+}
+
+try {
+  await update(...);
+} catch (error) {
+  queueWrite();
+}
+```
+
+Do not automatically queue a write only because Firebase did not acknowledge it within two seconds.
+
+Use `.info/connected` to determine offline state.
+
+If retaining a timeout is absolutely necessary, it must not create a second potentially conflicting write while the first unresolved write is still active.
+
+## Priority 8: show offline queue storage failures visibly
+
+`saveQueue()` now reports failure through its return value, but `enqueue()` only logs a warning.
+
+Change `enqueue()` to return success or failure:
+
+```js
+export function enqueue(item) {
+  // ...
+  return saveQueue(queue);
+}
+```
+
+If saving the offline queue fails, show a persistent visible warning:
+
+```text
+This timer update could not be stored offline.
+Keep the application open and reconnect before closing it.
+```
+
+Do not rely on the developer console.
+
+## Priority 9: handle task-not-found updates
+
+The mobile transactional update currently resolves successfully even when no matching task ID exists.
+
+Make the operation report a clear failure when the task cannot be located.
+
+Prefer direct keyed updates when `taskKey` is already available.
+
+For legacy ID lookup:
+
+1. Locate the Firebase task key.
+2. Throw or return a failure result if no match exists.
+3. Update the specific task path once found.
+
+Do not silently return unchanged data as a successful task update.
+
+## Priority 10: complete empty Firebase state handling
+
+Review all Firebase listeners.
+
+Some listeners still only change state when a non-empty value is present.
+
+Explicitly reset state when Firebase returns `null`.
+
+Examples:
+
+```js
+setChecklistTemplates([]);
+setTaskGroups([]);
+setHierarchyOrder(DEFAULT_HIERARCHY);
+setNotificationSettings(DEFAULT_NOTIFICATION_SETTINGS);
+```
+
+Use the correct product default rather than leaving stale state in memory.
+
+## Priority 11: add focused automated tests
+
+Add tests for the exact changes made.
+
+At minimum, cover:
+
+1. Web-created tasks use Firebase push keys.
+2. Mobile-created push-key tasks render correctly on web.
+3. Web-created tasks render correctly on mobile.
+4. Updating one task does not write or replace unrelated tasks.
+5. Updating one client does not write or replace another client.
+6. Bulk approval uses only multi-path field updates.
+7. Array-shaped legacy task data remains readable.
+8. Object-shaped push-key data remains readable.
+9. Every task mutation preserves `taskKey`.
+10. Task deletion removes only the selected task.
+11. Timer updates and status updates merge into one offline queue record.
+12. Newer pending fields replace older pending fields.
+13. Offline queue entries are removed only after confirmed persistence.
+14. Queue storage failure produces a visible warning.
+15. Firebase `null` snapshots clear state.
+16. Failed task writes show an error.
+17. Optimistic task changes roll back after save failure.
+18. Task-not-found mobile updates report failure.
+19. Firebase subscriptions are cleaned up.
+20. No component calls `.map()` directly on an uncertain Firebase task bucket.
+
+Use Firebase Emulator Suite where practical.
+
+## Constraints
+
+* Do not perform a security audit.
+* Do not redesign the UI.
+* Do not rewrite the complete application.
+* Preserve existing product behaviour.
+* Keep compatibility with legacy Firebase arrays.
+* Do not perform an immediate destructive database migration.
+* Do not replace working timer-key changes.
+* Do not revert mobile `push()` creation.
+* Do not change unrelated integrations.
+* Keep commits and changes reviewable.
+
+## Required process
+
+Before editing, provide:
+
+1. All affected files.
+2. Every broad task-write call found.
+3. Every unsafe array assumption found.
+4. The canonical data model.
+5. The compatibility strategy.
+6. Tests that will be added.
+
+Then implement the changes.
+
+After implementation, provide:
+
+1. Modified-file list.
+2. Each defect fixed.
+3. Remaining broad-write calls and why they remain.
+4. Remaining array assumptions and why they remain.
+5. Legacy compatibility details.
+6. Manual migration requirements, if any.
+7. Exact manual test instructions.
+8. Build result.
+9. Typecheck result.
+10. Lint result.
+11. Automated test result.
+12. Any failed checks and their exact errors.
+
+Do not claim the task is complete while ordinary task operations still route through broad `persistClientLogs()` writes.
