@@ -664,7 +664,7 @@ async function getBotFrameworkToken(): Promise<string> {
  * Get the Graph chat ID for the bot's 1:1 with a user.
  * Tries every known app external ID so dev/prod mismatches don't block delivery.
  */
-async function getBotUserChatId(userObjectId: string): Promise<string | null> {
+export async function getBotUserChatId(userObjectId: string): Promise<string | null> {
   const token = await getAccessToken();
 
   // Collect all distinct app external IDs across env vars + hardcoded prod default.

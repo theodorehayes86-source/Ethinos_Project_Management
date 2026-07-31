@@ -14,6 +14,7 @@ import {
   getChatMessage,
   getChatMembers,
   sendBotProactiveMessage,
+  getBotUserChatId,
   subscribeToChatMessages,
   renewChatSubscription,
   resolveEntraObjectId,
@@ -265,6 +266,47 @@ router.post(
             source: "flowpro",
           });
           await writeFirebasePath(`teamsDMs/chats/${key}/messages/${tempKey}`, null);
+
+          // Subscribe to the bot-user chat so replies from Teams flow back into Flow Pro.
+          // This is the chat the bot uses, which is different from the user-to-user rawChatId.
+          void (async () => {
+            try {
+              const botChatId = await getBotUserChatId(recipientAadId);
+              if (!botChatId) return;
+              const botChatKey = fbKey(botChatId);
+
+              // Persist a mapping: botChatKey → flowpro chatKey so the webhook can route replies.
+              await writeFirebasePath(`teamsDMs/botChatMap/${botChatKey}`, key);
+
+              // Create or renew a subscription on the bot-user chat.
+              const webhookUrl = `${getTeamsBaseUrl()}/api/teams-chat/webhook`;
+              const existingSub = await readFirebasePath<{
+                id: string;
+                expiresAt: number;
+              } | null>(`teamsDMs/botChats/${botChatKey}/subscription`);
+
+              if (
+                existingSub?.id &&
+                existingSub.expiresAt > Date.now() + 5 * 60 * 1000
+              ) {
+                const newExpiry = await renewChatSubscription(existingSub.id);
+                await writeFirebasePath(`teamsDMs/botChats/${botChatKey}/subscription`, {
+                  id: existingSub.id,
+                  expiresAt: new Date(newExpiry).getTime(),
+                });
+              } else {
+                const sub = await subscribeToChatMessages(botChatId, webhookUrl, WEBHOOK_CLIENT_STATE);
+                await writeFirebasePath(`teamsDMs/botChats/${botChatKey}/subscription`, {
+                  id: sub.id,
+                  expiresAt: new Date(sub.expiresDateTime).getTime(),
+                });
+              }
+              logger.info({ botChatKey, key }, "[TeamsChat] Bot-chat subscription ensured for reply tracking");
+            } catch (subErr) {
+              logger.warn({ err: subErr }, "[TeamsChat] Bot-chat subscription failed — replies may not appear in Flow Pro");
+            }
+          })();
+
           return res.json({ ok: true, messageId: stableKey });
         } else {
           // No recipient resolved — message is in Firebase, Teams delivery skipped.
@@ -295,7 +337,6 @@ router.post("/teams-chat/webhook", async (req: Request, res: Response) => {
 
   // Acknowledge immediately — Graph requires a response within 3 s
   res.status(202).send();
-  return;
 
   type GraphNotification = {
     clientState?: string;
@@ -320,11 +361,18 @@ router.post("/teams-chat/webhook", async (req: Request, res: Response) => {
     const rawChatId = resource.match(/\/chats\/([^/]+)\//)?.[1] ?? "";
     const messageId = resource.match(/\/messages\/([^/]+)$/)?.[1] ?? "";
     if (!rawChatId || !messageId) continue;
-    const chatKey = fbKey(rawChatId);
+    const incomingChatKey = fbKey(rawChatId);
     const msgKey = fbKey(messageId);
 
     void (async () => {
       try {
+        // Check if this is a bot-user chat — map it to the Flow Pro chat key if so.
+        // Bot-user chats are subscribed via /send; they map to a user-to-user chatKey.
+        const botMappedKey = await readFirebasePath<string | null>(
+          `teamsDMs/botChatMap/${incomingChatKey}`
+        );
+        const chatKey = botMappedKey ?? incomingChatKey;
+
         const existing = await readFirebasePath(
           `teamsDMs/chats/${chatKey}/messages/${msgKey}`
         );
@@ -352,7 +400,7 @@ router.post("/teams-chat/webhook", async (req: Request, res: Response) => {
           }
         );
         logger.info(
-          { chatKey, messageId },
+          { chatKey, messageId, viaBot: !!botMappedKey },
           "[TeamsChat] New Teams message stored in Firebase"
         );
       } catch (err) {
@@ -363,6 +411,7 @@ router.post("/teams-chat/webhook", async (req: Request, res: Response) => {
       }
     })();
   }
+  return;
 });
 
 export default router;
