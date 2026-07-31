@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ref, onValue, set, update, get } from 'firebase/database';
+import { ref, onValue, set, update, get, push, remove } from 'firebase/database';
 import { signInWithEmailAndPassword, signInWithCustomToken, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, updateProfile, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
 import { db, auth } from './firebase.js';
+import { tasksWithKeys, collectionValues } from './lib/firebaseCollections.js';
 // MSAL import removed — we use a direct PKCE+postMessage popup flow instead.
 
 import HomeView from './PMT/HomeView';
@@ -1041,6 +1042,8 @@ const App = () => {
   const [metricsAllDataRoles, setMetricsAllDataRoles] = useState(['Super Admin', 'Director']);
   const [reportsAllDataRoles, setReportsAllDataRoles] = useState(['Super Admin', 'Director']);
   const [clientLogs, setClientLogs] = useState({});
+  /** Always-current snapshot of clientLogs — used for task-level diff writes. */
+  const clientLogsRef = useRef({});
   const [taskTemplates, setTaskTemplates] = useState(DEFAULT_TASK_TEMPLATES);
   const [checklistTemplates, setChecklistTemplates] = useState([]);
   const [checklistAccessRoles, setChecklistAccessRoles] = useState(['Super Admin', 'Director']);
@@ -1207,6 +1210,7 @@ const App = () => {
 
     const unsubs = [
       syncRef('users', (val) => {
+        if (!val) { if (!dbReadyOnce) { dbReadyOnce = true; setDbReady(true); } return; }
         const raw = Array.isArray(val) ? val : Object.values(val);
         // Deduplicate by id (keep last occurrence — handles stale test-user duplicates in Firebase)
         const seen = new Map();
@@ -1214,8 +1218,16 @@ const App = () => {
         setUsers([...seen.values()]);
         if (!dbReadyOnce) { dbReadyOnce = true; setDbReady(true); }
       }),
-      syncRef('clients', (val) => setClients(Array.isArray(val) ? val : Object.values(val))),
-      syncRef('clientLogs', (val) => setClientLogs(val || {})),
+      syncRef('clients', (val) => setClients(!val ? [] : Array.isArray(val) ? val : Object.values(val))),
+      syncRef('clientLogs', (val) => {
+        // Enrich every task with its Firebase push key so all writes can use
+        // the stable path clientLogs/{clientId}/{taskKey}.
+        const enriched = val ? Object.fromEntries(
+          Object.entries(val).map(([cid, tasks]) => [cid, tasksWithKeys(tasks)])
+        ) : {};
+        clientLogsRef.current = enriched;
+        setClientLogs(enriched);
+      }),
       syncRef('taskCategories', (val) => setTaskCategories(migrateCategoryList(val))),
       syncRef('taskTemplates', (val) => setTaskTemplates(Array.isArray(val) ? val : Object.values(val))),
       syncRef('departments', (val) => setDepartments(Array.isArray(val) ? val : Object.values(val))),
@@ -1265,23 +1277,177 @@ const App = () => {
     setClients(nextClients);
     if (firebaseUser) set(ref(db, 'clients'), sanitizeForFirebase(nextClients));
   };
-  const persistClientLogs = (nextLogs) => {
-    setClientLogs(nextLogs);
-    // Use update() instead of set() so only the supplied client buckets are
-    // touched. Two users editing different clients will no longer overwrite
-    // each other. (Two users editing the SAME client's tasks still need
-    // task-level writes via persistTaskUpdate — use that for single-task ops.)
-    if (firebaseUser) update(ref(db, 'clientLogs'), sanitizeForFirebase(nextLogs));
+  /**
+   * Smart task-level diff writer.
+   *
+   * All view call-sites pass the whole clientLogs object (e.g.
+   * `{ ...clientLogs, [cid]: updatedArray }`). This function diffs the
+   * incoming value against the previous state and writes ONLY the fields that
+   * changed — never rewriting unrelated tasks or client buckets.
+   *
+   * New tasks (no taskKey): a stable Firebase push key is generated
+   * synchronously (client-side), task.id is set to that key, and the write
+   * is dispatched asynchronously. Local state is updated immediately so the
+   * UI never shows the temporary Date.now() id.
+   *
+   * Supports both value and functional-updater forms:
+   *   persistClientLogs({ ...clientLogs, [cid]: updated })
+   *   persistClientLogs(prev => ({ ...prev, [cid]: updated }))
+   */
+  const persistClientLogs = (nextLogsInput) => {
+    const prev = clientLogsRef.current;
+    const nextLogs = typeof nextLogsInput === 'function' ? nextLogsInput(prev) : nextLogsInput;
+
+    if (!firebaseUser) {
+      clientLogsRef.current = nextLogs;
+      setClientLogs(nextLogs);
+      return;
+    }
+
+    const multiPathUpdate = {};
+    const finalLogs = { ...nextLogs };
+
+    // Changed / new client buckets
+    for (const cid of Object.keys(nextLogs)) {
+      if (nextLogs[cid] === prev[cid]) continue; // reference-equal → unchanged
+
+      const prevRaw = prev[cid];
+      const prevTasks = Array.isArray(prevRaw) ? prevRaw : prevRaw ? Object.values(prevRaw) : [];
+      const prevByKey = new Map(
+        prevTasks.filter(t => t?.taskKey).map(t => [t.taskKey, t])
+      );
+
+      const rawNext = nextLogs[cid];
+      if (!rawNext || (Array.isArray(rawNext) && rawNext.length === 0)) {
+        // Bucket cleared — delete all tracked tasks from Firebase
+        for (const key of prevByKey.keys()) {
+          multiPathUpdate[`clientLogs/${cid}/${key}`] = null;
+        }
+        continue;
+      }
+
+      const nextArr = Array.isArray(rawNext) ? [...rawNext] : Object.values(rawNext);
+      const finalTasks = [];
+
+      for (const task of nextArr) {
+        if (!task) { finalTasks.push(task); continue; }
+
+        if (!task.taskKey) {
+          // NEW task — generate a push key synchronously (no network round-trip)
+          const newRef = push(ref(db, `clientLogs/${cid}`));
+          const pushKey = newRef.key;
+          const taskWithKey = { ...task, id: pushKey, taskKey: pushKey };
+          set(newRef, sanitizeForFirebase(taskWithKey)).catch(err =>
+            console.error('[PMT] Task create failed:', err)
+          );
+          finalTasks.push(taskWithKey);
+          continue;
+        }
+
+        finalTasks.push(task);
+
+        const prevTask = prevByKey.get(task.taskKey);
+        prevByKey.delete(task.taskKey); // mark seen; remainder = deleted
+
+        if (!prevTask) {
+          // Has a key but not in prev — just arrived from Firebase listener; don't echo.
+          continue;
+        }
+
+        // Write only changed fields
+        for (const [field, val] of Object.entries(task)) {
+          if (field === 'taskKey') continue; // internal, not stored in Firebase
+          if (JSON.stringify(prevTask[field]) !== JSON.stringify(val)) {
+            multiPathUpdate[`clientLogs/${cid}/${task.taskKey}/${field}`] =
+              sanitizeForFirebase(val) ?? null;
+          }
+        }
+        // Null-out fields removed from the task object
+        for (const field of Object.keys(prevTask)) {
+          if (field === 'taskKey') continue;
+          if (!(field in task)) {
+            multiPathUpdate[`clientLogs/${cid}/${task.taskKey}/${field}`] = null;
+          }
+        }
+      }
+
+      // Remaining prevByKey entries were deleted from nextLogs
+      for (const key of prevByKey.keys()) {
+        multiPathUpdate[`clientLogs/${cid}/${key}`] = null;
+      }
+
+      finalLogs[cid] = finalTasks;
+    }
+
+    // Clients removed entirely from nextLogs
+    for (const cid of Object.keys(prev)) {
+      if (!(cid in nextLogs)) {
+        const prevRaw = prev[cid];
+        const prevTasks = Array.isArray(prevRaw) ? prevRaw : prevRaw ? Object.values(prevRaw) : [];
+        for (const t of prevTasks) {
+          if (t?.taskKey) multiPathUpdate[`clientLogs/${cid}/${t.taskKey}`] = null;
+        }
+      }
+    }
+
+    if (Object.keys(multiPathUpdate).length > 0) {
+      update(ref(db), multiPathUpdate).catch(err =>
+        console.error('[PMT] Firebase multi-path write failed:', err)
+      );
+    }
+
+    clientLogsRef.current = finalLogs;
+    setClientLogs(finalLogs);
   };
 
   /**
-   * Write a single task's fields atomically without touching any other task.
-   * Preferred over persistClientLogs for single-task operations (status
-   * changes, archiving, QC updates) once the task has a stable Firebase key.
+   * Write a single task's fields atomically — async, throws on error.
+   * Use this for explicit single-task operations (status changes, archiving,
+   * QC updates) when you have the taskKey available and don't need the
+   * full clientLogs diff logic.
    */
-  const persistTaskUpdate = useCallback((clientId, taskKey, updates) => {
+  const persistTaskUpdate = useCallback(async (clientId, taskKey, updates) => {
+    if (!firebaseUser) throw new Error('No authenticated user — cannot write to Firebase');
+    await update(ref(db, `clientLogs/${clientId}/${taskKey}`), sanitizeForFirebase(updates));
+  }, [firebaseUser]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /**
+   * Create a task with a stable Firebase push key.
+   * Returns the created task with id = taskKey = pushKey.
+   */
+  const persistTaskCreate = useCallback(async (clientId, taskData) => {
+    if (!firebaseUser) throw new Error('No authenticated user — cannot write to Firebase');
+    const newRef = push(ref(db, `clientLogs/${clientId}`));
+    const pushKey = newRef.key;
+    const task = sanitizeForFirebase({ ...taskData, id: pushKey, taskKey: pushKey });
+    await set(newRef, task);
+    setClientLogs(prev => {
+      const prevArr = Array.isArray(prev[clientId]) ? prev[clientId]
+        : prev[clientId] ? Object.values(prev[clientId]) : [];
+      const updated = {
+        ...prev,
+        [clientId]: [{ ...taskData, id: pushKey, taskKey: pushKey }, ...prevArr],
+      };
+      clientLogsRef.current = updated;
+      return updated;
+    });
+    return { ...taskData, id: pushKey, taskKey: pushKey };
+  }, [firebaseUser]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Remove a single task from Firebase by its stable push key. */
+  const persistTaskDelete = useCallback(async (clientId, taskKey) => {
     if (!firebaseUser) return;
-    update(ref(db, `clientLogs/${clientId}/${taskKey}`), sanitizeForFirebase(updates));
+    await remove(ref(db, `clientLogs/${clientId}/${taskKey}`));
+  }, [firebaseUser]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /**
+   * Atomic multi-path update across arbitrary Firebase paths.
+   * Keys must be full paths relative to the database root,
+   * e.g. `clientLogs/${clientId}/${taskKey}/qcStatus`.
+   */
+  const persistBulkUpdate = useCallback(async (multiPathObj) => {
+    if (!firebaseUser) return;
+    await update(ref(db), sanitizeForFirebase(multiPathObj));
   }, [firebaseUser]); // eslint-disable-line react-hooks/exhaustive-deps
   const persistTaskCategories = (val) => {
     setTaskCategories(val);
@@ -1459,8 +1625,8 @@ const App = () => {
   ];
 
   const allTasks = [
-    ...accessibleClients.flatMap(c => (clientLogs[c.id] || []).map(t => ({ ...t, cid: c.id, cName: c.name }))),
-    ...SYNTHETIC_CLIENTS.flatMap(c => (clientLogs[c.id] || []).map(t => ({ ...t, cid: c.id, cName: c.name }))),
+    ...accessibleClients.flatMap(c => collectionValues(clientLogs[c.id]).map(t => ({ ...t, cid: c.id, cName: c.name }))),
+    ...SYNTHETIC_CLIENTS.flatMap(c => collectionValues(clientLogs[c.id]).map(t => ({ ...t, cid: c.id, cName: c.name }))),
   ];
 
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];

@@ -1,11 +1,11 @@
 export interface QueuedWrite {
-  /** Logical task ID (used for deduplication). */
-  id: string;
+  /** Optional logical task ID — kept for debugging; deduplication uses clientId:taskKey. */
+  id?: string;
   clientId: number | string;
-  /** The actual Firebase key within clientLogs/${clientId} — stable across deletions. */
+  /** The stable Firebase key within clientLogs/${clientId}. */
   taskKey: string;
   payload: Record<string, unknown>;
-  /** Wall-clock ms when this write was enqueued. Used for staleness checks on flush. */
+  /** Wall-clock ms when this write was last enqueued or merged. */
   timestamp: number;
 }
 
@@ -36,43 +36,46 @@ export function saveQueue(queue: QueuedWrite[]): boolean {
   }
 }
 
-/** Stable deduplication key for a queued write. */
-function itemKey(item: Pick<QueuedWrite, "id" | "clientId" | "taskKey">): string {
-  return item.id ? item.id : `${item.clientId}:${item.taskKey}`;
+/** Stable deduplication key for a queued write. Always clientId:taskKey. */
+function itemKey(item: Pick<QueuedWrite, "clientId" | "taskKey">): string {
+  return `${item.clientId}:${item.taskKey}`;
 }
 
 /**
- * Add or replace a queued write.
- * If an entry with the same logical key already exists, the newer one wins
- * (prevents a stale retry from outlasting a more recent write for the same task).
+ * Add or merge a queued write.
+ *
+ * If an entry for the same task (same clientId + taskKey) already exists,
+ * the payloads are MERGED so no field update is lost:
+ *   merged.payload = { ...existing.payload, ...incoming.payload }
+ *   merged.timestamp = Math.max(existing.timestamp, incoming.timestamp)
+ *
+ * This means a status-change and a timer-update for the same task collapse
+ * into a single queued entry that carries both changes.
+ *
+ * Returns true if the queue was saved successfully, false on storage failure.
  */
-export function enqueue(item: QueuedWrite): void {
+export function enqueue(item: QueuedWrite): boolean {
   const key = itemKey(item);
   const queue = loadQueue();
-  const existing = queue.findIndex((q) => itemKey(q) === key);
-  if (existing >= 0) {
-    // Only replace if the incoming write is newer
-    if (item.timestamp >= queue[existing].timestamp) {
-      queue[existing] = item;
-    }
+  const existingIdx = queue.findIndex((q) => itemKey(q) === key);
+  if (existingIdx >= 0) {
+    // Merge: newer fields win; take the later timestamp
+    queue[existingIdx] = {
+      ...queue[existingIdx],
+      payload: {
+        ...queue[existingIdx].payload,
+        ...item.payload,
+      },
+      timestamp: Math.max(queue[existingIdx].timestamp, item.timestamp),
+    };
   } else {
     queue.push(item);
   }
-  if (!saveQueue(queue)) {
-    // Storage failed — warn the user so they know the write may not survive a reload
-    console.warn(
-      "[PMT Timer] Could not persist offline queue. If you go offline, this timer update may be lost."
-    );
-  }
+  return saveQueue(queue);
 }
 
-export function dequeueByKey(item: Pick<QueuedWrite, "id" | "clientId" | "taskKey">): void {
+export function dequeueByKey(item: Pick<QueuedWrite, "clientId" | "taskKey">): void {
   const key = itemKey(item);
   const queue = loadQueue().filter((q) => itemKey(q) !== key);
-  saveQueue(queue);
-}
-
-export function dequeue(id: string): void {
-  const queue = loadQueue().filter((q) => q.id !== id);
   saveQueue(queue);
 }

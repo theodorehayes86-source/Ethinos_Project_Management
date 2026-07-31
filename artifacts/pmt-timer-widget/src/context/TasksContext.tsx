@@ -12,9 +12,6 @@ import { useAuth } from "./AuthContext";
 import { Client, GroupedTasks, TaskLog } from "../types";
 import { enqueue, loadQueue, dequeueByKey, QueuedWrite } from "../offlineQueue";
 
-/** Max ms to wait for Firebase write acknowledgment before falling back to local queue. */
-const WRITE_TIMEOUT_MS = 2000;
-
 interface SyncStatus {
   state: "synced" | "pending" | "offline";
   pendingCount: number;
@@ -24,6 +21,8 @@ interface TasksContextValue {
   groupedTasks: GroupedTasks[];
   loading: boolean;
   syncStatus: SyncStatus;
+  /** True when localStorage could not accept a queued write. */
+  queueSaveFailed: boolean;
   updateTaskTimer: (
     clientId: number | string,
     taskKey: string,
@@ -49,16 +48,6 @@ function formatDuration(ms: number): string {
   return `${h}:${m}:${s}`;
 }
 
-/** Race a Firebase write against a hard timeout. */
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("write timeout")), ms)
-    ),
-  ]);
-}
-
 export function TasksProvider({ children }: { children: React.ReactNode }) {
   const { pmtUser } = useAuth();
   const [clients, setClients] = useState<Client[]>([]);
@@ -70,6 +59,13 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
     state: loadQueue().length > 0 ? "pending" : "synced",
     pendingCount: loadQueue().length,
   }));
+
+  /**
+   * Exposed to the UI when localStorage could not save a queued write.
+   * When true, the app shows a persistent warning banner so the user knows
+   * that a network outage at this point could lose in-flight timer data.
+   */
+  const [queueSaveFailed, setQueueSaveFailed] = useState(false);
 
   /**
    * Always-current snapshot of rawLogs used by the flush logic to detect
@@ -93,6 +89,8 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
 
   // ─── Write helper ────────────────────────────────────────────────────────
   // Always writes to the stable Firebase key (taskKey), never a derived index.
+  // No artificial timeout — Firebase's own connection management handles
+  // reconnection. If the write fails (network error), we queue it for retry.
 
   const doWrite = useCallback(
     async (
@@ -100,10 +98,7 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
       taskKey: string,
       payload: Record<string, unknown>
     ) => {
-      await withTimeout(
-        update(ref(db, `clientLogs/${clientId}/${taskKey}`), payload),
-        WRITE_TIMEOUT_MS
-      );
+      await update(ref(db, `clientLogs/${clientId}/${taskKey}`), payload);
     },
     []
   );
@@ -290,8 +285,9 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
         payload.status = partial.status;
       }
 
+      // Deduplicated by clientId:taskKey — a concurrent status write for the
+      // same task will be merged into this entry rather than queued separately.
       const queueItem: QueuedWrite = {
-        id: taskId,
         clientId,
         taskKey,
         payload,
@@ -300,7 +296,8 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
 
       // If Firebase is known offline, skip the attempt — queue immediately
       if (!firebaseConnectedRef.current) {
-        enqueue(queueItem);
+        const saved = enqueue(queueItem);
+        if (!saved) setQueueSaveFailed(true);
         setSyncStatus({ state: "offline", pendingCount: loadQueue().length });
         return;
       }
@@ -312,10 +309,9 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
           pendingCount: prev.pendingCount,
         }));
       } catch {
-        // Timed out or network error — save locally, sync on reconnect.
-        // The write may still complete server-side; updatedAt lets the flush
-        // logic detect and skip this entry if the server is already newer.
-        enqueue(queueItem);
+        // Network error — save locally; sync on next reconnect.
+        const saved = enqueue(queueItem);
+        if (!saved) setQueueSaveFailed(true);
         setSyncStatus({ state: "pending", pendingCount: loadQueue().length });
       }
     },
@@ -334,8 +330,8 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
       if (fields.status !== undefined) payload.status = fields.status;
       if ("qcStatus" in fields) payload.qcStatus = fields.qcStatus ?? null;
 
+      // Deduplicated by clientId:taskKey — merges with any pending timer write.
       const queueItem: QueuedWrite = {
-        id: `status-${taskId}`,
         clientId,
         taskKey,
         payload,
@@ -343,7 +339,8 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
       };
 
       if (!firebaseConnectedRef.current) {
-        enqueue(queueItem);
+        const saved = enqueue(queueItem);
+        if (!saved) setQueueSaveFailed(true);
         setSyncStatus({ state: "offline", pendingCount: loadQueue().length });
         return;
       }
@@ -355,7 +352,8 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
           pendingCount: prev.pendingCount,
         }));
       } catch {
-        enqueue(queueItem);
+        const saved = enqueue(queueItem);
+        if (!saved) setQueueSaveFailed(true);
         setSyncStatus({ state: "pending", pendingCount: loadQueue().length });
       }
     },
@@ -368,7 +366,15 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <TasksContext.Provider
-      value={{ groupedTasks, loading, syncStatus, updateTaskTimer, updateTaskStatus, flushQueue }}
+      value={{
+        groupedTasks,
+        loading,
+        syncStatus,
+        queueSaveFailed,
+        updateTaskTimer,
+        updateTaskStatus,
+        flushQueue,
+      }}
     >
       {children}
     </TasksContext.Provider>

@@ -21,7 +21,7 @@ function formatMs(ms: number): string {
 type TimerState = "idle" | "running" | "paused" | "stopped";
 
 export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }: TimerPageProps) {
-  const { updateTaskTimer, updateTaskStatus } = useTasks();
+  const { updateTaskTimer, updateTaskStatus, queueSaveFailed } = useTasks();
 
   const initialTimerState: TimerState =
     task.timerState === "stopped" ? "idle" : (task.timerState as TimerState) ?? "idle";
@@ -268,6 +268,15 @@ export default function TimerPage({ task, clientName, onBack, onElapsedUpdate }:
 
   return (
     <div className="flex-1 flex flex-col">
+      {/* Persistent warning when localStorage refused a queued write */}
+      {queueSaveFailed && (
+        <div className="mx-4 mt-3 flex items-start gap-2 rounded-lg bg-amber-500/20 border border-amber-400/40 px-3 py-2">
+          <span className="text-amber-400 text-sm mt-0.5 shrink-0">⚠</span>
+          <p className="text-amber-200 text-xs leading-snug">
+            Timer data could not be saved locally. If you go offline right now this update may be lost. Free up storage or reload the app.
+          </p>
+        </div>
+      )}
       <div className="flex items-center gap-3 px-4 pt-4 pb-3">
         <button
           onClick={onBack}

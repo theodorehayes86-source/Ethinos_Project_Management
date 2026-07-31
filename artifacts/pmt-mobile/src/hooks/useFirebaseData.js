@@ -295,28 +295,52 @@ export function useChecklistDashboardData(isAuthed) {
  * The `clientLogs` parameter is no longer required and is ignored; callers
  * may omit it.
  */
-export async function updateTaskInFirebase(clientId, taskId, updates) {
-  await runTransaction(ref(db, `clientLogs/${clientId}`), (current) => {
-    if (!current) return current; // no data → nothing to update
+export async function updateTaskInFirebase(clientId, taskId, updates, taskKey) {
+  // Fast path: if taskKey matches taskId, this is a push-created task —
+  // use a direct field-level update instead of a full transaction scan.
+  if (taskKey && taskKey === taskId) {
+    await update(ref(db, `clientLogs/${clientId}/${taskKey}`), updates);
+    return;
+  }
+
+  // Legacy path: find by id field using a read-modify-write transaction.
+  let taskFound = false;
+
+  const result = await runTransaction(ref(db, `clientLogs/${clientId}`), (current) => {
+    taskFound = false; // reset on every retry attempt
+    if (!current) return current; // no data — abort without change
 
     if (Array.isArray(current)) {
-      // Legacy array shape
-      return current.map(t =>
-        t && String(t.id) === String(taskId) ? { ...t, ...updates } : t
-      );
+      const idx = current.findIndex(t => t && String(t.id) === String(taskId));
+      if (idx < 0) return current; // not found — commit unchanged
+      taskFound = true;
+      const updated = [...current];
+      updated[idx] = { ...current[idx], ...updates };
+      return updated;
     }
 
     // Object / push-key shape
-    const result = { ...current };
-    for (const key of Object.keys(result)) {
-      const task = result[key];
-      if (task && String(task.id) === String(taskId)) {
-        result[key] = { ...task, ...updates };
+    const obj = { ...current };
+    for (const key of Object.keys(obj)) {
+      if (obj[key] && String(obj[key].id) === String(taskId)) {
+        obj[key] = { ...obj[key], ...updates };
+        taskFound = true;
         break;
       }
     }
-    return result;
+    return obj;
   });
+
+  if (!result.committed) {
+    throw new Error(
+      `Transaction aborted for task id "${taskId}" in client "${clientId}"`
+    );
+  }
+  if (!taskFound) {
+    throw new Error(
+      `Task not found: id "${taskId}" does not exist in client "${clientId}"`
+    );
+  }
 }
 
 /**

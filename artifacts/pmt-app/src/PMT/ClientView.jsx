@@ -1926,7 +1926,7 @@ const ClientView = ({
                               <button
                                 onClick={() => {
                                   if (window.confirm('Are you sure you want to delete this task?')) {
-                                    const upd = clientLogs[selectedClient.id].filter(l => l.id !== log.id);
+                                    const upd = (clientLogs[selectedClient.id] || []).filter(l => l.id !== log.id);
                                     setClientLogs({ ...clientLogs, [selectedClient.id]: upd });
                                     if (log.taskGroupId && !upd.some(t => t.taskGroupId === log.taskGroupId)) {
                                       setTaskGroups(taskGroups.filter(g => g.id !== log.taskGroupId));
@@ -1975,7 +1975,7 @@ const ClientView = ({
                               value={log.status}
                               onChange={e => {
                                 const newStatus = e.target.value;
-                                const updated = clientLogs[selectedClient.id].map(l => {
+                                const updated = (clientLogs[selectedClient.id] || []).map(l => {
                                   if (l.id !== log.id) return l;
                                   let timerUpdate = {};
                                   if (newStatus === 'Done' && (l.timerState === 'running' || l.timerState === 'paused')) {
@@ -2023,7 +2023,7 @@ const ClientView = ({
                           {log.qcEnabled && log.status === 'Done' && (!log.qcStatus || log.qcStatus === 'rejected') && canChangeTaskStatus(log) && (
                             <button
                               onClick={() => {
-                                const updated = clientLogs[selectedClient.id].map(l =>
+                                const updated = (clientLogs[selectedClient.id] || []).map(l =>
                                   l.id === log.id ? { ...l, qcStatus: 'sent' } : l
                                 );
                                 setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
@@ -2071,7 +2071,7 @@ const ClientView = ({
                           {log.qcEnabled && log.qcStatus === 'rejected' && (
                             <button
                               onClick={() => {
-                                const updated = clientLogs[selectedClient.id].map(l =>
+                                const updated = (clientLogs[selectedClient.id] || []).map(l =>
                                   l.id === log.id ? { ...l, qcStatus: 'sent' } : l
                                 );
                                 setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
@@ -3081,7 +3081,7 @@ const ClientView = ({
             const validRating = !isNaN(ratingNum) && ratingNum >= 1 && ratingNum <= 10 ? ratingNum : null;
             if (qcReviewDecision === 'rejected' && !qcReviewFeedback.trim()) return;
             const feedbackText = qcReviewFeedback.trim();
-            const updated = clientLogs[selectedClient.id].map(l => {
+            const updated = (clientLogs[selectedClient.id] || []).map(l => {
               if (l.id !== qcReviewingTaskId) return l;
               const existing = Array.isArray(l.feedbackThread) ? l.feedbackThread : [];
               const entry = feedbackText ? {
