@@ -135,3 +135,66 @@ describe('dequeueByKey', () => {
     expect(loadQueue()).toHaveLength(1);
   });
 });
+
+// ─── Timestamp validation ─────────────────────────────────────────────────────
+
+describe('enqueue — timestamp validation', () => {
+  it('rejects items with timestamp = 0', () => {
+    expect(enqueue(makeItem({ timestamp: 0 }))).toBe(false);
+    expect(loadQueue()).toHaveLength(0);
+  });
+
+  it('rejects items with negative timestamp', () => {
+    expect(enqueue(makeItem({ timestamp: -1 }))).toBe(false);
+    expect(loadQueue()).toHaveLength(0);
+  });
+
+  it('rejects items with NaN timestamp', () => {
+    expect(enqueue(makeItem({ timestamp: NaN }))).toBe(false);
+    expect(loadQueue()).toHaveLength(0);
+  });
+
+  it('rejects items with Infinity timestamp', () => {
+    expect(enqueue(makeItem({ timestamp: Infinity }))).toBe(false);
+    expect(loadQueue()).toHaveLength(0);
+  });
+
+  it('accepts items with a positive finite timestamp', () => {
+    expect(enqueue(makeItem({ timestamp: 1_000_000 }))).toBe(true);
+    expect(loadQueue()).toHaveLength(1);
+  });
+});
+
+// ─── elapsedMs non-regression ─────────────────────────────────────────────────
+
+describe('enqueue — elapsedMs non-regression', () => {
+  it('keeps the higher elapsedMs when a lower value arrives later', () => {
+    enqueue(makeItem({ payload: { elapsedMs: 5000 }, timestamp: 1000 }));
+    enqueue(makeItem({ payload: { elapsedMs: 3000 }, timestamp: 2000 }));
+    const [merged] = loadQueue();
+    expect(merged.payload.elapsedMs).toBe(5000); // must not go backwards
+  });
+
+  it('takes the newer elapsedMs when it is higher', () => {
+    enqueue(makeItem({ payload: { elapsedMs: 3000 }, timestamp: 1000 }));
+    enqueue(makeItem({ payload: { elapsedMs: 7000 }, timestamp: 2000 }));
+    const [merged] = loadQueue();
+    expect(merged.payload.elapsedMs).toBe(7000);
+  });
+
+  it('merges other fields alongside the elapsedMs guard', () => {
+    enqueue(makeItem({ payload: { status: 'Done', elapsedMs: 3000 }, timestamp: 1000 }));
+    enqueue(makeItem({ payload: { elapsedMs: 1000 }, timestamp: 2000 }));
+    const [merged] = loadQueue();
+    expect(merged.payload.elapsedMs).toBe(3000); // non-regression
+    expect(merged.payload.status).toBe('Done');  // field preserved
+  });
+
+  it('does not apply guard when only one side has elapsedMs', () => {
+    enqueue(makeItem({ payload: { status: 'Done' }, timestamp: 1000 }));
+    enqueue(makeItem({ payload: { elapsedMs: 4000 }, timestamp: 2000 }));
+    const [merged] = loadQueue();
+    expect(merged.payload.elapsedMs).toBe(4000);
+    expect(merged.payload.status).toBe('Done');
+  });
+});

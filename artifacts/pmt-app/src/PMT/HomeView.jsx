@@ -98,6 +98,7 @@ const HomeView = ({
   canCreateChecklists = false,
   taskGroups = [],
   setTaskGroups = () => {},
+  persistTaskCreate = null,
 }) => {
   const isManagement = managementRoles.includes(currentUser?.role);
   const allClientOptions = useMemo(
@@ -124,6 +125,8 @@ const HomeView = ({
   const [assigneeName, setAssigneeName] = useState('');
   const [assigneeQuery, setAssigneeQuery] = useState('');
   const [showAssigneeMenu, setShowAssigneeMenu] = useState(false);
+  const [taskCreating, setTaskCreating] = useState(false);
+  const [taskCreateError, setTaskCreateError] = useState(null);
   const [qcEnabled, setQcEnabled] = useState(false);
   const [qcAssigneeId, setQcAssigneeId] = useState('');
   const [qcAssigneeName, setQcAssigneeName] = useState('');
@@ -493,9 +496,8 @@ const HomeView = ({
     }
   };
 
-  const handleCreateTaskFromItem = ({ taskName, category, dueDate, comment, clientId, clientName, assigneeId, assigneeName }) => {
-    const newTask = {
-      id: Date.now(),
+  const handleCreateTaskFromItem = async ({ taskName, category, dueDate, comment, clientId, clientName, assigneeId, assigneeName }) => {
+    const taskData = {
       name: taskName,
       date: format(new Date(), 'do MMM yyyy'),
       comment: comment || '',
@@ -516,22 +518,34 @@ const HomeView = ({
       timeTaken: null,
     };
     const targetClientId = clientId || '__personal__';
-    const nextLogs = { ...clientLogs, [targetClientId]: [newTask, ...(clientLogs[targetClientId] || [])] };
-    setClientLogs(nextLogs);
-
-    // Notify assignee if different from creator
-    const assigneeUser = users.find(u => String(u.id) === String(assigneeId));
-    if (assigneeUser?.email && String(assigneeId) !== String(currentUser?.id)) {
-      sendNotification('task-assigned', {
-        assigneeEmail: assigneeUser.email,
-        assigneeName: assigneeUser.name,
-        taskName,
-        taskDescription: comment || '',
-        clientName: clientName || '',
-        dueDate: dueDate || null,
-        creatorName: currentUser?.name,
-        steps: [],
-      });
+    setTaskCreating(true);
+    setTaskCreateError(null);
+    try {
+      if (persistTaskCreate) {
+        await persistTaskCreate(targetClientId, taskData);
+      } else {
+        // Fallback for contexts that don't yet pass persistTaskCreate
+        setClientLogs({ ...clientLogs, [targetClientId]: [{ ...taskData, id: Date.now() }, ...(clientLogs[targetClientId] || [])] });
+      }
+      // Notify assignee if different from creator
+      const assigneeUser = users.find(u => String(u.id) === String(assigneeId));
+      if (assigneeUser?.email && String(assigneeId) !== String(currentUser?.id)) {
+        sendNotification('task-assigned', {
+          assigneeEmail: assigneeUser.email,
+          assigneeName: assigneeUser.name,
+          taskName,
+          taskDescription: comment || '',
+          clientName: clientName || '',
+          dueDate: dueDate || null,
+          creatorName: currentUser?.name,
+          steps: [],
+        });
+      }
+    } catch (err) {
+      console.error('[PMT] Failed to create task:', err);
+      setTaskCreateError('Could not save task — check your connection and try again.');
+    } finally {
+      setTaskCreating(false);
     }
   };
 

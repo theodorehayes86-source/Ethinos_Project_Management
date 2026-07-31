@@ -1,0 +1,401 @@
+Please perform the next reliability pass on the project management tool.
+
+Do not perform a security audit. Do not redesign the UI or rewrite the application.
+
+The previous changes successfully addressed the major multi-user overwrite problem, stable task keys, web/mobile task compatibility, timer write timeouts, offline queue merging, visible queue-storage failures, and basic utility tests.
+
+Preserve those changes.
+
+## Confirmed current improvements
+
+The following behaviour is now present and must not be reverted:
+
+* Firebase task data is enriched with stable `taskKey` values.
+* `persistClientLogs()` produces task-field-level Firebase paths rather than replacing unrelated client buckets.
+* New tasks receive Firebase push keys.
+* The timer widget writes using `taskKey`.
+* The artificial two-second timer write timeout has been removed.
+* Timer writes are queued when Firebase is offline or explicitly rejects.
+* Timer and status queue writes merge by `clientId:taskKey`.
+* Queue-storage failure is exposed visibly through `queueSaveFailed`.
+* Firebase collection utility tests exist.
+* Timer offline-queue tests exist.
+
+Focus this pass on save failures, explicit mutation integration, atomic writes, settings reset behaviour, and executable tests.
+
+## Priority 1: make failed task creation visible and recoverable
+
+Inside `persistClientLogs()`, new tasks are currently created using a fire-and-forget operation similar to:
+
+```js
+set(
+  newRef,
+  sanitizeForFirebase(taskWithKey)
+).catch(error => {
+  console.error(
+    '[PMT] Task create failed:',
+    error
+  );
+});
+```
+
+The task is added to local state before Firebase confirms the save.
+
+If creation fails, the task remains visible and the employee receives no warning.
+
+Change this behaviour.
+
+Preferred approach:
+
+1. Migrate every ordinary task-creation action to the existing asynchronous `persistTaskCreate(clientId, taskData)` helper.
+2. Await the helper.
+3. Show a saving state while the task is being created.
+4. Show a visible error if the write fails.
+5. Do not show a success message before Firebase confirms the save.
+6. Do not leave an unsaved task appearing as successfully created.
+7. Prevent duplicate submissions while creation is in progress.
+
+Review task creation in:
+
+```text
+artifacts/pmt-app/src/PMT/HomeView.jsx
+artifacts/pmt-app/src/PMT/ClientView.jsx
+artifacts/pmt-app/src/PMT/TeamView.jsx
+artifacts/pmt-app/src/PMT/MasterDataView.jsx
+artifacts/pmt-app/src/PMT/SettingsView.jsx
+```
+
+Pass `persistTaskCreate` into every view that creates tasks.
+
+Avoid routing task creation through the compatibility `persistClientLogs()` diff writer.
+
+## Priority 2: make task deletion awaited and recoverable
+
+Migrate task deletion actions to:
+
+```js
+await persistTaskDelete(
+  clientId,
+  taskKey
+);
+```
+
+Required behaviour:
+
+1. Confirm the task has a valid `taskKey`.
+2. Disable duplicate delete actions while saving.
+3. Await Firebase removal.
+4. Show success only after confirmation.
+5. Show a visible error if deletion fails.
+6. If deletion is optimistic, restore the task when Firebase rejects it.
+7. Delete only the selected Firebase task path.
+
+Review individual and bulk deletion flows in:
+
+```text
+ClientView.jsx
+HomeView.jsx
+TeamView.jsx
+ApprovalsView.jsx
+MasterDataView.jsx
+ChecklistDashboard.jsx
+```
+
+For bulk deletion, use one awaited root multi-path update with only the selected task paths set to `null`.
+
+## Priority 3: expose and use explicit task mutation functions
+
+The following helpers already exist:
+
+```js
+persistTaskUpdate
+persistTaskCreate
+persistTaskDelete
+```
+
+Pass them into the relevant views and use them for high-value user actions.
+
+Prioritise:
+
+1. Creating a task.
+2. Deleting a task.
+3. Completing a task.
+4. Archiving a task.
+5. QC approval and rejection.
+6. Moving a task between clients.
+7. Assigning or reassigning a task.
+8. Bulk status changes.
+9. Checklist completion.
+10. Timer-related status changes from the web app.
+
+Each action must:
+
+* return a promise;
+* be awaited;
+* show a visible failure;
+* prevent unhandled promise rejections;
+* avoid writing unrelated task data.
+
+The smart `persistClientLogs()` diff writer can remain temporarily as a compatibility layer for low-risk legacy actions, but it should no longer be the primary save API for important task workflows.
+
+## Priority 4: surface failures from compatibility multi-path writes
+
+The current compatibility writer performs:
+
+```js
+update(
+  ref(db),
+  multiPathUpdate
+).catch(error => {
+  console.error(...);
+});
+```
+
+Add visible application-level handling.
+
+At minimum:
+
+1. Track whether a compatibility save is pending.
+2. Show a visible error toast when it fails.
+3. Include a retry action where practical.
+4. Do not display a success notification before confirmation.
+5. Ensure failed saves are not represented as permanently successful.
+6. Log enough context to identify the affected operation without exposing sensitive content.
+
+Consider changing `persistClientLogs()` to return a promise.
+
+If existing callers cannot immediately be migrated, create a central save-error callback or state that the application shell can display.
+
+## Priority 5: make mixed task operations atomic
+
+The smart diff writer currently:
+
+* creates new tasks through separate `set()` calls;
+* updates and deletes existing tasks through a root multi-path `update()`.
+
+This allows partial success.
+
+Change task creation inside the diff plan so that new push-key task values are placed directly into the same `multiPathUpdate` object:
+
+```js
+const newRef = push(
+  ref(db, `clientLogs/${clientId}`)
+);
+
+const taskKey = newRef.key;
+
+multiPathUpdate[
+  `clientLogs/${clientId}/${taskKey}`
+] = sanitizeForFirebase({
+  ...task,
+  id: taskKey,
+  taskKey,
+});
+```
+
+Then submit one:
+
+```js
+await update(
+  ref(db),
+  multiPathUpdate
+);
+```
+
+This allows one action containing creates, edits and deletes to succeed or fail together.
+
+Do not issue separate fire-and-forget `set()` calls for new tasks from inside the diff writer.
+
+## Priority 6: extract the task diff planner into a testable function
+
+Move the pure comparison and Firebase-path generation logic out of `App.jsx`.
+
+Suggested file:
+
+```text
+artifacts/pmt-app/src/lib/clientLogDiff.js
+```
+
+Suggested interface:
+
+```js
+export function buildClientLogUpdatePlan({
+  previousLogs,
+  nextLogs,
+  createTaskKey,
+}) {
+  return {
+    firebaseUpdates,
+    finalLogs,
+    createdTasks,
+    updatedTasks,
+    deletedTasks,
+  };
+}
+```
+
+The function must not call React setters or Firebase directly.
+
+It should:
+
+* support legacy array-shaped input;
+* support push-key-shaped input;
+* preserve existing `taskKey` values;
+* generate keys for new tasks;
+* write only changed fields;
+* set removed fields to `null`;
+* set deleted task paths to `null`;
+* leave unrelated tasks untouched;
+* produce one root multi-path update object.
+
+`persistClientLogs()` should call this pure function and then execute the returned update plan.
+
+## Priority 7: add comprehensive diff-writer tests
+
+Add tests covering:
+
+1. Updating one field writes only that field path.
+2. Updating one task does not write sibling tasks.
+3. Updating one client does not write another client.
+4. Removing one field generates a `null` path.
+5. Removing one task generates only that task’s deletion path.
+6. Clearing a client deletes all tasks for that client.
+7. Removing a client from `nextLogs` deletes only that client’s tasks.
+8. Creating one task generates a push key.
+9. A created task has `id === taskKey`.
+10. Creating and editing tasks in one action produces one update plan.
+11. Creating and deleting tasks in one action produces one update plan.
+12. Legacy array tasks preserve numeric Firebase keys.
+13. Push-key object tasks preserve push keys.
+14. Null array positions are ignored.
+15. Unchanged task fields generate no writes.
+16. Unchanged client buckets generate no writes.
+17. Nested field changes are detected.
+18. Removed nested data is persisted correctly.
+19. Generated final local state matches the Firebase paths.
+20. A failed Firebase update does not produce a confirmed-success state.
+
+## Priority 8: add executable test scripts
+
+The repositories contain Vitest tests but do not currently define test scripts.
+
+Add to:
+
+```text
+artifacts/pmt-app/package.json
+```
+
+```json
+"test": "vitest run"
+```
+
+Add to:
+
+```text
+artifacts/pmt-timer-widget/package.json
+```
+
+```json
+"test": "vitest run"
+```
+
+Add to the root `package.json`:
+
+```json
+"test": "pnpm -r --if-present run test"
+```
+
+Where useful, also add:
+
+```json
+"test:watch": "vitest"
+```
+
+Run the tests and provide the exact output.
+
+## Priority 9: finish null-state handling for optional Firebase paths
+
+Some listeners still update only when Firebase returns a non-empty value.
+
+Review paths including:
+
+```text
+controlCenterTabAccess
+checklistTemplates
+settings/conditions/checklistAccess
+taskGroups
+hierarchyOrder
+notificationSettings
+```
+
+When Firebase returns `null`, reset state to the appropriate product default.
+
+Examples:
+
+```js
+setChecklistTemplates([]);
+setControlCenterTabAccess({});
+setChecklistAccessRoles(
+  DEFAULT_CHECKLIST_ACCESS_ROLES
+);
+```
+
+Do not leave stale configuration values visible after a Firebase path is deleted.
+
+Add tests for the default-value mapping where practical.
+
+## Priority 10: improve queued-write timestamp handling without overengineering
+
+The timer queue currently compares local `Date.now()` timestamps.
+
+Do not perform a major distributed-systems redesign in this pass.
+
+Add a documented limitation and ensure:
+
+* a queued write never moves elapsed time backwards;
+* newer queued field values win during merging;
+* server data newer than the queued timestamp causes the queue item to be dropped;
+* invalid or missing timestamps do not cause destructive overwrites.
+
+Add a test where an older queued elapsed time is not replayed over a newer task value.
+
+## Required process
+
+Before implementation, report:
+
+1. Every task-creation call site.
+2. Every task-deletion call site.
+3. Every high-value action still routed through `persistClientLogs()`.
+4. The planned explicit mutation props for each view.
+5. The planned save-error UI.
+6. The proposed diff-planner interface.
+7. The exact tests to add.
+
+After implementation, report:
+
+1. All modified files.
+2. Task-creation flows migrated.
+3. Task-deletion flows migrated.
+4. Other explicit task actions migrated.
+5. Remaining `persistClientLogs()` callers and why they remain.
+6. Save-error and rollback behaviour.
+7. Atomic-write behaviour.
+8. Diff-planner test results.
+9. Collection utility test results.
+10. Timer queue test results.
+11. Root test-command output.
+12. Typecheck output.
+13. Build output.
+14. Lint output, where configured.
+15. Any failures with exact errors.
+
+## Completion rule
+
+Do not report this task as complete unless:
+
+* failed task creation produces a visible error;
+* failed task deletion produces a visible error;
+* important task actions await Firebase;
+* new tasks in the compatibility writer are included in one atomic multi-path update;
+* the diff planner has dedicated tests;
+* and `pnpm test` executes the repository’s test suites.

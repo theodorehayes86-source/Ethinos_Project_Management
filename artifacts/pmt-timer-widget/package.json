@@ -15,7 +15,9 @@
     "package": "pnpm build:electron && electron-builder --config electron-builder.json",
     "package:win": "pnpm build:electron && electron-builder --config electron-builder.json --win",
     "package:mac": "pnpm build:electron && electron-builder --config electron-builder.json --mac",
-    "package:linux": "pnpm build:electron && electron-builder --config electron-builder.json --linux"
+    "package:linux": "pnpm build:electron && electron-builder --config electron-builder.json --linux",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "electron-updater": "^6.8.3",

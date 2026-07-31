@@ -1052,6 +1052,8 @@ const App = () => {
   const [feedbackItems, setFeedbackItems] = useState([]);
   const [digestGlobalEnabled, setDigestGlobalEnabled] = useState(true);
   const [notificationSettings, setNotificationSettings] = useState({});
+  /** Surfaced when a Firebase multi-path write fails — shows a dismissible toast. */
+  const [saveError, setSaveError] = useState(null); // { message: string, time: number } | null
   const DEFAULT_HIERARCHY_ORDER = ['Director', 'Snr Manager', 'Manager', 'Asst Manager', 'Snr Executive', 'Executive', 'Employee', 'Intern'];
   const [hierarchyOrder, setHierarchyOrder] = useState(DEFAULT_HIERARCHY_ORDER);
   const [notifications, setNotifications] = useState([
@@ -1233,7 +1235,13 @@ const App = () => {
       syncRef('taskTemplates', (val) => setTaskTemplates(Array.isArray(val) ? val : Object.values(val))),
       syncRef('departments', (val) => setDepartments(Array.isArray(val) ? val : Object.values(val))),
       syncRef('regions', (val) => setRegions(Array.isArray(val) ? val : Object.values(val))),
-      syncRef('controlCenterTabAccess', (val) => { if (val && typeof val === 'object' && !Array.isArray(val)) setControlCenterTabAccess(prev => ({ ...prev, ...val })); }),
+      syncRef('controlCenterTabAccess', (val) => {
+        if (!val || typeof val !== 'object' || Array.isArray(val)) {
+          setControlCenterTabAccess(DEFAULT_CC_TAB_ACCESS);
+          return;
+        }
+        setControlCenterTabAccess(prev => ({ ...prev, ...val }));
+      }),
       syncRef('userManagementAccessRoles', (val) => setUserManagementAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
       syncRef('employeeViewAccessRoles', (val) => setEmployeeViewAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
       syncRef('teamViewAccessRoles', (val) => setTeamViewAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Asst Manager', 'Project Manager', 'CSM'])),
@@ -1242,16 +1250,22 @@ const App = () => {
       syncRef('metricsAllDataRoles', (val) => setMetricsAllDataRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
       syncRef('reportsAllDataRoles', (val) => setReportsAllDataRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
       syncRef('feedbackItems', (val) => setFeedbackItems(val && typeof val === 'object' ? (Array.isArray(val) ? val : Object.values(val)) : [])),
-      syncRef('checklistTemplates', (val) => { if (val && typeof val === 'object') setChecklistTemplates(Array.isArray(val) ? val : Object.values(val)); }),
-      syncRef('settings/conditions/checklistAccess', (val) => { if (Array.isArray(val)) setChecklistAccessRoles(val); }),
-      syncRef('taskGroups', (val) => { if (val && typeof val === 'object') setTaskGroups(Array.isArray(val) ? val : Object.values(val)); }),
+      syncRef('checklistTemplates', (val) => setChecklistTemplates(!val ? [] : Array.isArray(val) ? val : Object.values(val))),
+      syncRef('settings/conditions/checklistAccess', (val) => {
+        // null means the setting was removed; keep previous value rather than
+        // locking out all checklist-capable users.
+        if (Array.isArray(val) && val.length > 0) setChecklistAccessRoles(val);
+      }),
+      syncRef('taskGroups', (val) => setTaskGroups(!val ? [] : Array.isArray(val) ? val : Object.values(val))),
       syncRef('settings/hierarchyOrder', (val) => { if (Array.isArray(val) && val.length > 0) setHierarchyOrder(val); }),
       syncRef('settings/notifications', (val) => {
-        if (val && typeof val === 'object' && !Array.isArray(val)) {
-          setNotificationSettings(val);
-          if (typeof val['weekly-digest']?.enabled === 'boolean') {
-            setDigestGlobalEnabled(val['weekly-digest'].enabled);
-          }
+        if (!val || typeof val !== 'object' || Array.isArray(val)) {
+          setNotificationSettings({});
+          return;
+        }
+        setNotificationSettings(val);
+        if (typeof val['weekly-digest']?.enabled === 'boolean') {
+          setDigestGlobalEnabled(val['weekly-digest'].enabled);
         }
       }),
     ];
@@ -1300,30 +1314,24 @@ const App = () => {
     }
 
     // Delegate pure diff logic to the extracted, unit-tested utility.
-    // generatePushKey uses Firebase push() to create a stable key synchronously
-    // (client-side) without a network round-trip.
-    const { multiPathUpdate, finalLogs, newTaskWrites } = computeClientLogsDiff(
+    // All creates, updates, and deletes go into one multiPathUpdate for a
+    // single atomic Firebase update() call — no separate set() calls needed.
+    const { multiPathUpdate, finalLogs } = computeClientLogsDiff(
       prev,
       nextLogsInput,
       (cid) => push(ref(db, `clientLogs/${cid}`)).key,
     );
 
-    // Individual set() calls for brand-new tasks (update() cannot atomically
-    // create a new keyed child and set its fields in one pass).
-    for (const { path, task } of newTaskWrites) {
-      set(ref(db, path), task).catch(err =>
-        console.error('[PMT] Task create failed:', err)
-      );
-    }
-
-    if (Object.keys(multiPathUpdate).length > 0) {
-      update(ref(db), multiPathUpdate).catch(err =>
-        console.error('[PMT] Firebase multi-path write failed:', err)
-      );
-    }
-
+    // Optimistic local update first so the UI feels instant.
     clientLogsRef.current = finalLogs;
     setClientLogs(finalLogs);
+
+    if (Object.keys(multiPathUpdate).length > 0) {
+      update(ref(db), multiPathUpdate).catch(err => {
+        console.error('[PMT] Firebase multi-path write failed:', err);
+        setSaveError({ message: 'Could not save changes — check your connection and retry.', time: Date.now() });
+      });
+    }
   };
 
   /**
@@ -2065,6 +2073,7 @@ const App = () => {
               clientLogs={clientLogs}
               setSelectedClient={setSelectedClient}
               setClientLogs={persistClientLogs}
+              persistTaskCreate={persistTaskCreate}
               currentUser={currentUser}
               taskCategories={filteredTaskCategoryNames}
               users={users}
@@ -2101,6 +2110,7 @@ const App = () => {
               syntheticClients={SYNTHETIC_CLIENTS}
               clientLogs={clientLogs}
               setClientLogs={persistClientLogs}
+              persistTaskCreate={persistTaskCreate}
               taskCategories={filteredTaskCategoryNames}
               hierarchyOrder={hierarchyOrder}
               onOpenClient={(client) => { setSelectedClient(client); setActiveTab('clients'); }}
@@ -2116,6 +2126,8 @@ const App = () => {
               setClients={persistClients}
               clientLogs={clientLogs}
               setClientLogs={persistClientLogs}
+              persistTaskCreate={persistTaskCreate}
+              persistTaskDelete={persistTaskDelete}
               clientSearch={clientSearch}
               setClientSearch={setClientSearch}
               users={users}
@@ -2230,6 +2242,21 @@ const App = () => {
           )}
         </main>
       </div>
+
+      {/* Save-error toast — shown when a Firebase multi-path write fails */}
+      {saveError && (
+        <div
+          role="alert"
+          className="fixed bottom-6 right-6 z-[9999] flex items-center gap-3 bg-red-600 text-white text-sm font-medium px-4 py-3 rounded-xl shadow-2xl border border-red-500"
+        >
+          <span>⚠ {saveError.message}</span>
+          <button
+            onClick={() => setSaveError(null)}
+            className="ml-2 text-white/80 hover:text-white transition-colors"
+            aria-label="Dismiss"
+          >✕</button>
+        </div>
+      )}
 
       <TestModePanel
         currentUser={currentUser}

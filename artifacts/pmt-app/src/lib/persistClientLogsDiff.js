@@ -5,10 +5,11 @@
  * Firebase, or component state.
  *
  * Usage in App.jsx:
- *   const { multiPathUpdate, finalLogs, newTaskWrites } =
+ *   const { multiPathUpdate, finalLogs } =
  *     computeClientLogsDiff(prev, nextLogsInput, (cid) => push(ref(db, `clientLogs/${cid}`)).key);
- *   newTaskWrites.forEach(({ path, task }) => set(ref(db, path), task).catch(...));
- *   if (Object.keys(multiPathUpdate).length > 0) update(ref(db), multiPathUpdate).catch(...);
+ *   if (Object.keys(multiPathUpdate).length > 0) {
+ *     await update(ref(db), multiPathUpdate);
+ *   }
  */
 
 /**
@@ -28,6 +29,11 @@ export function sanitizeForFirebase(value) {
 /**
  * Diffs `nextLogsInput` against `prev` and returns what needs to be written.
  *
+ * All task creates, updates, and deletes within one action are collected into
+ * a single `multiPathUpdate` object so they can be committed atomically with
+ * one `update(ref(db), multiPathUpdate)` call. This prevents partial success
+ * where some tasks are created but others fail to update.
+ *
  * @param {object} prev               - clientLogsRef.current (previous state)
  * @param {object|Function} nextLogsInput
  *   Either the new clientLogs object, or a functional updater `prev => next`.
@@ -40,15 +46,18 @@ export function sanitizeForFirebase(value) {
  * @returns {{
  *   multiPathUpdate: Record<string, *>,
  *   finalLogs:       object,
- *   newTaskWrites:   Array<{ path: string, task: object }>,
+ *   createdTasks:    Array<{ clientId: string, taskKey: string }>,
+ *   updatedTasks:    Array<{ clientId: string, taskKey: string }>,
+ *   deletedTasks:    Array<{ clientId: string, taskKey: string }>,
  * }}
  *
  * - `multiPathUpdate`  — paths → values for a single Firebase `update()` call.
- *                        Deleted tasks / fields have `null` values.
+ *                        New tasks, updated fields, and deleted tasks / fields
+ *                        are ALL included here — one atomic write covers all.
  * - `finalLogs`        — updated clientLogs with stable push keys embedded.
- * - `newTaskWrites`    — sanitized task objects that need individual `set()` calls
- *                        because Firebase `update()` cannot atomically create a
- *                        new keyed child and set its fields in one pass.
+ * - `createdTasks`     — metadata for logging / error surfacing.
+ * - `updatedTasks`     — metadata for logging / error surfacing.
+ * - `deletedTasks`     — metadata for logging / error surfacing.
  */
 export function computeClientLogsDiff(prev, nextLogsInput, generatePushKey) {
   const nextLogs =
@@ -56,8 +65,9 @@ export function computeClientLogsDiff(prev, nextLogsInput, generatePushKey) {
 
   const multiPathUpdate = {};
   const finalLogs = { ...nextLogs };
-  /** @type {Array<{ path: string, task: object }>} */
-  const newTaskWrites = [];
+  const createdTasks = [];
+  const updatedTasks = [];
+  const deletedTasks = [];
 
   // ── Changed / new client buckets ────────────────────────────────────────────
   for (const cid of Object.keys(nextLogs)) {
@@ -78,6 +88,7 @@ export function computeClientLogsDiff(prev, nextLogsInput, generatePushKey) {
       // Bucket cleared — delete all tracked tasks from Firebase
       for (const key of prevByKey.keys()) {
         multiPathUpdate[`clientLogs/${cid}/${key}`] = null;
+        deletedTasks.push({ clientId: cid, taskKey: key });
       }
       continue;
     }
@@ -89,14 +100,17 @@ export function computeClientLogsDiff(prev, nextLogsInput, generatePushKey) {
       if (!task) { finalTasks.push(task); continue; }
 
       if (!task.taskKey) {
-        // NEW task — generate a push key synchronously (no network round-trip)
+        // NEW task — generate a push key synchronously (no network round-trip).
+        // Include directly in multiPathUpdate so it is part of the same atomic
+        // update() call as all edits and deletes in this action.
         const pushKey = generatePushKey(cid);
         const taskWithKey = { ...task, id: pushKey, taskKey: pushKey };
-        newTaskWrites.push({
-          path: `clientLogs/${cid}/${pushKey}`,
-          task: sanitizeForFirebase(taskWithKey),
-        });
+        // Store taskKey in Firebase alongside other fields so reads are
+        // self-contained (tasksWithKeys() will also set it from the key, but
+        // having it explicit makes the data portable).
+        multiPathUpdate[`clientLogs/${cid}/${pushKey}`] = sanitizeForFirebase(taskWithKey);
         finalTasks.push(taskWithKey);
+        createdTasks.push({ clientId: cid, taskKey: pushKey });
         continue;
       }
 
@@ -110,12 +124,14 @@ export function computeClientLogsDiff(prev, nextLogsInput, generatePushKey) {
         continue;
       }
 
-      // Write only fields that changed
+      // Write only fields that changed (field-level diff)
+      let hadChanges = false;
       for (const [field, val] of Object.entries(task)) {
-        if (field === 'taskKey') continue; // internal — not stored in Firebase
+        if (field === 'taskKey') continue; // internal — already stored explicitly above
         if (JSON.stringify(prevTask[field]) !== JSON.stringify(val)) {
           multiPathUpdate[`clientLogs/${cid}/${task.taskKey}/${field}`] =
             sanitizeForFirebase(val) ?? null;
+          hadChanges = true;
         }
       }
       // Null-out fields that were removed from the task object
@@ -123,13 +139,16 @@ export function computeClientLogsDiff(prev, nextLogsInput, generatePushKey) {
         if (field === 'taskKey') continue;
         if (!(field in task)) {
           multiPathUpdate[`clientLogs/${cid}/${task.taskKey}/${field}`] = null;
+          hadChanges = true;
         }
       }
+      if (hadChanges) updatedTasks.push({ clientId: cid, taskKey: task.taskKey });
     }
 
     // Any prevByKey entries still remaining were deleted
     for (const key of prevByKey.keys()) {
       multiPathUpdate[`clientLogs/${cid}/${key}`] = null;
+      deletedTasks.push({ clientId: cid, taskKey: key });
     }
 
     finalLogs[cid] = finalTasks;
@@ -145,10 +164,13 @@ export function computeClientLogsDiff(prev, nextLogsInput, generatePushKey) {
           ? Object.values(prevRaw)
           : [];
       for (const t of prevTasks) {
-        if (t?.taskKey) multiPathUpdate[`clientLogs/${cid}/${t.taskKey}`] = null;
+        if (t?.taskKey) {
+          multiPathUpdate[`clientLogs/${cid}/${t.taskKey}`] = null;
+          deletedTasks.push({ clientId: cid, taskKey: t.taskKey });
+        }
       }
     }
   }
 
-  return { multiPathUpdate, finalLogs, newTaskWrites };
+  return { multiPathUpdate, finalLogs, createdTasks, updatedTasks, deletedTasks };
 }

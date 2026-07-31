@@ -81,7 +81,7 @@ const getLevelsToShow = (parentRole, effectiveHierarchyOrder) => {
   return effectiveHierarchyOrder.slice(idx + 1);
 };
 
-const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCategories, currentUser, clientLogs, setClientLogs, onClose }) => {
+const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCategories, currentUser, clientLogs, setClientLogs, persistTaskCreate = null, onClose }) => {
   const allClients = [...(clients || []), ...(syntheticClients || [])];
   const [selectedClientId, setSelectedClientId] = useState('');
   const [taskName, setTaskName] = useState('');
@@ -94,6 +94,7 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
   const [estimatedHrs, setEstimatedHrs] = useState('');
   const [estimatedMins, setEstimatedMins] = useState('');
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
   const [leaveConflict, setLeaveConflict] = useState(null);
   const [leaveModalOpen, setLeaveModalOpen] = useState(false);
@@ -120,7 +121,7 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
   const filteredClients = allClients.filter(c => !clientSearch.trim() || (c.name || '').toLowerCase().includes(clientSearch.toLowerCase()));
   const selectedClient = allClients.find(c => String(c.id) === String(selectedClientId));
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!selectedClientId || !taskName.trim() || !taskCategory || !taskComment.trim()) {
       setError('Client, name, category and description are required.'); return;
@@ -128,8 +129,7 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
     const estHrs = parseInt(estimatedHrs || '0', 10) || 0;
     const estMins = parseInt(estimatedMins || '0', 10) || 0;
     const estimatedMs = (estHrs * 60 + estMins) > 0 ? (estHrs * 3600000 + estMins * 60000) : null;
-    const newTask = {
-      id: Date.now(),
+    const taskData = {
       name: taskName.trim(),
       date: format(taskDate, 'do MMM yyyy'),
       comment: taskComment.trim(),
@@ -149,23 +149,34 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
       billable: selectedClientId === '__ethinos__' ? false : taskBillable,
       estimatedMs,
     };
-    setClientLogs({ ...clientLogs, [selectedClientId]: [newTask, ...(clientLogs[selectedClientId] || [])] });
-
-    // Notify the assignee by email — skip if creator is assigning to themselves
-    if (prefilledAssignee?.email && String(prefilledAssignee.id) !== String(currentUser?.id)) {
-      sendNotification('task-assigned', {
-        assigneeEmail: prefilledAssignee.email,
-        assigneeName: prefilledAssignee.name,
-        taskName: taskName.trim(),
-        taskDescription: taskComment.trim(),
-        clientName: selectedClient?.name || '',
-        dueDate: taskDueDate ? format(taskDueDate, 'do MMM yyyy') : null,
-        creatorName: currentUser?.name,
-        steps: [],
-      });
+    setSubmitting(true);
+    setError('');
+    try {
+      if (persistTaskCreate) {
+        await persistTaskCreate(selectedClientId, taskData);
+      } else {
+        setClientLogs({ ...clientLogs, [selectedClientId]: [{ ...taskData, id: Date.now() }, ...(clientLogs[selectedClientId] || [])] });
+      }
+      // Notify the assignee by email — skip if creator is assigning to themselves
+      if (prefilledAssignee?.email && String(prefilledAssignee.id) !== String(currentUser?.id)) {
+        sendNotification('task-assigned', {
+          assigneeEmail: prefilledAssignee.email,
+          assigneeName: prefilledAssignee.name,
+          taskName: taskName.trim(),
+          taskDescription: taskComment.trim(),
+          clientName: selectedClient?.name || '',
+          dueDate: taskDueDate ? format(taskDueDate, 'do MMM yyyy') : null,
+          creatorName: currentUser?.name,
+          steps: [],
+        });
+      }
+      onClose();
+    } catch (err) {
+      console.error('[PMT] Failed to create task:', err);
+      setError('Could not save task — check your connection and try again.');
+    } finally {
+      setSubmitting(false);
     }
-
-    onClose();
   };
 
   return (
@@ -244,7 +255,7 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
           )}
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className="flex-1 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-all">Cancel</button>
-            <button type="submit" className="flex-1 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all">Add Task</button>
+            <button type="submit" disabled={submitting} className="flex-1 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed">{submitting ? 'Saving…' : 'Add Task'}</button>
           </div>
         </form>
       </div>
@@ -559,7 +570,7 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
         </div>
       )}
       {showAddTask && (
-        <AddTaskModal prefilledAssignee={member} clients={clients} syntheticClients={syntheticClients} taskCategories={taskCategories} currentUser={currentUser} clientLogs={clientLogs} setClientLogs={setClientLogs} onClose={() => setShowAddTask(false)}/>
+        <AddTaskModal prefilledAssignee={member} clients={clients} syntheticClients={syntheticClients} taskCategories={taskCategories} currentUser={currentUser} clientLogs={clientLogs} setClientLogs={setClientLogs} persistTaskCreate={persistTaskCreate} onClose={() => setShowAddTask(false)}/>
       )}
       {showDm && (
         <TeamsChatModal
@@ -693,6 +704,7 @@ const TeamView = ({
   syntheticClients = [],
   clientLogs = {},
   setClientLogs,
+  persistTaskCreate = null,
   taskCategories = [],
   hierarchyOrder = [],
   onOpenClient = () => {},

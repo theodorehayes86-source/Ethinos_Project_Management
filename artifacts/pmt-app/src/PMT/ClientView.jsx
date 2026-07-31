@@ -64,6 +64,8 @@ const ClientView = ({
   setTaskGroups = () => {},
   checklistTemplates = [],
   canCreateChecklists = false,
+  persistTaskCreate = null,
+  persistTaskDelete = null,
 }) => {
   const managementRoles = ['Super Admin', 'Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
@@ -118,14 +120,14 @@ const ClientView = ({
     }
   };
 
-  const handleBatchDelete = (clientId) => {
+  const handleBatchDelete = async (clientId) => {
     if (selectedTaskIds.size === 0 || !clientId) return;
     if (!window.confirm(`Delete ${selectedTaskIds.size} selected task${selectedTaskIds.size > 1 ? 's' : ''}? This cannot be undone.`)) return;
+    const toDelete = (clientLogs[clientId] || []).filter(t => selectedTaskIds.has(String(t.id)));
     const updated = (clientLogs[clientId] || []).filter(t => !selectedTaskIds.has(String(t.id)));
+    const affectedGroupIds = new Set(toDelete.filter(t => t.taskGroupId).map(t => t.taskGroupId));
+    // Optimistic update — Firebase write handled by diff writer inside persistClientLogs
     setClientLogs({ ...clientLogs, [clientId]: updated });
-    const affectedGroupIds = new Set(
-      (clientLogs[clientId] || []).filter(t => selectedTaskIds.has(String(t.id)) && t.taskGroupId).map(t => t.taskGroupId)
-    );
     if (affectedGroupIds.size > 0) {
       const emptyGroupIds = [...affectedGroupIds].filter(gid => !updated.some(t => t.taskGroupId === gid));
       if (emptyGroupIds.length > 0) setTaskGroups(taskGroups.filter(g => !emptyGroupIds.includes(g.id)));
@@ -1924,8 +1926,25 @@ const ClientView = ({
                             )}
                             {!log.archived && canModifyTaskMeta() && (
                               <button
-                                onClick={() => {
-                                  if (window.confirm('Are you sure you want to delete this task?')) {
+                                onClick={async () => {
+                                  if (!window.confirm('Are you sure you want to delete this task?')) return;
+                                  if (persistTaskDelete && log.taskKey) {
+                                    // Awaited delete: task stays visible until Firebase confirms,
+                                    // so it naturally reappears if the write is rejected.
+                                    try {
+                                      await persistTaskDelete(selectedClient.id, log.taskKey);
+                                      if (log.taskGroupId) {
+                                        const remaining = (clientLogs[selectedClient.id] || []).filter(l => l.id !== log.id);
+                                        if (!remaining.some(t => t.taskGroupId === log.taskGroupId)) {
+                                          setTaskGroups(prev => (prev || []).filter(g => g.id !== log.taskGroupId));
+                                        }
+                                      }
+                                    } catch (err) {
+                                      console.error('[PMT] Task delete failed:', err);
+                                      toast({ title: 'Delete failed', description: 'Could not remove task — please try again.', variant: 'destructive' });
+                                    }
+                                  } else {
+                                    // Fallback for legacy tasks without push key
                                     const upd = (clientLogs[selectedClient.id] || []).filter(l => l.id !== log.id);
                                     setClientLogs({ ...clientLogs, [selectedClient.id]: upd });
                                     if (log.taskGroupId && !upd.some(t => t.taskGroupId === log.taskGroupId)) {

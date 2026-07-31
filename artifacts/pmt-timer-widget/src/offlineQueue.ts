@@ -55,18 +55,43 @@ function itemKey(item: Pick<QueuedWrite, "clientId" | "taskKey">): string {
  * Returns true if the queue was saved successfully, false on storage failure.
  */
 export function enqueue(item: QueuedWrite): boolean {
+  // Guard: reject writes with missing or invalid timestamps.
+  // An invalid timestamp can silently overwrite correct server data during flush.
+  if (
+    typeof item.timestamp !== 'number' ||
+    !Number.isFinite(item.timestamp) ||
+    item.timestamp <= 0
+  ) {
+    console.error('[PMT Timer] Rejecting queued write — invalid timestamp:', item.timestamp);
+    return false;
+  }
+
   const key = itemKey(item);
   const queue = loadQueue();
   const existingIdx = queue.findIndex((q) => itemKey(q) === key);
   if (existingIdx >= 0) {
+    const existing = queue[existingIdx];
     // Merge: newer fields win; take the later timestamp
+    const mergedPayload: Record<string, unknown> = {
+      ...existing.payload,
+      ...item.payload,
+    };
+    // elapsedMs must never go backwards — always keep the higher value.
+    // A stale queued write arriving late could otherwise replay a shorter
+    // elapsed time over the correct longer server value.
+    if (
+      typeof existing.payload.elapsedMs === 'number' &&
+      typeof item.payload.elapsedMs === 'number'
+    ) {
+      mergedPayload.elapsedMs = Math.max(
+        existing.payload.elapsedMs,
+        item.payload.elapsedMs,
+      );
+    }
     queue[existingIdx] = {
-      ...queue[existingIdx],
-      payload: {
-        ...queue[existingIdx].payload,
-        ...item.payload,
-      },
-      timestamp: Math.max(queue[existingIdx].timestamp, item.timestamp),
+      ...existing,
+      payload: mergedPayload,
+      timestamp: Math.max(existing.timestamp, item.timestamp),
     };
   } else {
     queue.push(item);

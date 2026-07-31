@@ -271,7 +271,7 @@ describe('new tasks — push key assigned synchronously', () => {
     expect(finalLogs.c1[0].id).toBe('-Ktest0');
   });
 
-  it('emits a newTaskWrite for each new task', () => {
+  it('records createdTasks metadata for each new task', () => {
     const prev = {};
     const next = {
       c1: [
@@ -279,26 +279,32 @@ describe('new tasks — push key assigned synchronously', () => {
         { title: 'Task 2' }, // no taskKey
       ],
     };
-    const { newTaskWrites } = computeClientLogsDiff(prev, next, makeKeyGen());
-    expect(newTaskWrites).toHaveLength(2);
-    expect(newTaskWrites[0].path).toBe('clientLogs/c1/-Ktest0');
-    expect(newTaskWrites[1].path).toBe('clientLogs/c1/-Ktest1');
+    const { createdTasks, multiPathUpdate } = computeClientLogsDiff(prev, next, makeKeyGen());
+    // Both new tasks tracked in createdTasks
+    expect(createdTasks).toHaveLength(2);
+    expect(createdTasks[0].taskKey).toBe('-Ktest0');
+    expect(createdTasks[1].taskKey).toBe('-Ktest1');
+    // Both new tasks go directly into multiPathUpdate for one atomic write
+    expect(multiPathUpdate['clientLogs/c1/-Ktest0']).toBeTruthy();
+    expect(multiPathUpdate['clientLogs/c1/-Ktest1']).toBeTruthy();
   });
 
-  it('newTaskWrite payload includes the push key as both id and taskKey', () => {
+  it('new task in multiPathUpdate has id and taskKey set to push key', () => {
     const prev = {};
     const next = { c1: [{ title: 'T', status: 'WIP' }] };
-    const { newTaskWrites } = computeClientLogsDiff(prev, next, makeKeyGen());
-    expect(newTaskWrites[0].task.id).toBe('-Ktest0');
-    expect(newTaskWrites[0].task.taskKey).toBe('-Ktest0');
+    const { multiPathUpdate } = computeClientLogsDiff(prev, next, makeKeyGen());
+    const stored = multiPathUpdate['clientLogs/c1/-Ktest0'];
+    expect(stored.id).toBe('-Ktest0');
+    expect(stored.taskKey).toBe('-Ktest0');
   });
 
-  it('new task does NOT appear in multiPathUpdate (uses set, not update)', () => {
+  it('new task APPEARS in multiPathUpdate (atomic write — no separate set() needed)', () => {
     const prev = {};
     const next = { c1: [{ title: 'New' }] };
     const { multiPathUpdate } = computeClientLogsDiff(prev, next, makeKeyGen());
     const paths = Object.keys(multiPathUpdate);
-    expect(paths.some(p => p.includes('/-Ktest0'))).toBe(false);
+    // The new task IS in multiPathUpdate so creates and updates go in one update()
+    expect(paths.some(p => p.startsWith('clientLogs/c1/-Ktest0'))).toBe(true);
   });
 
   it('correctly handles mix of new and existing tasks in the same bucket', () => {
@@ -310,17 +316,17 @@ describe('new tasks — push key assigned synchronously', () => {
         { title: 'Brand new' },            // new task
       ],
     };
-    const { multiPathUpdate, newTaskWrites, finalLogs } = computeClientLogsDiff(
+    const { multiPathUpdate, createdTasks, finalLogs } = computeClientLogsDiff(
       prev, next, makeKeyGen()
     );
 
-    // existing task: only status changed
+    // existing task: only status changed — one field path
     expect(multiPathUpdate['clientLogs/c1/-Kexist/status']).toBe('Done');
     expect(Object.keys(multiPathUpdate).filter(p => p.includes('-Kexist'))).toHaveLength(1);
 
-    // new task: emitted as a set write
-    expect(newTaskWrites).toHaveLength(1);
-    expect(newTaskWrites[0].path).toBe('clientLogs/c1/-Ktest0');
+    // new task: in multiPathUpdate for atomic write
+    expect(createdTasks).toHaveLength(1);
+    expect(multiPathUpdate['clientLogs/c1/-Ktest0']).toBeTruthy();
 
     // finalLogs has both tasks
     expect(finalLogs.c1).toHaveLength(2);
@@ -362,9 +368,12 @@ describe('functional updater pattern', () => {
   it('functional updater adding a new client bucket', () => {
     const prev = {};
     const updater = (p) => ({ ...p, newClient: [{ title: 'Fresh task' }] });
-    const { newTaskWrites } = computeClientLogsDiff(prev, updater, makeKeyGen());
-    expect(newTaskWrites).toHaveLength(1);
-    expect(newTaskWrites[0].path).toMatch(/^clientLogs\/newClient\//);
+    const { createdTasks, multiPathUpdate } = computeClientLogsDiff(prev, updater, makeKeyGen());
+    expect(createdTasks).toHaveLength(1);
+    expect(createdTasks[0].clientId).toBe('newClient');
+    // New task path is in multiPathUpdate
+    const newPath = Object.keys(multiPathUpdate).find(p => p.startsWith('clientLogs/newClient/'));
+    expect(newPath).toBeTruthy();
   });
 
   it('functional updater removing a client bucket', () => {
@@ -377,9 +386,9 @@ describe('functional updater pattern', () => {
   it('functional updater with no changes produces empty multiPathUpdate', () => {
     const prev = { c1: [{ taskKey: '-Ka', id: '-Ka', title: 'Same' }] };
     const updater = (p) => p; // identity — returns same reference
-    const { multiPathUpdate, newTaskWrites } = computeClientLogsDiff(prev, updater, makeKeyGen());
+    const { multiPathUpdate, createdTasks } = computeClientLogsDiff(prev, updater, makeKeyGen());
     expect(multiPathUpdate).toEqual({});
-    expect(newTaskWrites).toHaveLength(0);
+    expect(createdTasks).toHaveLength(0);
   });
 });
 
@@ -391,15 +400,15 @@ describe('edge cases', () => {
   it('tasks that arrived from Firebase listener (have key but not in prev) are not echoed', () => {
     const prev = { c1: [] };
     const next = { c1: [{ taskKey: '-KlistenerArrival', id: '-KlistenerArrival', title: 'Echo?' }] };
-    const { multiPathUpdate, newTaskWrites } = diff(prev, next);
+    const { multiPathUpdate, createdTasks } = diff(prev, next);
     expect(Object.keys(multiPathUpdate)).toHaveLength(0);
-    expect(newTaskWrites).toHaveLength(0);
+    expect(createdTasks).toHaveLength(0);
   });
 
   it('completely empty prev and empty next produce no writes', () => {
-    const { multiPathUpdate, newTaskWrites } = diff({}, {});
+    const { multiPathUpdate, createdTasks } = diff({}, {});
     expect(multiPathUpdate).toEqual({});
-    expect(newTaskWrites).toHaveLength(0);
+    expect(createdTasks).toHaveLength(0);
   });
 
   it('finalLogs for unchanged client retains original array reference', () => {
