@@ -917,7 +917,10 @@ export async function syncAttendanceToday(): Promise<AttendanceSyncResult> {
       const body = (await resp.json()) as KekaApiResponse<KekaAttendanceRecord>;
       const page = (body.data ?? body.response ?? []) as KekaAttendanceRecord[];
       records.push(...page);
-      if (body.lastPage || page.length < PAGE_SIZE) break;
+      // NOTE: Keka returns lastPage as a URL string pointing to the final page
+      // (not a boolean), so it is always truthy when there are multiple pages.
+      // Rely solely on page.length < PAGE_SIZE to detect the final page.
+      if (page.length < PAGE_SIZE) break;
       pageNumber++;
     }
 
