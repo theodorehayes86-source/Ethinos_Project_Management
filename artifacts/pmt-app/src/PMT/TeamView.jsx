@@ -91,6 +91,8 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
   const [taskDueDate, setTaskDueDate] = useState(null);
   const [taskBillable, setTaskBillable] = useState(true);
   const [taskRepeat, setTaskRepeat] = useState('Monthly');
+  const [repeatDayOfMonth, setRepeatDayOfMonth] = useState('');
+  const [repeatWeekendRule, setRepeatWeekendRule] = useState('none');
   const [estimatedHrs, setEstimatedHrs] = useState('');
   const [estimatedMins, setEstimatedMins] = useState('');
   const [error, setError] = useState('');
@@ -142,6 +144,8 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
       creatorRole: currentUser?.role || '',
       category: taskCategory,
       repeatFrequency: taskRepeat,
+      repeatDayOfMonth: (taskRepeat === 'Monthly' && repeatDayOfMonth) ? parseInt(repeatDayOfMonth, 10) : null,
+      repeatWeekendRule: (taskRepeat === 'Monthly' && repeatDayOfMonth) ? repeatWeekendRule : null,
       dueDate: taskDueDate ? format(taskDueDate, 'do MMM yyyy') : null,
       timerState: 'idle', timerStartedAt: null, elapsedMs: 0, timeTaken: null,
       qcEnabled: false, qcAssigneeId: null, qcAssigneeName: null, qcStatus: null, qcRating: null, qcFeedback: null, qcReviewedAt: null,
@@ -210,11 +214,50 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
             </div>
             <div className="flex-1">
               <label className="text-xs font-semibold text-slate-600 mb-1 block">Repeat</label>
-              <select value={taskRepeat} onChange={e => setTaskRepeat(e.target.value)} className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20">
+              <select value={taskRepeat} onChange={e => { setTaskRepeat(e.target.value); setRepeatDayOfMonth(''); setRepeatWeekendRule('none'); }} className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20">
                 {REPEAT_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
           </div>
+          {taskRepeat === 'Monthly' && (
+            <div className="space-y-2 rounded-xl border border-blue-100 bg-blue-50/60 px-3 py-2.5">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-blue-500">Monthly schedule</p>
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-semibold text-slate-600 whitespace-nowrap">Day of month</label>
+                <input
+                  type="number" min="1" max="28"
+                  value={repeatDayOfMonth}
+                  onChange={e => {
+                    const v = e.target.value;
+                    if (v === '' || (parseInt(v, 10) >= 1 && parseInt(v, 10) <= 28)) setRepeatDayOfMonth(v);
+                  }}
+                  placeholder="e.g. 5"
+                  className="w-20 px-2 py-1.5 text-xs bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20"
+                />
+                <span className="text-xs text-slate-400">of every month</span>
+              </div>
+              {repeatDayOfMonth && (
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-semibold text-slate-600 whitespace-nowrap">If weekend</label>
+                  <select
+                    value={repeatWeekendRule}
+                    onChange={e => setRepeatWeekendRule(e.target.value)}
+                    className="flex-1 px-2 py-1.5 text-xs bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20"
+                  >
+                    <option value="none">Keep date as-is</option>
+                    <option value="prev-friday">Move to previous Friday</option>
+                    <option value="next-monday">Move to next Monday</option>
+                  </select>
+                </div>
+              )}
+              {repeatDayOfMonth && (
+                <p className="text-[10px] text-blue-600 font-medium">
+                  Repeats on the {repeatDayOfMonth}{['st','nd','rd'][parseInt(repeatDayOfMonth,10)-1]||'th'} of each month
+                  {repeatWeekendRule !== 'none' ? ` · ${repeatWeekendRule === 'prev-friday' ? 'moves to Friday if weekend' : 'moves to Monday if weekend'}` : ''}
+                </p>
+              )}
+            </div>
+          )}
           <div><label className="text-xs font-semibold text-slate-600 mb-1 block">Description *</label><textarea value={taskComment} onChange={e => setTaskComment(e.target.value)} rows={3} placeholder="Describe the task…" className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20 resize-none"/></div>
           <div>
             <label className="text-xs font-semibold text-slate-600 mb-1 block">Due Date</label>

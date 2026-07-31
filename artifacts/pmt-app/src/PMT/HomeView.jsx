@@ -118,6 +118,9 @@ const HomeView = ({
   const [taskRepeatDays, setTaskRepeatDays] = useState([]);
   const [taskRepeatMonthlyWeek, setTaskRepeatMonthlyWeek] = useState(1);
   const [taskRepeatMonthlyDay, setTaskRepeatMonthlyDay] = useState(0);
+  const [taskRepeatMonthlyMode, setTaskRepeatMonthlyMode] = useState('weekday'); // 'weekday' | 'date'
+  const [taskRepeatDayOfMonth, setTaskRepeatDayOfMonth] = useState('');
+  const [taskRepeatWeekendRule, setTaskRepeatWeekendRule] = useState('none');
   const [taskName, setTaskName] = useState('');
   const [taskComment, setTaskComment] = useState('');
   const [taskDueDate, setTaskDueDate] = useState(null);
@@ -342,6 +345,9 @@ const HomeView = ({
     setTaskRepeatDays([]);
     setTaskRepeatMonthlyWeek(1);
     setTaskRepeatMonthlyDay(0);
+    setTaskRepeatMonthlyMode('weekday');
+    setTaskRepeatDayOfMonth('');
+    setTaskRepeatWeekendRule('none');
     setTaskName('');
     setTaskComment('');
     setTaskDueDate(null);
@@ -570,7 +576,15 @@ const HomeView = ({
     return null;
   };
 
-  const hvGenerateRecurring = (startDate, endDate, freq, rDays, rWeek, rDay) => {
+  const hvApplyWeekendRule = (date, rule) => {
+    const dow = date.getDay();
+    if (dow !== 0 && dow !== 6) return date;
+    if (rule === 'prev-friday') return new Date(date.getFullYear(), date.getMonth(), date.getDate() + (dow === 0 ? -2 : -1));
+    if (rule === 'next-monday') return new Date(date.getFullYear(), date.getMonth(), date.getDate() + (dow === 0 ? 1 : 2));
+    return date;
+  };
+
+  const hvGenerateRecurring = (startDate, endDate, freq, rDays, rWeek, rDay, dayOfMonth, weekendRule) => {
     if (!endDate || !startDate) return startDate ? [startDate] : [];
     const end = new Date(endDate); end.setHours(23, 59, 59, 999);
     const dates = [];
@@ -591,21 +605,39 @@ const HomeView = ({
         d.setDate(d.getDate() + 1);
       }
     } else if (freq === 'Monthly') {
-      const wk = rWeek || 1;
-      const di = rDay !== undefined ? rDay : 0;
       let yr = startDate.getFullYear(), mo = startDate.getMonth();
       const endYr = end.getFullYear(), endMo = end.getMonth();
-      while (yr < endYr || (yr === endYr && mo <= endMo)) {
-        const dt = hvGetNthWeekday(yr, mo, wk, di);
-        if (dt && dt >= startDate && dt <= end) dates.push(dt);
-        mo++; if (mo > 11) { mo = 0; yr++; }
+      if (dayOfMonth) {
+        // Fixed calendar-date mode: e.g. every 5th of the month
+        const dom = parseInt(dayOfMonth, 10);
+        while (yr < endYr || (yr === endYr && mo <= endMo)) {
+          const daysInMo = new Date(yr, mo + 1, 0).getDate();
+          const clampedDay = Math.min(dom, daysInMo);
+          let dt = hvApplyWeekendRule(new Date(yr, mo, clampedDay), weekendRule);
+          if (dt >= startDate && dt <= end) dates.push(dt);
+          mo++; if (mo > 11) { mo = 0; yr++; }
+        }
+      } else {
+        // Nth-weekday mode: e.g. 2nd Tuesday
+        const wk = rWeek || 1;
+        const di = rDay !== undefined ? rDay : 0;
+        while (yr < endYr || (yr === endYr && mo <= endMo)) {
+          const dt = hvGetNthWeekday(yr, mo, wk, di);
+          if (dt && dt >= startDate && dt <= end) dates.push(dt);
+          mo++; if (mo > 11) { mo = 0; yr++; }
+        }
       }
     }
     return dates;
   };
 
   const hvRecurringCount = (taskRepeat !== 'Once' && taskRepeatEnd && selectedDate)
-    ? hvGenerateRecurring(selectedDate, taskRepeatEnd, taskRepeat, taskRepeatDays, taskRepeatMonthlyWeek, taskRepeatMonthlyDay).length
+    ? hvGenerateRecurring(
+        selectedDate, taskRepeatEnd, taskRepeat, taskRepeatDays,
+        taskRepeatMonthlyWeek, taskRepeatMonthlyDay,
+        taskRepeatMonthlyMode === 'date' ? taskRepeatDayOfMonth : null,
+        taskRepeatWeekendRule
+      ).length
     : 0;
 
   const handleAddTaskFromHome = (event) => {
@@ -640,8 +672,10 @@ const HomeView = ({
       repeatFrequency: taskRepeat,
       repeatEnd: taskRepeat !== 'Once' ? (taskRepeatEnd ? format(taskRepeatEnd, 'do MMM yyyy') : null) : null,
       repeatDays: taskRepeat === 'Weekly' ? (taskRepeatDays.length > 0 ? taskRepeatDays : [0, 1, 2, 3, 4]) : null,
-      repeatMonthlyWeek: taskRepeat === 'Monthly' ? taskRepeatMonthlyWeek : null,
-      repeatMonthlyDay: taskRepeat === 'Monthly' ? taskRepeatMonthlyDay : null,
+      repeatMonthlyWeek: (taskRepeat === 'Monthly' && taskRepeatMonthlyMode === 'weekday') ? taskRepeatMonthlyWeek : null,
+      repeatMonthlyDay: (taskRepeat === 'Monthly' && taskRepeatMonthlyMode === 'weekday') ? taskRepeatMonthlyDay : null,
+      repeatDayOfMonth: (taskRepeat === 'Monthly' && taskRepeatMonthlyMode === 'date' && taskRepeatDayOfMonth) ? parseInt(taskRepeatDayOfMonth, 10) : null,
+      repeatWeekendRule: (taskRepeat === 'Monthly' && taskRepeatMonthlyMode === 'date' && taskRepeatDayOfMonth) ? taskRepeatWeekendRule : null,
       dueDate: taskDueDate ? format(taskDueDate, 'do MMM yyyy') : null,
       timerState: 'idle',
       timerStartedAt: null,
@@ -668,7 +702,9 @@ const HomeView = ({
       const dates = hvGenerateRecurring(
         selectedDate, taskRepeatEnd, taskRepeat,
         taskRepeat === 'Weekly' ? (taskRepeatDays.length > 0 ? taskRepeatDays : [0,1,2,3,4]) : taskRepeatDays,
-        taskRepeatMonthlyWeek, taskRepeatMonthlyDay
+        taskRepeatMonthlyWeek, taskRepeatMonthlyDay,
+        taskRepeatMonthlyMode === 'date' ? taskRepeatDayOfMonth : null,
+        taskRepeatWeekendRule
       );
       if (dates.length > 1) {
         logsToAdd = dates.map((dt, i) => ({
@@ -2111,19 +2147,63 @@ const HomeView = ({
                           </div>
                         )}
                         {taskRepeat === 'Monthly' && (
-                          <div className="space-y-1">
+                          <div className="space-y-1.5">
                             <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Repeat on</p>
-                            <div className="flex gap-2 items-center">
-                              <select value={taskRepeatMonthlyWeek} onChange={e => setTaskRepeatMonthlyWeek(Number(e.target.value))}
-                                className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 bg-white">
-                                {HV_WEEK_ORDINALS.map((w, i) => <option key={i} value={i + 1}>{w}</option>)}
-                              </select>
-                              <select value={taskRepeatMonthlyDay} onChange={e => setTaskRepeatMonthlyDay(Number(e.target.value))}
-                                className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 bg-white">
-                                {HV_WEEKDAY_FULL.map((d, i) => <option key={i} value={i}>{d}</option>)}
-                              </select>
+                            {/* Mode toggle */}
+                            <div className="flex rounded-lg border border-slate-200 overflow-hidden text-[10px] font-semibold">
+                              {[['weekday', 'Nth weekday'], ['date', 'Specific date']].map(([mode, label]) => (
+                                <button key={mode} type="button"
+                                  onClick={() => { setTaskRepeatMonthlyMode(mode); setTaskRepeatDayOfMonth(''); setTaskRepeatWeekendRule('none'); }}
+                                  className={`flex-1 py-1.5 transition-all ${taskRepeatMonthlyMode === mode ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                                >{label}</button>
+                              ))}
                             </div>
-                            <p className="text-[10px] text-blue-600 font-medium">{HV_WEEK_ORDINALS[taskRepeatMonthlyWeek - 1]} {HV_WEEKDAY_FULL[taskRepeatMonthlyDay]} of each month</p>
+                            {taskRepeatMonthlyMode === 'weekday' ? (
+                              <>
+                                <div className="flex gap-2 items-center">
+                                  <select value={taskRepeatMonthlyWeek} onChange={e => setTaskRepeatMonthlyWeek(Number(e.target.value))}
+                                    className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 bg-white">
+                                    {HV_WEEK_ORDINALS.map((w, i) => <option key={i} value={i + 1}>{w}</option>)}
+                                  </select>
+                                  <select value={taskRepeatMonthlyDay} onChange={e => setTaskRepeatMonthlyDay(Number(e.target.value))}
+                                    className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 bg-white">
+                                    {HV_WEEKDAY_FULL.map((d, i) => <option key={i} value={i}>{d}</option>)}
+                                  </select>
+                                </div>
+                                <p className="text-[10px] text-blue-600 font-medium">{HV_WEEK_ORDINALS[taskRepeatMonthlyWeek - 1]} {HV_WEEKDAY_FULL[taskRepeatMonthlyDay]} of each month</p>
+                              </>
+                            ) : (
+                              <>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="number" min="1" max="28"
+                                    value={taskRepeatDayOfMonth}
+                                    onChange={e => {
+                                      const v = e.target.value;
+                                      if (v === '' || (parseInt(v, 10) >= 1 && parseInt(v, 10) <= 28)) setTaskRepeatDayOfMonth(v);
+                                    }}
+                                    placeholder="e.g. 5"
+                                    className="w-20 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 bg-white"
+                                  />
+                                  <span className="text-[10px] text-slate-500 font-medium">of every month</span>
+                                </div>
+                                {taskRepeatDayOfMonth && (
+                                  <div className="space-y-1">
+                                    <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">If it falls on a weekend</p>
+                                    <select value={taskRepeatWeekendRule} onChange={e => setTaskRepeatWeekendRule(e.target.value)}
+                                      className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 bg-white">
+                                      <option value="none">Keep date as-is</option>
+                                      <option value="prev-friday">Move to previous Friday (same week)</option>
+                                      <option value="next-monday">Move to next Monday (next week)</option>
+                                    </select>
+                                    <p className="text-[10px] text-blue-600 font-medium">
+                                      {`${taskRepeatDayOfMonth}${['st','nd','rd'][parseInt(taskRepeatDayOfMonth,10)-1]||'th'} of each month`}
+                                      {taskRepeatWeekendRule !== 'none' ? ` · ${taskRepeatWeekendRule === 'prev-friday' ? 'moves to Friday if weekend' : 'moves to Monday if weekend'}` : ''}
+                                    </p>
+                                  </div>
+                                )}
+                              </>
+                            )}
                           </div>
                         )}
                         {taskRepeat !== 'Once' && (

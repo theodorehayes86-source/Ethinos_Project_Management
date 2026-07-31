@@ -1,0 +1,359 @@
+Please perform one final focused reliability pass.
+
+Do not perform a security audit, visual redesign, or broad refactor. Preserve the existing atomic task diff writer, push-key task model, timer queue changes, error toast, and automated tests.
+
+## Priority 1: prevent duplicate task creation in local state
+
+Review:
+
+```text
+artifacts/pmt-app/src/App.jsx
+```
+
+The current `persistTaskCreate()`:
+
+1. calls Firebase `set()`;
+2. waits for it to resolve;
+3. manually prepends the created task into `clientLogs`.
+
+Firebase’s local listener may already add the task before the `set()` promise resolves. The manual insertion can therefore create a duplicate local task.
+
+Use only one local-state source.
+
+Preferred implementation:
+
+```js
+const persistTaskCreate = useCallback(
+  async (clientId, taskData) => {
+    if (!firebaseUser) {
+      throw new Error(
+        'No authenticated user — cannot create task'
+      );
+    }
+
+    const newRef = push(
+      ref(db, `clientLogs/${clientId}`)
+    );
+
+    const pushKey = newRef.key;
+
+    const task = sanitizeForFirebase({
+      ...taskData,
+      id: pushKey,
+      taskKey: pushKey,
+    });
+
+    await set(newRef, task);
+
+    // Do not manually insert into clientLogs here.
+    // The Firebase listener is the authoritative local-state update.
+    return {
+      ...taskData,
+      id: pushKey,
+      taskKey: pushKey,
+    };
+  },
+  [firebaseUser]
+);
+```
+
+Alternatively, perform an optimistic insertion before the write, but then:
+
+* deduplicate by `taskKey`;
+* do not insert again after success;
+* remove the optimistic record if Firebase rejects the write.
+
+Add tests covering:
+
+1. Firebase listener adds the task before `set()` resolves.
+2. Firebase listener adds the task after `set()` resolves.
+3. The final local task collection contains exactly one task with the push key.
+4. A failed creation does not leave an unsaved task visible.
+
+## Priority 2: roll back failed compatibility writes
+
+`persistClientLogs()` currently applies `finalLogs` locally before Firebase confirms the root multi-path update.
+
+When Firebase rejects the update, it shows an error but leaves the unsaved local state visible.
+
+Change `persistClientLogs()` so failed writes restore the previous local state.
+
+Suggested behaviour:
+
+```js
+const persistClientLogs = async nextLogsInput => {
+  const previousLogs = clientLogsRef.current;
+
+  const {
+    multiPathUpdate,
+    finalLogs,
+  } = computeClientLogsDiff(
+    previousLogs,
+    nextLogsInput,
+    generateTaskKey
+  );
+
+  clientLogsRef.current = finalLogs;
+  setClientLogs(finalLogs);
+
+  if (!Object.keys(multiPathUpdate).length) {
+    return;
+  }
+
+  try {
+    await update(ref(db), multiPathUpdate);
+  } catch (error) {
+    clientLogsRef.current = previousLogs;
+    setClientLogs(previousLogs);
+
+    setSaveError({
+      message:
+        'Could not save changes. The change was reverted.',
+      time: Date.now(),
+    });
+
+    throw error;
+  }
+};
+```
+
+Consider concurrent local actions carefully. A simple full-state rollback can itself remove a later successful user action.
+
+A safer approach is:
+
+* store the failed update plan;
+* reverse only the paths affected by that plan; or
+* prevent another compatibility mutation while one is pending.
+
+Choose the simplest correct approach and document it.
+
+Do not leave a failed change displayed as saved.
+
+## Priority 3: make compatibility persistence return a promise
+
+Change `persistClientLogs()` to return the Firebase promise.
+
+Migrate important callers to `await` it.
+
+At minimum migrate:
+
+1. task completion;
+2. archive and unarchive;
+3. QC approval and rejection;
+4. task assignment;
+5. moving tasks;
+6. checklist submission;
+7. bulk status actions;
+8. recurring-task creation or completion.
+
+Each migrated action must:
+
+* await the result;
+* prevent duplicate clicks where appropriate;
+* show a visible action-specific failure;
+* not show success before confirmation.
+
+Do not migrate every minor action in one uncontrolled rewrite. Prioritise the listed workflows.
+
+## Priority 4: make explicit mutation helpers reject unavailable writes
+
+Update:
+
+```js
+persistTaskDelete
+persistBulkUpdate
+```
+
+They currently return without error when `firebaseUser` is absent.
+
+Use:
+
+```js
+if (!firebaseUser) {
+  throw new Error(
+    'No authenticated user — cannot write to Firebase'
+  );
+}
+```
+
+Ensure every explicit mutation helper has the same contract:
+
+* returns a promise;
+* resolves only after Firebase confirms;
+* rejects when the write cannot be attempted or fails.
+
+## Priority 5: remove legacy task-creation fallbacks
+
+`HomeView` and `TeamView` still contain fallback task creation using:
+
+```js
+id: Date.now()
+```
+
+and array-based `setClientLogs()` calls.
+
+Remove these fallbacks.
+
+If `persistTaskCreate` is unavailable, show a visible error:
+
+```js
+if (!persistTaskCreate) {
+  throw new Error(
+    'Task creation service is unavailable'
+  );
+}
+```
+
+Do not silently create a legacy task shape.
+
+Search the entire web app for task creation using:
+
+```text
+Date.now()
+setClientLogs([...newTask])
+[ newTask, ...existingTasks ]
+```
+
+Migrate or remove all remaining task-creation fallbacks.
+
+## Priority 6: filter null tasks from final local state
+
+Review:
+
+```text
+artifacts/pmt-app/src/lib/persistClientLogsDiff.js
+```
+
+The current planner preserves null array positions:
+
+```js
+if (!task) {
+  finalTasks.push(task);
+  continue;
+}
+```
+
+Change this to:
+
+```js
+if (!task) continue;
+```
+
+The final local collection should contain only task objects.
+
+Update the corresponding test so null array positions are ignored rather than retained.
+
+Add tests confirming:
+
+* null legacy array positions generate no Firebase writes;
+* null positions do not appear in `finalLogs`;
+* deleting an actual keyed task still generates a deletion path;
+* filtering nulls does not change valid task keys.
+
+## Priority 7: reset optional settings to explicit defaults
+
+Review Firebase listeners for:
+
+```text
+settings/conditions/checklistAccess
+settings/hierarchyOrder
+```
+
+When Firebase returns `null`, restore documented defaults rather than retaining stale previous state.
+
+Example:
+
+```js
+setHierarchyOrder(
+  Array.isArray(val) && val.length > 0
+    ? val
+    : DEFAULT_HIERARCHY
+);
+```
+
+Define and use a checklist-access default similarly.
+
+Add small tests for any extracted default-mapping helper.
+
+## Priority 8: make the save-error UI accurate
+
+The current toast says to retry but provides no retry button.
+
+Choose one of these:
+
+### Option A: rollback
+
+Show:
+
+```text
+Could not save changes. The change was reverted.
+```
+
+### Option B: retry
+
+Store the failed update plan and display:
+
+* Retry;
+* Dismiss.
+
+The Retry button must await the same Firebase update and clear the error only after success.
+
+Do not claim the user can retry unless a real retry mechanism exists or the relevant action remains available to repeat safely.
+
+## Priority 9: expand tests
+
+Add tests for:
+
+1. Explicit create does not duplicate listener-added tasks.
+2. Failed explicit create leaves no local task.
+3. Failed compatibility update restores or correctly reverses local changes.
+4. A later successful change is not removed by rollback of an earlier failure.
+5. `persistClientLogs()` returns a rejecting promise on Firebase failure.
+6. Mutation helpers reject when unauthenticated.
+7. Legacy task-creation fallbacks no longer exist.
+8. Null tasks are filtered from `finalLogs`.
+9. Explicit settings defaults are restored after null snapshots.
+10. Save-error wording matches actual rollback or retry behaviour.
+
+Run:
+
+```bash
+pnpm test
+pnpm run typecheck
+pnpm run build
+```
+
+Provide exact output.
+
+## Required report
+
+Before implementation, list:
+
+1. All remaining task-creation fallbacks.
+2. High-value actions still using compatibility persistence.
+3. The chosen rollback or retry design.
+4. Tests to be added.
+
+After implementation, provide:
+
+1. Modified files.
+2. Duplicate-creation fix.
+3. Failed-save rollback or retry behaviour.
+4. Explicit actions migrated.
+5. Remaining compatibility actions.
+6. Null-task handling.
+7. Settings default handling.
+8. Test output.
+9. Typecheck output.
+10. Build output.
+11. Any exact failures.
+
+## Completion rule
+
+Do not report completion unless:
+
+* explicit task creation cannot create a duplicate local task;
+* failed writes do not remain displayed as successfully saved;
+* `Date.now()` task-creation fallbacks are removed;
+* null tasks are not preserved in local state;
+* and the new tests execute successfully.

@@ -17,6 +17,13 @@ interface TaskLog {
   archived?: boolean;
   parentTaskId?: string | number;
   repeatGroupId?: string;
+  /** Fixed calendar day of month for monthly recurrence (1–28). When set, spawns
+   *  on this specific date each month rather than "+1 month from last spawn". */
+  repeatDayOfMonth?: number | null;
+  /** What to do when repeatDayOfMonth falls on a weekend:
+   *  'none' = keep the date as-is, 'prev-friday' = move back to Friday,
+   *  'next-monday' = move forward to Monday. */
+  repeatWeekendRule?: "none" | "prev-friday" | "next-monday" | null;
   [key: string]: unknown;
 }
 
@@ -75,6 +82,39 @@ function getNextDate(frequency: string, fromDate: Date): Date | null {
   }
 }
 
+/** Shift a date that falls on a weekend to the nearest working day per rule. */
+function applyWeekendRule(
+  date: Date,
+  rule: string | null | undefined
+): Date {
+  const dow = date.getDay(); // 0=Sun, 6=Sat
+  if (dow !== 0 && dow !== 6) return startOfDay(date); // already a weekday
+  if (rule === "prev-friday") {
+    // Sun → Fri (-2), Sat → Fri (-1)
+    return startOfDay(addDays(date, dow === 0 ? -2 : -1));
+  }
+  if (rule === "next-monday") {
+    // Sun → Mon (+1), Sat → Mon (+2)
+    return startOfDay(addDays(date, dow === 0 ? 1 : 2));
+  }
+  // 'none' or missing — keep the original date unchanged
+  return startOfDay(date);
+}
+
+/** Next occurrence of a fixed calendar day in the month after fromDate. */
+function getFixedDayNextMonth(
+  dayOfMonth: number,
+  fromDate: Date,
+  weekendRule: string | null | undefined
+): Date {
+  // Move to the 1st of next month (using a temp copy to avoid mutation)
+  const base = new Date(fromDate.getFullYear(), fromDate.getMonth() + 1, 1);
+  const daysInMonth = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
+  const clampedDay = Math.min(dayOfMonth, daysInMonth);
+  const target = new Date(base.getFullYear(), base.getMonth(), clampedDay);
+  return applyWeekendRule(target, weekendRule);
+}
+
 function shouldSpawn(task: TaskLog, today: Date): boolean {
   const freq = task.repeatFrequency;
   if (!freq || freq === "Once" || freq === "One-time") return false;
@@ -83,6 +123,24 @@ function shouldSpawn(task: TaskLog, today: Date): boolean {
   if (task.repeatEnd) {
     const end = parseDateStr(task.repeatEnd);
     if (end && today > end) return false;
+  }
+
+  // Fixed-day monthly path (repeatDayOfMonth overrides the relative +1-month logic)
+  if (freq === "Monthly" && task.repeatDayOfMonth) {
+    const dom = task.repeatDayOfMonth;
+    const rule = task.repeatWeekendRule;
+
+    if (task.lastSpawnedDate) {
+      const last = parseDateStr(task.lastSpawnedDate);
+      if (!last) return false;
+      // Next occurrence = fixed day N in the month after lastSpawnedDate's month
+      const nextFixed = getFixedDayNextMonth(dom, last, rule);
+      return today >= nextFixed;
+    }
+    // First spawn: use dueDate (the user set it to the specific date they want)
+    if (!task.dueDate) return false;
+    const due = parseDateStr(task.dueDate);
+    return due !== null && today >= due;
   }
 
   if (task.lastSpawnedDate) {
@@ -130,7 +188,16 @@ function buildChild(parent: TaskLog, today: Date): TaskLog {
 
   // New task's dueDate is one interval after the spawn date
   let newDueDate: Date | null = null;
-  if (parent.lastSpawnedDate) {
+
+  if (freq === "Monthly" && parent.repeatDayOfMonth) {
+    // Fixed-day monthly: next child's dueDate = fixed day N in the month after today
+    const dom = parent.repeatDayOfMonth;
+    const rule = parent.repeatWeekendRule;
+    // "This" spawn's fixed day
+    const thisFixed = getFixedDayNextMonth(dom, parseDateStr(parent.lastSpawnedDate ?? null) ?? today, rule);
+    // Child's due = fixed day in month after thisFixed
+    newDueDate = getFixedDayNextMonth(dom, thisFixed, rule);
+  } else if (parent.lastSpawnedDate) {
     const last = parseDateStr(parent.lastSpawnedDate)!;
     const spawnBase = getNextDate(freq, last)!;
     newDueDate = getNextDate(freq, spawnBase);
