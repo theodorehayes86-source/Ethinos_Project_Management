@@ -3,6 +3,7 @@ import { ref, onValue, set, update, get, push, remove } from 'firebase/database'
 import { signInWithEmailAndPassword, signInWithCustomToken, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, updateProfile, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
 import { db, auth } from './firebase.js';
 import { tasksWithKeys, collectionValues } from './lib/firebaseCollections.js';
+import { computeClientLogsDiff, sanitizeForFirebase as sanitizeForFirebaseUtil } from './lib/persistClientLogsDiff.js';
 // MSAL import removed — we use a direct PKCE+postMessage popup flow instead.
 
 import HomeView from './PMT/HomeView';
@@ -1260,14 +1261,8 @@ const App = () => {
 
   // --- FIREBASE WRITE HELPERS ---
   // Firebase rejects `undefined` values — replace them recursively with `null`
-  const sanitizeForFirebase = (value) => {
-    if (value === undefined) return null;
-    if (value === null || typeof value !== 'object') return value;
-    if (Array.isArray(value)) return value.map(sanitizeForFirebase);
-    return Object.fromEntries(
-      Object.entries(value).map(([k, v]) => [k, sanitizeForFirebase(v)])
-    );
-  };
+  // (imported from lib/persistClientLogsDiff.js to keep the logic testable)
+  const sanitizeForFirebase = sanitizeForFirebaseUtil;
 
   const persistUsers = (nextUsers) => {
     setUsers(nextUsers);
@@ -1296,98 +1291,29 @@ const App = () => {
    */
   const persistClientLogs = (nextLogsInput) => {
     const prev = clientLogsRef.current;
-    const nextLogs = typeof nextLogsInput === 'function' ? nextLogsInput(prev) : nextLogsInput;
 
     if (!firebaseUser) {
+      const nextLogs = typeof nextLogsInput === 'function' ? nextLogsInput(prev) : nextLogsInput;
       clientLogsRef.current = nextLogs;
       setClientLogs(nextLogs);
       return;
     }
 
-    const multiPathUpdate = {};
-    const finalLogs = { ...nextLogs };
+    // Delegate pure diff logic to the extracted, unit-tested utility.
+    // generatePushKey uses Firebase push() to create a stable key synchronously
+    // (client-side) without a network round-trip.
+    const { multiPathUpdate, finalLogs, newTaskWrites } = computeClientLogsDiff(
+      prev,
+      nextLogsInput,
+      (cid) => push(ref(db, `clientLogs/${cid}`)).key,
+    );
 
-    // Changed / new client buckets
-    for (const cid of Object.keys(nextLogs)) {
-      if (nextLogs[cid] === prev[cid]) continue; // reference-equal → unchanged
-
-      const prevRaw = prev[cid];
-      const prevTasks = Array.isArray(prevRaw) ? prevRaw : prevRaw ? Object.values(prevRaw) : [];
-      const prevByKey = new Map(
-        prevTasks.filter(t => t?.taskKey).map(t => [t.taskKey, t])
+    // Individual set() calls for brand-new tasks (update() cannot atomically
+    // create a new keyed child and set its fields in one pass).
+    for (const { path, task } of newTaskWrites) {
+      set(ref(db, path), task).catch(err =>
+        console.error('[PMT] Task create failed:', err)
       );
-
-      const rawNext = nextLogs[cid];
-      if (!rawNext || (Array.isArray(rawNext) && rawNext.length === 0)) {
-        // Bucket cleared — delete all tracked tasks from Firebase
-        for (const key of prevByKey.keys()) {
-          multiPathUpdate[`clientLogs/${cid}/${key}`] = null;
-        }
-        continue;
-      }
-
-      const nextArr = Array.isArray(rawNext) ? [...rawNext] : Object.values(rawNext);
-      const finalTasks = [];
-
-      for (const task of nextArr) {
-        if (!task) { finalTasks.push(task); continue; }
-
-        if (!task.taskKey) {
-          // NEW task — generate a push key synchronously (no network round-trip)
-          const newRef = push(ref(db, `clientLogs/${cid}`));
-          const pushKey = newRef.key;
-          const taskWithKey = { ...task, id: pushKey, taskKey: pushKey };
-          set(newRef, sanitizeForFirebase(taskWithKey)).catch(err =>
-            console.error('[PMT] Task create failed:', err)
-          );
-          finalTasks.push(taskWithKey);
-          continue;
-        }
-
-        finalTasks.push(task);
-
-        const prevTask = prevByKey.get(task.taskKey);
-        prevByKey.delete(task.taskKey); // mark seen; remainder = deleted
-
-        if (!prevTask) {
-          // Has a key but not in prev — just arrived from Firebase listener; don't echo.
-          continue;
-        }
-
-        // Write only changed fields
-        for (const [field, val] of Object.entries(task)) {
-          if (field === 'taskKey') continue; // internal, not stored in Firebase
-          if (JSON.stringify(prevTask[field]) !== JSON.stringify(val)) {
-            multiPathUpdate[`clientLogs/${cid}/${task.taskKey}/${field}`] =
-              sanitizeForFirebase(val) ?? null;
-          }
-        }
-        // Null-out fields removed from the task object
-        for (const field of Object.keys(prevTask)) {
-          if (field === 'taskKey') continue;
-          if (!(field in task)) {
-            multiPathUpdate[`clientLogs/${cid}/${task.taskKey}/${field}`] = null;
-          }
-        }
-      }
-
-      // Remaining prevByKey entries were deleted from nextLogs
-      for (const key of prevByKey.keys()) {
-        multiPathUpdate[`clientLogs/${cid}/${key}`] = null;
-      }
-
-      finalLogs[cid] = finalTasks;
-    }
-
-    // Clients removed entirely from nextLogs
-    for (const cid of Object.keys(prev)) {
-      if (!(cid in nextLogs)) {
-        const prevRaw = prev[cid];
-        const prevTasks = Array.isArray(prevRaw) ? prevRaw : prevRaw ? Object.values(prevRaw) : [];
-        for (const t of prevTasks) {
-          if (t?.taskKey) multiPathUpdate[`clientLogs/${cid}/${t.taskKey}`] = null;
-        }
-      }
     }
 
     if (Object.keys(multiPathUpdate).length > 0) {
