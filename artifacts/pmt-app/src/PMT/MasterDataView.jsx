@@ -4,7 +4,8 @@ import { useToast } from '../hooks/use-toast';
 import UserPickerModal from './UserPickerModal';
 import CsvImportModal from './CsvImportModal';
 import { sendNotification } from '../utils/notify';
-import { auth } from '../firebase.js';
+import { auth, db } from '../firebase.js';
+import { ref, update } from 'firebase/database';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -342,6 +343,73 @@ const MasterDataView = ({
   const [kekaSyncResult, setKekaSyncResult] = useState(null);
   const [kekaTesting, setKekaTesting] = useState(false);
   const [kekaTestResult, setKekaTestResult] = useState(null);
+
+  // Teams bulk-enable confirmation state
+  const [teamsBulkConfirm, setTeamsBulkConfirm] = useState(null); // null | 'enable' | 'disable'
+  const [teamsBulkSaving, setTeamsBulkSaving] = useState(false);
+
+  // Active users eligible for bulk Teams ping updates (excludes archived / inactive)
+  const eligibleTeamsUsers = useMemo(
+    () => (users || []).filter(u => !u.archived && u.active !== false),
+    [users]
+  );
+
+  // Escape key: close the bulk-confirm modal when idle
+  useEffect(() => {
+    if (!teamsBulkConfirm) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape' && !teamsBulkSaving) setTeamsBulkConfirm(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [teamsBulkConfirm, teamsBulkSaving]);
+
+  // Bulk-update Teams notification preference via targeted Firebase multi-path write
+  const handleTeamsBulkUpdate = useCallback(async () => {
+    if (!teamsBulkConfirm || teamsBulkSaving) return;
+    const enabling = teamsBulkConfirm === 'enable';
+
+    if (eligibleTeamsUsers.length === 0) {
+      toast({ title: 'No eligible users', description: 'There are no active users to update.', variant: 'destructive' });
+      return;
+    }
+
+    setTeamsBulkSaving(true);
+    try {
+      // Build a multi-path Firebase update so only `teamsNotificationsEnabled` is
+      // touched — no other user fields are overwritten and concurrent edits are safe.
+      const firebaseUpdates = {};
+      (users || []).forEach((u, idx) => {
+        if (!u.archived && u.active !== false) {
+          firebaseUpdates[`users/${idx}/teamsNotificationsEnabled`] = enabling;
+        }
+      });
+      await update(ref(db), firebaseUpdates);
+
+      // Mirror the change in local state (only eligible users, immutably)
+      const eligibleIds = new Set(eligibleTeamsUsers.map(u => String(u.id)));
+      setUsers((users || []).map(u =>
+        eligibleIds.has(String(u.id)) ? { ...u, teamsNotificationsEnabled: enabling } : u
+      ));
+
+      toast({
+        title: enabling
+          ? `Teams pings enabled for ${eligibleTeamsUsers.length} user${eligibleTeamsUsers.length !== 1 ? 's' : ''}`
+          : `Teams pings disabled for ${eligibleTeamsUsers.length} user${eligibleTeamsUsers.length !== 1 ? 's' : ''}`,
+      });
+      setTeamsBulkConfirm(null);
+    } catch (error) {
+      console.error('Failed to bulk-update Teams notification preferences', error);
+      toast({
+        title: 'Failed to update Teams notification preferences',
+        description: 'No changes were applied. Please try again.',
+        variant: 'destructive',
+      });
+      // Modal stays open so the admin can retry
+    } finally {
+      setTeamsBulkSaving(false);
+    }
+  }, [teamsBulkConfirm, teamsBulkSaving, eligibleTeamsUsers, users, setUsers, toast]);
 
   // Teams DM OAuth state
   const [teamsConnected, setTeamsConnected] = useState(null); // null = loading
@@ -1534,12 +1602,14 @@ const MasterDataView = ({
                         <span>Teams Pings</span>
                         <div className="flex gap-1 mt-0.5">
                           <button
-                            onClick={() => { const next = (users || []).map(u => ({ ...u, teamsNotificationsEnabled: true })); setUsers(next); }}
-                            className="text-[9px] font-semibold text-violet-700 bg-violet-50 border border-violet-200 rounded px-1.5 py-0.5 hover:bg-violet-100 transition-all"
+                            onClick={() => !teamsBulkSaving && setTeamsBulkConfirm('enable')}
+                            disabled={teamsBulkSaving}
+                            className="text-[9px] font-semibold text-violet-700 bg-violet-50 border border-violet-200 rounded px-1.5 py-0.5 hover:bg-violet-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                           >All on</button>
                           <button
-                            onClick={() => { const next = (users || []).map(u => ({ ...u, teamsNotificationsEnabled: false })); setUsers(next); }}
-                            className="text-[9px] font-semibold text-slate-500 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 hover:bg-slate-100 transition-all"
+                            onClick={() => !teamsBulkSaving && setTeamsBulkConfirm('disable')}
+                            disabled={teamsBulkSaving}
+                            className="text-[9px] font-semibold text-slate-500 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 hover:bg-slate-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                           >All off</button>
                         </div>
                       </div>
@@ -4669,6 +4739,67 @@ const MasterDataView = ({
             <div className="flex gap-4">
               <button onClick={() => setShowDeleteUserConfirm(null)} className="flex-1 bg-slate-100 text-slate-600 py-4 rounded-2xl font-semibold text-sm hover:bg-slate-200 transition-all">Cancel</button>
               <button onClick={confirmDeleteUser} className="flex-1 bg-red-600 text-white py-4 rounded-2xl font-semibold text-sm shadow-lg shadow-red-100 hover:bg-red-700 transition-all">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── TEAMS BULK ENABLE/DISABLE CONFIRMATION ─── */}
+      {teamsBulkConfirm && (
+        <div
+          className="fixed inset-0 z-[800] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="teams-bulk-dialog-title"
+          aria-describedby="teams-bulk-dialog-description"
+        >
+          <div className="bg-white p-10 rounded-[2.5rem] shadow-2xl border border-slate-100 max-w-sm w-full text-center space-y-6 animate-in zoom-in-95">
+            <div className="w-20 h-20 bg-violet-50 text-violet-500 rounded-full flex items-center justify-center mx-auto mb-4">
+              <MessageSquare size={32}/>
+            </div>
+            <div>
+              <h4 id="teams-bulk-dialog-title" className="text-xl font-semibold text-slate-900">
+                {teamsBulkConfirm === 'enable' ? 'Enable Teams Pings for All?' : 'Disable Teams Pings for All?'}
+              </h4>
+              {eligibleTeamsUsers.length === 0 ? (
+                <p id="teams-bulk-dialog-description" className="text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mt-3">
+                  There are no eligible active users to update.
+                </p>
+              ) : (
+                <p id="teams-bulk-dialog-description" className="text-sm font-medium text-slate-600 mt-2 leading-relaxed">
+                  {teamsBulkConfirm === 'enable'
+                    ? `This will enable Teams activity pings for ${eligibleTeamsUsers.length} eligible user${eligibleTeamsUsers.length !== 1 ? 's' : ''}. They will receive Teams notifications for future qualifying activity.`
+                    : `This will disable Teams activity pings for ${eligibleTeamsUsers.length} eligible user${eligibleTeamsUsers.length !== 1 ? 's' : ''}. They will not receive future Teams activity notifications until the setting is re-enabled.`
+                  }
+                </p>
+              )}
+            </div>
+            <div className="flex gap-4">
+              <button
+                onClick={() => !teamsBulkSaving && setTeamsBulkConfirm(null)}
+                disabled={teamsBulkSaving}
+                className="flex-1 bg-slate-100 text-slate-600 py-4 rounded-2xl font-semibold text-sm hover:bg-slate-200 transition-all disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                // eslint-disable-next-line react/jsx-no-bind
+                onClick={handleTeamsBulkUpdate}
+                disabled={teamsBulkSaving || eligibleTeamsUsers.length === 0}
+                autoFocus
+                className={`flex-1 py-4 rounded-2xl font-semibold text-sm shadow-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed ${
+                  teamsBulkConfirm === 'enable'
+                    ? 'bg-violet-600 text-white shadow-violet-100 hover:bg-violet-700'
+                    : 'bg-slate-700 text-white shadow-slate-100 hover:bg-slate-800'
+                }`}
+              >
+                {teamsBulkSaving
+                  ? (teamsBulkConfirm === 'enable' ? 'Enabling…' : 'Disabling…')
+                  : eligibleTeamsUsers.length === 0
+                    ? 'No eligible users'
+                    : (teamsBulkConfirm === 'enable' ? `Enable for ${eligibleTeamsUsers.length}` : `Disable for ${eligibleTeamsUsers.length}`)
+                }
+              </button>
             </div>
           </div>
         </div>

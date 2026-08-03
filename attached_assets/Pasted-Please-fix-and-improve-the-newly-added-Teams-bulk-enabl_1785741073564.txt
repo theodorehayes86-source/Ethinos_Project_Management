@@ -1,0 +1,462 @@
+Please fix and improve the newly added **Teams bulk enable/disable confirmation flow** in:
+
+```text
+artifacts/pmt-app/src/PMT/MasterDataView.jsx
+```
+
+## Objective
+
+Keep the new confirmation modal for the **All on** and **All off** Teams notification actions, but ensure the bulk update is:
+
+* Persisted to the backend correctly
+* Safe from false-success messages
+* Resistant to partial or concurrent updates
+* Clear to the administrator
+* Accessible
+* Consistent with the existing individual Teams notification toggle behaviour
+
+Do not remove the confirmation modal.
+
+---
+
+## 1. Verify how user changes are persisted
+
+The current implementation uses:
+
+```jsx
+await setUsers(next);
+```
+
+Do not assume that `setUsers` persists data.
+
+If `setUsers` is a normal React state setter, it:
+
+* Does not return a meaningful promise
+* Cannot be awaited for persistence
+* Cannot report backend failures
+* Only updates local state
+
+Find the existing persistence logic used by the individual `teamsNotificationsEnabled` user toggle and reuse the same backend/Firebase mechanism.
+
+The bulk operation must only show success after backend persistence succeeds.
+
+If `setUsers` is actually a custom asynchronous persistence function, verify this from its implementation. If so, rename or document it clearly to avoid confusion with a normal React state setter.
+
+---
+
+## 2. Avoid replacing the entire users collection where possible
+
+Do not persist the complete users array just to change one property.
+
+The bulk action should update only:
+
+```js
+teamsNotificationsEnabled
+```
+
+for each eligible user.
+
+Prefer one of these approaches:
+
+* A Firebase multi-location update
+* A dedicated backend bulk-update endpoint
+* The application’s existing targeted user update function, safely applied in bulk
+
+Do not overwrite unrelated user properties.
+
+This is important because another administrator could update a user at the same time.
+
+---
+
+## 3. Define eligible users
+
+Confirm which users should be affected by “All on” and “All off”.
+
+Avoid automatically changing:
+
+* Archived users
+* Inactive users
+* Deleted users
+* System or service accounts
+* Records that are not real users
+
+Use the application’s existing active-user logic.
+
+For example, if consistent with the current data model:
+
+```js
+const eligibleUsers = (users || []).filter(
+  user => !user.archived && user.active !== false
+);
+```
+
+Do not invent new eligibility rules if the application already has an established one.
+
+Use the same eligible-user list for:
+
+* The confirmation count
+* The actual update
+* The success message
+
+---
+
+## 4. Create a dedicated handler
+
+Move the large inline async function out of the JSX.
+
+Create a handler such as:
+
+```js
+const handleTeamsBulkUpdate = async () => {
+  // validation
+  // persistence
+  // local state update
+  // toast
+  // cleanup
+};
+```
+
+The handler must guard against duplicate execution:
+
+```js
+if (!teamsBulkConfirm || teamsBulkSaving) return;
+```
+
+The confirmation button should simply call:
+
+```jsx
+onClick={handleTeamsBulkUpdate}
+```
+
+---
+
+## 5. Correct success and failure handling
+
+Do not show a success toast unless persistence has completed successfully.
+
+Use this behaviour:
+
+### On success
+
+* Update local user state
+* Show the number of users updated
+* Close the modal
+* Reset the saving state
+
+Example message:
+
+```text
+Teams pings enabled for 42 users
+```
+
+or:
+
+```text
+Teams pings disabled for 42 users
+```
+
+### On failure
+
+* Show a destructive error toast
+* Keep the modal open so the administrator can retry
+* Do not apply a misleading local-only update
+* Log the actual error for debugging
+* Reset the saving state
+
+Do not close the modal after a failed update.
+
+Use `finally` to ensure the saving state is always reset.
+
+Suggested structure:
+
+```js
+setTeamsBulkSaving(true);
+
+try {
+  await persistBulkTeamsPreference(...);
+
+  setUsers(updatedUsers);
+
+  toast({
+    title: enabling
+      ? `Teams pings enabled for ${eligibleUsers.length} users`
+      : `Teams pings disabled for ${eligibleUsers.length} users`,
+  });
+
+  setTeamsBulkConfirm(null);
+} catch (error) {
+  console.error(
+    'Failed to bulk-update Teams notification preferences',
+    error
+  );
+
+  toast({
+    title: 'Failed to update Teams notification preferences',
+    description: 'No changes were applied. Please try again.',
+    variant: 'destructive',
+  });
+} finally {
+  setTeamsBulkSaving(false);
+}
+```
+
+Use the project’s existing logger instead of `console.error` if one is available.
+
+---
+
+## 6. Prevent partial-success ambiguity
+
+If users are updated through multiple independent requests, handle partial failures explicitly.
+
+Do not report that all users were updated when some failed.
+
+Prefer one atomic bulk operation.
+
+If an atomic operation is not possible, return or calculate:
+
+```js
+{
+  updated: number,
+  failed: number,
+  errors: []
+}
+```
+
+Then show an accurate result.
+
+Do not update local state for users whose backend update failed.
+
+---
+
+## 7. Correct the confirmation wording
+
+The current message says users will receive notifications “immediately”.
+
+Enabling the setting normally means users become eligible for future Teams notifications; it does not necessarily send a notification immediately.
+
+Change the enable message to something like:
+
+```text
+This will enable Teams activity pings for all 42 eligible users. They will receive Teams notifications for future qualifying activity.
+```
+
+Change the disable message to:
+
+```text
+This will disable Teams activity pings for all 42 eligible users. They will not receive future Teams activity notifications until the setting is re-enabled.
+```
+
+Use the eligible-user count, not the raw users-array count.
+
+---
+
+## 8. Handle zero eligible users
+
+If there are no eligible users:
+
+* Disable the confirmation action
+* Do not attempt a backend update
+* Display a clear message such as:
+
+```text
+There are no eligible active users to update.
+```
+
+The confirmation button should not say “Enable for All” or “Disable for All” as though an action can be completed.
+
+---
+
+## 9. Preserve local state correctly
+
+After successful backend persistence, update the local users array without affecting ineligible users.
+
+Example:
+
+```js
+const eligibleIds = new Set(
+  eligibleUsers.map(user => String(user.id))
+);
+
+const updatedUsers = (users || []).map(user =>
+  eligibleIds.has(String(user.id))
+    ? {
+        ...user,
+        teamsNotificationsEnabled: enabling,
+      }
+    : user
+);
+```
+
+Do not mutate existing user objects directly.
+
+---
+
+## 10. Improve modal accessibility
+
+Add appropriate dialog attributes:
+
+```jsx
+role="dialog"
+aria-modal="true"
+aria-labelledby="teams-bulk-dialog-title"
+aria-describedby="teams-bulk-dialog-description"
+```
+
+Assign corresponding IDs to the heading and explanatory text.
+
+Also implement:
+
+* Escape-key closing when not saving
+* Initial focus on a sensible button
+* Focus trapping if the project already has a modal/dialog component
+* Restoration of focus to the initiating button after closing
+* Prevention of closing while the save is actively running
+
+Prefer using the project’s existing modal or dialog component if one exists.
+
+---
+
+## 11. Prevent duplicate or conflicting operations
+
+While the bulk update is running:
+
+* Disable both confirmation buttons
+* Disable the original **All on** and **All off** controls
+* Prevent another bulk operation from opening
+* Prevent repeated requests from double-clicking
+* Keep the individual user toggles consistent with the application’s existing behaviour
+
+Do not allow **All on** and **All off** requests to run concurrently.
+
+---
+
+## 12. Preserve existing behaviour
+
+Do not break:
+
+* Individual Teams notification toggles
+* Teams OAuth connection controls
+* Teams test/ping functionality
+* Existing user filtering
+* Other Master Data settings
+* Existing toast behaviour
+* Existing user persistence logic
+
+The change should only make bulk Teams preference updates safer.
+
+---
+
+## Suggested implementation shape
+
+Adapt this to the project’s actual persistence utilities:
+
+```jsx
+const eligibleTeamsUsers = useMemo(
+  () =>
+    (users || []).filter(
+      user => !user.archived && user.active !== false
+    ),
+  [users]
+);
+
+const handleTeamsBulkUpdate = async () => {
+  if (!teamsBulkConfirm || teamsBulkSaving) return;
+
+  const enabling = teamsBulkConfirm === 'enable';
+
+  if (eligibleTeamsUsers.length === 0) {
+    toast({
+      title: 'No eligible users',
+      description: 'There are no active users to update.',
+      variant: 'destructive',
+    });
+    return;
+  }
+
+  setTeamsBulkSaving(true);
+
+  try {
+    await persistBulkTeamsNotificationPreference({
+      userIds: eligibleTeamsUsers.map(user => String(user.id)),
+      enabled: enabling,
+    });
+
+    const eligibleIds = new Set(
+      eligibleTeamsUsers.map(user => String(user.id))
+    );
+
+    const updatedUsers = (users || []).map(user =>
+      eligibleIds.has(String(user.id))
+        ? {
+            ...user,
+            teamsNotificationsEnabled: enabling,
+          }
+        : user
+    );
+
+    setUsers(updatedUsers);
+
+    toast({
+      title: enabling
+        ? `Teams pings enabled for ${eligibleTeamsUsers.length} users`
+        : `Teams pings disabled for ${eligibleTeamsUsers.length} users`,
+    });
+
+    setTeamsBulkConfirm(null);
+  } catch (error) {
+    console.error(
+      'Failed to bulk-update Teams notification preferences',
+      error
+    );
+
+    toast({
+      title: 'Failed to update Teams notification preferences',
+      description: 'No changes were applied. Please try again.',
+      variant: 'destructive',
+    });
+  } finally {
+    setTeamsBulkSaving(false);
+  }
+};
+```
+
+Do not create a placeholder persistence function without connecting it to the real backend implementation.
+
+---
+
+## Testing required
+
+Test the following scenarios:
+
+1. **All on** opens the enable confirmation modal.
+2. **All off** opens the disable confirmation modal.
+3. Cancel closes the modal without changing users.
+4. Successful enable persists all eligible users.
+5. Successful disable persists all eligible users.
+6. Success toast appears only after backend confirmation.
+7. Backend failure shows an error toast.
+8. Modal remains open after failure.
+9. Saving state resets after both success and failure.
+10. Double-clicking does not create duplicate requests.
+11. Inactive and archived users are not changed.
+12. The confirmation count matches the number actually updated.
+13. Zero eligible users is handled safely.
+14. Individual toggle behaviour still works.
+15. Unrelated user fields are not overwritten.
+16. Escape closes the modal when idle.
+17. Escape does not interrupt an active save.
+18. Type checking, linting and the production build pass.
+
+---
+
+## Deliverables
+
+After completing the changes:
+
+1. List every file changed.
+2. Explain which persistence method was used.
+3. Confirm whether the update is atomic.
+4. Explain how eligible users are determined.
+5. State how partial failures are handled.
+6. Confirm that individual Teams notification toggles still work.
+7. Mention anything that could not be tested locally.
