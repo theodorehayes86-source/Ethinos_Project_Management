@@ -56,3 +56,35 @@ export async function writeFirebasePath(path: string, value: unknown): Promise<v
   const database = getAdminDatabase();
   await database.ref(path).set(value);
 }
+
+/**
+ * Return the immediate child keys at a Firebase path without downloading
+ * child data. Uses the Firebase REST API with `?shallow=true` so large
+ * subtrees (e.g. message histories) are never transferred.
+ *
+ * Returns an empty array when the path does not exist.
+ */
+export async function listFirebaseChildKeys(path: string): Promise<string[]> {
+  // Obtain a short-lived OAuth2 token from the Admin SDK credential.
+  const cred = admin.app().options.credential;
+  if (!cred) throw new Error("Firebase Admin credential not available");
+  const tokenObj = await cred.getAccessToken();
+
+  const databaseURL = (process.env.VITE_FIREBASE_DATABASE_URL ?? "").replace(/\/$/, "");
+  if (!databaseURL) throw new Error("VITE_FIREBASE_DATABASE_URL is not set");
+
+  // Encode path segments but preserve forward slashes.
+  const safePath = path.split("/").map(encodeURIComponent).join("/");
+  const url = `${databaseURL}/${safePath}.json?shallow=true&access_token=${tokenObj.access_token}`;
+
+  const resp = await fetch(url);
+  if (!resp.ok) {
+    if (resp.status === 404) return [];
+    const text = await resp.text();
+    throw new Error(`Firebase shallow read failed (${resp.status}): ${text.slice(0, 200)}`);
+  }
+
+  const data = (await resp.json()) as Record<string, true> | null;
+  if (!data || typeof data !== "object") return [];
+  return Object.keys(data);
+}

@@ -6,6 +6,32 @@ import { startRepeatScheduler } from "./lib/repeat-scheduler";
 import { startWeeklyDigestScheduler } from "./lib/weekly-digest-scheduler";
 import { startKekaScheduler } from "./lib/keka-scheduler";
 import { startAttendanceScheduler } from "./lib/attendance-scheduler";
+import { startChatSubscriptionRenewalScheduler } from "./lib/chat-subscription-scheduler";
+
+/**
+ * Start all background schedulers. Each scheduler is wrapped individually so
+ * a synchronous startup failure in one does not prevent the others from starting.
+ */
+function startBackgroundSchedulers(): void {
+  const schedulers: Array<{ name: string; start: () => void }> = [
+    { name: "Repeat",                  start: startRepeatScheduler },
+    { name: "Reminders",               start: startReminderScheduler },
+    { name: "WeeklyDigest",            start: startWeeklyDigestScheduler },
+    { name: "Keka",                    start: startKekaScheduler },
+    { name: "Attendance",              start: startAttendanceScheduler },
+    { name: "ChatSubscriptionRenewal", start: startChatSubscriptionRenewalScheduler },
+  ];
+
+  for (const { name, start } of schedulers) {
+    try {
+      start();
+    } catch (err) {
+      logger.error({ err, scheduler: name }, `[Startup] Scheduler '${name}' failed to start`);
+    }
+  }
+
+  logger.info("[Startup] All background schedulers registered");
+}
 
 const rawPort = process.env["PORT"];
 
@@ -68,9 +94,5 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port, build: GIT_SHA }, "Server listening");
-  startRepeatScheduler();
-  startReminderScheduler();
-  startWeeklyDigestScheduler();
-  startKekaScheduler();
-  startAttendanceScheduler();
+  startBackgroundSchedulers();
 });

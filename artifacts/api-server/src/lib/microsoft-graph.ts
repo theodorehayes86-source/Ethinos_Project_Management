@@ -1,6 +1,19 @@
 import { logger } from "./logger";
 import { readFirebasePath, writeFirebasePath } from "./firebase-admin";
 
+/**
+ * Typed error thrown by Graph API calls so callers can inspect the HTTP status code.
+ */
+export class GraphApiError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string
+  ) {
+    super(message);
+    this.name = "GraphApiError";
+  }
+}
+
 interface GraphTokenResponse {
   access_token: string;
   expires_in: number;
@@ -791,7 +804,12 @@ export async function getChatMembers(
 
 /**
  * Subscribe to new messages in a 1:1 chat via Graph change notifications.
- * Maximum expiry for app-only chat subscriptions is 60 min; we use 55 min as a buffer.
+ *
+ * Graph subscription lifetime for /chats/{id}/messages (app-only, no resource data):
+ *   Maximum: 60 minutes  (confirmed in Graph docs for chat message subscriptions)
+ *   We request 55 minutes to stay safely within the limit.
+ *
+ * Lifecycle notifications are not required for this subscription type at the durations used.
  */
 export async function subscribeToChatMessages(
   chatId: string,
@@ -814,27 +832,34 @@ export async function subscribeToChatMessages(
   });
   if (!resp.ok) {
     const text = await resp.text();
-    throw new Error(`[Graph] subscribeToChatMessages: ${resp.status} ${text}`);
+    throw new GraphApiError(resp.status, `[Graph] subscribeToChatMessages: ${resp.status} ${text}`);
   }
   const data = (await resp.json()) as { id: string; expirationDateTime: string };
   return { id: data.id, expiresDateTime: data.expirationDateTime };
 }
 
-/** Renew an existing Graph change-notification subscription. Returns the new expiry ISO string. */
+/**
+ * Renew an existing Graph change-notification subscription.
+ * Returns the actual expiry ISO string confirmed by Graph's response.
+ *
+ * Throws GraphApiError so callers can inspect the HTTP status (e.g. 404 = dead subscription).
+ */
 export async function renewChatSubscription(subscriptionId: string): Promise<string> {
   const token = await getAccessToken();
-  const expiresDateTime = new Date(Date.now() + 55 * 60 * 1000).toISOString();
+  const requestedExpiry = new Date(Date.now() + 55 * 60 * 1000).toISOString();
   const resp = await fetch(
     `https://graph.microsoft.com/v1.0/subscriptions/${subscriptionId}`,
     {
       method: "PATCH",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ expirationDateTime: expiresDateTime }),
+      body: JSON.stringify({ expirationDateTime: requestedExpiry }),
     }
   );
   if (!resp.ok) {
     const text = await resp.text();
-    throw new Error(`[Graph] renewChatSubscription: ${resp.status} ${text}`);
+    throw new GraphApiError(resp.status, `[Graph] renewChatSubscription: ${resp.status} ${text}`);
   }
-  return expiresDateTime;
+  // Use the expiry Graph actually assigned — it may differ from the requested value.
+  const data = (await resp.json()) as { expirationDateTime?: string };
+  return data.expirationDateTime ?? requestedExpiry;
 }

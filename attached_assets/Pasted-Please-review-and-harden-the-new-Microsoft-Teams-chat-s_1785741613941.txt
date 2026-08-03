@@ -1,0 +1,751 @@
+Please review and harden the new **Microsoft Teams chat subscription renewal scheduler** implementation.
+
+## Files involved
+
+```text
+artifacts/api-server/src/index.ts
+artifacts/api-server/src/lib/chat-subscription-scheduler.ts
+artifacts/api-server/src/lib/microsoft-graph.ts
+artifacts/api-server/src/lib/firebase-admin.ts
+artifacts/api-server/src/lib/job-lock.ts
+```
+
+## Objective
+
+Microsoft Graph chat change-notification subscriptions expire regularly. The scheduler should renew active subscriptions before expiry without:
+
+* Missing subscriptions
+* Creating overlapping scheduler runs
+* Silently leaving expired subscriptions broken
+* Writing invalid expiry values
+* Overloading Firebase or Microsoft Graph
+* Exposing subscription identifiers unnecessarily
+* Starting duplicate schedulers during hot reload or multi-instance deployment
+
+Preserve the intended behaviour:
+
+* Run every 10 minutes
+* Renew subscriptions close to expiry
+* Process both bot chats and regular chats
+* Run once at server startup
+* Use the existing distributed job-lock mechanism
+* Log useful results without logging secrets
+
+---
+
+# 1. Verify the real Microsoft Graph subscription lifetime
+
+The current comments assume subscriptions expire after approximately 55 minutes:
+
+```ts
+Microsoft Graph change-notification subscriptions expire after ~55 minutes.
+```
+
+Verify this against the actual Microsoft Graph resource type used by:
+
+```ts
+renewChatSubscription()
+```
+
+Do not rely only on this comment.
+
+Confirm:
+
+* Which Graph subscription resource is being renewed
+* Its actual maximum permitted expiry
+* Whether the expiry differs for chats, messages, rich notifications or resource data
+* Whether the renewal request is allowed to extend the subscription to the requested duration
+* Whether lifecycle notifications are required
+
+Update comments and renewal timing based on the actual resource being used.
+
+Do not change unrelated Graph subscription behaviour.
+
+---
+
+# 2. Validate renewal responses before writing to Firebase
+
+The current code does:
+
+```ts
+const newExpiryStr = await renewChatSubscription(sub.id);
+const newExpiresAt = new Date(newExpiryStr).getTime();
+
+await writeFirebasePath(..., {
+  id: sub.id,
+  expiresAt: newExpiresAt,
+});
+```
+
+This can write:
+
+```ts
+NaN
+```
+
+or an expiry value that is already in the past.
+
+Add strict validation:
+
+```ts
+const newExpiresAt = Date.parse(newExpiryStr);
+
+if (!Number.isFinite(newExpiresAt)) {
+  throw new Error("Microsoft Graph returned an invalid subscription expiry");
+}
+
+if (newExpiresAt <= Date.now()) {
+  throw new Error("Microsoft Graph returned an expired subscription");
+}
+```
+
+Also verify the renewed expiry is meaningfully later than the previous expiry.
+
+Do not overwrite a valid stored expiry with an invalid value.
+
+---
+
+# 3. Handle already expired subscriptions properly
+
+The current code only logs:
+
+```ts
+subscription already expired — will be recreated on next chat open
+```
+
+This means replies can remain broken indefinitely if the chat is never manually reopened.
+
+Review the existing subscription creation flow and improve this behaviour.
+
+Preferred behaviour:
+
+* Attempt to recreate an expired subscription automatically when enough information is available.
+* If automatic recreation is not possible, mark the subscription as expired or invalid in Firebase.
+* Preserve enough state for the application to know that the subscription needs recreation.
+* Avoid repeatedly logging the same expired subscription every 10 minutes without taking action.
+
+Do not claim that a subscription will be recreated automatically unless the code actually guarantees that behaviour.
+
+Possible stored state:
+
+```ts
+{
+  id: string;
+  expiresAt: number;
+  status?: "active" | "expired" | "renewal_failed";
+  lastRenewalAttemptAt?: number;
+  renewalFailureCount?: number;
+}
+```
+
+Adapt this to the project’s existing data model rather than introducing unnecessary fields.
+
+---
+
+# 4. Validate Firebase records defensively
+
+The current interface assumes:
+
+```ts
+interface SubscriptionRecord {
+  id: string;
+  expiresAt: number;
+}
+```
+
+Firebase data is untrusted runtime data.
+
+Validate:
+
+* `subscription` is an object
+* `id` is a non-empty string
+* `expiresAt` is a finite number
+* `expiresAt` is a realistic timestamp
+* Chat records are objects rather than arrays or primitive values
+
+Do not attempt to call Microsoft Graph using malformed subscription IDs.
+
+Log malformed records using the chat key, but do not log sensitive token data.
+
+---
+
+# 5. Confirm Firebase key safety
+
+The code writes:
+
+```ts
+`${parentPath}/${chatKey}/subscription`
+```
+
+Verify that `chatKey` comes from valid Firebase child keys and cannot contain invalid path characters.
+
+Since it originates from existing Firebase keys, it should normally be safe, but add comments or validation if the value can originate elsewhere.
+
+Do not construct Firebase paths using untrusted raw Microsoft IDs unless they are encoded consistently.
+
+---
+
+# 6. Avoid reading the entire chat tree unnecessarily
+
+The scheduler currently reads:
+
+```ts
+teamsDMs/botChats
+teamsDMs/chats
+```
+
+in full every 10 minutes.
+
+Review the likely size of these nodes.
+
+If each chat contains messages, participants, metadata or large history, reading the entire node every 10 minutes may be expensive.
+
+Prefer storing or querying subscriptions under a dedicated lightweight index such as:
+
+```text
+teamsDMSubscriptions/{subscriptionKey}
+```
+
+or another existing subscriptions-only path.
+
+If restructuring is too disruptive, at minimum:
+
+* Document the expected data size
+* Confirm only lightweight chat metadata is stored under these paths
+* Avoid downloading message history
+* Consider querying records by expiry if the Firebase schema supports it
+* Add an index if querying by `expiresAt`
+
+Do not introduce a major data migration without preserving backward compatibility.
+
+---
+
+# 7. Review concurrency inside each run
+
+The current code renews subscriptions sequentially within each parent path:
+
+```ts
+for (const [chatKey, chatData] of entries) {
+  await renewChatSubscription(...)
+}
+```
+
+But it processes bot chats and normal chats concurrently with:
+
+```ts
+Promise.all(...)
+```
+
+Review whether this is appropriate.
+
+Requirements:
+
+* Avoid overwhelming Microsoft Graph
+* Avoid runs taking longer than the lock TTL
+* Use bounded concurrency if there may be many subscriptions
+* Do not use an unbounded `Promise.all()` over all chats
+* Continue processing other subscriptions if one renewal fails
+
+A small bounded concurrency limit such as 3–5 may be appropriate.
+
+Use the project’s existing concurrency utility if one exists.
+
+---
+
+# 8. Fix lock TTL assumptions
+
+The scheduler runs every 10 minutes and uses:
+
+```ts
+const LOCK_TTL_MS = 9 * 60 * 1000;
+```
+
+A lock shorter than the schedule interval does not guarantee that a slow run finishes before another instance starts.
+
+If a run takes more than 9 minutes:
+
+* The lock may expire while the original run is still active
+* Another server instance may start the same renewal job
+* The same subscription may be renewed concurrently
+
+Review the `withJobLock()` implementation.
+
+Use a TTL comfortably longer than the maximum expected job duration, for example:
+
+```ts
+const LOCK_TTL_MS = 15 * 60 * 1000;
+```
+
+or implement lock extension/heartbeat support if available.
+
+The cron interval and lock TTL should not be chosen solely to be “just under” each other.
+
+---
+
+# 9. Use the same lock key for startup and scheduled runs
+
+The current code uses:
+
+```ts
+"chat-subscription-renewal"
+```
+
+for scheduled runs and:
+
+```ts
+"chat-subscription-renewal-startup"
+```
+
+for startup runs.
+
+This allows a startup run and scheduled run to execute concurrently because they use different locks.
+
+Use the same lock key for both:
+
+```ts
+const JOB_LOCK_KEY = "chat-subscription-renewal";
+```
+
+Then:
+
+```ts
+withJobLock(JOB_LOCK_KEY, LOCK_TTL_MS, ...)
+```
+
+for both startup and cron execution.
+
+This is particularly important if the server starts close to a 10-minute cron boundary.
+
+---
+
+# 10. Prevent duplicate scheduler registration
+
+Confirm that:
+
+```ts
+startChatSubscriptionRenewalScheduler()
+```
+
+is called only once per process.
+
+Development hot reload, test setup or repeated application initialization can register multiple cron jobs.
+
+Add a module-level guard if necessary:
+
+```ts
+let schedulerStarted = false;
+
+export function startChatSubscriptionRenewalScheduler(): void {
+  if (schedulerStarted) {
+    logger.warn("[ChatSubRenewal] Scheduler already started");
+    return;
+  }
+
+  schedulerStarted = true;
+  // schedule job
+}
+```
+
+Use the project’s existing scheduler-start pattern if one exists.
+
+---
+
+# 11. Confirm `app.listen` startup behaviour
+
+The code adds:
+
+```ts
+startChatSubscriptionRenewalScheduler();
+```
+
+inside the `app.listen()` callback.
+
+Review the complete startup function.
+
+Confirm:
+
+* `app.listen` uses a callback signature supported by the HTTP server implementation
+* The scheduler starts only after the server has successfully bound to the port
+* An `err` argument is not being incorrectly assumed for Express’s callback
+* Startup exceptions are handled
+* Schedulers are not started during unit tests unless explicitly requested
+
+Standard Express `app.listen()` callbacks normally do not receive an error parameter. Errors are usually emitted on the returned server.
+
+Do not leave misleading code such as:
+
+```ts
+app.listen(port, (err) => {
+```
+
+unless the project’s wrapper genuinely provides that signature.
+
+Prefer:
+
+```ts
+const server = app.listen(port, () => {
+  startSchedulers();
+});
+
+server.on("error", error => {
+  logger.error({ error }, "Server failed to start");
+});
+```
+
+Adapt this to the existing application structure.
+
+---
+
+# 12. Separate scheduler startup into one function
+
+There are now several scheduler calls inside the server startup callback:
+
+```ts
+startWeeklyDigestScheduler();
+startKekaScheduler();
+startAttendanceScheduler();
+startChatSubscriptionRenewalScheduler();
+```
+
+Create a central function such as:
+
+```ts
+function startBackgroundSchedulers(): void {
+  startWeeklyDigestScheduler();
+  startKekaScheduler();
+  startAttendanceScheduler();
+  startChatSubscriptionRenewalScheduler();
+}
+```
+
+Requirements:
+
+* Log scheduler startup clearly
+* Catch synchronous startup failures per scheduler
+* Ensure one failing scheduler does not prevent all others from starting
+* Make scheduler startup easy to disable in tests
+* Avoid registering schedulers more than once
+
+Consider an environment flag such as:
+
+```text
+DISABLE_SCHEDULERS=true
+```
+
+only if the project already uses this pattern or it is required for tests.
+
+---
+
+# 13. Return a structured run result
+
+The current function returns:
+
+```ts
+Promise<void>
+```
+
+Change it to return a structured result for testing, monitoring and manual execution:
+
+```ts
+export interface ChatSubscriptionRenewalResult {
+  botChats: {
+    renewed: number;
+    skipped: number;
+    expired: number;
+    invalid: number;
+    failed: number;
+  };
+  chats: {
+    renewed: number;
+    skipped: number;
+    expired: number;
+    invalid: number;
+    failed: number;
+  };
+  errors: string[];
+}
+```
+
+Use the simplest structure compatible with the existing code.
+
+Do not include secret values or access tokens in errors.
+
+The scheduler may ignore the returned result after logging it, but tests should be able to assert it.
+
+---
+
+# 14. Distinguish skip reasons
+
+Currently all non-renewed records increment:
+
+```ts
+skipped
+```
+
+This combines:
+
+* Missing subscription
+* Invalid record
+* Already expired
+* Not yet within renewal window
+* Possibly unsupported subscription
+
+Track these separately where practical:
+
+```ts
+notDue
+expired
+invalid
+renewed
+failed
+```
+
+This makes monitoring actionable.
+
+---
+
+# 15. Improve failure tracking and retry behaviour
+
+A subscription that fails renewal will be retried every 10 minutes, which is generally useful, but add safeguards:
+
+* Record the last renewal attempt time if the existing data model supports it
+* Avoid noisy repeated logs for permanently invalid subscriptions
+* Detect Microsoft Graph 404 responses, which usually mean the subscription no longer exists
+* Detect authentication or permission errors separately
+* Detect throttling responses such as HTTP 429
+* Respect `Retry-After` where supported by the Graph client
+* Do not immediately delete subscription records on transient failures
+
+For a 404/nonexistent subscription:
+
+* Mark it invalid or recreate it if possible
+* Do not repeatedly call the renewal endpoint forever using the same dead ID
+
+---
+
+# 16. Review Microsoft Graph expiry calculations
+
+Inspect `renewChatSubscription()` and confirm it requests a valid future expiry.
+
+Requirements:
+
+* Use UTC ISO timestamps
+* Do not request an expiry beyond Graph’s allowed maximum
+* Include a small safety margin below the maximum
+* Do not hard-code a duration inconsistent with the resource type
+* Return the actual expiry from Graph’s response, not merely the requested value
+
+The Firebase value should reflect the expiry confirmed by Microsoft Graph.
+
+---
+
+# 17. Handle clock skew safely
+
+The renewal window currently uses:
+
+```ts
+const renewBefore = now + RENEW_BEFORE_EXPIRY_MS;
+```
+
+Add a reasonable safety buffer for:
+
+* Server clock skew
+* Network latency
+* Microsoft processing time
+* Scheduler delays
+* Throttling retries
+
+The renewal window must be comfortably earlier than expiry.
+
+Base the final value on the real subscription lifetime determined in step 1.
+
+---
+
+# 18. Review startup-run comment and behaviour
+
+The comment says:
+
+```ts
+run once at startup to catch any subscriptions that expired while the server was down
+```
+
+But the code explicitly does not renew expired subscriptions.
+
+Correct either:
+
+* The implementation, by recreating expired subscriptions; or
+* The comment, so it accurately says the startup run renews subscriptions that are still valid but close to expiry.
+
+Comments must reflect actual behaviour.
+
+---
+
+# 19. Improve logging safety
+
+Current logs include:
+
+```ts
+subscriptionId: sub.id
+```
+
+Subscription IDs are not access tokens, but they are operational identifiers.
+
+Review the project’s logging policy.
+
+Prefer masking or omitting full subscription IDs unless necessary:
+
+```ts
+subscriptionIdSuffix: sub.id.slice(-6)
+```
+
+Continue logging:
+
+* Chat key or safe internal identifier
+* Old expiry
+* New expiry
+* Failure category
+* Renewal counts
+
+Never log:
+
+* Microsoft access tokens
+* Client secrets
+* Bearer headers
+* Full webhook validation tokens
+* Raw Graph request headers
+
+---
+
+# 20. Add graceful shutdown if supported
+
+`node-cron` returns scheduled task objects.
+
+If the application already implements graceful shutdown:
+
+* Keep a reference to the scheduled task
+* Stop it during shutdown
+* Avoid starting new renewal work after SIGTERM
+* Allow an active run to finish where practical
+
+Do not introduce a complex shutdown system if the project does not already have one, but integrate with the existing pattern.
+
+---
+
+# 21. Testing requirements
+
+Add or update tests for:
+
+1. Subscription outside renewal window is not renewed.
+2. Subscription inside renewal window is renewed.
+3. Invalid expiry is rejected.
+4. Invalid subscription ID is skipped safely.
+5. Graph returning an invalid expiry does not overwrite Firebase.
+6. Graph returning an expired expiry does not overwrite Firebase.
+7. One subscription failure does not stop other renewals.
+8. Expired subscriptions are marked or recreated according to the final design.
+9. Graph 404 is handled as a dead subscription.
+10. Graph 429 is handled without uncontrolled retrying.
+11. Startup and cron runs use the same lock key.
+12. A slow startup run cannot overlap the scheduled run.
+13. Duplicate scheduler registration is prevented.
+14. Both `botChats` and `chats` are processed.
+15. Structured counts are returned correctly.
+16. Empty Firebase paths return a successful zero-count result.
+17. Malformed Firebase records do not crash the run.
+18. The production TypeScript build succeeds.
+19. Existing Microsoft Teams DM subscription creation still works.
+20. Existing weekly digest, Keka and attendance schedulers still start normally.
+
+---
+
+# Recommended core structure
+
+Adapt this to the project rather than copying blindly:
+
+```ts
+const JOB_LOCK_KEY = "chat-subscription-renewal";
+const LOCK_TTL_MS = 15 * 60 * 1000;
+
+let schedulerStarted = false;
+
+export async function runChatSubscriptionRenewal():
+  Promise<ChatSubscriptionRenewalResult> {
+  logger.info("[ChatSubRenewal] Running subscription renewal check");
+
+  const [botChats, chats] = await Promise.all([
+    renewSubscriptionsUnder("teamsDMs/botChats", "botChats"),
+    renewSubscriptionsUnder("teamsDMs/chats", "chats"),
+  ]);
+
+  const result = {
+    botChats,
+    chats,
+    errors: [...botChats.errors, ...chats.errors],
+  };
+
+  logger.info(
+    {
+      botChats: sanitiseResultForLogs(botChats),
+      chats: sanitiseResultForLogs(chats),
+    },
+    "[ChatSubRenewal] Renewal check complete"
+  );
+
+  return result;
+}
+
+export function startChatSubscriptionRenewalScheduler(): void {
+  if (schedulerStarted) {
+    logger.warn("[ChatSubRenewal] Scheduler already started");
+    return;
+  }
+
+  schedulerStarted = true;
+
+  cron.schedule("*/10 * * * *", () => {
+    withJobLock(
+      JOB_LOCK_KEY,
+      LOCK_TTL_MS,
+      runChatSubscriptionRenewal
+    ).catch(error => {
+      logger.error(
+        { error },
+        "[ChatSubRenewal] Scheduled renewal failed"
+      );
+    });
+  });
+
+  withJobLock(
+    JOB_LOCK_KEY,
+    LOCK_TTL_MS,
+    runChatSubscriptionRenewal
+  ).catch(error => {
+    logger.error(
+      { error },
+      "[ChatSubRenewal] Startup renewal failed"
+    );
+  });
+
+  logger.info(
+    "[ChatSubRenewal] Scheduler started — checking every 10 minutes"
+  );
+}
+```
+
+---
+
+# Deliverables
+
+After completing the changes:
+
+1. List every file changed.
+2. Confirm the actual Microsoft Graph subscription lifetime for the resource used.
+3. Explain the final renewal window.
+4. Explain how expired subscriptions are handled.
+5. Confirm startup and cron runs cannot overlap.
+6. Confirm duplicate scheduler registration is prevented.
+7. Explain whether renewal processing is sequential or bounded-concurrent.
+8. State whether Firebase reads were optimized.
+9. Confirm invalid Graph expiry values cannot be written.
+10. Report type-check, lint, test and production build results.
+11. Mention anything that could not be tested locally.
