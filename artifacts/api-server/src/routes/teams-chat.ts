@@ -387,6 +387,7 @@ router.post("/teams-chat/webhook", async (req: Request, res: Response) => {
         );
         const chatKey = botMappedKey ?? incomingChatKey;
 
+        // Fast path: exact message-key match (same chat, same Graph message ID)
         const existing = await readFirebasePath(
           `teamsDMs/chats/${chatKey}/messages/${msgKey}`
         );
@@ -395,6 +396,19 @@ router.post("/teams-chat/webhook", async (req: Request, res: Response) => {
         const msg = await getChatMessage(rawChatId, messageId);
         if (!msg) return;
 
+        // ── Guard 1: skip bot/application messages ─────────────────────────
+        // When the bot-user subscription (/send) is active, every outgoing
+        // bot message echoes back as a webhook notification. These have no
+        // from.user (Graph sets from.application instead). Storing them would
+        // duplicate every Flow Pro → Teams message in the chat history.
+        if (!msg.from?.user?.id) {
+          logger.info(
+            { chatKey, messageId, viaBot: !!botMappedKey },
+            "[TeamsChat] Skipping bot/system message (no from.user)"
+          );
+          return;
+        }
+
         const raw =
           msg.body.contentType === "html"
             ? htmlToText(msg.body.content)
@@ -402,14 +416,37 @@ router.post("/teams-chat/webhook", async (req: Request, res: Response) => {
         const body = raw.trim();
         if (!body) return;
 
+        // ── Guard 2: content-fingerprint deduplication ────────────────────
+        // When both the user-to-user subscription (/open) and the bot-user
+        // subscription (/send) are active for the same chatKey, a reply from
+        // the recipient can arrive via BOTH subscriptions — each with a
+        // different Graph message ID, so the exact-key check above won't help.
+        // We deduplicate by: sender + body (first 200 chars) + minute bucket.
+        const msgSentAt = new Date(msg.createdDateTime).getTime();
+        const fingerprint = fbKey(
+          `${msg.from.user.id}:${body.slice(0, 200)}:${Math.floor(msgSentAt / 60_000)}`
+        );
+        const fingerprintPath = `teamsDMs/chats/${chatKey}/msgFingerprints/${fingerprint}`;
+        const fpExists = await readFirebasePath<string | null>(fingerprintPath);
+        if (fpExists) {
+          logger.info(
+            { chatKey, messageId, fingerprint, viaBot: !!botMappedKey },
+            "[TeamsChat] Content fingerprint match — duplicate skipped"
+          );
+          return;
+        }
+        // Claim fingerprint first; a concurrent delivery of the same content
+        // will find this entry and bail out.
+        await writeFirebasePath(fingerprintPath, msgKey);
+
         await writeFirebasePath(
           `teamsDMs/chats/${chatKey}/messages/${msgKey}`,
           {
             id: msg.id,
-            fromObjectId: msg.from?.user?.id ?? "",
-            fromName: msg.from?.user?.displayName ?? "Unknown",
+            fromObjectId: msg.from.user.id,
+            fromName: msg.from.user.displayName ?? "Unknown",
             body,
-            sentAt: new Date(msg.createdDateTime).getTime(),
+            sentAt: msgSentAt,
             source: "teams",
           }
         );
