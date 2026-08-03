@@ -1,5 +1,8 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { format, parse, isBefore, addDays, differenceInCalendarDays } from 'date-fns';
+import { useToast } from '../hooks/use-toast';
+import TaskViewToggle from './shared/TaskViewToggle';
+import WeeklyTaskBoard from './shared/WeeklyTaskBoard';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { Briefcase, Clock, Activity, AlertTriangle, ChevronRight, Plus, X, Search, ShieldCheck, Users, CheckCircle, XCircle, MinusCircle, Tag, Calendar, CalendarCheck, Archive, ArchiveRestore, LayoutTemplate, ChevronDown, ChevronUp, Play, Square, Pause, Send, ThumbsUp, ThumbsDown, RotateCcw, Pencil, ClipboardList, CheckSquare, Trash2 } from 'lucide-react';
@@ -103,6 +106,7 @@ const HomeView = ({
   persistTaskCreate = null,
 }) => {
   const isManagement = managementRoles.includes(currentUser?.role);
+  const { toast } = useToast();
   const allClientOptions = useMemo(
     () => [...syntheticClients, ...accessibleClients],
     [syntheticClients, accessibleClients]
@@ -162,6 +166,12 @@ const HomeView = ({
   const [teamLeaveStatuses, setTeamLeaveStatuses] = useState({});
   const [selectedTaskIds, setSelectedTaskIds] = useState(new Set());
   const [selectMode, setSelectMode] = useState(false);
+
+  // --- Card Dashboard view state ---
+  const [homeView, setHomeView] = useState(() => {
+    try { return localStorage.getItem('pmt_view_personal') || 'list'; } catch { return 'list'; }
+  });
+  const [homeWeekOffset, setHomeWeekOffset] = useState(0);
 
   // --- 4-hour timer alert ---
   const [timerAlert, setTimerAlert] = useState(null); // { task, clientId }
@@ -981,6 +991,26 @@ const HomeView = ({
     setEditDraft(null);
   };
 
+  /** Reschedule a task from the board view. Called after user confirms the move modal. */
+  const handleHomeReschedule = useCallback(async (task, newDate, scope) => {
+    const cid = task.cid;
+    if (!cid) return;
+    const dateStr = format(newDate, 'do MMM yyyy');
+    const updated = (clientLogs[cid] || []).map(t => {
+      if (scope === 'all' && task.repeatGroupId && t.repeatGroupId === task.repeatGroupId) {
+        return { ...t, dueDate: dateStr };
+      }
+      if (String(t.id) === String(task.id)) return { ...t, dueDate: dateStr };
+      return t;
+    });
+    try {
+      await setClientLogs({ ...clientLogs, [cid]: updated });
+      toast({ title: 'Task moved', description: `Due date set to ${dateStr}` });
+    } catch (err) {
+      toast({ title: 'Failed to move task', variant: 'destructive' });
+      throw err;
+    }
+  }, [clientLogs, setClientLogs, toast]);
 
   useEffect(() => {
     const handler = (e) => { if (addMenuRef.current && !addMenuRef.current.contains(e.target)) setShowAddMenu(false); };
@@ -1411,6 +1441,11 @@ const HomeView = ({
         )}
         {/* Archive + Add — fixed right, outside any overflow container so dropdown isn't clipped */}
         <div className="flex items-center gap-2 shrink-0 ml-auto">
+          <TaskViewToggle
+            view={homeView}
+            onChange={setHomeView}
+            storageKey="pmt_view_personal"
+          />
           {!showArchived && (
             <button
               onClick={() => {
@@ -1530,6 +1565,21 @@ const HomeView = ({
           </button>
         </div>
       )}
+
+      {/* CARD DASHBOARD VIEW */}
+      {homeView === 'card' && (
+        <WeeklyTaskBoard
+          tasks={filteredMyTasks}
+          weekOffset={homeWeekOffset}
+          onWeekOffsetChange={setHomeWeekOffset}
+          mode="personal"
+          canEditTask={(task) => canFullyEditTaskFor(task, currentUser)}
+          onOpenTask={setDetailTask}
+          onRescheduleConfirmed={handleHomeReschedule}
+        />
+      )}
+
+      {homeView !== 'card' && <>
 
       {/* ARCHIVE ALL DONE shortcut */}
       {!showArchived && statusFilter === 'done' && myDone.length > 0 && !selectMode && (
@@ -1903,6 +1953,8 @@ const HomeView = ({
           })}
         </div>
       )}
+
+      </>}
 
       {/* HOME TEMPLATE PICKER MODAL */}
       {showHomeTemplateModal && (

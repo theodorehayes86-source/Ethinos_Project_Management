@@ -1,5 +1,7 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useToast } from '../hooks/use-toast';
+import TaskViewToggle from './shared/TaskViewToggle';
+import WeeklyTaskBoard from './shared/WeeklyTaskBoard';
 import { Search, ChevronLeft, ChevronDown, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, AlertTriangle, Calendar, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus, Hourglass, Archive, ArchiveRestore, LayoutGrid, LayoutList, ClipboardList, LayoutTemplate, CheckSquare, Upload, Copy } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import DatePicker from "react-datepicker";
@@ -293,6 +295,12 @@ const ClientView = ({
   const [showArchived, setShowArchived] = useState(false);
   const [selectedTaskIds, setSelectedTaskIds] = useState(new Set());
   const [showBulkCopyModal, setShowBulkCopyModal] = useState(false);
+
+  // --- Card Dashboard view state ---
+  const [clientView, setClientView] = useState(() => {
+    try { return localStorage.getItem('pmt_view_client') || 'list'; } catch { return 'list'; }
+  });
+  const [clientWeekOffset, setClientWeekOffset] = useState(0);
   const [copyClientQuery, setCopyClientQuery] = useState('');
   const [copyTargetClientId, setCopyTargetClientId] = useState('');
   const [copyAssigneeOverride, setCopyAssigneeOverride] = useState('keep');
@@ -598,6 +606,27 @@ const ClientView = ({
     setEditingTask(null);
     setEditDraft(null);
   };
+
+  /** Reschedule a task from the board view. Called after user confirms the move modal. */
+  const handleClientReschedule = useCallback(async (task, newDate, scope) => {
+    const cid = selectedClient?.id;
+    if (!cid) return;
+    const dateStr = format(newDate, 'do MMM yyyy');
+    const updated = (clientLogs[cid] || []).map(t => {
+      if (scope === 'all' && task.repeatGroupId && t.repeatGroupId === task.repeatGroupId) {
+        return { ...t, dueDate: dateStr };
+      }
+      if (String(t.id) === String(task.id)) return { ...t, dueDate: dateStr };
+      return t;
+    });
+    try {
+      await setClientLogs({ ...clientLogs, [cid]: updated });
+      toast({ title: 'Task moved', description: `Due date set to ${dateStr}` });
+    } catch (err) {
+      toast({ title: 'Failed to move task', variant: 'destructive' });
+      throw err;
+    }
+  }, [selectedClient?.id, clientLogs, setClientLogs, toast]);
 
   const formatDuration = (milliseconds = 0) => {
     const totalSeconds = Math.floor(milliseconds / 1000);
@@ -1395,6 +1424,11 @@ const ClientView = ({
                 <Upload size={13}/> Import Tasks
               </button>
             )}
+            <TaskViewToggle
+              view={clientView}
+              onChange={setClientView}
+              storageKey="pmt_view_client"
+            />
             <div className="relative" ref={clientAddMenuRef}>
               <button
                 onClick={() => setShowClientAddMenu(v => !v)}
@@ -1798,8 +1832,21 @@ const ClientView = ({
           );
         })()}
 
+        {/* CARD DASHBOARD VIEW */}
+        {clientView === 'card' && !taskStatusFilter.startsWith('cl-') && !showArchived && (
+          <WeeklyTaskBoard
+            tasks={filteredTaskLogs}
+            weekOffset={clientWeekOffset}
+            onWeekOffsetChange={setClientWeekOffset}
+            mode="client"
+            canEditTask={canFullyEditTask}
+            onOpenTask={setDetailTask}
+            onRescheduleConfirmed={handleClientReschedule}
+          />
+        )}
+
         {/* Task Table */}
-        <div ref={taskListRef} className={`bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden${taskStatusFilter.startsWith('cl-') ? ' hidden' : ''}`}>
+        <div ref={taskListRef} className={`bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden${taskStatusFilter.startsWith('cl-') || (clientView === 'card' && !showArchived) ? ' hidden' : ''}`}>
           <div className="max-h-[68vh] overflow-auto">
             <table className="w-full min-w-[1100px] border-collapse table-fixed">
               <colgroup>
