@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { format } from 'date-fns';
+import { format, getDay } from 'date-fns';
 import WeekNavigator from './WeekNavigator';
 import WeeklyTaskColumn from './WeeklyTaskColumn';
 import TaskMoveConfirmationModal from './TaskMoveConfirmationModal';
@@ -26,11 +26,29 @@ const WeeklyTaskBoard = ({
   onOpenTask,
   onRescheduleConfirmed,
 }) => {
-  const weekDays = useMemo(() => getWeekDays(weekOffset), [weekOffset]);
+  const allWeekDays = useMemo(() => getWeekDays(weekOffset), [weekOffset]);
+
+  // Weekend visibility — persisted so the user's choice survives navigation
+  const [showWeekend, setShowWeekend] = useState(() => {
+    try { return localStorage.getItem('pmt_board_show_weekend') === 'true'; } catch { return false; }
+  });
+  const toggleWeekend = () => {
+    setShowWeekend(v => {
+      const next = !v;
+      try { localStorage.setItem('pmt_board_show_weekend', String(next)); } catch {}
+      return next;
+    });
+  };
+
+  // When weekend is hidden, drop Sat (index 5) and Sun (index 6)
+  const weekDays = useMemo(
+    () => showWeekend ? allWeekDays : allWeekDays.filter((_, i) => i < 5),
+    [allWeekDays, showWeekend]
+  );
 
   const { byDay, noDueDate } = useMemo(
-    () => groupTasksByDay(tasks, weekDays),
-    [tasks, weekDays]
+    () => groupTasksByDay(tasks, allWeekDays),
+    [tasks, allWeekDays]
   );
 
   // Drag state — we track the dragged task here so columns can call onDropTask(targetDate)
@@ -102,9 +120,23 @@ const WeeklyTaskBoard = ({
       {/* Week navigation bar */}
       <div className="flex items-center justify-between gap-4">
         <WeekNavigator weekOffset={weekOffset} onOffsetChange={onWeekOffsetChange} />
-        <p className="text-[10px] text-slate-400 hidden sm:block">
-          Drag cards between columns to reschedule
-        </p>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={toggleWeekend}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all whitespace-nowrap ${
+              showWeekend
+                ? 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100'
+                : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+            }`}
+            title={showWeekend ? 'Hide Sat & Sun' : 'Show Sat & Sun'}
+          >
+            {showWeekend ? 'Hide Weekend' : 'Show Weekend'}
+          </button>
+          <p className="text-[10px] text-slate-400 hidden sm:block">
+            Drag cards between columns to reschedule
+          </p>
+        </div>
       </div>
 
       {/* Columns — horizontally scrollable */}
