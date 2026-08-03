@@ -58,6 +58,19 @@ export async function writeFirebasePath(path: string, value: unknown): Promise<v
 }
 
 /**
+ * Write multiple paths atomically in a single Firebase multi-path update.
+ * Much faster than sequential writeFirebasePath calls — one round-trip instead of N.
+ *
+ * @param updates - Record of absolute Firebase path → value (null to delete).
+ */
+export async function multiPathUpdate(
+  updates: Record<string, unknown>
+): Promise<void> {
+  const database = getAdminDatabase();
+  await database.ref().update(updates);
+}
+
+/**
  * Return the immediate child keys at a Firebase path without downloading
  * child data. Uses the Firebase REST API with `?shallow=true` so large
  * subtrees (e.g. message histories) are never transferred.

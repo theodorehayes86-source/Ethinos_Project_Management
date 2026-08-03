@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
-import { readFirebasePath, writeFirebasePath } from "./firebase-admin";
+import { readFirebasePath, writeFirebasePath, multiPathUpdate } from "./firebase-admin";
 import { logger } from "./logger";
 import { format, addDays, parseISO, isValid } from "date-fns";
 import { toZonedTime } from "date-fns-tz";
@@ -987,11 +987,14 @@ export async function syncAttendanceToday(
       }
     }
 
-    // ── Step 4: Write a record for every Keka-linked user ────────────────────
+    // ── Step 4: Write a record for every Keka-linked user (single atomic batch) ─
+    // One multiPathUpdate round-trip instead of 64+ sequential set() calls —
+    // faster, atomic, and won't leave Firebase in a partial state if interrupted.
     const nowStr = new Date().toISOString();
     let recordsWritten = 0;
     let totalArrived = 0;
     let totalNotArrived = 0;
+    const updates: Record<string, unknown> = {};
 
     for (const [kekaEmployeeId, pmtUserId] of Object.entries(kekaIdToUserId)) {
       const rec = attendanceByKekaId[kekaEmployeeId];
@@ -1000,7 +1003,7 @@ export async function syncAttendanceToday(
       const hasArrived = clockIn !== null;
       const isInOffice = hasArrived && clockOut === null;
 
-      await writeFirebasePath(`attendanceData/${today}/${pmtUserId}`, {
+      updates[`attendanceData/${today}/${pmtUserId}`] = {
         clockIn,
         clockOut,
         hasArrived,
@@ -1008,19 +1011,22 @@ export async function syncAttendanceToday(
         grossHours: rec?.totalGrossHours ?? 0,
         effectiveHours: rec?.totalEffectiveHours ?? 0,
         syncedAt: nowStr,
-      });
+      };
 
       recordsWritten++;
       if (hasArrived) totalArrived++; else totalNotArrived++;
     }
 
-    await writeFirebasePath("settings/integrations/keka/lastAttendanceSync", {
+    // Include lastAttendanceSync in the same atomic write
+    updates["settings/integrations/keka/lastAttendanceSync"] = {
       syncedAt: nowStr,
       recordsWritten,
       totalArrived,
       totalNotArrived,
       date: today,
-    });
+    };
+
+    await multiPathUpdate(updates);
 
     logger.info(
       { recordsWritten, totalArrived, totalNotArrived, date: today, retriesUsed: totalRetries },
