@@ -1034,14 +1034,28 @@ const TeamView = ({
 
   const allClients = useMemo(() => [...(clients || []), ...(syntheticClients || [])], [clients, syntheticClients]);
 
-  const allTasksForUser = useCallback((userId) => {
-    const result = [];
+  // Pre-built user→tasks index so MemberCard lookups are O(1) instead of
+  // iterating all clientLogs on every render. Recomputed only when clientLogs
+  // or the clients list changes — not on every task-level field update.
+  const userTasksIndex = useMemo(() => {
+    const index = new Map();
     Object.entries(clientLogs).forEach(([cid, tasks]) => {
       const clientObj = allClients.find(c => String(c.id) === String(cid));
-      (tasks || []).forEach(t => { if (String(t.assigneeId) === String(userId)) result.push({ ...t, cid, cName: clientObj?.name || cid }); });
+      const cName = clientObj?.name || cid;
+      (tasks || []).forEach(t => {
+        const uid = String(t.assigneeId);
+        const enriched = { ...t, cid, cName };
+        const existing = index.get(uid);
+        if (existing) existing.push(enriched);
+        else index.set(uid, [enriched]);
+      });
     });
-    return result;
+    return index;
   }, [clientLogs, allClients]);
+
+  const allTasksForUser = useCallback((userId) => {
+    return userTasksIndex.get(String(userId)) ?? [];
+  }, [userTasksIndex]);
 
   const currentParent = drillStack.length > 0 ? drillStack[drillStack.length - 1] : null;
 

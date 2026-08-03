@@ -1,0 +1,430 @@
+Please investigate and permanently fix the **Keka Attendance Scheduler**, which is responsible for importing employee **IN** and **OUT** times each day.
+
+## Objective
+
+The scheduler currently works initially but then **fails the following day**, requiring manual intervention or simply not processing attendance correctly.
+
+I do **not** want a workaround. I want the root cause identified and fixed so the scheduler runs reliably every day without manual intervention.
+
+Do not remove any existing functionality.
+
+---
+
+# 1. Perform a complete root cause analysis
+
+Before making changes, determine exactly why the scheduler stops working after the first successful run.
+
+Investigate all possible causes including:
+
+* Scheduler not firing
+* Cron expression issues
+* Job lock not releasing
+* Lock TTL expiring incorrectly
+* Timezone problems
+* Date calculations
+* Keka API limitations
+* Authentication expiry
+* OAuth token expiry
+* Refresh token issues
+* API throttling
+* Firebase state corruption
+* Scheduler registration issues
+* Duplicate schedulers
+* Process restarts
+* Unhandled exceptions
+* Memory leaks
+* Promise rejections
+* Incorrect "last processed" logic
+* Incorrect date range calculations
+* Weekend logic
+* Public holiday handling
+* DST or timezone edge cases
+* Stale cache
+* Database writes preventing future runs
+
+Do not assume the issue is the scheduler itself.
+
+---
+
+# 2. Trace the complete execution flow
+
+Document every stage:
+
+Scheduler Starts
+
+↓
+
+Cron Fires
+
+↓
+
+Job Lock Acquired
+
+↓
+
+Authentication
+
+↓
+
+Token Refresh
+
+↓
+
+Keka API Request
+
+↓
+
+Attendance Retrieved
+
+↓
+
+Attendance Processed
+
+↓
+
+Firebase Updated
+
+↓
+
+Scheduler Completes
+
+For each stage determine:
+
+* Does it run?
+* Does it complete?
+* Does it throw?
+* Does it silently stop?
+* Does it leave stale state?
+
+---
+
+# 3. Review the cron schedule
+
+Verify:
+
+* Cron expression
+* Timezone
+* Server timezone
+* Application timezone
+* Keka timezone
+
+Ensure the scheduler executes exactly when intended.
+
+Confirm it still runs after midnight and across multiple days.
+
+---
+
+# 4. Review the job lock
+
+Inspect the locking mechanism.
+
+Confirm:
+
+* Locks are always released.
+* Locks expire correctly.
+* Failed jobs cannot permanently block future runs.
+* A crashed process cannot leave a permanent lock.
+* Multiple server instances cannot interfere with one another.
+
+Add logging for:
+
+```text
+Lock acquired
+Lock skipped
+Lock expired
+Lock released
+```
+
+---
+
+# 5. Review date calculations
+
+This is one of the most likely causes.
+
+Verify:
+
+* Yesterday's attendance
+* Today's attendance
+* Date formatting
+* Local timezone
+* UTC conversion
+* Inclusive vs exclusive ranges
+
+Check behaviour around:
+
+* Midnight
+* Month end
+* Year end
+* Weekends
+
+The scheduler should always request the correct attendance period.
+
+---
+
+# 6. Verify Keka authentication
+
+Inspect:
+
+* Access token lifetime
+* Refresh token lifetime
+* API key usage
+* Session expiry
+
+Confirm authentication is refreshed automatically.
+
+The scheduler must never fail because an old token is reused.
+
+---
+
+# 7. Review Keka API responses
+
+Log:
+
+* HTTP status
+* Response time
+* Rate limit headers
+* Error codes
+* Empty responses
+
+Distinguish between:
+
+* No attendance today
+* API failure
+* Authentication failure
+* Validation failure
+* Rate limiting
+* Network timeout
+
+Do not treat all failures identically.
+
+---
+
+# 8. Improve retry logic
+
+For transient failures:
+
+Retry automatically using exponential backoff.
+
+Retry examples:
+
+* Network timeout
+* HTTP 429
+* HTTP 500
+* Temporary Keka outage
+
+Do not retry:
+
+* Invalid credentials
+* Invalid requests
+* Permanent validation errors
+
+---
+
+# 9. Prevent silent failures
+
+Every scheduler execution should end with one of:
+
+```text
+Success
+
+Skipped
+
+Partial Success
+
+Failed
+```
+
+Never allow the scheduler to terminate silently.
+
+Log the exact reason.
+
+---
+
+# 10. Improve logging
+
+Add structured logging including:
+
+Scheduler started
+
+Scheduler completed
+
+Duration
+
+Employees processed
+
+Attendance records found
+
+Attendance records updated
+
+Employees skipped
+
+API duration
+
+Database duration
+
+Retry count
+
+Failure reason
+
+Example:
+
+```text
+[KekaScheduler]
+Date: 2026-08-04
+Duration: 8.2s
+Employees processed: 94
+Updated: 89
+Skipped: 5
+Retries: 1
+Status: Success
+```
+
+---
+
+# 11. Review database updates
+
+Verify attendance writes cannot prevent future scheduler runs.
+
+Ensure:
+
+* Partial writes are handled
+* Duplicate records are avoided
+* Failed writes are retried where appropriate
+* Scheduler state remains consistent
+
+---
+
+# 12. Prevent duplicate processing
+
+Ensure the scheduler cannot import the same attendance twice.
+
+Implement idempotent processing.
+
+If the scheduler reruns for the same day it should update existing records where appropriate instead of creating duplicates.
+
+---
+
+# 13. Handle missing OUT times
+
+Employees often have:
+
+IN recorded
+
+OUT not yet available
+
+The scheduler should:
+
+* Import the IN time.
+* Update the OUT time later once available.
+* Never assume an employee forgot to clock out until the appropriate cut-off.
+
+---
+
+# 14. Review startup behaviour
+
+If the server restarts:
+
+The scheduler should determine:
+
+"What attendance have I not processed yet?"
+
+It should catch up automatically.
+
+It should not permanently skip an entire day because the server restarted.
+
+---
+
+# 15. Add health monitoring
+
+Maintain scheduler metadata such as:
+
+```text
+Last successful run
+
+Last attempted run
+
+Last failed run
+
+Next scheduled run
+
+Last API duration
+
+Last error
+```
+
+Store this where appropriate so administrators can easily see scheduler health.
+
+---
+
+# 16. Self-healing
+
+If one day's import fails:
+
+The scheduler should recover automatically the following day.
+
+It should not require:
+
+* Server restart
+* Manual intervention
+* Clearing Firebase
+* Resetting locks
+
+---
+
+# 17. Testing
+
+Verify:
+
+✓ Scheduler runs every day
+
+✓ Scheduler survives server restart
+
+✓ Authentication refresh works
+
+✓ Job lock releases correctly
+
+✓ Date calculation remains correct across days
+
+✓ Duplicate imports are prevented
+
+✓ Missing OUT times are updated later
+
+✓ API failures retry correctly
+
+✓ Permanent failures log correctly
+
+✓ Scheduler automatically recovers after failure
+
+✓ Month-end works
+
+✓ Year-end works
+
+✓ Timezone changes work
+
+✓ Production build passes
+
+---
+
+# Deliverables
+
+After fixing the issue provide:
+
+1. Root cause identified.
+
+2. Files changed.
+
+3. Exact bug that caused the next-day failure.
+
+4. Improvements made.
+
+5. New retry behaviour.
+
+6. New logging added.
+
+7. Confirmation the scheduler is self-healing.
+
+8. Confirmation no manual intervention should be required going forward.
+
+9. Anything that could not be fully tested locally.
+
+Prioritise identifying the **real root cause** rather than simply making the scheduler more resilient. If multiple issues are found, fix each one rather than masking the underlying problem.

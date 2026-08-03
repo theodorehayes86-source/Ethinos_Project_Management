@@ -725,6 +725,12 @@ const BOT_SERVICE_URLS = [
 ];
 
 /**
+ * Remembers which service URL worked last time so we skip the sequential
+ * fallback on every call after the first successful delivery.
+ */
+let lastSuccessfulBotServiceUrl: string | null = null;
+
+/**
  * Send a proactive Bot Connector message to a user's 1:1 bot chat.
  * The message appears in Teams as a message from the Flow Pro bot.
  */
@@ -749,8 +755,15 @@ export async function sendBotProactiveMessage(
     channelData: { notification: { alert: true } },
   };
 
+  // Try the last-successful URL first to avoid the sequential fallback on
+  // every call. On first use (or after a server restart) this is null and we
+  // fall through to the full list.
+  const orderedUrls = lastSuccessfulBotServiceUrl
+    ? [lastSuccessfulBotServiceUrl, ...BOT_SERVICE_URLS.filter(u => u !== lastSuccessfulBotServiceUrl)]
+    : BOT_SERVICE_URLS;
+
   let lastErr: Error = new Error("[Bot] No service URLs tried");
-  for (const serviceUrl of BOT_SERVICE_URLS) {
+  for (const serviceUrl of orderedUrls) {
     try {
       const sendResp = await fetch(
         `${serviceUrl}v3/conversations/${encodeURIComponent(conversationId)}/activities`,
@@ -764,6 +777,7 @@ export async function sendBotProactiveMessage(
         }
       );
       if (sendResp.ok) {
+        lastSuccessfulBotServiceUrl = serviceUrl; // cache for next call
         logger.info({ serviceUrl, recipientAadId }, "[Bot] Proactive message sent");
         return;
       }

@@ -81,8 +81,9 @@ router.post(
       });
     }
 
+    const t0 = Date.now();
     try {
-      // Stable lookup key — sort so A→B and B→A use the same entry
+      // ── 1. Resolve the chat ID (fast: Firebase cache or parallel Graph calls) ──
       const lookupKey = fbKey([senderId, recipientId].sort().join("_"));
       const cached = await readFirebasePath<{
         rawChatId: string;
@@ -121,88 +122,101 @@ router.post(
       }
 
       const chatKey = fbKey(rawChatId);
+      const resolveMs = Date.now() - t0;
 
-      // Hydrate Firebase with recent message history from Graph
-      try {
-        const graphMessages = await getChatMessages(rawChatId, 50);
-        for (const msg of graphMessages) {
-          const raw = msg.body.contentType === "html"
-            ? htmlToText(msg.body.content)
-            : msg.body.content;
-          const body = raw.trim();
-          if (!body) continue;
-          const msgKey = fbKey(msg.id);
-          const existing = await readFirebasePath(
-            `teamsDMs/chats/${chatKey}/messages/${msgKey}`
-          );
-          if (!existing) {
-            await writeFirebasePath(
-              `teamsDMs/chats/${chatKey}/messages/${msgKey}`,
-              {
-                id: msg.id,
-                fromObjectId: msg.from?.user?.id ?? "",
-                fromName: msg.from?.user?.displayName ?? "Unknown",
-                body,
-                sentAt: new Date(msg.createdDateTime).getTime(),
-                source: "teams",
-              }
-            );
-          }
-        }
-      } catch (histErr) {
-        logger.warn(
-          { histErr, rawChatId },
-          "[TeamsChat] History hydration failed — continuing"
-        );
-      }
-
-      // Create or renew the Graph change-notification subscription
-      const webhookUrl = `${getTeamsBaseUrl()}/api/teams-chat/webhook`;
-      try {
-        const existingSub = await readFirebasePath<{
-          id: string;
-          expiresAt: number;
-        } | null>(`teamsDMs/chats/${chatKey}/subscription`);
-
-        if (
-          existingSub?.id &&
-          existingSub.expiresAt > Date.now() + 5 * 60 * 1000
-        ) {
-          // Still valid — extend it
-          const newExpiry = await renewChatSubscription(existingSub.id);
-          await writeFirebasePath(`teamsDMs/chats/${chatKey}/subscription`, {
-            id: existingSub.id,
-            expiresAt: new Date(newExpiry).getTime(),
-          });
-        } else {
-          const sub = await subscribeToChatMessages(
-            rawChatId,
-            webhookUrl,
-            WEBHOOK_CLIENT_STATE
-          );
-          await writeFirebasePath(`teamsDMs/chats/${chatKey}/subscription`, {
-            id: sub.id,
-            expiresAt: new Date(sub.expiresDateTime).getTime(),
-          });
-        }
-      } catch (subErr) {
-        // Non-fatal — the chat still works, just without instant push
-        logger.warn(
-          { subErr, rawChatId },
-          "[TeamsChat] Subscription create/renew failed — replies may be delayed"
-        );
-      }
-
+      // ── 2. Respond immediately — UI is unblocked ──────────────────────────
+      // History hydration and subscription management run in the background so
+      // they never delay the chat from opening. Messages arrive via the Firebase
+      // onValue listener once hydration completes.
       logger.info(
-        { chatKey, senderName },
-        "[TeamsChat] Chat opened"
+        { chatKey, senderName, resolveMs },
+        "[TeamsChat] Chat opened — hydration/subscription running in background"
       );
+      res.json({ chatKey, rawChatId, senderObjectId: senderObjectId ?? "" });
 
-      return res.json({
-        chatKey,
-        rawChatId,
-        senderObjectId: senderObjectId ?? "",
-      });
+      // ── 3. Background: hydrate Firebase with recent message history ────────
+      void (async () => {
+        const hStart = Date.now();
+        try {
+          const graphMessages = await getChatMessages(rawChatId, 50);
+          let hydrated = 0;
+          for (const msg of graphMessages) {
+            const raw = msg.body.contentType === "html"
+              ? htmlToText(msg.body.content)
+              : msg.body.content;
+            const body = raw.trim();
+            if (!body) continue;
+            const msgKey = fbKey(msg.id);
+            const existing = await readFirebasePath(
+              `teamsDMs/chats/${chatKey}/messages/${msgKey}`
+            );
+            if (!existing) {
+              await writeFirebasePath(
+                `teamsDMs/chats/${chatKey}/messages/${msgKey}`,
+                {
+                  id: msg.id,
+                  fromObjectId: msg.from?.user?.id ?? "",
+                  fromName: msg.from?.user?.displayName ?? "Unknown",
+                  body,
+                  sentAt: new Date(msg.createdDateTime).getTime(),
+                  source: "teams",
+                }
+              );
+              hydrated++;
+            }
+          }
+          logger.info(
+            { chatKey, hydrated, totalFetched: graphMessages.length, ms: Date.now() - hStart },
+            "[TeamsChat] Background history hydration complete"
+          );
+        } catch (histErr) {
+          logger.warn(
+            { histErr, rawChatId, ms: Date.now() - hStart },
+            "[TeamsChat] Background history hydration failed"
+          );
+        }
+      })();
+
+      // ── 4. Background: create / renew the Graph change-notification subscription
+      void (async () => {
+        const sStart = Date.now();
+        const webhookUrl = `${getTeamsBaseUrl()}/api/teams-chat/webhook`;
+        try {
+          const existingSub = await readFirebasePath<{
+            id: string;
+            expiresAt: number;
+          } | null>(`teamsDMs/chats/${chatKey}/subscription`);
+
+          if (
+            existingSub?.id &&
+            existingSub.expiresAt > Date.now() + 5 * 60 * 1000
+          ) {
+            const newExpiry = await renewChatSubscription(existingSub.id);
+            await writeFirebasePath(`teamsDMs/chats/${chatKey}/subscription`, {
+              id: existingSub.id,
+              expiresAt: new Date(newExpiry).getTime(),
+            });
+          } else {
+            const sub = await subscribeToChatMessages(
+              rawChatId,
+              webhookUrl,
+              WEBHOOK_CLIENT_STATE
+            );
+            await writeFirebasePath(`teamsDMs/chats/${chatKey}/subscription`, {
+              id: sub.id,
+              expiresAt: new Date(sub.expiresDateTime).getTime(),
+            });
+          }
+          logger.info({ chatKey, ms: Date.now() - sStart }, "[TeamsChat] Background subscription ensured");
+        } catch (subErr) {
+          logger.warn(
+            { subErr, rawChatId, ms: Date.now() - sStart },
+            "[TeamsChat] Background subscription create/renew failed — replies may be delayed"
+          );
+        }
+      })();
+
+      return;
     } catch (err) {
       logger.error({ err }, "[TeamsChat] /open failed");
       return res.status(500).json({ error: "Failed to open chat" });

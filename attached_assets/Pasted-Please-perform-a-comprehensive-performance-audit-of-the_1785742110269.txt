@@ -1,0 +1,409 @@
+Please perform a comprehensive performance audit of the **Microsoft Teams module** and optimise it to achieve the fastest possible loading time without removing any existing functionality.
+
+## Objective
+
+The Teams section currently feels slow to load. I want the application to feel almost instantaneous, with the UI rendering immediately while background operations continue asynchronously.
+
+The goal is to reduce:
+
+* Initial page load time
+* Time to first render
+* Time before chats become usable
+* Time before users can interact
+* Firebase read latency
+* Microsoft Graph API latency
+* React rendering overhead
+
+while preserving all existing functionality.
+
+---
+
+# 1. Profile the entire Teams loading flow
+
+Before making changes, profile the complete loading sequence and identify exactly where time is being spent.
+
+Break down loading into:
+
+* React rendering
+* Firebase reads
+* Microsoft Graph requests
+* Authentication
+* Token refresh
+* Subscription validation
+* Subscription creation
+* Presence loading
+* User loading
+* Chat loading
+* Message loading
+* Images / avatars
+* Any unnecessary waiting
+
+Produce a summary showing approximately where the application spends its loading time.
+
+Do not optimise blindly.
+
+---
+
+# 2. Render the UI immediately
+
+Do not wait for every API request before rendering.
+
+The Teams page should render immediately with loading placeholders while background requests continue.
+
+For example:
+
+Immediately render:
+
+* Sidebar
+* Chat list skeleton
+* Search
+* User list
+* Buttons
+* Navigation
+
+Then progressively load:
+
+* Chat summaries
+* Avatars
+* Presence
+* Messages
+* Attachments
+
+The user should be able to interact before everything finishes loading.
+
+---
+
+# 3. Lazy-load chat messages
+
+Do not download message history for every conversation during page load.
+
+Instead:
+
+* Load only conversation summaries initially.
+* Load message history only when a chat is opened.
+* Cache previously opened chats.
+
+Never preload hundreds or thousands of messages that the user may never read.
+
+---
+
+# 4. Reduce Firebase reads
+
+Review every Firebase listener and read operation.
+
+Identify:
+
+* Entire collections being downloaded unnecessarily.
+* Repeated reads of the same data.
+* Multiple listeners on the same node.
+* Reads occurring every render.
+* Duplicate subscriptions.
+
+Only retrieve the minimum data required.
+
+Avoid downloading:
+
+* Complete message history
+* Large chat objects
+* Historical metadata
+
+unless required.
+
+If appropriate:
+
+* Split metadata from message history.
+* Create lightweight indexes.
+* Query only recent chats.
+
+---
+
+# 5. Cache aggressively
+
+Introduce caching wherever safe.
+
+Cache:
+
+* User list
+* Chat list
+* Chat metadata
+* Avatars
+* Presence
+* Teams IDs
+* Subscription status
+
+Only refresh data when required.
+
+Do not repeatedly download data that has not changed.
+
+---
+
+# 6. Optimise Microsoft Graph requests
+
+Review every Microsoft Graph request.
+
+Identify:
+
+* Duplicate requests
+* Sequential requests that can run in parallel
+* Requests that block rendering
+* Unnecessary subscription validation
+* Repeated user lookups
+* Repeated chat lookups
+
+Use bounded concurrency where appropriate.
+
+Avoid sending multiple requests for the same resource.
+
+Batch requests where Microsoft Graph supports batching.
+
+---
+
+# 7. Do not validate subscriptions during page load
+
+Subscription renewal and validation should not delay the Teams UI.
+
+Loading the Teams page should never wait for:
+
+* Subscription renewal
+* Subscription expiry checks
+* Scheduler work
+
+Those should happen entirely in the background.
+
+---
+
+# 8. Optimise React rendering
+
+Review every Teams component.
+
+Identify:
+
+* Unnecessary re-renders
+* Expensive filtering
+* Large maps
+* Missing memoization
+* Unstable callbacks
+* Large derived objects recreated every render
+
+Use:
+
+* useMemo
+* useCallback
+* React.memo
+
+only where they genuinely improve performance.
+
+Remove unnecessary state updates.
+
+---
+
+# 9. Virtualise long lists
+
+If there are many:
+
+* chats
+* users
+* messages
+
+render only the visible items.
+
+Avoid rendering hundreds of DOM elements simultaneously.
+
+Use the project's preferred virtualization approach.
+
+---
+
+# 10. Improve loading strategy
+
+Current loading should become:
+
+Immediately:
+
+✓ Render Teams shell
+
+✓ Render navigation
+
+✓ Render sidebar
+
+✓ Render placeholders
+
+Then:
+
+✓ Load chat summaries
+
+✓ Load recent chats
+
+Then:
+
+✓ Load presence
+
+✓ Load avatars
+
+Then:
+
+✓ Load messages for active chat
+
+Finally:
+
+✓ Load background metadata
+
+No expensive background work should block the interface.
+
+---
+
+# 11. Reduce startup work
+
+Review everything that happens when Teams first opens.
+
+Delay anything that is not immediately required.
+
+Examples:
+
+* Historical message sync
+* Subscription verification
+* Background indexing
+* Presence refresh
+* Analytics
+* Typing indicators
+
+Load these after the interface becomes usable.
+
+---
+
+# 12. Improve backend endpoints
+
+Review Teams-related API endpoints.
+
+Identify endpoints that:
+
+* Return too much data
+* Perform unnecessary joins
+* Read Firebase repeatedly
+* Make duplicate Graph requests
+
+Return only the data needed by the current screen.
+
+---
+
+# 13. Improve realtime listeners
+
+Review Firebase realtime listeners.
+
+Ensure:
+
+* Listeners are cleaned up correctly.
+* Duplicate listeners cannot exist.
+* Hidden screens are not still listening.
+* Background listeners are paused where appropriate.
+
+---
+
+# 14. Add performance logging
+
+Add lightweight timing logs for development.
+
+Measure:
+
+* Firebase read time
+* Microsoft Graph time
+* React render time
+* Total Teams page load
+* Chat open time
+
+Example:
+
+```text
+Teams page loaded in 820ms
+Firebase users: 120ms
+Chat summaries: 180ms
+Graph presence: 310ms
+Messages: 95ms
+```
+
+These logs should be easy to disable in production.
+
+---
+
+# 15. Review scheduler interactions
+
+Confirm that background schedulers do not negatively affect Teams responsiveness.
+
+This includes:
+
+* Chat subscription renewal
+* Notification processing
+* Background sync
+* Token refresh
+
+They should never block UI rendering.
+
+---
+
+# 16. Target performance
+
+Aim for approximately:
+
+* Initial render < 500ms
+* Chat list visible < 1 second
+* Opening a cached chat < 200ms
+* Opening an uncached chat < 1 second
+* Smooth scrolling
+* No UI freezing
+
+Do not sacrifice correctness for speed.
+
+---
+
+# 17. Testing
+
+After optimisation verify:
+
+✓ Existing chat functionality still works
+
+✓ Teams notifications still work
+
+✓ Chat subscriptions still renew
+
+✓ Presence still updates
+
+✓ Search still works
+
+✓ Message sending still works
+
+✓ Attachments still work
+
+✓ Realtime updates still work
+
+✓ No duplicate listeners exist
+
+✓ No memory leaks
+
+✓ No additional authentication prompts
+
+✓ TypeScript build passes
+
+✓ Lint passes
+
+---
+
+# Deliverables
+
+After completing the optimisation:
+
+1. List every file changed.
+
+2. Explain every optimisation made.
+
+3. Rank the biggest bottlenecks found.
+
+4. Report before-and-after loading times.
+
+5. State how many Firebase reads were reduced.
+
+6. State how many Microsoft Graph requests were reduced.
+
+7. Confirm no existing Teams functionality was removed.
+
+8. Mention anything that could not be optimised without larger architectural changes.
+
+Prioritise **real performance improvements** over code style changes. Focus on reducing network requests, Firebase reads, Graph API latency, React rendering time, and perceived load time.

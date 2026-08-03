@@ -1,6 +1,22 @@
 import { ref, get } from "firebase/database";
 import { db } from "../firebase.js";
 
+// ── Performance caches ────────────────────────────────────────────────────────
+// Avoids repeated Firebase reads when the user changes the dept filter or
+// drills into a sub-team. TTLs are short enough to always reflect same-day
+// leave / holiday changes but long enough to eliminate duplicate reads.
+
+const LEAVE_STATUS_TTL  = 2 * 60 * 1000; // 2 min — leave can change during the day
+const HOLIDAYS_TTL      = 5 * 60 * 1000; // 5 min — holidays are near-static
+const ATTENDANCE_TTL    = 2 * 60 * 1000; // 2 min — clock-in state changes
+
+/** @type {Map<string, { result: any; cachedAt: number }>} */
+const leaveStatusCache   = new Map();
+/** @type {Map<string, { result: Set<string>; cachedAt: number }>} */
+const holidaysCache      = new Map();
+/** @type {{ result: Record<string, unknown>; cachedAt: number } | null} */
+let attendanceCache      = null;
+
 /**
  * @typedef {Object} LeaveConflict
  * @property {'full-leave'|'half-leave'|'holiday'|'pending-leave'} type
@@ -169,6 +185,11 @@ export async function getUserLeaveAndHolidayData(userId, region = "All") {
 export async function getUserLeaveStatus(userId, region = "All") {
   if (!userId) return { onLeaveToday: false, onLeavePendingToday: false, upcomingLeaveDate: null, upcomingPendingDate: null, upcomingHolidayDate: null };
 
+  // Cache hit — avoids one Firebase read per visible team member on filter changes
+  const cacheKey = `${userId}:${region}`;
+  const hit = leaveStatusCache.get(cacheKey);
+  if (hit && Date.now() - hit.cachedAt < LEAVE_STATUS_TTL) return hit.result;
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -216,7 +237,9 @@ export async function getUserLeaveStatus(userId, region = "All") {
       .filter(dk => dk >= tomorrowKey && dk <= cutoffKey && holidayData[dk])
       .sort()[0] ?? null;
 
-    return { onLeaveToday, onLeavePendingToday, upcomingLeaveDate, upcomingPendingDate, upcomingHolidayDate };
+    const result = { onLeaveToday, onLeavePendingToday, upcomingLeaveDate, upcomingPendingDate, upcomingHolidayDate };
+    leaveStatusCache.set(cacheKey, { result, cachedAt: Date.now() });
+    return result;
   } catch {
     return { onLeaveToday: false, onLeavePendingToday: false, upcomingLeaveDate: null, upcomingPendingDate: null, upcomingHolidayDate: null };
   }
@@ -232,9 +255,17 @@ export async function getUserLeaveStatus(userId, region = "All") {
 export async function getTodayAttendanceMap() {
   const today = toDateKey(new Date());
   if (!today) return {};
+
+  // Cache hit — single bulk read for all users; filter changes should reuse it
+  if (attendanceCache && Date.now() - attendanceCache.cachedAt < ATTENDANCE_TTL) {
+    return attendanceCache.result;
+  }
+
   try {
     const snap = await get(ref(db, `attendanceData/${today}`));
-    return snap.val() || {};
+    const result = snap.val() || {};
+    attendanceCache = { result, cachedAt: Date.now() };
+    return result;
   } catch {
     return {};
   }
@@ -249,6 +280,11 @@ export async function getTodayAttendanceMap() {
  * @returns {Promise<Set<string>>}
  */
 export async function getUpcomingHolidays(region = "All", days = 14) {
+  // Cache hit — holidays don't change during a session
+  const cacheKey = `${region}:${days}`;
+  const hit = holidaysCache.get(cacheKey);
+  if (hit && Date.now() - hit.cachedAt < HOLIDAYS_TTL) return hit.result;
+
   try {
     const snap = await get(ref(db, `publicHolidays/${region}`));
     const data = snap.val() || {};
@@ -260,6 +296,7 @@ export async function getUpcomingHolidays(region = "All", days = 14) {
     Object.keys(data).forEach(dk => {
       if (dk >= todayKey && dk <= cutoffKey && data[dk]) result.add(dk);
     });
+    holidaysCache.set(cacheKey, { result, cachedAt: Date.now() });
     return result;
   } catch {
     return new Set();

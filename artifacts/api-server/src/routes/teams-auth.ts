@@ -94,16 +94,36 @@ async function verifyFirebaseToken(req: Request): Promise<{ email?: string } | n
   }
 }
 
-/** Look up a PMT user by email from the Firebase users array */
+/**
+ * In-process cache for email → PMT user ID lookups.
+ * Avoids downloading the entire users collection on every /teams/status call.
+ * 5-minute TTL — safe for a low-churn dataset.
+ */
+const pmtUserCache = new Map<string, { id: string | number; cachedAt: number }>();
+const PMT_USER_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/** Look up a PMT user by email from the Firebase users array (cached). */
 async function getPmtUserByEmail(email: string): Promise<{ id: string | number } | null> {
+  const key = email.toLowerCase();
+
+  // Cache hit — avoid the full users collection read
+  const hit = pmtUserCache.get(key);
+  if (hit && Date.now() - hit.cachedAt < PMT_USER_CACHE_TTL_MS) {
+    return { id: hit.id };
+  }
+
   type PmtUser = { id?: string | number; email?: string; emailAddress?: string };
   const raw = await readFirebasePath<PmtUser[] | Record<string, PmtUser> | null>("users");
   const arr: PmtUser[] = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
   const match = arr.find(
-    (u) => u?.email?.toLowerCase() === email.toLowerCase() ||
-           u?.emailAddress?.toLowerCase() === email.toLowerCase()
+    (u) => u?.email?.toLowerCase() === key ||
+           u?.emailAddress?.toLowerCase() === key
   );
-  return match && match.id != null ? { id: match.id } : null;
+  if (match && match.id != null) {
+    pmtUserCache.set(key, { id: match.id, cachedAt: Date.now() });
+    return { id: match.id };
+  }
+  return null;
 }
 
 /* ─── routes ─── */
@@ -353,12 +373,9 @@ router.post("/teams/test-ping", requireFirebaseAuth, async (req: Request, res: R
     const email = decoded.email;
     if (!email) { res.status(400).json({ error: "No email in token" }); return; }
 
-    type FBUser = { id?: string; email?: string; emailAddress?: string };
-    const usersRaw = await readFirebasePath<FBUser[] | Record<string, FBUser> | null>("users");
-    const usersArr: FBUser[] = Array.isArray(usersRaw)
-      ? usersRaw : usersRaw ? Object.values(usersRaw) : [];
-    const userRecord = usersArr.find(u => u && (u.email === email || u.emailAddress === email));
-    const userId = userRecord ? String(userRecord.id ?? "") : "";
+    // Reuse cached lookup — avoids a second full users-collection read
+    const pmtUser = await getPmtUserByEmail(email);
+    const userId = pmtUser ? String(pmtUser.id) : "";
 
     const objectId = await resolveEntraObjectId(email, userId);
     if (!objectId) {
