@@ -1,0 +1,369 @@
+Please review the recently added **Team Checklist Dashboard** and **Manager Read-Only Checklist View** implementation and fix the issues below without changing the intended functionality.
+
+## Objective
+
+The feature should allow managers to:
+
+* View checklist groups assigned to team members.
+* Filter by status, cadence and client.
+* Open any checklist group in a completely read-only mode.
+* View accurate completion statistics and progress.
+* See correct overdue/pending/submitted status.
+
+Do not remove any existing functionality.
+
+---
+
+# 1. Fix incorrect progress calculations
+
+The current implementation calculates:
+
+```javascript
+answered = yes/no answers + text answers
+```
+
+but divides by
+
+```javascript
+ynTotal
+```
+
+which only counts Yes/No questions.
+
+This causes incorrect percentages.
+
+Example:
+
+* 2 Yes/No questions
+* 2 Text questions
+* All completed
+
+Current result:
+
+```
+4 / 2 answered
+200%
+```
+
+This is incorrect.
+
+Instead:
+
+Create separate values:
+
+```javascript
+_totalQuestions
+_ynTotal
+_answered
+```
+
+where
+
+```
+totalQuestions =
+yes/no questions +
+text questions
+```
+
+Progress bars should use
+
+```
+answered / totalQuestions
+```
+
+not
+
+```
+answered / ynTotal
+```
+
+Continue displaying Yes / No counts separately.
+
+---
+
+# 2. Show progress for text-only checklists
+
+Currently progress only appears when
+
+```javascript
+_ynTotal > 0
+```
+
+This means checklist groups containing only text-input questions show no progress.
+
+Instead:
+
+Display progress whenever
+
+```
+totalQuestions > 0
+```
+
+Text-only checklists should show
+
+```
+2 / 3 answered
+```
+
+just like mixed checklists.
+
+---
+
+# 3. Verify checklist completion logic
+
+Review how checklist groups are marked as submitted.
+
+The current code only checks
+
+```javascript
+group.status === "done"
+```
+
+Confirm whether this is correct.
+
+If checklist submission is determined by an explicit submit action, preserve that behaviour.
+
+If submission should be inferred from every child question being completed, calculate it accordingly.
+
+Do not accidentally change business logic.
+
+---
+
+# 4. Normalize status values
+
+Avoid case-sensitive comparisons such as
+
+```javascript
+group.status === "done"
+```
+
+Instead normalize status values before comparison.
+
+Support values like
+
+```
+Done
+done
+DONE
+```
+
+without changing stored data.
+
+---
+
+# 5. Normalize ID comparisons
+
+Wherever checklist child tasks are matched back to a group, compare IDs consistently.
+
+Replace comparisons like
+
+```javascript
+task.taskGroupId === group.id
+```
+
+with safe string comparisons so Firebase string/number differences cannot break grouping.
+
+Apply this consistently throughout the checklist feature.
+
+---
+
+# 6. Improve date parsing
+
+Current parsing assumes one specific format.
+
+Support the formats currently used by the application.
+
+Prefer ISO dates where available.
+
+Do not rely on browser-specific parsing.
+
+Ensure overdue calculations remain correct.
+
+---
+
+# 7. Keep selected checklist data live
+
+Currently selecting a checklist stores the entire object.
+
+If another user updates the checklist while the manager is viewing it, the panel becomes stale.
+
+Instead:
+
+Store only
+
+```
+selectedChecklistGroupId
+```
+
+and always derive the latest checklist from the current data.
+
+This applies to both:
+
+* Member Checklist View
+* Team Checklist View
+
+---
+
+# 8. Fully enforce read-only mode
+
+The ChecklistGroupDetailPanel should become completely read-only.
+
+Managers must not be able to:
+
+* Edit responses
+* Delete groups
+* Submit
+* Change answers
+* Create linked tasks
+* Trigger save actions
+* Modify checklist metadata
+
+Hide editing controls instead of relying on no-op callbacks wherever possible.
+
+Read-only mode should still allow:
+
+* Viewing answers
+* Viewing notes
+* Viewing status
+* Opening linked tasks (if appropriate)
+
+---
+
+# 9. Improve Team Checklist ordering
+
+Currently the Team Checklist table simply slices the first 20 records.
+
+Instead:
+
+Sort by
+
+1. Overdue
+2. Pending
+3. Submitted
+
+Within each category:
+
+Sort by due date (oldest first).
+
+Only then apply the display limit.
+
+Managers should always see the most important checklist groups first.
+
+---
+
+# 10. Improve display when more than 20 groups exist
+
+If there are more than 20 checklist groups after filtering, indicate this clearly.
+
+For example:
+
+```
+Showing 20 of 57 checklist groups
+```
+
+or implement simple pagination.
+
+Do not silently hide remaining records.
+
+---
+
+# 11. Verify statistics
+
+Confirm the following KPIs always match the displayed data:
+
+Member View
+
+* Total
+* Submitted
+* Overdue
+
+Team View
+
+* Total
+* Submitted
+* Overdue
+
+They should be derived from the same underlying checklist data.
+
+---
+
+# 12. Prevent divide-by-zero issues
+
+Whenever calculating progress percentages:
+
+Safely handle
+
+```
+0 questions
+```
+
+Avoid
+
+```
+Infinity
+NaN
+```
+
+or rendering errors.
+
+---
+
+# 13. Performance review
+
+The new feature introduces multiple
+
+```
+useMemo()
+filter()
+map()
+```
+
+operations.
+
+Review them for unnecessary recomputation.
+
+Reuse computed checklist data wherever possible.
+
+Avoid repeatedly traversing the same arrays.
+
+---
+
+# 14. Regression testing
+
+After making changes verify:
+
+✓ Text-only checklists display progress.
+
+✓ Mixed checklists display correct percentages.
+
+✓ Progress never exceeds 100%.
+
+✓ Overdue logic still works.
+
+✓ Submitted groups remain submitted.
+
+✓ Read-only mode prevents every edit path.
+
+✓ Team table ordering is correct.
+
+✓ Manager panel updates if checklist data changes.
+
+✓ IDs work regardless of string/number type.
+
+✓ No existing checklist functionality has been broken.
+
+---
+
+## Deliverables
+
+After completing the work:
+
+1. Summarise every file changed.
+
+2. Explain every logic change.
+
+3. Highlight any assumptions made.
+
+4. List anything that could not be tested locally.
+
+5. Confirm that no existing checklist creation, editing or submission functionality has been regressed.

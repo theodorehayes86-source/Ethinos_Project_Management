@@ -43,6 +43,7 @@ const ChecklistGroupDetailPanel = ({
   onOpenTask,
   onCreateTaskFromItem,
   onDeleteGroup,
+  readOnly = false,
 }) => {
   const [localChildren, setLocalChildren] = useState(childTasks || []);
   const [noteTexts, setNoteTexts] = useState({});
@@ -241,7 +242,7 @@ const ChecklistGroupDetailPanel = ({
               </div>
             </div>
             <div className="flex items-center gap-1 flex-shrink-0">
-              {onDeleteGroup && !confirmDelete && (
+              {onDeleteGroup && !confirmDelete && !readOnly && (
                 <button
                   onClick={() => setConfirmDelete(true)}
                   className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-all"
@@ -336,17 +337,38 @@ const ChecklistGroupDetailPanel = ({
 
                         {task.requiresInput ? (
                           /* ── Text-input-only question (no yes/no/na) ── */
-                          <div>
-                            <textarea
-                              value={noteTexts[task.id] ?? (task.checklistNote || '')}
-                              onChange={e => handleNoteChange(task.id, e.target.value)}
-                              onBlur={() => handleNoteBlur(task)}
-                              placeholder={task.inputLabel || 'Write your note for management…'}
-                              rows={3}
-                              className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs resize-none outline-none focus:ring-2 ring-indigo-500/20 bg-white"
-                            />
-                            {!hasNote && (
-                              <p className="text-[10px] font-semibold text-amber-600 mt-1">Required — please fill this in</p>
+                          readOnly ? (
+                            <p className={`text-xs rounded-lg px-2.5 py-1.5 ${hasNote ? 'bg-indigo-50 text-slate-700' : 'text-slate-400 italic'}`}>
+                              {(task.checklistNote || '').trim() || 'No response'}
+                            </p>
+                          ) : (
+                            <div>
+                              <textarea
+                                value={noteTexts[task.id] ?? (task.checklistNote || '')}
+                                onChange={e => handleNoteChange(task.id, e.target.value)}
+                                onBlur={() => handleNoteBlur(task)}
+                                placeholder={task.inputLabel || 'Write your note for management…'}
+                                rows={3}
+                                className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs resize-none outline-none focus:ring-2 ring-indigo-500/20 bg-white"
+                              />
+                              {!hasNote && (
+                                <p className="text-[10px] font-semibold text-amber-600 mt-1">Required — please fill this in</p>
+                              )}
+                            </div>
+                          )
+                        ) : readOnly ? (
+                          /* ── Read-only: show answer as static badge ── */
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {currentAnswer ? (() => {
+                              const cfg = ANSWER_CONFIG[currentAnswer];
+                              const Icon = cfg?.icon;
+                              return cfg ? (
+                                <span className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold ${cfg.bg} ${cfg.text}`}>
+                                  {Icon && <Icon size={12} />} {cfg.label}
+                                </span>
+                              ) : null;
+                            })() : (
+                              <span className="text-[11px] text-slate-400 italic">Not answered</span>
                             )}
                           </div>
                         ) : (
@@ -389,7 +411,8 @@ const ChecklistGroupDetailPanel = ({
                             </div>
                           </div>
                         )}
-                        {createTaskOpen[task.id] && (
+                        {/* #8 — never show the create-task form in read-only mode */}
+                        {createTaskOpen[task.id] && !readOnly && (
                           <form
                             onSubmit={e => handleCreateTaskSubmit(e, task)}
                             className="mt-3 pt-3 border-t border-slate-100 space-y-2"
@@ -509,74 +532,81 @@ const ChecklistGroupDetailPanel = ({
                           </div>
                         </div>
 
-                        {/* Controls */}
-                        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-                          {/* Status dropdown */}
-                          <select
-                            className={`text-[10px] border-none rounded-md px-1.5 py-1 font-semibold outline-none cursor-pointer ${
-                              task.status === 'Done' ? 'bg-emerald-100 text-emerald-700' :
-                              task.status === 'WIP' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'
-                            }`}
-                            value={task.status || 'Pending'}
-                            onChange={e => handleStandardStatusChange(task, e.target.value)}
-                            onClick={e => e.stopPropagation()}
-                          >
-                            <option value="Pending">Pending</option>
-                            <option value="WIP">WIP</option>
-                            <option value="Done">Done</option>
-                          </select>
+                        {/* Controls — hidden entirely in read-only mode (#8) */}
+                        {readOnly ? (
+                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${
+                            task.status === 'Done' ? 'bg-emerald-100 text-emerald-700' :
+                            task.status === 'WIP' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'
+                          }`}>{task.status || 'Pending'}</span>
+                        ) : (
+                          <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                            {/* Status dropdown */}
+                            <select
+                              className={`text-[10px] border-none rounded-md px-1.5 py-1 font-semibold outline-none cursor-pointer ${
+                                task.status === 'Done' ? 'bg-emerald-100 text-emerald-700' :
+                                task.status === 'WIP' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'
+                              }`}
+                              value={task.status || 'Pending'}
+                              onChange={e => handleStandardStatusChange(task, e.target.value)}
+                              onClick={e => e.stopPropagation()}
+                            >
+                              <option value="Pending">Pending</option>
+                              <option value="WIP">WIP</option>
+                              <option value="Done">Done</option>
+                            </select>
 
-                          {/* Timer controls */}
-                          {showTimer && (
-                            <div className="flex items-center gap-1">
-                              {(!task.timerState || task.timerState === 'idle' || task.timerState === 'stopped') && (
-                                <button
-                                  onClick={e => { e.stopPropagation(); handleStartTimer(task); }}
-                                  className="p-1 rounded border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-all"
-                                  title="Start timer"
-                                >
-                                  <Play size={11} />
-                                </button>
-                              )}
-                              {isRunning && (
-                                <>
-                                  <button
-                                    onClick={e => { e.stopPropagation(); handlePauseTimer(task); }}
-                                    className="p-1 rounded border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 transition-all"
-                                    title="Pause timer"
-                                  >
-                                    <Pause size={11} />
-                                  </button>
-                                  <button
-                                    onClick={e => { e.stopPropagation(); handleStopTimer(task); }}
-                                    className="p-1 rounded border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-all"
-                                    title="Stop timer"
-                                  >
-                                    <Square size={11} />
-                                  </button>
-                                </>
-                              )}
-                              {isPaused && (
-                                <>
+                            {/* Timer controls */}
+                            {showTimer && (
+                              <div className="flex items-center gap-1">
+                                {(!task.timerState || task.timerState === 'idle' || task.timerState === 'stopped') && (
                                   <button
                                     onClick={e => { e.stopPropagation(); handleStartTimer(task); }}
                                     className="p-1 rounded border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-all"
-                                    title="Resume timer"
+                                    title="Start timer"
                                   >
                                     <Play size={11} />
                                   </button>
-                                  <button
-                                    onClick={e => { e.stopPropagation(); handleStopTimer(task); }}
-                                    className="p-1 rounded border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-all"
-                                    title="Stop timer"
-                                  >
-                                    <Square size={11} />
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          )}
-                        </div>
+                                )}
+                                {isRunning && (
+                                  <>
+                                    <button
+                                      onClick={e => { e.stopPropagation(); handlePauseTimer(task); }}
+                                      className="p-1 rounded border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 transition-all"
+                                      title="Pause timer"
+                                    >
+                                      <Pause size={11} />
+                                    </button>
+                                    <button
+                                      onClick={e => { e.stopPropagation(); handleStopTimer(task); }}
+                                      className="p-1 rounded border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-all"
+                                      title="Stop timer"
+                                    >
+                                      <Square size={11} />
+                                    </button>
+                                  </>
+                                )}
+                                {isPaused && (
+                                  <>
+                                    <button
+                                      onClick={e => { e.stopPropagation(); handleStartTimer(task); }}
+                                      className="p-1 rounded border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-all"
+                                      title="Resume timer"
+                                    >
+                                      <Play size={11} />
+                                    </button>
+                                    <button
+                                      onClick={e => { e.stopPropagation(); handleStopTimer(task); }}
+                                      className="p-1 rounded border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-all"
+                                      title="Stop timer"
+                                    >
+                                      <Square size={11} />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -589,8 +619,13 @@ const ChecklistGroupDetailPanel = ({
             <div className="flex flex-col items-center justify-center py-16 text-center px-4">
               <Trash2 size={28} className="text-red-200 mb-3" />
               <p className="text-sm font-bold text-slate-500 mb-1">This group has no items</p>
-              <p className="text-[11px] text-slate-400 mb-4">It was created from a template that had no questions at the time. You can delete it using the trash icon above.</p>
-              {onDeleteGroup && (
+              <p className="text-[11px] text-slate-400 mb-4">
+                {readOnly
+                  ? 'No checklist items were found for this group.'
+                  : 'It was created from a template that had no questions at the time. You can delete it using the trash icon above.'}
+              </p>
+              {/* #8 — hide delete action in read-only mode */}
+              {onDeleteGroup && !readOnly && (
                 <button
                   onClick={() => setConfirmDelete(true)}
                   className="flex items-center gap-1.5 text-[12px] font-semibold px-4 py-2 rounded-xl bg-red-50 border border-red-200 text-red-600 hover:bg-red-100 transition-all"
@@ -602,8 +637,8 @@ const ChecklistGroupDetailPanel = ({
           )}
         </div>
 
-        {/* Footer — Submit / Done bar */}
-        {localChildren.length > 0 && (
+        {/* Footer — Submit / Done bar (hidden in read-only manager view) */}
+        {localChildren.length > 0 && !readOnly && (
           <div className={`flex-shrink-0 border-t px-5 py-4 ${isDone ? 'border-emerald-100 bg-emerald-50' : 'border-slate-100 bg-white'}`}>
             {isDone ? (
               <div className="flex items-center justify-between gap-3">

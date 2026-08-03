@@ -2,6 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { Users, ChevronRight, ChevronLeft, Plus, X, Search, Star, ArrowUp, ArrowDown, Filter, CalendarClock, CalendarCheck2, CalendarX2, AlertTriangle, BarChart2, ClipboardCheck, Clock, Link2, Link2Off, MessageSquare, CheckCircle } from 'lucide-react';
 import { format, isBefore, isAfter, startOfWeek, endOfWeek, startOfMonth, endOfMonth, parse } from 'date-fns';
 import TaskDetailPanel from './TaskDetailPanel';
+import ChecklistGroupDetailPanel from './ChecklistGroupDetailPanel';
 import { sendNotification } from '../utils/notify';
 import DueDateInput from './DueDateInput';
 import { getUserLeaveStatus, getUserLeaveData, getUserLeaveAndHolidayData, checkLeaveConflict, toDateKey, isFullDayLeaveOrHoliday, getUpcomingHolidays, getTodayAttendanceMap } from '../utils/leaveConflict';
@@ -326,7 +327,65 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
   );
 };
 
-const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users, currentUser, clientLogs, setClientLogs, taskCategories }) => {
+// Enrich a checklist group with computed stats from clientLogs child tasks.
+// Returns the group extended with _childTasks, _totalQuestions, _ynTotal, _answered, _yesCount, _noCount, _effectiveStatus, _groupDate.
+// Progress = _answered / _totalQuestions (covers both yes/no and text questions).
+// Yes/No counts remain separate for display.
+const enrichChecklistGroup = (group, clientLogs) => {
+  const clientTasks = clientLogs[group.clientId] || [];
+  // #5 — normalize both sides to string so Firebase string/number differences don't break grouping
+  const childTasks = clientTasks.filter(t => String(t.taskGroupId) === String(group.id));
+  const ynTasks = childTasks.filter(t => t.taskType === 'checklist' && !t.requiresInput);
+  const textTasks = childTasks.filter(t => t.taskType === 'checklist' && t.requiresInput);
+  const ynAnswered = ynTasks.filter(t => t.checklistAnswer != null);
+  const textAnswered = textTasks.filter(t => t.checklistNote?.trim());
+  const yesCount = ynAnswered.filter(t => t.checklistAnswer === 'yes').length;
+  const noCount = ynAnswered.filter(t => t.checklistAnswer === 'no').length;
+  const ynTotal = ynTasks.length;
+  // #1 — totalQuestions includes both yes/no AND text questions; progress = answered / totalQuestions
+  const totalQuestions = ynTotal + textTasks.length;
+  // #12 — clamp to avoid > 100%
+  const answered = totalQuestions > 0 ? Math.min(ynAnswered.length + textAnswered.length, totalQuestions) : 0;
+  // #6 — robust date parsing: prefer ISO (YYYY-MM-DD), then 'do MMM yyyy', then 'd MMM yyyy', then fallback
+  let groupDate = null;
+  if (group.date) {
+    const isoMatch = String(group.date).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) {
+      groupDate = new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3]));
+    } else {
+      try { groupDate = parse(group.date, 'do MMM yyyy', new Date()); } catch {}
+      if (!groupDate || isNaN(groupDate.getTime())) {
+        try { groupDate = parse(group.date, 'd MMM yyyy', new Date()); } catch {}
+      }
+      if (!groupDate || isNaN(groupDate.getTime())) {
+        const d2 = new Date(group.date);
+        groupDate = isNaN(d2.getTime()) ? null : d2;
+      }
+    }
+    if (groupDate && !isNaN(groupDate.getTime())) {
+      groupDate = new Date(groupDate.getFullYear(), groupDate.getMonth(), groupDate.getDate());
+    } else {
+      groupDate = null;
+    }
+  }
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  // #4 — normalize status to lowercase before comparison
+  const normalizedStatus = (group.status ?? '').toString().toLowerCase();
+  const isDone = normalizedStatus === 'done';
+  const isOverdue = !isDone && groupDate != null && groupDate < today;
+  const effectiveStatus = isDone ? 'done' : isOverdue ? 'overdue' : 'pending';
+  return { ...group, _childTasks: childTasks, _totalQuestions: totalQuestions, _ynTotal: ynTotal, _answered: answered, _yesCount: yesCount, _noCount: noCount, _effectiveStatus: effectiveStatus, _groupDate: groupDate };
+};
+
+const CHECKLIST_CADENCE_COLORS = {
+  Daily:   'bg-rose-100 text-rose-700',
+  Weekly:  'bg-amber-100 text-amber-700',
+  Monthly: 'bg-blue-100 text-blue-700',
+  Once:    'bg-slate-100 text-slate-600',
+};
+
+const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users, currentUser, clientLogs, setClientLogs, taskCategories, taskGroups = [], persistTaskCreate = null }) => {
+  const [activeTab, setActiveTab] = useState('tasks');
   const [statusFilter, setStatusFilter] = useState('all');
   const [clientFilter, setClientFilter] = useState('all');
   const [dateRange, setDateRange] = useState('all');
@@ -336,6 +395,11 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
   const [showDm, setShowDm] = useState(false);
   const [memberLeaveByDate, setMemberLeaveByDate] = useState({});
   const [leaveOpen, setLeaveOpen] = useState(true);
+  // Checklists tab state
+  const [checklistCadenceFilter, setChecklistCadenceFilter] = useState('All');
+  const [checklistClientFilter, setChecklistClientFilter] = useState('all');
+  const [checklistStatusFilter, setChecklistStatusFilter] = useState('all');
+  const [selectedChecklistGroupId, setSelectedChecklistGroupId] = useState(null);
 
   const memberTasksRef = useRef(null);
   const scrollToTasks = (filter) => {
@@ -437,6 +501,46 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
     return Object.entries(seen).map(([id, name]) => ({ id, name }));
   }, [allMemberTasks]);
 
+  // Checklist groups for this member, enriched with child-task stats
+  const memberChecklistGroups = useMemo(() => {
+    return taskGroups
+      .filter(g => !g.archived && String(g.assigneeId) === String(member.id))
+      .map(g => enrichChecklistGroup(g, clientLogs));
+  }, [taskGroups, member.id, clientLogs]);
+
+  const filteredChecklistGroups = useMemo(() => {
+    let list = memberChecklistGroups;
+    if (checklistCadenceFilter !== 'All') list = list.filter(g => (g.repeatFrequency || 'Once') === checklistCadenceFilter);
+    if (checklistClientFilter !== 'all') list = list.filter(g => String(g.clientId) === String(checklistClientFilter));
+    if (checklistStatusFilter !== 'all') list = list.filter(g => g._effectiveStatus === checklistStatusFilter);
+    return list.sort((a, b) => {
+      // Sort: overdue first, then pending, then done
+      const order = { overdue: 0, pending: 1, done: 2 };
+      return (order[a._effectiveStatus] ?? 1) - (order[b._effectiveStatus] ?? 1);
+    });
+  }, [memberChecklistGroups, checklistCadenceFilter, checklistClientFilter, checklistStatusFilter]);
+
+  const checklistUniqueClients = useMemo(() => {
+    const seen = {};
+    memberChecklistGroups.forEach(g => { if (g.clientId && !seen[g.clientId]) seen[g.clientId] = g.clientName || g.clientId; });
+    return Object.entries(seen).map(([id, name]) => ({ id, name }));
+  }, [memberChecklistGroups]);
+
+  const checklistStats = useMemo(() => {
+    const total = memberChecklistGroups.length;
+    const submitted = memberChecklistGroups.filter(g => g._effectiveStatus === 'done').length;
+    const overdue = memberChecklistGroups.filter(g => g._effectiveStatus === 'overdue').length;
+    return { total, submitted, overdue };
+  }, [memberChecklistGroups]);
+
+  // #7 — derive the live selected group from current data so it stays fresh
+  const liveSelectedChecklistGroup = useMemo(
+    () => selectedChecklistGroupId != null
+      ? memberChecklistGroups.find(g => String(g.id) === String(selectedChecklistGroupId)) ?? null
+      : null,
+    [selectedChecklistGroupId, memberChecklistGroups]
+  );
+
   // P3: async so task-status changes are confirmed in Firebase before the UI
   // moves on. savingGuard prevents a second update while one is in-flight.
   const savingGuard = useRef(false);
@@ -482,7 +586,27 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
           </button>
         </div>
       </div>
+      {/* Tab switcher */}
+      <div className="px-5 pt-3 border-b border-slate-100 flex items-center gap-1 flex-shrink-0">
+        <button
+          onClick={() => setActiveTab('tasks')}
+          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 transition-colors ${activeTab === 'tasks' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+        >
+          <ClipboardCheck size={12} /> Tasks
+          <span className="ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">{stats.total}</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('checklists')}
+          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 transition-colors ${activeTab === 'checklists' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+        >
+          <CheckCircle size={12} /> Checklists
+          {checklistStats.total > 0 && (
+            <span className={`ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${checklistStats.overdue > 0 ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'}`}>{checklistStats.total}</span>
+          )}
+        </button>
+      </div>
       <div className="p-4 overflow-y-auto flex-1 space-y-4">
+        {activeTab === 'tasks' && (<>
         <div className="grid grid-cols-4 gap-2">
           {[{ label: 'Total', value: stats.total, color: 'text-slate-800', filter: 'all' }, { label: 'Pending', value: stats.pending, color: 'text-orange-600', filter: 'Pending' }, { label: 'WIP', value: stats.wip, color: 'text-blue-600', filter: 'WIP' }, { label: 'Done', value: stats.done, color: 'text-emerald-600', filter: 'Done' }].map(s => (
             <button key={s.label} onClick={() => scrollToTasks(s.filter)} className="bg-white border border-slate-200 rounded-xl p-3 text-center transition-opacity hover:opacity-80 active:opacity-60">
@@ -618,7 +742,120 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
             )
           }
         </div>
+        </>) /* end tasks tab */}
+
+        {activeTab === 'checklists' && (
+          <>
+            {/* Checklist KPI row */}
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-white border border-slate-200 rounded-xl p-3 text-center">
+                <p className="text-xl font-black text-slate-800">{checklistStats.total}</p>
+                <p className="text-[10px] text-slate-500 font-semibold mt-0.5">Total</p>
+              </div>
+              <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center">
+                <p className="text-xl font-black text-emerald-600">{checklistStats.submitted}</p>
+                <p className="text-[10px] text-slate-500 font-semibold mt-0.5">Submitted</p>
+              </div>
+              <div className="bg-red-50 border border-red-100 rounded-xl p-3 text-center">
+                <p className="text-xl font-black text-red-600">{checklistStats.overdue}</p>
+                <p className="text-[10px] text-slate-500 font-semibold mt-0.5">Overdue</p>
+              </div>
+            </div>
+            {/* Filters */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <select value={checklistCadenceFilter} onChange={e => setChecklistCadenceFilter(e.target.value)} className="text-[10px] border border-slate-200 rounded-md px-2 py-1 bg-slate-50 outline-none">
+                <option value="All">All Cadences</option>
+                <option value="Daily">Daily</option>
+                <option value="Weekly">Weekly</option>
+                <option value="Monthly">Monthly</option>
+                <option value="Once">One-time</option>
+              </select>
+              {checklistUniqueClients.length > 1 && (
+                <select value={checklistClientFilter} onChange={e => setChecklistClientFilter(e.target.value)} className="text-[10px] border border-slate-200 rounded-md px-2 py-1 bg-slate-50 outline-none max-w-[120px]">
+                  <option value="all">All Clients</option>
+                  {checklistUniqueClients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              )}
+              <select value={checklistStatusFilter} onChange={e => setChecklistStatusFilter(e.target.value)} className="text-[10px] border border-slate-200 rounded-md px-2 py-1 bg-slate-50 outline-none">
+                <option value="all">All Status</option>
+                <option value="pending">Pending</option>
+                <option value="overdue">Overdue</option>
+                <option value="done">Submitted</option>
+              </select>
+            </div>
+            {/* Group list */}
+            {filteredChecklistGroups.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 text-center">
+                <CheckCircle size={28} className="text-slate-200 mb-2"/>
+                <p className="text-xs text-slate-400">{checklistStats.total === 0 ? 'No checklist groups assigned to this member.' : 'No groups match the current filters.'}</p>
+              </div>
+            ) : (
+              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-2">
+                  <ClipboardCheck size={13} className="text-indigo-400"/>
+                  <h4 className="text-xs font-bold text-slate-700 flex-1">Checklist Groups</h4>
+                  <span className="text-[10px] text-slate-400">{filteredChecklistGroups.length}</span>
+                </div>
+                <div className="divide-y divide-slate-50">
+                  {filteredChecklistGroups.map(group => (
+                    <button key={group.id} onClick={() => setSelectedChecklistGroupId(group.id)} className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-slate-800 truncate">{group.name}</p>
+                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                            {group.clientName && <span className="text-[10px] text-slate-500 truncate max-w-[100px]">{group.clientName}</span>}
+                            {group.repeatFrequency && group.repeatFrequency !== 'Once' && (
+                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${CHECKLIST_CADENCE_COLORS[group.repeatFrequency] || 'bg-slate-100 text-slate-600'}`}>{group.repeatFrequency}</span>
+                            )}
+                            {group.date && <span className="text-[10px] text-slate-400">{group.date}</span>}
+                          </div>
+                          {group._totalQuestions > 0 && (
+                            <div className="mt-2 space-y-0.5">
+                              <div className="flex items-center justify-between text-[10px] text-slate-500">
+                                <span>{group._answered} / {group._totalQuestions} answered</span>
+                                {group._ynTotal > 0 && <span><span className="text-emerald-600">{group._yesCount} Yes</span> · <span className="text-red-500">{group._noCount} No</span></span>}
+                              </div>
+                              <div className="h-1 rounded-full bg-slate-100 overflow-hidden">
+                                <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${Math.round((group._answered / group._totalQuestions) * 100)}%` }} />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                          {group._effectiveStatus === 'done' ? (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">✓ Submitted</span>
+                          ) : group._effectiveStatus === 'overdue' ? (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">Overdue</span>
+                          ) : (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">Pending</span>
+                          )}
+                          <ChevronRight size={12} className="text-slate-300 mt-0.5"/>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
+
+      {/* Read-only checklist group detail for managers */}
+      {liveSelectedChecklistGroup && (
+        <ChecklistGroupDetailPanel
+          group={liveSelectedChecklistGroup}
+          childTasks={liveSelectedChecklistGroup._childTasks || []}
+          currentUser={currentUser}
+          users={users}
+          taskCategories={taskCategories}
+          onClose={() => setSelectedChecklistGroupId(null)}
+          onUpdateChildTask={() => {}}
+          onUpdateGroup={() => {}}
+          readOnly
+        />
+      )}
+
       {selectedTask && (
         <div className="fixed inset-0 z-[800] flex items-center justify-end">
           <div className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm" onClick={() => setSelectedTask(null)}/>
@@ -765,6 +1002,7 @@ const TeamView = ({
   persistTaskCreate = null,
   taskCategories = [],
   hierarchyOrder = [],
+  taskGroups = [],
   onOpenClient = () => {},
   onGoToApprovals = () => {},
 }) => {
@@ -1085,6 +1323,48 @@ const TeamView = ({
     [leaveConflicts]
   );
 
+  // Team-wide checklist groups for the overview panel
+  const teamChecklistGroups = useMemo(() => {
+    return taskGroups
+      .filter(g => !g.archived && visibleMemberIds.has(String(g.assigneeId)))
+      .map(g => enrichChecklistGroup(g, clientLogs));
+  }, [taskGroups, visibleMemberIds, clientLogs]);
+
+  const teamChecklistKpis = useMemo(() => {
+    const total = teamChecklistGroups.length;
+    const submitted = teamChecklistGroups.filter(g => g._effectiveStatus === 'done').length;
+    const overdue = teamChecklistGroups.filter(g => g._effectiveStatus === 'overdue').length;
+    return { total, submitted, overdue };
+  }, [teamChecklistGroups]);
+
+  const [teamChecklistFilter, setTeamChecklistFilter] = useState('all'); // 'all' | 'pending' | 'overdue' | 'done'
+  const [selectedTeamChecklistGroupId, setSelectedTeamChecklistGroupId] = useState(null);
+
+  // #9 — sort: overdue → pending → done; within each bucket sort oldest due-date first
+  const sortedTeamChecklistGroups = useMemo(() => {
+    const STATUS_ORDER = { overdue: 0, pending: 1, done: 2 };
+    return [...teamChecklistGroups].sort((a, b) => {
+      const sd = (STATUS_ORDER[a._effectiveStatus] ?? 1) - (STATUS_ORDER[b._effectiveStatus] ?? 1);
+      if (sd !== 0) return sd;
+      const aT = a._groupDate ? a._groupDate.getTime() : Infinity;
+      const bT = b._groupDate ? b._groupDate.getTime() : Infinity;
+      return aT - bT;
+    });
+  }, [teamChecklistGroups]);
+
+  const filteredTeamChecklistGroups = useMemo(() => {
+    if (teamChecklistFilter === 'all') return sortedTeamChecklistGroups;
+    return sortedTeamChecklistGroups.filter(g => g._effectiveStatus === teamChecklistFilter);
+  }, [sortedTeamChecklistGroups, teamChecklistFilter]);
+
+  // #7 — always derive the live group from the latest data rather than storing the whole object
+  const liveSelectedTeamChecklistGroup = useMemo(
+    () => selectedTeamChecklistGroupId != null
+      ? teamChecklistGroups.find(g => String(g.id) === String(selectedTeamChecklistGroupId)) ?? null
+      : null,
+    [selectedTeamChecklistGroupId, teamChecklistGroups]
+  );
+
   if (!currentUser) return null;
 
   const showDeptFilter = allDepartments.length > 1;
@@ -1198,6 +1478,8 @@ const TeamView = ({
             clientLogs={clientLogs}
             setClientLogs={setClientLogs}
             taskCategories={taskCategories}
+            taskGroups={taskGroups}
+            persistTaskCreate={persistTaskCreate}
           />
         ) : (
           <div className="flex flex-col h-full overflow-hidden">
@@ -1234,6 +1516,12 @@ const TeamView = ({
                   <p className="text-2xl font-black text-rose-600">{leaveLoaded ? hardConflictCount : '—'}</p>
                   <p className="text-[10px] text-slate-500 font-semibold mt-0.5 leading-tight">Leave Conflicts</p>
                 </button>
+                {teamChecklistKpis.total > 0 && (
+                  <div className="rounded-xl border p-3 text-center bg-indigo-50 border-indigo-100">
+                    <p className="text-2xl font-black text-indigo-600">{teamChecklistKpis.submitted}<span className="text-sm font-semibold text-indigo-300">/{teamChecklistKpis.total}</span></p>
+                    <p className="text-[10px] text-slate-500 font-semibold mt-0.5 leading-tight">Checklists Done</p>
+                  </div>
+                )}
               </div>
 
               {/* At-Risk Tasks */}
@@ -1315,6 +1603,108 @@ const TeamView = ({
                     })}
                   </div>
                 </div>
+              )}
+
+              {/* Team Checklists */}
+              {teamChecklistGroups.length > 0 && (
+                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-2 flex-wrap">
+                    <ClipboardCheck size={13} className="text-indigo-400"/>
+                    <h4 className="text-xs font-bold text-slate-700 flex-1">Team Checklists</h4>
+                    <div className="flex items-center gap-1">
+                      {[
+                        { value: 'all',     label: 'All',       count: teamChecklistKpis.total },
+                        { value: 'overdue', label: 'Overdue',   count: teamChecklistKpis.overdue },
+                        { value: 'pending', label: 'Pending',   count: null },
+                        { value: 'done',    label: 'Submitted', count: teamChecklistKpis.submitted },
+                      ].map(f => (
+                        <button
+                          key={f.value}
+                          onClick={() => setTeamChecklistFilter(f.value)}
+                          className={`text-[9px] font-bold px-2 py-0.5 rounded-full border transition-colors ${teamChecklistFilter === f.value ? (f.value === 'overdue' ? 'bg-red-500 text-white border-red-500' : f.value === 'done' ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-indigo-600 text-white border-indigo-600') : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}
+                        >
+                          {f.label}{f.count != null ? ` (${f.count})` : ''}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {filteredTeamChecklistGroups.length === 0 ? (
+                    <p className="text-center text-xs text-slate-400 py-6">No groups match the filter.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[480px] text-[11px]">
+                        <thead className="bg-slate-50 border-b border-slate-100">
+                          <tr>
+                            <th className="px-4 py-1.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wide">Group</th>
+                            <th className="px-3 py-1.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wide">Member</th>
+                            <th className="px-3 py-1.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wide">Client</th>
+                            <th className="px-3 py-1.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wide">Cadence</th>
+                            <th className="px-3 py-1.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wide">Progress</th>
+                            <th className="px-3 py-1.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wide">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                          {filteredTeamChecklistGroups.slice(0, 20).map((g, idx) => {
+                            const memberUser = users.find(u => String(u.id) === String(g.assigneeId));
+                            const memberName = memberUser?.name || g.assigneeName || '—';
+                            // #1/#2 — use _totalQuestions so text-only checklists show progress too
+                            const pct = g._totalQuestions > 0 ? Math.round((g._answered / g._totalQuestions) * 100) : null;
+                            return (
+                              <tr key={`tc-${g.id}-${idx}`} onClick={() => setSelectedTeamChecklistGroupId(g.id)} className="hover:bg-slate-50 cursor-pointer transition-colors">
+                                <td className="px-4 py-2 text-xs font-semibold text-slate-800 max-w-[140px]"><p className="truncate">{g.name}</p></td>
+                                <td className="px-3 py-2 text-[10px] text-slate-500 truncate max-w-[80px]">{memberName}</td>
+                                <td className="px-3 py-2 text-[10px] text-slate-500 truncate max-w-[80px]">{g.clientName || '—'}</td>
+                                <td className="px-3 py-2">
+                                  {g.repeatFrequency && g.repeatFrequency !== 'Once' ? (
+                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${CHECKLIST_CADENCE_COLORS[g.repeatFrequency] || 'bg-slate-100 text-slate-600'}`}>{g.repeatFrequency}</span>
+                                  ) : <span className="text-[10px] text-slate-400">—</span>}
+                                </td>
+                                <td className="px-3 py-2 min-w-[80px]">
+                                  {pct != null ? (
+                                    <div className="flex items-center gap-1.5">
+                                      <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden min-w-[40px]">
+                                        <div className="h-full rounded-full bg-emerald-400" style={{ width: `${pct}%` }}/>
+                                      </div>
+                                      <span className="text-[10px] text-slate-500 flex-shrink-0">{g._answered}/{g._totalQuestions}</span>
+                                    </div>
+                                  ) : <span className="text-[10px] text-slate-400">—</span>}
+                                </td>
+                                <td className="px-3 py-2">
+                                  {g._effectiveStatus === 'done'
+                                    ? <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">✓ Submitted</span>
+                                    : g._effectiveStatus === 'overdue'
+                                    ? <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">Overdue</span>
+                                    : <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">Pending</span>}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                      {/* #10 — show truncation notice when more than 20 records */}
+                      {filteredTeamChecklistGroups.length > 20 && (
+                        <p className="text-center text-[10px] text-slate-400 py-2 border-t border-slate-50">
+                          Showing 20 of {filteredTeamChecklistGroups.length} checklist groups
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Team Checklist read-only detail panel */}
+              {liveSelectedTeamChecklistGroup && (
+                <ChecklistGroupDetailPanel
+                  group={liveSelectedTeamChecklistGroup}
+                  childTasks={liveSelectedTeamChecklistGroup._childTasks || []}
+                  currentUser={currentUser}
+                  users={users}
+                  taskCategories={taskCategories}
+                  onClose={() => setSelectedTeamChecklistGroupId(null)}
+                  onUpdateChildTask={() => {}}
+                  onUpdateGroup={() => {}}
+                  readOnly
+                />
               )}
 
               {/* Pending QC Reviews */}

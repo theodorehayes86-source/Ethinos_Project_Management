@@ -2206,6 +2206,7 @@ const App = () => {
               persistTaskCreate={persistTaskCreate}
               taskCategories={filteredTaskCategoryNames}
               hierarchyOrder={hierarchyOrder}
+              taskGroups={taskGroups}
               onOpenClient={(client) => { setSelectedClient(client); setActiveTab('clients'); }}
               onGoToApprovals={() => setActiveTab('approvals')}
             />
