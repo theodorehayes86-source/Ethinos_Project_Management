@@ -1,0 +1,387 @@
+Please implement a new alternative task view for the PMT. This is NOT a new dashboard or reporting page—it is simply another way of viewing and managing the existing tasks.
+
+The existing List View must remain unchanged. Add a second "Card Dashboard" view that users can switch to.
+
+This functionality should exist in TWO places:
+
+1. Personal Tasks (Home screen)
+2. Client Tasks (Client screen)
+
+Both should use the same shared components and behaviour.
+
+--------------------------------------------------
+OBJECTIVE
+--------------------------------------------------
+
+Users should be able to switch between:
+
+• List View
+• Card Dashboard View
+
+using a simple toggle (List icon / Dashboard icon).
+
+Both views must use exactly the same underlying task data, permissions, filters and persistence.
+
+No duplicate task systems should be created.
+
+--------------------------------------------------
+VIEW TOGGLE
+--------------------------------------------------
+
+Add a compact toggle beside the task section header.
+
+Icons:
+
+• List
+• Dashboard / Cards
+
+Requirements:
+
+• Active state clearly visible
+• Accessible labels/tooltips
+• Works on mobile and desktop
+• Does not reset filters
+• Does not reset selected week
+• Optionally remember the user's last selected view
+
+Keep separate preferences for:
+
+• Personal Tasks
+• Client Tasks
+
+--------------------------------------------------
+CARD DASHBOARD VIEW
+--------------------------------------------------
+
+The Card Dashboard should display tasks grouped by week.
+
+Use the application's existing week logic.
+
+Show:
+
+• Previous week
+• Current week
+• Next week
+• Current week label
+
+Tasks should be grouped into day columns/cards.
+
+Each day should display:
+
+• Day
+• Date
+• Number of tasks
+• Task cards
+
+Empty days should show a friendly empty state.
+
+Tasks without a due date should appear in a separate "No Due Date" section rather than disappearing.
+
+Task cards should include:
+
+• Task title
+• Client (Personal View)
+• Assignee (Client View)
+• Status
+• Priority
+• Due time (if applicable)
+• Overdue indicator
+
+Cards should remain compact and readable.
+
+--------------------------------------------------
+PERSONAL TASKS
+--------------------------------------------------
+
+On the Home screen, the Card Dashboard should display ONLY tasks relevant to the logged-in user using the existing My Tasks rules.
+
+Do not change any permissions or filtering.
+
+--------------------------------------------------
+CLIENT TASKS
+--------------------------------------------------
+
+Within the Client screen, the Card Dashboard should display ONLY tasks for the selected client.
+
+Do not show tasks belonging to any other client.
+
+--------------------------------------------------
+DRAG & DROP RESCHEDULING
+--------------------------------------------------
+
+Users with permission to edit a task should be able to drag task cards between days.
+
+Users without edit permission:
+
+• Cannot drag
+• Can still open tasks
+• Must not see drag handles
+
+Reuse the application's existing edit permissions.
+
+Do NOT create frontend-only permissions.
+
+--------------------------------------------------
+DROP BEHAVIOUR
+--------------------------------------------------
+
+Dropping a task onto another day MUST NOT immediately save the task.
+
+Instead:
+
+1. Highlight the drop.
+2. Open a confirmation popup.
+3. Allow the user to review and edit the new date.
+4. Save only after confirmation.
+
+--------------------------------------------------
+CONFIRMATION POPUP
+--------------------------------------------------
+
+Example:
+
+Move "Prepare Weekly Report" to Wednesday 12 August?
+
+Display:
+
+• Task name
+• Current due date
+• Proposed due date
+• Editable date picker
+• Editable time (if task supports time)
+
+Buttons:
+
+• Cancel
+• Confirm Move
+
+The proposed date should default to the day where the task was dropped.
+
+The user must be able to edit it before saving.
+
+--------------------------------------------------
+SAVE LOGIC
+--------------------------------------------------
+
+Only save after the user confirms.
+
+On success:
+
+• Update backend
+• Update local state
+• Move the card
+• Close popup
+• Show success toast
+
+On failure:
+
+• Restore original position
+• Show error toast
+• Keep popup open if retry is possible
+
+Do not leave the UI showing a successful move if persistence failed.
+
+--------------------------------------------------
+CANCEL LOGIC
+--------------------------------------------------
+
+If cancelled:
+
+• No backend request
+• Task returns to original day
+• Popup closes
+
+--------------------------------------------------
+TIME PRESERVATION
+--------------------------------------------------
+
+If the task already has a due time:
+
+• Preserve it by default
+• Show it in the popup
+• Allow editing
+
+If the task is date-only:
+
+• Preserve date-only behaviour
+• Do not invent arbitrary times
+
+--------------------------------------------------
+RECURRING TASKS
+--------------------------------------------------
+
+Review how recurring tasks are handled.
+
+If recurring series editing is already supported:
+
+Ask whether the move applies to:
+
+• This occurrence
+• This and future occurrences
+• Entire series
+
+If recurring tasks currently exist as independent generated tasks, only move the selected occurrence.
+
+Do not silently update an entire recurring series.
+
+--------------------------------------------------
+CLICK BEHAVIOUR
+--------------------------------------------------
+
+Clicking a task card (without dragging) should continue to open the existing task details.
+
+Dragging should not accidentally trigger the task details screen.
+
+--------------------------------------------------
+FILTERS
+--------------------------------------------------
+
+Both List View and Card Dashboard must honour exactly the same filters.
+
+Including:
+
+• Status
+• Assignee
+• Client
+• Category
+• Priority
+• Search
+
+Switching views must never change which tasks are visible.
+
+--------------------------------------------------
+MOBILE
+--------------------------------------------------
+
+The Card Dashboard must work well on mobile.
+
+Do NOT simply shrink the desktop board.
+
+Suggested layout:
+
+• Horizontally scrollable day columns
+OR
+• Swipeable day cards
+
+Touch dragging must work reliably.
+
+If drag-and-drop is not reliable on mobile, provide a "Move Date" action from the task menu as a fallback while keeping desktop drag-and-drop.
+
+Ensure:
+
+• No clipped content
+• No hidden cards
+• No content behind bottom navigation
+• Smooth scrolling
+
+--------------------------------------------------
+DESKTOP
+--------------------------------------------------
+
+Desktop should display a weekly board using day columns.
+
+Requirements:
+
+• Responsive layout
+• Horizontal scrolling when required
+• Clear drop targets
+• Compact cards
+• Good performance with many tasks
+
+--------------------------------------------------
+SHARED COMPONENTS
+--------------------------------------------------
+
+Avoid duplicating code.
+
+Create shared components such as:
+
+• TaskViewToggle
+• WeeklyTaskBoard
+• WeeklyTaskColumn
+• WeeklyTaskCard
+• WeekNavigator
+• TaskMoveConfirmationModal
+
+Both Personal Tasks and Client Tasks should use the same board component with different data.
+
+--------------------------------------------------
+SHARED HELPERS
+--------------------------------------------------
+
+Reuse or create shared helpers for:
+
+• Week calculation
+• Task grouping
+• Date formatting
+• Overdue calculation
+• Local date parsing
+• Moving task dates
+• Permission checking
+
+Avoid duplicated logic.
+
+--------------------------------------------------
+PERFORMANCE
+--------------------------------------------------
+
+Do not introduce unnecessary Firebase listeners.
+
+Reuse already loaded task data where possible.
+
+Memoise grouped tasks.
+
+Do not save while dragging.
+
+Only persist after confirmation.
+
+Keep the board responsive with large task volumes.
+
+--------------------------------------------------
+TESTING
+--------------------------------------------------
+
+Verify:
+
+✓ Personal List View still works
+✓ Personal Card Dashboard works
+✓ Client List View still works
+✓ Client Card Dashboard works
+✓ View toggle works
+✓ Filters persist
+✓ Week navigation works
+✓ Editable tasks can be dragged
+✓ Non-editable tasks cannot be dragged
+✓ Drop opens confirmation popup
+✓ Date can be edited
+✓ Time is preserved
+✓ Cancel restores original position
+✓ Confirm updates backend
+✓ Failed save restores original state
+✓ Clicking still opens task details
+✓ Recurring task behaviour is correct
+✓ Mobile layout works
+✓ Desktop layout works
+✓ No regressions to existing task functionality
+✓ Lint passes
+✓ TypeScript passes
+✓ Production build succeeds
+
+--------------------------------------------------
+DELIVERABLES
+--------------------------------------------------
+
+After implementation provide:
+
+1. Files changed.
+2. Shared components created.
+3. Explanation of the List/Card toggle.
+4. Explanation of the drag-and-drop implementation.
+5. Permission logic used.
+6. Confirmation popup behaviour.
+7. Recurring task behaviour.
+8. Mobile implementation details.
+9. Desktop implementation details.
+10. Performance improvements.
+11. Results of testing.
+12. Any limitations or items that could not be fully tested locally.
