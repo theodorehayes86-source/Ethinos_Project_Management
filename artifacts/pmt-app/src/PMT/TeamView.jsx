@@ -440,9 +440,11 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
   // P3: async so task-status changes are confirmed in Firebase before the UI
   // moves on. savingGuard prevents a second update while one is in-flight.
   const savingGuard = useRef(false);
+  const [saving, setSaving] = useState(false);
   const handleUpdateTask = useCallback(async (task, changes) => {
     if (!task.cid || savingGuard.current) return;
     savingGuard.current = true;
+    setSaving(true);
     try {
       const updated = (clientLogs[task.cid] || []).map(t => t.id === task.id ? { ...t, ...changes } : t);
       await setClientLogs({ ...clientLogs, [task.cid]: updated });
@@ -451,6 +453,7 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
       console.error('[PMT] TeamView handleUpdateTask: Firebase write failed', err);
     } finally {
       savingGuard.current = false;
+      setSaving(false);
     }
   }, [clientLogs, setClientLogs, selectedTask]);
 
@@ -620,7 +623,7 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
         <div className="fixed inset-0 z-[800] flex items-center justify-end">
           <div className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm" onClick={() => setSelectedTask(null)}/>
           <div className="relative z-10 h-full w-full max-w-xl">
-            <TaskDetailPanel task={selectedTask} currentUser={currentUser} users={users} canEdit={false} onClose={() => setSelectedTask(null)} onUpdate={(updated) => handleUpdateTask(selectedTask, updated)}/>
+            <TaskDetailPanel task={selectedTask} currentUser={currentUser} users={users} canEdit={false} saving={saving} onClose={() => setSelectedTask(null)} onUpdate={(updated) => handleUpdateTask(selectedTask, updated)}/>
           </div>
         </div>
       )}

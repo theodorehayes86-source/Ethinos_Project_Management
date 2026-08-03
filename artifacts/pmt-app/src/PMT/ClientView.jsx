@@ -76,6 +76,8 @@ const ClientView = ({
   const taskListRef = useRef(null);
   // P3: guards the high-value persist callers against double-submit.
   const savingRef = useRef(false);
+  // Mirrors savingRef as React state so buttons can react to it.
+  const [saving, setSaving] = useState(false);
   const checklistGroupsRef = useRef(null);
 
   /** Wraps a fire-and-forget setClientLogs call so its rejection is captured
@@ -152,6 +154,7 @@ const ClientView = ({
   const handleBatchArchive = async (clientId) => {
     if (selectedTaskIds.size === 0 || !clientId || savingRef.current) return;
     savingRef.current = true;
+    setSaving(true);
     try {
       const updated = (clientLogs[clientId] || []).map(t =>
         selectedTaskIds.has(String(t.id)) ? { ...t, archived: true } : t
@@ -162,12 +165,14 @@ const ClientView = ({
       console.error('[PMT] handleBatchArchive: Firebase write failed', err);
     } finally {
       savingRef.current = false;
+      setSaving(false);
     }
   };
 
   const handleBatchStatus = async (clientId, newStatus) => {
     if (selectedTaskIds.size === 0 || !clientId || savingRef.current) return;
     savingRef.current = true;
+    setSaving(true);
     try {
       const updated = (clientLogs[clientId] || []).map(t =>
         selectedTaskIds.has(String(t.id)) ? { ...t, status: newStatus } : t
@@ -178,6 +183,7 @@ const ClientView = ({
       console.error('[PMT] handleBatchStatus: Firebase write failed', err);
     } finally {
       savingRef.current = false;
+      setSaving(false);
     }
   };
 
@@ -1615,20 +1621,22 @@ const ClientView = ({
                 <button
                   key={s}
                   onClick={() => handleBatchStatus(selectedClient.id, s)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+                  disabled={saving}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${
                     s === 'Done' ? 'bg-emerald-500 hover:bg-emerald-400' :
                     s === 'WIP' ? 'bg-sky-500 hover:bg-sky-400' : 'bg-orange-500 hover:bg-orange-400'
                   }`}
                 >
-                  → {s}
+                  {saving ? '…' : `→ ${s}`}
                 </button>
               ))}
             </div>
             <button
               onClick={() => handleBatchArchive(selectedClient.id)}
-              className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-semibold bg-slate-600 hover:bg-slate-500 transition-all"
+              disabled={saving}
+              className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-semibold bg-slate-600 hover:bg-slate-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Archive size={11} /> Archive
+              <Archive size={11} /> {saving ? 'Saving…' : 'Archive'}
             </button>
             <button
               onClick={() => {
@@ -3134,6 +3142,7 @@ const ClientView = ({
           const reviewingTask = (clientLogs[selectedClient.id] || []).find(l => l.id === qcReviewingTaskId);
           if (!reviewingTask) return null;
           const handleSubmitReview = async () => {
+            if (savingRef.current) return;
             const ratingNum = parseInt(qcReviewRating, 10);
             const validRating = !isNaN(ratingNum) && ratingNum >= 1 && ratingNum <= 10 ? ratingNum : null;
             if (qcReviewDecision === 'rejected' && !qcReviewFeedback.trim()) return;
@@ -3163,11 +3172,17 @@ const ClientView = ({
             // P3: await Firebase confirmation before sending notifications or
             // closing the modal. On failure the rollback toast is shown and we
             // return early — no notifications, modal stays open.
+            savingRef.current = true;
+            setSaving(true);
             try {
               await setClientLogs({ ...clientLogs, [selectedClient.id]: updated });
             } catch {
+              savingRef.current = false;
+              setSaving(false);
               return; // Write failed and rolled back — keep modal open.
             }
+            savingRef.current = false;
+            setSaving(false);
             const taskAssignee = reviewingTask.assigneeId
               ? (users || []).find(u => String(u.id) === String(reviewingTask.assigneeId))
               : null;
@@ -3269,10 +3284,10 @@ const ClientView = ({
                   <button
                     type="button"
                     onClick={handleSubmitReview}
-                    disabled={qcReviewDecision === 'rejected' && !qcReviewFeedback.trim()}
+                    disabled={saving || (qcReviewDecision === 'rejected' && !qcReviewFeedback.trim())}
                     className={`px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${qcReviewDecision === 'approved' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'}`}
                   >
-                    {qcReviewDecision === 'approved' ? 'Approve Task' : 'Return to Employee'}
+                    {saving ? 'Saving…' : qcReviewDecision === 'approved' ? 'Approve Task' : 'Return to Employee'}
                   </button>
                 </div>
               </div>

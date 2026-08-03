@@ -49,7 +49,7 @@ const tryParseDate = (str) => {
   }
 };
 
-const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEditDueDate = true, setNotifications = () => {}, onClose, onUpdate, seriesCount = 0, clientName = '' }) => {
+const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEditDueDate = true, setNotifications = () => {}, onClose, onUpdate, seriesCount = 0, clientName = '', saving = false }) => {
   const [steps, setSteps] = useState(() => task.steps || []);
   const [messages, setMessages] = useState(() => task.messages || []);
   const [localDueDate, setLocalDueDate] = useState(() => tryParseDate(task.dueDate));
@@ -704,9 +704,9 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
                 />
                 <button
                   onClick={handleSendMessage}
-                  disabled={!newMessage.trim()}
+                  disabled={saving || !newMessage.trim()}
                   className="p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
-                  title="Send message"
+                  title={saving ? 'Saving…' : 'Send message'}
                 >
                   <Send size={14} />
                 </button>
@@ -746,8 +746,8 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
                   />
                   <div className="flex gap-2 justify-end">
                     <button onClick={() => { setNewFeedback(''); setReplyingToFeedbackId(null); }} className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-500 hover:bg-slate-50 transition-all">Cancel</button>
-                    <button onClick={() => handleAddFeedback(entryId)} disabled={!newFeedback.trim()} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
-                      <Send size={11} /> Send
+                    <button onClick={() => handleAddFeedback(entryId)} disabled={saving || !newFeedback.trim()} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                      <Send size={11} /> {saving ? 'Saving…' : 'Send'}
                     </button>
                   </div>
                 </div>

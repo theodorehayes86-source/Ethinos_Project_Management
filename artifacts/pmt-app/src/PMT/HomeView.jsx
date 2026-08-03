@@ -147,6 +147,8 @@ const HomeView = ({
   const taskListRef = useRef(null);
   // P3: guards the 8 high-value persist callers against double-submit.
   const savingRef = useRef(false);
+  // Mirrors savingRef as React state so buttons can react to it.
+  const [saving, setSaving] = useState(false);
   const [estimatedHrs, setEstimatedHrs] = useState('');
   const [estimatedMins, setEstimatedMins] = useState('');
   const [taskReminders, setTaskReminders] = useState([]);
@@ -475,14 +477,22 @@ const HomeView = ({
       [clSelectedClientId]: [...childTasks, ...(clientLogs[clSelectedClientId] || [])],
     };
     // P3: await so checklist tasks are confirmed in Firebase before modal closes.
+    // savingRef serializes this with all other guarded write handlers.
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
     try {
       await setClientLogs(nextLogs);
     } catch (err) {
       console.error('[PMT] handleCreateChecklistGroup: Firebase write failed', err);
       // Abort — do not persist the group or close the modal when the task
       // write failed. The rollback toast has already been shown to the user.
+      savingRef.current = false;
+      setSaving(false);
       return;
     }
+    savingRef.current = false;
+    setSaving(false);
     // Only reach here when Firebase confirmed the task write.
     setTaskGroups([newGroup, ...taskGroups]);
     closeNewChecklistModal();
@@ -863,6 +873,7 @@ const HomeView = ({
     const cid = task.cid;
     if (!cid || savingRef.current) return;
     savingRef.current = true;
+    setSaving(true);
     try {
       const updated = (clientLogs[cid] || []).map(t =>
         t.id === task.id ? { ...t, archived: !t.archived } : t
@@ -872,6 +883,7 @@ const HomeView = ({
       console.error('[PMT] handleArchiveTask: Firebase write failed', err);
     } finally {
       savingRef.current = false;
+      setSaving(false);
     }
   };
 
@@ -879,6 +891,7 @@ const HomeView = ({
     const cid = task.cid;
     if (!cid || savingRef.current) return;
     savingRef.current = true;
+    setSaving(true);
     try {
       const updated = (clientLogs[cid] || []).map(t =>
         t.id === task.id ? { ...t, ...changes } : t
@@ -891,6 +904,7 @@ const HomeView = ({
       throw err;
     } finally {
       savingRef.current = false;
+      setSaving(false);
     }
   };
 
@@ -909,6 +923,7 @@ const HomeView = ({
   const handleBatchStatus = async (newStatus) => {
     if (selectedTaskIds.size === 0 || savingRef.current) return;
     savingRef.current = true;
+    setSaving(true);
     try {
       const updated = {};
       Object.keys(clientLogs).forEach(cid => {
@@ -923,12 +938,14 @@ const HomeView = ({
       console.error('[PMT] handleBatchStatus: Firebase write failed', err);
     } finally {
       savingRef.current = false;
+      setSaving(false);
     }
   };
 
   const handleBatchArchive = async () => {
     if (selectedTaskIds.size === 0 || savingRef.current) return;
     savingRef.current = true;
+    setSaving(true);
     try {
       const updated = {};
       Object.keys(clientLogs).forEach(cid => {
@@ -943,6 +960,7 @@ const HomeView = ({
       console.error('[PMT] handleBatchArchive: Firebase write failed', err);
     } finally {
       savingRef.current = false;
+      setSaving(false);
     }
   };
 
@@ -951,6 +969,7 @@ const HomeView = ({
     if (doneIds.size === 0 || savingRef.current) return;
     if (!window.confirm(`Archive all ${doneIds.size} completed task${doneIds.size > 1 ? 's' : ''}?`)) return;
     savingRef.current = true;
+    setSaving(true);
     try {
       const updated = {};
       Object.keys(clientLogs).forEach(cid => {
@@ -964,6 +983,7 @@ const HomeView = ({
       console.error('[PMT] handleArchiveAllDone: Firebase write failed', err);
     } finally {
       savingRef.current = false;
+      setSaving(false);
     }
   };
 
@@ -1535,20 +1555,22 @@ const HomeView = ({
               <button
                 key={s}
                 onClick={() => handleBatchStatus(s)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+                disabled={saving}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${
                   s === 'Done' ? 'bg-emerald-500 hover:bg-emerald-400' :
                   s === 'WIP' ? 'bg-sky-500 hover:bg-sky-400' : 'bg-orange-500 hover:bg-orange-400'
                 }`}
               >
-                → {s}
+                {saving ? '…' : `→ ${s}`}
               </button>
             ))}
           </div>
           <button
             onClick={handleBatchArchive}
-            className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-400 transition-all whitespace-nowrap"
+            disabled={saving}
+            className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-400 transition-all whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Archive size={11} /> Archive
+            <Archive size={11} /> {saving ? 'Saving…' : 'Archive'}
           </button>
           {isManagement && (
             <button
@@ -1573,9 +1595,10 @@ const HomeView = ({
         <div className="flex items-center justify-end">
           <button
             onClick={handleArchiveAllDone}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-all whitespace-nowrap"
+            disabled={saving}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-all whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Archive size={12} /> Archive all Done ({myDone.length})
+            <Archive size={12} /> {saving ? 'Saving…' : `Archive all Done (${myDone.length})`}
           </button>
         </div>
       )}
@@ -1838,10 +1861,11 @@ const HomeView = ({
                             {task.qcEnabled && task.status === 'Done' && (!task.qcStatus || task.qcStatus === 'rejected') && (String(task.assigneeId) === String(currentUser?.id) || isManagement) && !task.archived && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleUpdateTask(task, { qcStatus: 'sent' }); }}
-                                className="flex items-center gap-0.5 text-[9px] font-semibold bg-indigo-50 text-indigo-600 border border-indigo-200 rounded px-1 py-0.5 hover:bg-indigo-100 transition-all whitespace-nowrap"
+                                disabled={saving}
+                                className="flex items-center gap-0.5 text-[9px] font-semibold bg-indigo-50 text-indigo-600 border border-indigo-200 rounded px-1 py-0.5 hover:bg-indigo-100 transition-all whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                                 title="Send for Quality Check"
                               >
-                                <Send size={8} /> Send for QC
+                                <Send size={8} /> {saving ? '…' : 'Send for QC'}
                               </button>
                             )}
                             {task.qcEnabled && task.qcStatus === 'sent' && !isManagement && (
@@ -1866,7 +1890,8 @@ const HomeView = ({
                             {task.qcEnabled && task.qcStatus === 'rejected' && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleUpdateTask(task, { qcStatus: 'sent' }); }}
-                                className="flex items-center gap-0.5 text-[9px] font-semibold bg-red-50 text-red-600 border border-red-200 rounded px-1 py-0.5 hover:bg-red-100 transition-all whitespace-nowrap"
+                                disabled={saving}
+                                className="flex items-center gap-0.5 text-[9px] font-semibold bg-red-50 text-red-600 border border-red-200 rounded px-1 py-0.5 hover:bg-red-100 transition-all whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                                 title="Resubmit for QC"
                               >
                                 <RotateCcw size={8} /> Returned
@@ -1904,7 +1929,8 @@ const HomeView = ({
                                 {/* Archive */}
                                 <button
                                   onClick={(e) => { e.stopPropagation(); handleArchiveTask(task); }}
-                                  className="p-1 rounded-md text-slate-300 hover:text-amber-500 hover:bg-amber-50 transition-all"
+                                  disabled={saving}
+                                  className="p-1 rounded-md text-slate-300 hover:text-amber-500 hover:bg-amber-50 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                                   title="Archive task"
                                 >
                                   <Archive size={11}/>
@@ -1914,7 +1940,8 @@ const HomeView = ({
                             {!showTimer && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleArchiveTask(task); }}
-                                className={`p-1 rounded-md transition-all ${
+                                disabled={saving}
+                                className={`p-1 rounded-md transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
                                   task.archived
                                     ? 'text-amber-500 hover:text-amber-700 hover:bg-amber-50'
                                     : 'text-slate-300 hover:text-amber-500 hover:bg-amber-50'
@@ -2580,6 +2607,7 @@ const HomeView = ({
 
       {qcReviewingTask && (() => {
         const handleSubmitQcReview = async () => {
+          if (savingRef.current) return;
           const ratingNum = parseInt(qcReviewRating, 10);
           const validRating = !isNaN(ratingNum) && ratingNum >= 1 && ratingNum <= 10 ? ratingNum : null;
           if (qcReviewDecision === 'rejected' && !qcReviewFeedback.trim()) return;
@@ -2675,10 +2703,10 @@ const HomeView = ({
                 <button onClick={() => setQcReviewingTask(null)} className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all">Cancel</button>
                 <button
                   onClick={handleSubmitQcReview}
-                  disabled={qcReviewDecision === 'rejected' && !qcReviewFeedback.trim()}
+                  disabled={saving || (qcReviewDecision === 'rejected' && !qcReviewFeedback.trim())}
                   className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all ${qcReviewDecision === 'approved' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'} disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
-                  {qcReviewDecision === 'approved' ? 'Approve' : 'Return for Revision'}
+                  {saving ? 'Saving…' : qcReviewDecision === 'approved' ? 'Approve' : 'Return for Revision'}
                 </button>
               </div>
             </div>
@@ -3027,9 +3055,10 @@ const HomeView = ({
               </button>
               <button
                 onClick={handleCreateChecklistGroup}
-                className="px-5 py-2 bg-teal-600 text-white text-sm font-semibold rounded-lg hover:bg-teal-700 transition-all shadow-sm"
+                disabled={saving}
+                className="px-5 py-2 bg-teal-600 text-white text-sm font-semibold rounded-lg hover:bg-teal-700 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Create Group
+                {saving ? 'Saving…' : 'Create Group'}
               </button>
             </div>
           </div>
