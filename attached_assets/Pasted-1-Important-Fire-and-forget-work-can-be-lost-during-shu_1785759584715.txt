@@ -1,0 +1,65 @@
+1. Important: Fire-and-forget work can be lost during shutdown or deployment
+
+The route returns before these operations finish:
+
+Message-history hydration
+Subscription creation or renewal
+
+That is fine on a continuously running server, but if the Replit deployment restarts, scales down or is redeployed immediately after responding, the background promise may be terminated before completion.
+
+This does not need a large redesign, but confirm that:
+
+The application runs as a persistent Node process.
+Background failures are recoverable.
+The subscription scheduler will recreate or renew missing subscriptions.
+Opening the chat again will retry hydration.
+
+If those conditions are true, the risk is acceptable.
+
+If a lost background job would permanently stop replies, then the background operations need a durable queue or retry marker. Based on the existing subscription scheduler, this may already be sufficiently recoverable.
+
+2. Important: Renewing a subscription whenever a chat opens may create unnecessary Graph traffic
+
+The test explicitly expects an existing subscription with 30 minutes remaining to be renewed:
+
+expect(mockRenewChatSubscription)
+  .toHaveBeenCalledWith("existing-sub-id");
+
+If users open chats frequently, this may renew the same subscription repeatedly even though the dedicated subscription scheduler already handles renewal.
+
+That can create:
+
+Unnecessary Microsoft Graph calls
+Additional throttling risk
+More subscription writes to Firebase
+
+The open route should normally behave like:
+
+if (!existingSubscription) {
+  createSubscription();
+} else if (existingSubscription.expiresAt <= renewalThreshold) {
+  renewSubscription();
+}
+
+For example, renew only when fewer than 10–15 minutes remain, matching the scheduler’s policy.
+
+If renewChatSubscription() already internally checks whether renewal is needed, no change is required. Otherwise, this is worth fixing.
+
+Tests
+
+The new test coverage is useful and checks:
+
+Immediate response
+Cached chat lookup
+Background message hydration
+Empty-message filtering
+Duplicate message avoidance
+Background failure isolation
+Authentication
+Subscription creation and renewal
+
+The arbitrary waits such as:
+
+await new Promise(resolve => setTimeout(resolve, 50));
+
+can occasionally make tests flaky, but this is test quality rather than a production functionality issue. I would not spend another Replit cycle on that unless the tests actually fail intermittently.

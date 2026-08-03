@@ -178,6 +178,20 @@ router.post(
       })();
 
       // ── 4. Background: create / renew the Graph change-notification subscription
+      //
+      // Recovery guarantee: the chat-subscription-scheduler runs at startup and
+      // every 10 minutes to renew or recreate any subscriptions that lapsed while
+      // the server was down. Re-opening the chat also retries hydration and this
+      // block, so a lost background job here is always recoverable without manual
+      // intervention.
+      //
+      // Renewal policy (matches the scheduler's RENEW_BEFORE_EXPIRY_MS = 12 min):
+      //   • Sub healthy (> 12 min remaining) → skip; scheduler owns the renewal.
+      //   • Sub near expiry (≤ 12 min remaining) → renew proactively.
+      //   • Sub missing or already expired   → create a new subscription.
+      //
+      // This avoids unnecessary Graph calls when users open chats frequently.
+      const OPEN_RENEW_BEFORE_MS = 12 * 60 * 1000;
       void (async () => {
         const sStart = Date.now();
         const webhookUrl = `${getTeamsBaseUrl()}/api/teams-chat/webhook`;
@@ -187,16 +201,24 @@ router.post(
             expiresAt: number;
           } | null>(`teamsDMs/chats/${chatKey}/subscription`);
 
-          if (
-            existingSub?.id &&
-            existingSub.expiresAt > Date.now() + 5 * 60 * 1000
-          ) {
+          const now = Date.now();
+
+          if (existingSub?.id && existingSub.expiresAt > now + OPEN_RENEW_BEFORE_MS) {
+            // Subscription is healthy — nothing to do; the scheduler will renew it.
+            logger.info(
+              { chatKey, expiresIn: Math.round((existingSub.expiresAt - now) / 60_000) + "m" },
+              "[TeamsChat] Background subscription still valid — skipping renewal"
+            );
+          } else if (existingSub?.id && existingSub.expiresAt > now) {
+            // Near expiry — renew proactively.
             const newExpiry = await renewChatSubscription(existingSub.id);
             await writeFirebasePath(`teamsDMs/chats/${chatKey}/subscription`, {
               id: existingSub.id,
               expiresAt: new Date(newExpiry).getTime(),
             });
+            logger.info({ chatKey, ms: Date.now() - sStart }, "[TeamsChat] Background subscription renewed");
           } else {
+            // Missing or expired — create a new subscription.
             const sub = await subscribeToChatMessages(
               rawChatId,
               webhookUrl,
@@ -206,8 +228,8 @@ router.post(
               id: sub.id,
               expiresAt: new Date(sub.expiresDateTime).getTime(),
             });
+            logger.info({ chatKey, ms: Date.now() - sStart }, "[TeamsChat] Background subscription ensured");
           }
-          logger.info({ chatKey, ms: Date.now() - sStart }, "[TeamsChat] Background subscription ensured");
         } catch (subErr) {
           logger.warn(
             { subErr, rawChatId, ms: Date.now() - sStart },
