@@ -2,12 +2,17 @@ import cron from "node-cron";
 import { format } from "date-fns";
 import { toZonedTime } from "date-fns-tz";
 import { syncAttendanceToday, getKekaCredentials } from "./keka-client";
-import { readFirebasePath, writeFirebasePath } from "./firebase-admin";
+import { readFirebasePath, writeFirebasePath, multiPathUpdate } from "./firebase-admin";
+import { sendEmail, isEmailConfigured } from "./microsoft-graph";
 import { logger } from "./logger";
 import { withJobLock } from "./job-lock";
 
 // Lock TTL slightly shorter than the shortest interval (10 min).
 const ATTENDANCE_LOCK_TTL_MS = 8 * 60 * 1000;
+
+// Alert thresholds / cooldowns
+const ALERT_FAILURE_THRESHOLD = 3;       // ~30 min of consecutive failures
+const ALERT_COOLDOWN_MS = 60 * 60 * 1000; // at most one alert per hour
 
 /**
  * In-memory health counters — persisted to Firebase after every run.
@@ -17,6 +22,119 @@ const ATTENDANCE_LOCK_TTL_MS = 8 * 60 * 1000;
 let consecutiveFailures = 0;
 let lastSuccessfulRun: string | null = null;
 let lastFailedRun: string | null = null;
+
+interface AttendanceSchedulerHealth {
+  consecutiveFailures?: number;
+  lastSuccessfulRun?: string | null;
+  lastFailedRun?: string | null;
+  lastError?: string | null;
+  lastAttemptedRun?: string | null;
+  lastAlertSent?: string | null;
+}
+
+/**
+ * Reads the attendance scheduler health node and sends an alert email to the
+ * admin when the sync has failed consecutively for ALERT_FAILURE_THRESHOLD or
+ * more cycles (≈ 30 minutes).
+ *
+ * Throttled: at most one alert per ALERT_COOLDOWN_MS (1 hour).
+ * Auto-clears: no email is sent once consecutiveFailures drops back to 0.
+ */
+async function checkAttendanceSyncHealth(): Promise<void> {
+  if (!isEmailConfigured()) {
+    logger.debug("[AttendanceAlert] Email not configured — skipping health check");
+    return;
+  }
+
+  try {
+    const health = await readFirebasePath<AttendanceSchedulerHealth>(
+      "settings/integrations/keka/attendanceSchedulerHealth"
+    );
+
+    if (!health) {
+      logger.debug("[AttendanceAlert] No health data found — skipping");
+      return;
+    }
+
+    const failures = health.consecutiveFailures ?? 0;
+
+    if (failures < ALERT_FAILURE_THRESHOLD) {
+      logger.debug({ failures }, "[AttendanceAlert] Below failure threshold — no alert needed");
+      return;
+    }
+
+    // Throttle: skip if an alert was already sent within the cooldown window
+    if (health.lastAlertSent) {
+      const elapsed = Date.now() - new Date(health.lastAlertSent).getTime();
+      if (elapsed < ALERT_COOLDOWN_MS) {
+        logger.debug(
+          { failures, lastAlertSent: health.lastAlertSent, elapsedMin: Math.round(elapsed / 60000) },
+          "[AttendanceAlert] Alert already sent within cooldown window — skipping"
+        );
+        return;
+      }
+    }
+
+    const adminEmail = process.env.MS_SENDER_EMAIL;
+    if (!adminEmail) {
+      logger.warn("[AttendanceAlert] MS_SENDER_EMAIL not set — cannot send alert");
+      return;
+    }
+
+    const lastSuccess = health.lastSuccessfulRun
+      ? new Date(health.lastSuccessfulRun).toUTCString()
+      : "never";
+    const lastError = health.lastError ?? "unknown error";
+    const lastAttempted = health.lastAttemptedRun
+      ? new Date(health.lastAttemptedRun).toUTCString()
+      : "unknown";
+
+    const subject = `⚠️ Attendance Sync Alert: ${failures} consecutive sync failure${failures === 1 ? "" : "s"}`;
+    const bodyHtml = `
+      <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
+        <h2 style="color:#b91c1c;">Attendance Sync Has Stopped Working</h2>
+        <p>The Keka attendance sync has failed <strong>${failures} times in a row</strong> (~${Math.round(failures * 10)} minutes of no data).</p>
+        <table style="border-collapse:collapse;width:100%;margin:16px 0;">
+          <tr>
+            <td style="padding:8px 12px;background:#f3f4f6;font-weight:600;width:40%;">Last attempted</td>
+            <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${lastAttempted}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 12px;background:#f3f4f6;font-weight:600;">Last successful run</td>
+            <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${lastSuccess}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 12px;background:#f3f4f6;font-weight:600;">Last error</td>
+            <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;color:#b91c1c;word-break:break-all;">${lastError}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 12px;background:#f3f4f6;font-weight:600;">Consecutive failures</td>
+            <td style="padding:8px 12px;">${failures}</td>
+          </tr>
+        </table>
+        <p style="color:#6b7280;font-size:13px;">
+          This alert will repeat every hour until the sync recovers. No further email will be sent once attendance data starts syncing successfully again.
+        </p>
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;" />
+        <p style="color:#9ca3af;font-size:12px;">Ethinos Flow Pro — Attendance Monitor</p>
+      </div>
+    `.trim();
+
+    await sendEmail({ to: adminEmail, subject, bodyHtml });
+
+    logger.warn(
+      { failures, lastSuccess: health.lastSuccessfulRun, lastError, adminEmail },
+      "[AttendanceAlert] Alert email sent to admin"
+    );
+
+    // Record when the alert was last sent so we respect the cooldown
+    await multiPathUpdate({
+      "settings/integrations/keka/attendanceSchedulerHealth/lastAlertSent": new Date().toISOString(),
+    });
+  } catch (err) {
+    logger.warn({ err }, "[AttendanceAlert] Health check threw — non-fatal");
+  }
+}
 
 /**
  * Returns true when the current local time falls inside a "fast" window
@@ -216,8 +334,16 @@ export function startAttendanceScheduler(): void {
     );
   });
 
+  // Runs once per hour — checks consecutive failure count and emails the admin
+  // if the sync has been failing for >= ALERT_FAILURE_THRESHOLD cycles (~30 min).
+  cron.schedule("0 * * * *", () => {
+    checkAttendanceSyncHealth().catch((err) =>
+      logger.error({ err }, "[AttendanceAlert] Unhandled health-check error")
+    );
+  });
+
   logger.info(
     "[Attendance] Scheduler started — 10-min sync during 09:30–11:30 & 17:00–20:00; " +
-    "30-min otherwise (06:00–22:00); end-of-day pass at 21:30"
+    "30-min otherwise (06:00–22:00); end-of-day pass at 21:30; hourly admin health alert"
   );
 }
