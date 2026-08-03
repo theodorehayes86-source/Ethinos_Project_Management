@@ -2801,6 +2801,25 @@ const HomeView = ({
                   <option value="Done">Done</option>
                 </select>
               </div>
+              {/* Repeat badge — read-only preview of this task's repeat schedule */}
+              {editingTask.repeatFrequency && editingTask.repeatFrequency !== 'Once' && editingTask.repeatFrequency !== 'One-time' && (() => {
+                const label = formatRepeatLabel(editingTask);
+                const weekendLabel = formatWeekendRuleLabel(editingTask);
+                return (
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Repeat Schedule</label>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full ${repeatBadgeColor(editingTask.repeatFrequency)}`}>
+                        <RotateCcw size={10} />
+                        {label || editingTask.repeatFrequency}
+                      </span>
+                      {weekendLabel && (
+                        <span className="text-xs font-medium text-slate-400">{weekendLabel}</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
               {/* Series scope */}
               {editingTask.repeatGroupId && (
                 <div className="space-y-2 pt-1">

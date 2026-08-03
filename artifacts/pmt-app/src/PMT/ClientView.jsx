@@ -536,6 +536,10 @@ const ClientView = ({
       dueDate: tryParse(log.dueDate) || null,
       repeatFrequency: log.repeatFrequency || 'Once',
       repeatEnd: tryParse(log.repeatEnd) || null,
+      repeatDayOfMonth: log.repeatDayOfMonth ?? null,
+      repeatMonthlyWeek: log.repeatMonthlyWeek ?? null,
+      repeatMonthlyDay: log.repeatMonthlyDay ?? null,
+      repeatWeekendRule: log.repeatWeekendRule ?? null,
       status: log.status || 'Pending',
       qcEnabled: log.qcEnabled ?? true,
       qcAssigneeId: log.qcAssigneeId || '',
@@ -3007,6 +3011,29 @@ const ClientView = ({
                             )}
                           </div>
                         )}
+                        {/* Repeat schedule */}
+                        {editDraft.repeatFrequency && editDraft.repeatFrequency !== 'Once' && (() => {
+                          const previewTask = {
+                            repeatFrequency: editDraft.repeatFrequency,
+                            repeatDayOfMonth: editDraft.repeatDayOfMonth,
+                            repeatMonthlyWeek: editDraft.repeatMonthlyWeek,
+                            repeatMonthlyDay: editDraft.repeatMonthlyDay,
+                            repeatWeekendRule: editDraft.repeatWeekendRule,
+                          };
+                          const label = formatRepeatLabel(previewTask);
+                          const weekendLabel = formatWeekendRuleLabel(previewTask);
+                          return (
+                            <div className="flex items-center gap-2 flex-wrap mt-2">
+                              <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full ${repeatBadgeColor(editDraft.repeatFrequency)}`}>
+                                <RotateCcw size={10} />
+                                {label || editDraft.repeatFrequency}
+                              </span>
+                              {weekendLabel && (
+                                <span className="text-xs font-medium text-slate-400">{weekendLabel}</span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                     {/* Right column: all text fields */}
