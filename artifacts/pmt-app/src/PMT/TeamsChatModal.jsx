@@ -11,6 +11,52 @@ import { db, auth } from '../firebase.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
+/** Minimal Microsoft Teams "T" icon reproduced as an inline SVG. */
+function TeamsIcon({ className = '' }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      aria-hidden="true"
+    >
+      {/* Purple background pill for the "T" */}
+      <rect x="1" y="5" width="14" height="14" rx="3" fill="#5B5EA6" />
+      <text
+        x="8"
+        y="15.5"
+        textAnchor="middle"
+        fontSize="10"
+        fontWeight="bold"
+        fill="white"
+        fontFamily="sans-serif"
+      >T</text>
+      {/* Small person silhouette to the right, suggesting a group/Teams feel */}
+      <circle cx="19" cy="9" r="3" fill="#7B83EB" />
+      {/* Path clamped so rightmost point = x24, stays inside 24×24 viewBox */}
+      <path d="M13 19c0-3.038 2.462-5.5 5.5-5.5S24 15.962 24 19H13z" fill="#7B83EB" />
+    </svg>
+  );
+}
+
+/** Badge shown on bubbles that arrived from Microsoft Teams. */
+function ViaTeamsBadge({ mine = false }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-0.5 rounded px-1 py-px text-[9px] font-medium ${
+        mine
+          ? 'bg-indigo-500/30 text-indigo-100'
+          : 'bg-slate-100 text-slate-500 border border-slate-200'
+      }`}
+      title={mine ? 'Sent via Microsoft Teams' : 'Received via Microsoft Teams'}
+    >
+      <TeamsIcon className="w-2.5 h-2.5 flex-shrink-0" />
+      <span>via Teams</span>
+    </span>
+  );
+}
+
 const AVATAR_COLORS = [
   'bg-indigo-500', 'bg-purple-500', 'bg-pink-500', 'bg-rose-500',
   'bg-orange-500', 'bg-amber-500', 'bg-teal-500', 'bg-cyan-500',
@@ -214,12 +260,12 @@ export default function TeamsChatModal({ member, currentUser, onClose }) {
                       </p>
                     )}
                     <p className="whitespace-pre-wrap break-words">{msg.body}</p>
-                    <p className={`text-[9px] mt-1 text-right ${mine ? 'text-indigo-200' : 'text-slate-400'}`}>
-                      {fmtTime(msg.sentAt)}
-                      {msg.source === 'teams' && !mine && (
-                        <span className="ml-1 opacity-70">· Teams</span>
+                    <div className={`flex items-center justify-end gap-1.5 mt-1 ${mine ? 'text-indigo-200' : 'text-slate-400'}`}>
+                      {msg.source === 'teams' && (
+                        <ViaTeamsBadge mine={mine} />
                       )}
-                    </p>
+                      <span className="text-[9px]">{fmtTime(msg.sentAt)}</span>
+                    </div>
                   </div>
                 </div>
               );

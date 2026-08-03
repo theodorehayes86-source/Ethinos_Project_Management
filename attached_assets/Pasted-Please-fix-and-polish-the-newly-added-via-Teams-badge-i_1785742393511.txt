@@ -1,0 +1,291 @@
+Please fix and polish the newly added **“via Teams” badge** in the Teams chat message UI.
+
+## File involved
+
+Locate the component containing:
+
+```jsx
+TeamsChatModal
+```
+
+and the newly added:
+
+```jsx
+TeamsIcon
+ViaTeamsBadge
+```
+
+## Objective
+
+Keep the new visual indicator showing that a message came through Microsoft Teams, but correct the JSX issue and make the badge behaviour accurate and consistent.
+
+Do not remove the badge.
+
+---
+
+## 1. Fix the invalid JSX structure
+
+The new timestamp section currently opens with a `<div>` but closes with `</p>`.
+
+This will cause a JSX compilation error.
+
+Replace the timestamp and badge section with valid JSX:
+
+```jsx
+<div
+  className={`flex items-center justify-end gap-1.5 mt-1 ${
+    mine ? 'text-indigo-200' : 'text-slate-400'
+  }`}
+>
+  {msg.source === 'teams' && (
+    <ViaTeamsBadge mine={mine} />
+  )}
+
+  <span className="text-[9px]">
+    {fmtTime(msg.sentAt)}
+  </span>
+</div>
+```
+
+Ensure all opening and closing tags match correctly.
+
+---
+
+## 2. Remove the old duplicate Teams label
+
+The old implementation displayed:
+
+```jsx
+<span className="ml-1 opacity-70">· Teams</span>
+```
+
+Remove this old label completely so the message does not show both:
+
+```text
+· Teams
+```
+
+and:
+
+```text
+via Teams
+```
+
+Only the new badge should remain.
+
+---
+
+## 3. Confirm badge behaviour for incoming and outgoing messages
+
+The previous code only showed the Teams indicator when:
+
+```js
+msg.source === 'teams' && !mine
+```
+
+The new code shows it whenever:
+
+```js
+msg.source === 'teams'
+```
+
+Use this intended behaviour:
+
+* If a message genuinely originated from Microsoft Teams, show the badge.
+* Show it for both incoming and outgoing messages when `msg.source === 'teams'`.
+* Do not show it for messages sent directly inside the PMT application.
+
+Do not use `mine` to determine whether the message came through Teams.
+
+Use `mine` only for styling and tooltip wording.
+
+---
+
+## 4. Improve tooltip wording
+
+The current tooltip says:
+
+```text
+Replied via Microsoft Teams
+```
+
+This is inaccurate for outgoing messages and for messages that are not technically replies.
+
+Use:
+
+```jsx
+title={
+  mine
+    ? 'Sent via Microsoft Teams'
+    : 'Received via Microsoft Teams'
+}
+```
+
+---
+
+## 5. Keep the badge styling readable
+
+Preserve separate visual treatment for messages sent by the current user and messages received from others.
+
+Use:
+
+```jsx
+function ViaTeamsBadge({ mine = false }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-0.5 rounded px-1 py-px text-[9px] font-medium ${
+        mine
+          ? 'bg-indigo-500/30 text-indigo-100'
+          : 'bg-slate-100 text-slate-500 border border-slate-200'
+      }`}
+      title={
+        mine
+          ? 'Sent via Microsoft Teams'
+          : 'Received via Microsoft Teams'
+      }
+    >
+      <TeamsIcon className="w-2.5 h-2.5 flex-shrink-0" />
+      <span>via Teams</span>
+    </span>
+  );
+}
+```
+
+Ensure the badge remains legible on both light and indigo message bubbles.
+
+---
+
+## 6. Fix possible SVG clipping
+
+The current icon path extends slightly beyond the `24 × 24` view box.
+
+Review the path and ensure all coordinates stay inside:
+
+```jsx
+viewBox="0 0 24 24"
+```
+
+For example:
+
+```jsx
+function TeamsIcon({ className = '' }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      aria-hidden="true"
+    >
+      <rect
+        x="1"
+        y="5"
+        width="14"
+        height="14"
+        rx="3"
+        fill="#5B5EA6"
+      />
+
+      <text
+        x="8"
+        y="15.5"
+        textAnchor="middle"
+        fontSize="10"
+        fontWeight="bold"
+        fill="white"
+        fontFamily="sans-serif"
+      >
+        T
+      </text>
+
+      <circle
+        cx="19"
+        cy="9"
+        r="3"
+        fill="#7B83EB"
+      />
+
+      <path
+        d="M13 19c0-3.038 2.462-5.5 5.5-5.5S24 15.962 24 19H13z"
+        fill="#7B83EB"
+      />
+    </svg>
+  );
+}
+```
+
+If a branded Teams icon component or approved asset already exists in the project, reuse it rather than creating another version.
+
+---
+
+## 7. Keep message layout stable
+
+Ensure that adding the badge does not:
+
+* Increase bubble width unnecessarily
+* Push the timestamp onto a new line too often
+* Break long messages
+* Misalign incoming and outgoing bubbles
+* Cause overflow on mobile screens
+
+The badge and timestamp should remain on one compact row where possible.
+
+---
+
+## 8. Preserve accessibility
+
+The icon itself should remain:
+
+```jsx
+aria-hidden="true"
+```
+
+because the badge text and tooltip already convey the meaning.
+
+Do not add redundant screen-reader text.
+
+---
+
+## 9. Verify source values
+
+Confirm that messages arriving through Microsoft Teams consistently store:
+
+```js
+msg.source === 'teams'
+```
+
+Check incoming and outgoing Teams message creation paths.
+
+If different source values are used, normalize them in one place rather than adding multiple UI conditions.
+
+Do not change stored historical data unless necessary.
+
+---
+
+## 10. Testing required
+
+Verify:
+
+1. The component compiles without JSX errors.
+2. Incoming Teams messages show the badge.
+3. Outgoing Teams messages show the badge.
+4. PMT-native messages do not show the badge.
+5. The old `· Teams` text no longer appears.
+6. Incoming tooltip says “Received via Microsoft Teams”.
+7. Outgoing tooltip says “Sent via Microsoft Teams”.
+8. Timestamp remains visible.
+9. Badge styling works on both message bubble colours.
+10. The icon is not clipped.
+11. Mobile layout does not overflow.
+12. Lint and production build pass.
+
+## Deliverables
+
+After making the changes:
+
+1. List every file changed.
+2. Confirm the JSX mismatch was fixed.
+3. Confirm the old duplicate label was removed.
+4. Explain the final badge display condition.
+5. Confirm both incoming and outgoing Teams messages were tested.
+6. Report lint, type-check and build results.
