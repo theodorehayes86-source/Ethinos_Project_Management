@@ -1,6 +1,6 @@
 /**
- * Human-readable repeat schedule helpers.
- * Used across HomeView, ClientView (web) and referenced for mobile.
+ * Human-readable repeat schedule helpers for the mobile app.
+ * Mirrors artifacts/pmt-app/src/utils/repeatLabel.js.
  */
 
 import { formatOrdinal } from './recurrence.js';
@@ -10,10 +10,10 @@ const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 
 /**
  * Returns the display label for a task's repeat schedule, e.g.:
- *   "Monthly · 5th"   when repeatDayOfMonth is set
+ *   "Monthly · 5th"      when repeatDayOfMonth is set
  *   "Monthly · 2nd Tue"  when repeatMonthlyWeek/Day are set
- *   "Weekly", "Daily", etc. for other frequencies
- *   null when repeatFrequency is absent, "Once", or "One-time"
+ *   "Weekly", "Daily"    for other frequencies
+ *   null                 when repeatFrequency is absent, "Once", or "One-time"
  */
 export function formatRepeatLabel(task) {
   const freq = task?.repeatFrequency;
@@ -46,17 +46,4 @@ export function formatWeekendRuleLabel(task) {
     case 'next-monday':  return 'Mon if weekend →';
     default:             return null;
   }
-}
-
-/**
- * Tailwind class string for the repeat badge colour based on frequency.
- */
-export function repeatBadgeColor(freq) {
-  if (freq === 'Daily')       return 'bg-emerald-100 text-emerald-700';
-  if (freq === 'Weekly')      return 'bg-blue-100 text-blue-700';
-  if (freq === 'Fortnightly') return 'bg-cyan-100 text-cyan-700';
-  if (freq === 'Monthly')     return 'bg-purple-100 text-purple-700';
-  if (freq === 'Quarterly')   return 'bg-orange-100 text-orange-700';
-  if (freq === 'Yearly')      return 'bg-rose-100 text-rose-700';
-  return 'bg-slate-100 text-slate-600';
 }
