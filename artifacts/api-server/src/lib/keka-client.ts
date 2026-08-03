@@ -3,6 +3,7 @@ import { join } from "path";
 import { readFirebasePath, writeFirebasePath } from "./firebase-admin";
 import { logger } from "./logger";
 import { format, addDays, parseISO, isValid } from "date-fns";
+import { toZonedTime } from "date-fns-tz";
 
 const SECRETS_DIR = join(process.cwd(), ".secrets");
 const KEKA_KEY_FILE = join(SECRETS_DIR, "keka-api-key");
@@ -271,6 +272,44 @@ interface PMTUser {
   name?: string;
   email?: string;
   kekaEmployeeId?: string;
+}
+
+// ─── Retry helper ────────────────────────────────────────────────────────────
+
+const RETRY_DELAYS_MS = [2_000, 4_000, 8_000] as const;
+/** HTTP status codes worth retrying (transient server / rate-limit errors). */
+const RETRYABLE_HTTP_CODES = new Set([429, 500, 502, 503]);
+
+/**
+ * Retry wrapper with exponential backoff for transient Keka API errors.
+ *
+ * - Retries on: network/DNS errors, HTTP 429 / 500 / 502 / 503.
+ * - Propagates immediately on: HTTP 400 / 401 / 403 and other non-transient codes.
+ * - Max 3 retries (4 total attempts), 2 s → 4 s → 8 s backoff.
+ */
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  onRetry?: (attempt: number, delayMs: number) => void
+): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= RETRY_DELAYS_MS.length + 1; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      // Detect HTTP status codes in error messages like "Keka API error 429 …"
+      const statusMatch = String(err).match(/\berror (\d{3})\b/i);
+      if (statusMatch) {
+        const status = Number(statusMatch[1]);
+        if (!RETRYABLE_HTTP_CODES.has(status)) throw err; // non-retryable — propagate
+      }
+      const delayMs = RETRY_DELAYS_MS[attempt - 1];
+      if (delayMs === undefined) break; // all retries exhausted
+      onRetry?.(attempt, delayMs);
+      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  throw lastErr;
 }
 
 // ─── Pagination helpers ───────────────────────────────────────────────────────
@@ -848,6 +887,8 @@ export interface AttendanceSyncResult {
   error?: string;
   totalArrived?: number;
   totalNotArrived?: number;
+  /** Total number of Keka API retries used during this sync run. */
+  retriesUsed?: number;
 }
 
 /**
@@ -868,22 +909,32 @@ export interface AttendanceSyncResult {
  * Firebase path: attendanceData/{yyyy-MM-dd}/{pmtUserId}
  * Rate limit: 2 Keka API calls per run, every 10 min → well within 50 req/min.
  */
-export async function syncAttendanceToday(): Promise<AttendanceSyncResult> {
+/**
+ * Fetch attendance for a given date from Keka and write it to Firebase.
+ *
+ * @param tz   - IANA timezone string used to compute today's date when no
+ *               explicit date is supplied (fixes UTC vs. local-day mismatch).
+ * @param date - Optional ISO date override (yyyy-MM-dd). Pass yesterday's date
+ *               for catch-up runs; omit to sync the current local day.
+ */
+export async function syncAttendanceToday(
+  tz: string,
+  date?: string
+): Promise<AttendanceSyncResult> {
   const syncedAt = new Date().toISOString();
-  const today = format(new Date(), "yyyy-MM-dd");
+  // Fix root cause #3: use the configured timezone rather than the server's UTC clock.
+  const today = date ?? format(toZonedTime(new Date(), tz), "yyyy-MM-dd");
 
   const creds = await getKekaCredentials();
   if (!creds) {
-    return { success: false, recordsWritten: 0, date: today, syncedAt, error: "Keka credentials not configured" };
+    return { success: false, recordsWritten: 0, date: today, syncedAt, error: "Keka credentials not configured", retriesUsed: 0 };
   }
 
-  try {
-    const token = await getKekaAccessToken(creds.baseUrl);
-    const baseUrl = creds.baseUrl.replace(/\/$/, "");
+  let totalRetries = 0;
 
+  try {
     // ── Step 1: Load all PMT users with a kekaEmployeeId ─────────────────────
     const usersRaw = await readFirebasePath<unknown>("users");
-    // kekaEmployeeId → pmtUserId
     const kekaIdToUserId: Record<string, string> = {};
     if (usersRaw) {
       const userList: PMTUser[] = Array.isArray(usersRaw)
@@ -897,31 +948,35 @@ export async function syncAttendanceToday(): Promise<AttendanceSyncResult> {
     }
     const totalKekaUsers = Object.keys(kekaIdToUserId).length;
     if (totalKekaUsers === 0) {
-      return { success: true, recordsWritten: 0, date: today, syncedAt, totalArrived: 0, totalNotArrived: 0 };
+      return { success: true, recordsWritten: 0, date: today, syncedAt, totalArrived: 0, totalNotArrived: 0, retriesUsed: 0 };
     }
 
-    // ── Step 2: Fetch today's attendance records from Keka (paginated) ──────
-    // Keka caps each page at 200. We page until lastPage = true or no more records.
-    const PAGE_SIZE = 200;
+    // ── Step 2: Fetch attendance records from Keka (paginated) ──────────────
+    // Uses kekaGetPage which calls getKekaAccessToken() on every page so the
+    // token is refreshed automatically mid-loop (fixes root cause #2).
+    // The 50-page safety cap prevents a runaway loop (fixes root cause #1).
     const records: KekaAttendanceRecord[] = [];
+    const attendancePath = `/api/v1/time/attendance?from=${today}&to=${today}`;
     let pageNumber = 1;
+
     while (true) {
-      const url = `${baseUrl}/api/v1/time/attendance?from=${today}&to=${today}&pageNumber=${pageNumber}&pageSize=${PAGE_SIZE}`;
-      const resp = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-      });
-      if (!resp.ok) {
-        const errBody = await resp.text().catch(() => "");
-        throw new Error(`Keka attendance API HTTP ${resp.status}: ${errBody.slice(0, 200)}`);
-      }
-      const body = (await resp.json()) as KekaApiResponse<KekaAttendanceRecord>;
-      const page = (body.data ?? body.response ?? []) as KekaAttendanceRecord[];
-      records.push(...page);
-      // NOTE: Keka returns lastPage as a URL string pointing to the final page
-      // (not a boolean), so it is always truthy when there are multiple pages.
-      // Rely solely on page.length < PAGE_SIZE to detect the final page.
-      if (page.length < PAGE_SIZE) break;
+      const { items, hasMore } = await withRetry(
+        () => kekaGetPage<KekaAttendanceRecord>(creds.baseUrl, attendancePath, pageNumber),
+        (attempt, delayMs) => {
+          totalRetries++;
+          logger.warn(
+            { attempt, delayMs, pageNumber, date: today },
+            "[Keka] Attendance page fetch retry"
+          );
+        }
+      );
+      records.push(...items);
+      if (!hasMore) break;
       pageNumber++;
+      if (pageNumber > 50) {
+        logger.warn({ date: today }, "[Keka] Attendance pagination safety limit reached (50 pages)");
+        break;
+      }
     }
 
     // ── Step 3: Index records by kekaEmployeeId ──────────────────────────────
@@ -967,11 +1022,14 @@ export async function syncAttendanceToday(): Promise<AttendanceSyncResult> {
       date: today,
     });
 
-    logger.info({ recordsWritten, totalArrived, totalNotArrived, date: today }, "[Keka] Attendance sync complete");
-    return { success: true, recordsWritten, date: today, syncedAt, totalArrived, totalNotArrived };
+    logger.info(
+      { recordsWritten, totalArrived, totalNotArrived, date: today, retriesUsed: totalRetries },
+      "[Keka] Attendance sync complete"
+    );
+    return { success: true, recordsWritten, date: today, syncedAt, totalArrived, totalNotArrived, retriesUsed: totalRetries };
   } catch (err) {
-    logger.error({ err }, "[Keka] Attendance sync failed");
-    return { success: false, recordsWritten: 0, date: today, syncedAt, error: String(err) };
+    logger.error({ err, date: today }, "[Keka] Attendance sync failed");
+    return { success: false, recordsWritten: 0, date: today, syncedAt, error: String(err), retriesUsed: totalRetries };
   }
 }
 

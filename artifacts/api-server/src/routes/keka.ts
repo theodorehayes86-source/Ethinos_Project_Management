@@ -69,7 +69,16 @@ router.post("/keka/sync", requireAdminRole, async (_req: Request, res: Response)
 router.post("/keka/sync-attendance", requireAdminRole, async (_req: Request, res: Response) => {
   logger.info("[Keka] Manual attendance sync triggered via API");
   try {
-    const result = await syncAttendanceToday();
+    // Resolve timezone the same way the scheduler does so the date key matches.
+    const { readFirebasePath } = await import("../lib/firebase-admin");
+    const { toZonedTime } = await import("date-fns-tz");
+    const { format } = await import("date-fns");
+    const schedRaw = await readFirebasePath<{ scheduleTimezone?: string }>(
+      "settings/notifications/reminders-schedule"
+    ).catch(() => null);
+    const tz = schedRaw?.scheduleTimezone || "Asia/Kolkata";
+    const today = format(toZonedTime(new Date(), tz), "yyyy-MM-dd");
+    const result = await syncAttendanceToday(tz, today);
     res.json(result);
   } catch (err) {
     logger.error({ err }, "[Keka] Manual attendance sync failed");
