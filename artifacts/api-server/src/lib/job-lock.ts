@@ -84,3 +84,47 @@ export async function withJobLock(
 
   return true;
 }
+
+/**
+ * Reads the named lock and removes it if its `expiresAt` timestamp is already
+ * in the past. Safe to call at startup — it never touches a lock that is still
+ * within its TTL.
+ *
+ * Uses a Firebase transaction so the read-then-delete is atomic: if another
+ * instance re-acquires the lock between the read and the delete, the
+ * transaction aborts and the active lock is left untouched.
+ *
+ * @param name  Stable lock name, e.g. "attendance-10min"
+ * @returns     true if a stale lock was cleared, false if no action was needed
+ */
+export async function clearExpiredLock(name: string): Promise<boolean> {
+  const db = getAdminDatabase();
+  const lockRef = db.ref(`schedulerLocks/${name}`);
+
+  try {
+    const result = await lockRef.transaction((current: LockRecord | null) => {
+      if (current === null) {
+        // No lock present — nothing to do; abort transaction.
+        return undefined;
+      }
+      if (Date.now() < new Date(current.expiresAt).getTime()) {
+        // Lock is still within its TTL — leave it alone; abort transaction.
+        return undefined;
+      }
+      // Lock has expired — delete it.
+      return null;
+    });
+
+    if (result.committed) {
+      logger.warn(
+        { name },
+        "[JobLock] Cleared stale lock at startup — it had expired but was never released"
+      );
+      return true;
+    }
+  } catch (err) {
+    logger.warn({ err, name }, "[JobLock] Could not check/clear lock at startup — proceeding anyway");
+  }
+
+  return false;
+}

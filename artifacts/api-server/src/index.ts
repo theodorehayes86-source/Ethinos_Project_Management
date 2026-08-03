@@ -13,7 +13,7 @@ import { startChatSubscriptionRenewalScheduler } from "./lib/chat-subscription-s
  * a synchronous startup failure in one does not prevent the others from starting.
  */
 function startBackgroundSchedulers(): void {
-  const schedulers: Array<{ name: string; start: () => void }> = [
+  const schedulers: Array<{ name: string; start: () => void | Promise<void> }> = [
     { name: "Repeat",                  start: startRepeatScheduler },
     { name: "Reminders",               start: startReminderScheduler },
     { name: "WeeklyDigest",            start: startWeeklyDigestScheduler },
@@ -24,7 +24,12 @@ function startBackgroundSchedulers(): void {
 
   for (const { name, start } of schedulers) {
     try {
-      start();
+      const result = start();
+      if (result instanceof Promise) {
+        result.catch((err) =>
+          logger.error({ err, scheduler: name }, `[Startup] Scheduler '${name}' failed to start (async)`)
+        );
+      }
     } catch (err) {
       logger.error({ err, scheduler: name }, `[Startup] Scheduler '${name}' failed to start`);
     }

@@ -5,7 +5,7 @@ import { syncAttendanceToday, getKekaCredentials } from "./keka-client";
 import { readFirebasePath, writeFirebasePath, multiPathUpdate } from "./firebase-admin";
 import { sendEmail, isEmailConfigured } from "./microsoft-graph";
 import { logger } from "./logger";
-import { withJobLock } from "./job-lock";
+import { withJobLock, clearExpiredLock } from "./job-lock";
 
 // Lock TTL slightly shorter than the shortest interval (10 min).
 const ATTENDANCE_LOCK_TTL_MS = 8 * 60 * 1000;
@@ -322,7 +322,15 @@ async function runAttendanceSync(): Promise<void> {
   }
 }
 
-export function startAttendanceScheduler(): void {
+export async function startAttendanceScheduler(): Promise<void> {
+  // ── Startup lock hygiene ─────────────────────────────────────────────────────
+  // A ghost instance (e.g. a previous deployment that never shut down cleanly)
+  // can leave a stale lock in Firebase whose TTL has already elapsed.
+  // The normal transaction inside withJobLock will reclaim it on the next tick,
+  // but clearing it here means the very first tick after a restart is never
+  // blocked by a lock from a previous process.
+  await clearExpiredLock("attendance-10min");
+
   // Runs every 10 minutes; the handler decides whether to proceed based on
   // the active window (10-min during 09:30–11:30 and 17:00–20:00, 30-min
   // otherwise within the 06:00–22:00 gate; 21:30 provides the end-of-day pass).
