@@ -59,6 +59,7 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
   const [replyingToFeedbackId, setReplyingToFeedbackId] = useState(null);
   const feedbackInputRef = useRef(null);
   const [seriesScope, setSeriesScope] = useState('one');
+  const [pendingBulkUpdate, setPendingBulkUpdate] = useState(null);
 
   // Edit/delete state for messages
   const [editingMsgId, setEditingMsgId] = useState(null);
@@ -100,7 +101,17 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
   const tdpAcknowledgedRef = useRef(null);
   const [pendingDueDate, setPendingDueDate] = useState(null);
 
-  const saveUpdate = (updatedTask) => onUpdate(updatedTask, seriesScope);
+  const saveUpdate = (updatedTask) => {
+    if (seriesScope === 'all') {
+      // Capture a snapshot of current local state so cancel can fully restore it.
+      setPendingBulkUpdate({
+        updatedTask,
+        snapshot: { steps, messages, links, feedbackThread, localDueDate },
+      });
+      return;
+    }
+    onUpdate(updatedTask, seriesScope);
+  };
 
   const handleDueDateChange = async (date) => {
     const assigneeId = task.assigneeId ? String(task.assigneeId) : '';
@@ -385,6 +396,56 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
         className="relative flex flex-col bg-white shadow-2xl w-full max-w-lg h-full overflow-hidden animate-in slide-in-from-right duration-300"
         onClick={e => e.stopPropagation()}
       >
+        {/* Bulk series confirmation overlay */}
+        {pendingBulkUpdate !== null && (
+          <div className="absolute inset-0 z-[900] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl shadow-2xl mx-4 p-6 max-w-sm w-full">
+              <div className="flex items-center gap-3 mb-3">
+                <span className="flex-shrink-0 w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center">
+                  <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                  </svg>
+                </span>
+                <h3 className="text-sm font-bold text-slate-900">Update entire series?</h3>
+              </div>
+              <p className="text-sm text-slate-600 mb-5">
+                This will apply your change to{' '}
+                <span className="font-semibold text-amber-700">
+                  {seriesCount > 0 ? `all ${seriesCount} tasks` : 'all tasks'} in this series
+                </span>
+                . This action can't be undone.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    onUpdate(pendingBulkUpdate.updatedTask, 'all');
+                    setPendingBulkUpdate(null);
+                  }}
+                  className="flex-1 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold transition-colors"
+                >
+                  {seriesCount > 0 ? `Update ${seriesCount} tasks` : 'Update all'}
+                </button>
+                <button
+                  onClick={() => {
+                    // Restore all local state to its pre-edit snapshot so the
+                    // canceled change cannot leak into a subsequent "one" scope save.
+                    const { snapshot } = pendingBulkUpdate;
+                    setSteps(snapshot.steps);
+                    setMessages(snapshot.messages);
+                    setLinks(snapshot.links);
+                    setFeedbackThread(snapshot.feedbackThread);
+                    setLocalDueDate(snapshot.localDueDate);
+                    setPendingBulkUpdate(null);
+                  }}
+                  className="flex-1 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex-shrink-0 border-b border-slate-100 px-5 py-4">
           <div className="flex items-start justify-between gap-3">
