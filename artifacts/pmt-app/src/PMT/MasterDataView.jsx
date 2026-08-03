@@ -1790,7 +1790,7 @@ const MasterDataView = ({
               {catMsg && <span className={`text-xs font-medium whitespace-nowrap ${catMsg.startsWith('✓') ? 'text-green-600' : 'text-red-500'}`}>{catMsg}</span>}
             </div>
             {/* Visibility selector for new category */}
-            <div className="flex items-center gap-2 pl-1">
+            <div className="flex flex-wrap items-center gap-2 pl-1">
               <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">New category visibility:</span>
               <button
                 type="button"
