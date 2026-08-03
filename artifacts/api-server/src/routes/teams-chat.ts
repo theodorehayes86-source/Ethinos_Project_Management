@@ -241,7 +241,10 @@ router.post(
       const now = Date.now();
       // Write to Firebase first so the message always appears in Flow Pro,
       // even if the Teams Graph delivery has a transient failure.
-      const tempKey = `fp_${now}`;
+      // Key prefix "flowpro_" marks outgoing Flow Pro messages; it is NOT a
+      // content-fingerprint — do not confuse with the dedup logic that was
+      // removed from the webhook handler.
+      const tempKey = `flowpro_${now}`;
       await writeFirebasePath(`teamsDMs/chats/${key}/messages/${tempKey}`, {
         id: tempKey,
         fromId: fromId || "",
@@ -269,7 +272,7 @@ router.post(
         if (recipientAadId) {
           await sendBotProactiveMessage(recipientAadId, fromName || "A colleague", message.trim());
           // Message delivered to Teams — promote temp Firebase entry to a stable key.
-          const stableKey = `fp_${now}_sent`;
+          const stableKey = `flowpro_${now}_sent`;
           await writeFirebasePath(`teamsDMs/chats/${key}/messages/${stableKey}`, {
             id: stableKey,
             fromId: fromId || "",
@@ -416,28 +419,12 @@ router.post("/teams-chat/webhook", async (req: Request, res: Response) => {
         const body = raw.trim();
         if (!body) return;
 
-        // ── Guard 2: content-fingerprint deduplication ────────────────────
-        // When both the user-to-user subscription (/open) and the bot-user
-        // subscription (/send) are active for the same chatKey, a reply from
-        // the recipient can arrive via BOTH subscriptions — each with a
-        // different Graph message ID, so the exact-key check above won't help.
-        // We deduplicate by: sender + body (first 200 chars) + minute bucket.
+        // Duplicate protection is handled solely by the fast-path msgKey check
+        // above (teamsDMs/chats/{chatKey}/messages/{msgKey} already exists →
+        // return early). Content-fingerprint dedup was removed because it uses
+        // sender + body + minute-bucket, which suppresses legitimate repeated
+        // messages ("ok", "thanks") sent by the same person within one minute.
         const msgSentAt = new Date(msg.createdDateTime).getTime();
-        const fingerprint = fbKey(
-          `${msg.from.user.id}:${body.slice(0, 200)}:${Math.floor(msgSentAt / 60_000)}`
-        );
-        const fingerprintPath = `teamsDMs/chats/${chatKey}/msgFingerprints/${fingerprint}`;
-        const fpExists = await readFirebasePath<string | null>(fingerprintPath);
-        if (fpExists) {
-          logger.info(
-            { chatKey, messageId, fingerprint, viaBot: !!botMappedKey },
-            "[TeamsChat] Content fingerprint match — duplicate skipped"
-          );
-          return;
-        }
-        // Claim fingerprint first; a concurrent delivery of the same content
-        // will find this entry and bail out.
-        await writeFirebasePath(fingerprintPath, msgKey);
 
         await writeFirebasePath(
           `teamsDMs/chats/${chatKey}/messages/${msgKey}`,

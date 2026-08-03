@@ -1,0 +1,538 @@
+Please fix and complete the recurrence changes across desktop and mobile task creation, and also correct the Teams webhook deduplication issue found in the latest patch.
+
+Use the latest reviewed implementation as the basis. The current changes introduce a useful shared recurrence utility, but there are still several blocking issues, inconsistent behaviours, and likely merge artifacts.
+
+Do not add another parallel implementation. Clean up the existing code and make every task creation surface use one consistent recurrence model.
+
+==================================================
+FILES TO REVIEW
+==================================================
+
+At minimum review:
+
+- artifacts/api-server/src/routes/... Teams chat webhook file
+- artifacts/pmt-app/src/PMT/ClientView.jsx
+- artifacts/pmt-app/src/PMT/HomeView.jsx
+- artifacts/pmt-app/src/PMT/TeamView.jsx
+- artifacts/pmt-app/src/utils/recurrence.js
+- artifacts/pmt-app/src/utils/repeatLabel.js
+- artifacts/pmt-mobile/src/components/AddTaskSheet.jsx
+- artifacts/pmt-mobile/src/utils/recurrence.js
+- Any template-application task creation code
+- Any other task creation form using recurrence fields
+
+==================================================
+PART 1 — FIX TEAMS WEBHOOK DEDUPLICATION
+==================================================
+
+The Teams webhook comments say content-fingerprint deduplication was removed, but the code still calculates and writes a fingerprint using:
+
+- sender
+- first 200 characters of body
+- one-minute time bucket
+
+This can incorrectly suppress legitimate messages such as:
+
+- “ok”
+- “thanks”
+- repeated short replies
+
+sent by the same person within the same minute.
+
+Fix this inconsistency.
+
+Preferred behaviour:
+
+1. Use the Microsoft Graph message ID as the primary idempotency key.
+2. Keep the existing fast-path check against the stored message key.
+3. Remove the sender/body/minute fingerprint logic unless there is a reliable cross-subscription event identity available.
+4. Do not suppress legitimate repeated content.
+5. Ensure duplicate webhook delivery of the same Graph message remains idempotent.
+
+If a second deduplication mechanism is genuinely required, it must:
+
+- Be based on a reliable event or message identity
+- Not depend only on message content and minute bucket
+- Use an atomic Firebase transaction rather than a read-then-write race
+- Be documented accurately
+
+Do not leave comments that contradict the implementation.
+
+==================================================
+PART 2 — CONFIRM THE RECURRENCE MODEL
+==================================================
+
+Before changing task creation code, confirm which recurrence model the application actually uses:
+
+A. Generate all task occurrences immediately at creation time
+
+or
+
+B. Save one recurring parent task and allow a scheduler to create future occurrences
+
+The current Home, Client, Team, template and mobile flows appear inconsistent.
+
+Choose the existing intended model and apply it consistently across every task creation surface.
+
+Do not let one view generate multiple tasks while another stores only metadata unless that distinction is intentional and documented.
+
+==================================================
+PART 3 — FIX TEAMVIEW DEFAULT
+==================================================
+
+The Team add-task modal currently appears to initialise:
+
+taskRepeat = 'Monthly'
+
+Unless monthly-by-default is an intentional business requirement, change this back to:
+
+taskRepeat = 'Once'
+
+Opening the modal must not accidentally create a recurring task by default.
+
+==================================================
+PART 4 — CLEAN ALL MERGE ARTIFACTS
+==================================================
+
+Search the final source files for and remove all duplicate or stale code introduced by the patch.
+
+Specifically check for:
+
+- Duplicate state declarations
+- Duplicate object properties
+- Duplicate onClick handlers
+- Duplicate const declarations
+- Duplicate recurrence functions
+- Duplicate monthly UI blocks
+- Old recurrence mode values still present
+- Old and new generateRecurringDates calls together
+- Extra braces after converted loops
+- Old helper functions left in components after shared utilities were introduced
+
+Examples of problems to remove:
+
+- Two onClick props on one button
+- Two repeatMonthlyWeek properties in one object
+- Two previewDates declarations
+- Both old and new monthly UI rendered
+- Local generateRecurringDates still present after importing the shared one
+- Old values such as 'weekday' and 'date' mixed with 'nth-weekday' and 'specific-date'
+
+Run direct searches across the repository for all recurrence-related names.
+
+==================================================
+PART 5 — STANDARDISE MODE VALUES
+==================================================
+
+Use only these monthly mode values everywhere:
+
+- 'nth-weekday'
+- 'specific-date'
+
+Remove old values such as:
+
+- 'weekday'
+- 'date'
+
+Update:
+
+- State defaults
+- Reset logic
+- Validation
+- Payload generation
+- Preview generation
+- Template configuration
+- Mobile code
+- Desktop code
+- Edit flows
+
+==================================================
+PART 6 — FIX MOBILE DETAILS VALIDATION
+==================================================
+
+In mobile AddTaskSheet, remove the unreachable duplicate validation.
+
+Do not keep:
+
+if (step === 'details') return !!dueDate && !!category;
+
+followed by another details block.
+
+Use only one details validation block:
+
+- dueDate required
+- category required
+- specific-date monthly mode requires repeatDayOfMonth
+- repeating tasks require a valid repeat end date where the current flow requires one
+- repeat end must not be earlier than the start date
+
+==================================================
+PART 7 — USE ONE SHARED RECURRENCE UTILITY
+==================================================
+
+Both desktop and mobile should use shared recurrence utilities within their respective apps.
+
+The utility should provide:
+
+- generateRecurringDates
+- getNthWeekday
+- applyWeekendRule
+- formatOrdinal
+- parseLocalDate
+- WEEKDAY_SHORT
+- WEEKDAY_FULL
+- WEEK_ORDINALS
+
+Remove component-local recurrence implementations.
+
+Do not maintain separate algorithms in:
+
+- HomeView
+- ClientView
+- TeamView
+- AddTaskSheet
+
+The desktop app and mobile app may each have their own utility file if they are separate bundles, but the logic must be identical.
+
+==================================================
+PART 8 — ADD STRICT INPUT VALIDATION
+==================================================
+
+The shared recurrence utility must validate runtime input.
+
+For specific-date mode:
+
+- repeatDayOfMonth must be an integer
+- minimum 1
+- maximum 28, unless the product is intentionally extended to 31
+
+For nth-weekday mode:
+
+- repeatMonthlyWeek must be an integer from 1 to 4
+- repeatMonthlyDay must be an integer from 0 to 4
+
+For weekend rules, allow only:
+
+- none
+- prev-friday
+- next-monday
+
+Also validate:
+
+- start date is valid
+- end date is valid
+- end date is not before start date
+- frequency is supported
+- generated dates are valid Date objects
+
+Invalid configuration should return an empty list or a structured validation error, according to the current architecture.
+
+Do not rely only on input element min/max attributes.
+
+==================================================
+PART 9 — FIX DATE-ONLY PARSING
+==================================================
+
+Avoid timezone shifts caused by:
+
+new Date('YYYY-MM-DD')
+
+Create and use a shared local-date parser.
+
+Example behaviour:
+
+'2026-08-05' must become local midnight on 5 August, not a UTC date that may shift depending on timezone.
+
+Use the same parsing behaviour in:
+
+- Preview
+- Submission
+- Recurrence generation
+- Edit flows
+- Template flows
+
+==================================================
+PART 10 — VALIDATE REPEAT END DATE
+==================================================
+
+Every task creation surface must block:
+
+repeatEnd < startDate
+
+Show a clear form error such as:
+
+“Repeat end date must be on or after the task start date.”
+
+Do not silently generate no dates and then create a one-time task.
+
+==================================================
+PART 11 — REMOVE SILENT FALLBACKS
+==================================================
+
+For recurring tasks, do not use:
+
+dates.length > 0 ? dates : [startDate]
+
+If the recurrence is invalid and generates zero dates:
+
+- Show a validation error
+- Do not create the task
+- Do not silently convert it into a one-time task
+
+Use [startDate] only when repeatFrequency is 'Once'.
+
+==================================================
+PART 12 — STANDARDISE PAYLOAD FIELDS
+==================================================
+
+Every task creation surface must produce the same recurrence payload shape.
+
+For nth-weekday monthly mode:
+
+repeatFrequency: 'Monthly'
+repeatMonthlyWeek: selected week
+repeatMonthlyDay: selected weekday
+repeatDayOfMonth: null
+repeatWeekendRule: null
+
+For specific-date monthly mode:
+
+repeatFrequency: 'Monthly'
+repeatMonthlyWeek: null
+repeatMonthlyDay: null
+repeatDayOfMonth: selected day
+repeatWeekendRule: selected rule
+
+For weekly:
+
+repeatDays: selected weekdays
+
+For non-applicable fields:
+
+- Use null consistently
+- Do not leave stale values from another mode
+- Do not include duplicate keys
+
+Check this in:
+
+- HomeView
+- ClientView
+- TeamView
+- Mobile AddTaskSheet
+- Template application
+- Any quick-add form
+- Edit forms if recurrence is editable
+
+==================================================
+PART 13 — TEAMVIEW MUST USE THE SAME RECURRENCE MODEL
+==================================================
+
+TeamView currently appears to save recurrence metadata but may not generate occurrences or expose a repeat end date.
+
+Fix this so TeamView behaves the same as the other task creation surfaces.
+
+Confirm:
+
+- Repeat end date is present if required by the chosen recurrence model
+- Preview count works
+- Submission uses shared generateRecurringDates
+- Specific-date and nth-weekday both work
+- Weekend rule is applied
+- No single task is created when multiple occurrences are expected
+
+==================================================
+PART 14 — FIX TEMPLATE APPLICATION
+==================================================
+
+The template application logic was changed from forEach to a normal loop so the handler can abort correctly. Keep that improvement, but validate the full flow.
+
+Requirements:
+
+1. Validate every template task configuration before generating or appending tasks.
+2. Do not partially build newTasks and then fail on a later item.
+3. Use the shared recurrence utility.
+4. Apply the same monthly mode logic.
+5. Reject missing repeatDayOfMonth for specific-date mode.
+6. Reject invalid repeat ranges.
+7. Ensure braces and control flow are correct.
+8. Confirm return exits the outer handler.
+
+Prefer two phases:
+
+- Validate all template items
+- Generate all tasks only after validation succeeds
+
+==================================================
+PART 15 — PRESERVE MODE INPUTS WHILE EDITING
+==================================================
+
+When users switch between:
+
+- nth-weekday
+- specific-date
+
+do not unnecessarily erase the values they previously entered during the same open form.
+
+For example:
+
+1. User enters 5th
+2. Switches to nth-weekday
+3. Switches back
+
+The 5th may remain in local state.
+
+Only null irrelevant fields in the final saved payload.
+
+Reset values when the form is closed, cancelled, or reset.
+
+==================================================
+PART 16 — WEEKEND ADJUSTMENT
+==================================================
+
+Keep consistent behaviour for:
+
+- Keep date as-is
+- Move to previous Friday
+- Move to next Monday
+
+The shared utility currently allows weekend movement across month boundaries.
+
+For example:
+
+- Sunday 1st may move to Friday in the previous month
+- Saturday 31st may move to Monday in the next month
+
+Confirm this is the intended rule and keep it identical across mobile and desktop.
+
+Add explicit tests for:
+
+- Month start
+- Month end
+- Year end
+- Start-range boundary
+- End-range boundary
+
+==================================================
+PART 17 — DEDUPLICATE GENERATED DATES
+==================================================
+
+Before returning recurrence dates:
+
+- Remove duplicates by local calendar date
+- Sort ascending
+- Ensure no invalid dates remain
+
+Do not deduplicate using UTC strings if local date semantics are required.
+
+==================================================
+PART 18 — CLEAN UP REDUNDANT CLAMPING
+==================================================
+
+The UI currently limits specific dates to 1–28.
+
+If the product will remain 1–28:
+
+- Validate 1–28 everywhere
+- Remove misleading shorter-month clamping logic
+
+If the product should support 1–31:
+
+- Update all forms consistently
+- Define shorter-month behaviour
+- Add tests for February and 30-day months
+
+Do not keep a 1–28 UI with undocumented 1–31 logic.
+
+For this change, preserve 1–28 unless there is an explicit existing requirement for 29–31.
+
+==================================================
+PART 19 — SHARED LABELS
+==================================================
+
+Use formatOrdinal everywhere.
+
+Examples:
+
+- 1st
+- 2nd
+- 3rd
+- 4th
+- 11th
+- 12th
+- 13th
+- 21st
+- 22nd
+- 23rd
+
+Remove old suffix logic.
+
+Use shared label helpers for:
+
+- Task cards
+- Repeat summaries
+- Preview text
+- Template configuration
+- Edit views
+
+==================================================
+PART 20 — REQUIRED TESTS
+==================================================
+
+Add or update tests for:
+
+1. Once remains the default in every task creation form.
+2. Daily recurrence works.
+3. Weekly recurrence works.
+4. First Monday monthly recurrence works.
+5. Fourth Friday monthly recurrence works.
+6. Monthly on the 5th works.
+7. Weekend previous-Friday adjustment works.
+8. Weekend next-Monday adjustment works.
+9. Cross-month weekend adjustment is consistent.
+10. End date before start date is rejected.
+11. Invalid day-of-month is rejected.
+12. Invalid monthly week is rejected.
+13. Invalid monthly weekday is rejected.
+14. Invalid weekend rule is rejected.
+15. Preview count matches created task count.
+16. Home and Client generate identical dates.
+17. Team and Client generate identical dates.
+18. Mobile and desktop generate identical dates.
+19. Template application generates identical recurrence dates.
+20. No recurring flow silently falls back to one task.
+21. No duplicate task payload properties remain.
+22. No duplicate handlers or declarations remain.
+23. Mode values are only nth-weekday or specific-date.
+24. Local date parsing does not shift the calendar date.
+25. Generated dates are deduplicated and sorted.
+26. Repeated Teams messages with identical text are not suppressed.
+27. Duplicate delivery of the same Graph message remains idempotent.
+28. Webhook concurrent delivery does not create duplicate messages.
+29. Desktop production build passes.
+30. Mobile production build passes.
+31. Lint passes.
+32. Existing task creation and template flows still work.
+
+==================================================
+DELIVERABLES
+==================================================
+
+After completing the changes, provide:
+
+1. Exact root cause of the Teams duplicate-message issue.
+2. Exact recurrence model used by the application.
+3. List of every task creation surface reviewed.
+4. List of every file changed.
+5. Details of all merge artifacts removed.
+6. Confirmation TeamView defaults to Once.
+7. Confirmation Home, Client, Team, Mobile and templates use the same recurrence logic.
+8. Example payload for monthly on the 5th.
+9. Example payload for second Tuesday monthly.
+10. Before-and-after explanation of Teams webhook deduplication.
+11. Test results.
+12. Lint results.
+13. Desktop build result.
+14. Mobile build result.
+15. Anything that could not be tested locally.
+
+Do not mark the work complete until both desktop and mobile production builds pass and all duplicate declarations, props, payload keys and stale recurrence mode values have been removed.

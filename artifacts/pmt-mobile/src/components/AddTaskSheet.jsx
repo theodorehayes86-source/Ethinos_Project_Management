@@ -4,6 +4,7 @@ import { createTaskInFirebase, getSubtreeIds } from '../hooks/useFirebaseData.js
 import { sendNotification } from '../utils/notify.js';
 import { checkLeaveConflict } from '../utils/taskUtils.js';
 import LeaveConflictModal from './LeaveConflictModal.jsx';
+import { generateRecurringDates, formatOrdinal, parseLocalDate, WEEKDAY_SHORT, WEEKDAY_FULL, WEEK_ORDINALS } from '../utils/recurrence.js';
 
 const PINNED_CLIENT_NAMES = ['Personal', 'Ethinos Internal'];
 
@@ -15,56 +16,8 @@ const DEFAULT_CATEGORIES = [
 
 const FREQ_OPTIONS = ['Once','Daily','Weekly','Monthly'];
 
-const WEEKDAY_SHORT = ['Mon','Tue','Wed','Thu','Fri'];
-const WEEKDAY_FULL  = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
-const WEEK_ORDINALS = ['1st','2nd','3rd','4th'];
-
-function getNthWeekday(year, month, weekNum, dayIdx) {
-  const jsDay = dayIdx + 1;
-  let count = 0;
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  for (let d = 1; d <= daysInMonth; d++) {
-    if (new Date(year, month, d).getDay() === jsDay) {
-      count++;
-      if (count === weekNum) return new Date(year, month, d);
-    }
-  }
-  return null;
-}
-
-function generateRecurringDates(startDate, endDate, freq, rDays, rWeek, rDay) {
-  if (!endDate || !startDate) return startDate ? [startDate] : [];
-  const end = new Date(endDate); end.setHours(23, 59, 59, 999);
-  const dates = [];
-  if (freq === 'Daily') {
-    const d = new Date(startDate);
-    while (d <= end) {
-      const dow = d.getDay();
-      if (dow >= 1 && dow <= 5) dates.push(new Date(d));
-      d.setDate(d.getDate() + 1);
-    }
-  } else if (freq === 'Weekly') {
-    const days = (rDays && rDays.length > 0) ? rDays : [0];
-    const d = new Date(startDate);
-    while (d <= end) {
-      const dow = d.getDay();
-      const mapped = dow === 0 ? -1 : dow - 1;
-      if (days.includes(mapped)) dates.push(new Date(d));
-      d.setDate(d.getDate() + 1);
-    }
-  } else if (freq === 'Monthly') {
-    const wk = rWeek || 1;
-    const di = rDay !== undefined ? rDay : 0;
-    let yr = startDate.getFullYear(), mo = startDate.getMonth();
-    const endYr = end.getFullYear(), endMo = end.getMonth();
-    while (yr < endYr || (yr === endYr && mo <= endMo)) {
-      const dt = getNthWeekday(yr, mo, wk, di);
-      if (dt && dt >= startDate && dt <= end) dates.push(dt);
-      mo++; if (mo > 11) { mo = 0; yr++; }
-    }
-  }
-  return dates;
-}
+// WEEKDAY_SHORT, WEEKDAY_FULL, WEEK_ORDINALS, getNthWeekday, applyWeekendRule,
+// generateRecurringDates all imported from ../utils/recurrence.js above.
 
 const MANAGER_STEPS = [
   { id: 'who',      label: 'Assignee',   icon: User },
@@ -81,13 +34,29 @@ const PERSONAL_STEPS = [
   { id: 'confirm',  label: 'Confirm',    icon: Check },
 ];
 
+/**
+ * Format a YYYY-MM-DD string as "5th Aug 2026" using local timezone only.
+ * Avoids UTC midnight shift from new Date('YYYY-MM-DD').
+ */
 function formatDate(iso) {
   if (!iso) return '';
-  const d = new Date(iso);
+  const d = parseLocalDate(iso); // safe: no UTC shift
+  if (!d) return '';
   const day = d.getDate();
   const suffix = ['th','st','nd','rd'][((day % 100 - 10) < 0 || (day % 100 - 10) > 2) ? Math.min(day % 10, 3) : day % 10] || 'th';
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   return `${day}${suffix} ${months[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+/**
+ * Serialize a Date object to 'YYYY-MM-DD' using local timezone components.
+ * Avoids the UTC shift that toISOString() introduces for local dates.
+ */
+function localDateToISO(d) {
+  const y  = d.getFullYear();
+  const m  = String(d.getMonth() + 1).padStart(2, '0');
+  const dy = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dy}`;
 }
 
 function Breadcrumb({ step, steps }) {
@@ -233,6 +202,9 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
   const [repeatDays, setRepeatDays] = useState([]);
   const [repeatMonthlyWeek, setRepeatMonthlyWeek] = useState(1);
   const [repeatMonthlyDay, setRepeatMonthlyDay] = useState(0);
+  const [repeatMonthlyMode, setRepeatMonthlyMode] = useState('nth-weekday'); // 'nth-weekday' | 'specific-date'
+  const [repeatDayOfMonth, setRepeatDayOfMonth] = useState('');
+  const [repeatWeekendRule, setRepeatWeekendRule] = useState('none');
   const [repeatEnd, setRepeatEnd] = useState('');
   const [steps, setSteps] = useState([]);
   const [stepInput, setStepInput] = useState('');
@@ -268,7 +240,11 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
     if (step === 'who')     return !!assignee;
     if (step === 'client')  return !!client;
     if (step === 'task')    return name.trim().length > 0;
-    if (step === 'details') return !!dueDate && !!category;
+    if (step === 'details') {
+      if (!dueDate || !category) return false;
+      if (frequency === 'Monthly' && repeatMonthlyMode === 'specific-date' && !repeatDayOfMonth) return false;
+      return true;
+    }
     return true;
   };
 
@@ -304,20 +280,30 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
         repeatFrequency: frequency,
         repeatEnd: frequency !== 'Once' && repeatEnd ? formatDate(repeatEnd) : null,
         repeatDays: frequency === 'Weekly' ? (repeatDays.length > 0 ? repeatDays : [0,1,2,3,4]) : null,
-        repeatMonthlyWeek: frequency === 'Monthly' ? repeatMonthlyWeek : null,
-        repeatMonthlyDay: frequency === 'Monthly' ? repeatMonthlyDay : null,
+        repeatMonthlyWeek: (frequency === 'Monthly' && repeatMonthlyMode === 'nth-weekday') ? repeatMonthlyWeek : null,
+        repeatMonthlyDay: (frequency === 'Monthly' && repeatMonthlyMode === 'nth-weekday') ? repeatMonthlyDay : null,
+        repeatDayOfMonth: (frequency === 'Monthly' && repeatMonthlyMode === 'specific-date' && repeatDayOfMonth) ? parseInt(repeatDayOfMonth, 10) : null,
+        repeatWeekendRule: (frequency === 'Monthly' && repeatMonthlyMode === 'specific-date' && repeatDayOfMonth) ? repeatWeekendRule : null,
         steps: steps.length > 0 ? steps : [],
         reminderOffsets: reminderOffsets.length > 0 ? reminderOffsets : null,
       };
       if (frequency !== 'Once' && repeatEnd && dueDate) {
-        const startDate = new Date(dueDate);
-        const endDate = new Date(repeatEnd);
+        const startDate = parseLocalDate(dueDate);   // safe local parse — no UTC shift
+        const endDate   = parseLocalDate(repeatEnd); // safe local parse — no UTC shift
         const dates = generateRecurringDates(
           startDate, endDate, frequency,
           frequency === 'Weekly' ? (repeatDays.length > 0 ? repeatDays : [0,1,2,3,4]) : repeatDays,
-          repeatMonthlyWeek, repeatMonthlyDay
+          repeatMonthlyMode === 'nth-weekday' ? repeatMonthlyWeek : null,
+          repeatMonthlyMode === 'nth-weekday' ? repeatMonthlyDay : null,
+          repeatMonthlyMode === 'specific-date' ? repeatDayOfMonth : null,
+          repeatMonthlyMode === 'specific-date' ? repeatWeekendRule : null
         );
-        const occurrences = dates.length > 0 ? dates : [startDate];
+        if (dates.length === 0) {
+          setError('No valid dates found for this repeat schedule. Please check your settings.');
+          setSaving(false);
+          return;
+        }
+        const occurrences = dates;
         const existing = Array.isArray(clientLogs[String(client.id)]) ? clientLogs[String(client.id)] : [];
         const newTasks = occurrences.map((dt, i) => ({
           id: Date.now() + i,
@@ -326,7 +312,7 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
           elapsedMs: 0,
           timerState: 'stopped',
           ...baseTask,
-          dueDate: formatDate(dt.toISOString().split('T')[0]),
+          dueDate: formatDate(localDateToISO(dt)), // localDateToISO avoids UTC shift from toISOString()
         }));
         // Use push() for each recurring task so keys are stable and collision-free.
         // This also avoids overwriting the full client task list.
@@ -571,7 +557,7 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
                   {FREQ_OPTIONS.map(f => (
                     <button
                       key={f}
-                      onClick={() => { setFrequency(f); if (f === 'Once') { setRepeatEnd(''); setRepeatDays([]); }}}
+                      onClick={() => { setFrequency(f); if (f === 'Once') { setRepeatEnd(''); setRepeatDays([]); } if (f !== 'Monthly') { setRepeatMonthlyMode('nth-weekday'); setRepeatDayOfMonth(''); setRepeatWeekendRule('none'); } }}
                       className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${
                         frequency === f ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'
                       }`}
@@ -595,19 +581,81 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
                   </div>
                 )}
                 {frequency === 'Monthly' && (
-                  <div className="mt-3">
-                    <p className="text-xs font-semibold text-slate-500 mb-1.5">Repeat on</p>
-                    <div className="flex gap-2">
-                      <select value={repeatMonthlyWeek} onChange={e => setRepeatMonthlyWeek(Number(e.target.value))}
-                        className="border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400/30 bg-slate-50">
-                        {WEEK_ORDINALS.map((w, i) => <option key={i} value={i + 1}>{w}</option>)}
-                      </select>
-                      <select value={repeatMonthlyDay} onChange={e => setRepeatMonthlyDay(Number(e.target.value))}
-                        className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400/30 bg-slate-50">
-                        {WEEKDAY_FULL.map((d, i) => <option key={i} value={i}>{d}</option>)}
-                      </select>
+                  <div className="mt-3 space-y-3">
+                    {/* Mode toggle */}
+                    <div className="flex gap-0.5 p-0.5 bg-slate-100 rounded-xl w-fit">
+                      <button
+                        type="button"
+                        onClick={() => setRepeatMonthlyMode('nth-weekday')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${repeatMonthlyMode === 'nth-weekday' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500'}`}
+                      >
+                        Nth weekday
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRepeatMonthlyMode('specific-date')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${repeatMonthlyMode === 'specific-date' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500'}`}
+                      >
+                        Specific date
+                      </button>
                     </div>
-                    <p className="text-[11px] text-indigo-500 font-medium mt-1">{WEEK_ORDINALS[repeatMonthlyWeek - 1]} {WEEKDAY_FULL[repeatMonthlyDay]} of each month</p>
+
+                    {repeatMonthlyMode === 'nth-weekday' && (
+                      <div>
+                        <p className="text-xs font-semibold text-slate-500 mb-1.5">Repeat on</p>
+                        <div className="flex gap-2">
+                          <select value={repeatMonthlyWeek} onChange={e => setRepeatMonthlyWeek(Number(e.target.value))}
+                            className="border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400/30 bg-slate-50">
+                            {WEEK_ORDINALS.map((w, i) => <option key={i} value={i + 1}>{w}</option>)}
+                          </select>
+                          <select value={repeatMonthlyDay} onChange={e => setRepeatMonthlyDay(Number(e.target.value))}
+                            className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400/30 bg-slate-50">
+                            {WEEKDAY_FULL.map((d, i) => <option key={i} value={i}>{d}</option>)}
+                          </select>
+                        </div>
+                        <p className="text-[11px] text-indigo-500 font-medium mt-1">{WEEK_ORDINALS[repeatMonthlyWeek - 1]} {WEEKDAY_FULL[repeatMonthlyDay]} of each month</p>
+                      </div>
+                    )}
+
+                    {repeatMonthlyMode === 'specific-date' && (
+                      <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-3 py-2.5 space-y-2">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-blue-500">Monthly schedule</p>
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs font-semibold text-slate-600 whitespace-nowrap">Day of month</label>
+                          <input
+                            type="number" min="1" max="28"
+                            value={repeatDayOfMonth}
+                            onChange={e => {
+                              const v = e.target.value;
+                              if (v === '' || (parseInt(v, 10) >= 1 && parseInt(v, 10) <= 28)) setRepeatDayOfMonth(v);
+                            }}
+                            placeholder="e.g. 5"
+                            className="w-20 px-2 py-1.5 text-xs bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400"
+                          />
+                          <span className="text-xs text-slate-400">of every month</span>
+                        </div>
+                        {repeatDayOfMonth && (
+                          <div className="flex items-center gap-2">
+                            <label className="text-xs font-semibold text-slate-600 whitespace-nowrap">If weekend</label>
+                            <select
+                              value={repeatWeekendRule}
+                              onChange={e => setRepeatWeekendRule(e.target.value)}
+                              className="flex-1 px-2 py-1.5 text-xs bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400"
+                            >
+                              <option value="none">Keep date as-is</option>
+                              <option value="prev-friday">Move to previous Friday</option>
+                              <option value="next-monday">Move to next Monday</option>
+                            </select>
+                          </div>
+                        )}
+                        {repeatDayOfMonth && (
+                          <p className="text-[10px] text-blue-600 font-medium">
+                            Repeats on the {formatOrdinal(parseInt(repeatDayOfMonth,10))} of each month
+                            {repeatWeekendRule !== 'none' ? ` · ${repeatWeekendRule === 'prev-friday' ? 'moves to Friday if weekend' : 'moves to Monday if weekend'}` : ''}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
                 {frequency !== 'Once' && (
@@ -622,9 +670,12 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
                     />
                     {repeatEnd && dueDate && (() => {
                       const cnt = generateRecurringDates(
-                        new Date(dueDate), new Date(repeatEnd), frequency,
+                        parseLocalDate(dueDate), parseLocalDate(repeatEnd), frequency,
                         frequency === 'Weekly' ? (repeatDays.length > 0 ? repeatDays : [0,1,2,3,4]) : repeatDays,
-                        repeatMonthlyWeek, repeatMonthlyDay
+                        repeatMonthlyMode === 'nth-weekday' ? repeatMonthlyWeek : null,
+                        repeatMonthlyMode === 'nth-weekday' ? repeatMonthlyDay : null,
+                        repeatMonthlyMode === 'specific-date' ? repeatDayOfMonth : null,
+                        repeatMonthlyMode === 'specific-date' ? repeatWeekendRule : null
                       ).length;
                       return cnt > 0 ? (
                         <p className="text-xs font-semibold text-indigo-600 mt-1">{cnt} task{cnt !== 1 ? 's' : ''} will be created</p>
@@ -687,6 +738,8 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
                 { label: 'Category',    value: category },
                 { label: 'Repeat', value: frequency === 'Weekly' && repeatDays.length > 0
                     ? `Weekly (${repeatDays.map(i => WEEKDAY_SHORT[i]).join(', ')})`
+                    : frequency === 'Monthly' && repeatMonthlyMode === 'specific-date' && repeatDayOfMonth
+                    ? `Monthly (${formatOrdinal(parseInt(repeatDayOfMonth,10))} of month${repeatWeekendRule !== 'none' ? `, ${repeatWeekendRule === 'prev-friday' ? '→ prev Friday' : '→ next Monday'}` : ''})`
                     : frequency === 'Monthly'
                     ? `Monthly (${WEEK_ORDINALS[repeatMonthlyWeek - 1]} ${WEEKDAY_FULL[repeatMonthlyDay]})`
                     : frequency },

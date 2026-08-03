@@ -1,0 +1,566 @@
+Please fix and unify the **monthly recurring task functionality across both mobile and desktop task creation flows**.
+
+## Current situation
+
+The feature has already been added to both mobile and desktop, but the desktop version is either:
+
+* Not showing the new controls
+* Not entering the correct monthly mode
+* Not saving the new fields
+* Not generating recurring dates correctly
+* Using an older task creation component
+* Being hidden by conditional rendering
+
+The mobile implementation also needs to be cleaned up so that both platforms use the same reliable logic.
+
+The required use case is:
+
+```text
+Create a task that repeats monthly on the 5th
+```
+
+with optional weekend handling:
+
+```text
+Keep date as-is
+Move to previous Friday
+Move to next Monday
+```
+
+The existing mobile implementation includes the relevant state, recurrence fields and UI, but the reviewed patch contains duplicate and potentially broken code that must be corrected rather than copied as-is.
+
+## Objective
+
+Ensure the same complete monthly recurrence functionality works in:
+
+* Mobile task creation
+* Desktop task creation
+* Client View task creation
+* Team View task creation
+* My Tasks
+* Quick-add forms
+* Checklist-derived task creation
+* Any other place where a task can be added
+
+Do not create separate incompatible implementations.
+
+---
+
+# 1. Audit every task creation entry point
+
+Search the full frontend for all task creation surfaces.
+
+Look for:
+
+```text
+AddTaskSheet
+AddTaskModal
+CreateTaskModal
+QuickAddTask
+TaskForm
+persistTaskCreate
+onCreateTask
+onAddTask
+repeatFrequency
+repeatMonthlyWeek
+repeatMonthlyDay
+repeatDayOfMonth
+repeatWeekendRule
+```
+
+Create a clear internal map showing:
+
+* Which component is used on mobile
+* Which component is used on desktop
+* Which component Client View uses
+* Which component Team View uses
+* Which views still use an older form
+* Which views do not pass recurrence props correctly
+
+Do not assume the visible desktop component is the one actually used by Client View.
+
+---
+
+# 2. Identify why the desktop feature is not showing
+
+Trace the desktop rendering path and determine the exact reason the controls are absent.
+
+Check for:
+
+* Wrong task form component being rendered
+* Desktop still using an older `AddTaskModal`
+* Conditional rendering that never evaluates to true
+* `frequency` values using different casing
+* State reset immediately after selecting Monthly
+* Prefilled Client View flow skipping the details section
+* Parent props not being passed
+* Feature hidden behind mobile-only classes
+* `hidden`, `md:hidden`, `lg:hidden` or similar responsive classes
+* Overflow clipping
+* Modal height preventing scroll
+* Duplicate old monthly blocks overriding the new one
+* JSX errors preventing the block from rendering
+* Desktop branch returning before the recurrence section
+* Different submit payload between mobile and desktop
+
+Fix the actual cause rather than adding another copy of the UI.
+
+---
+
+# 3. Correct the mobile implementation first
+
+Clean up the existing mobile implementation so it becomes the reliable source of truth.
+
+Fix all of the following if present:
+
+### Duplicate function declarations
+
+There must be only one:
+
+```js
+generateRecurringDates(...)
+```
+
+### Broken nth-weekday helper
+
+Ensure:
+
+```js
+getNthWeekday(...)
+```
+
+returns the correct date and does not simply return `null`.
+
+### Duplicate validation branches
+
+Remove unreachable logic such as:
+
+```js
+if (step === 'details') return !!dueDate && !!category;
+```
+
+when a more complete `details` validation block follows.
+
+### Duplicate payload keys
+
+Each of these must appear only once:
+
+```js
+repeatMonthlyWeek
+repeatMonthlyDay
+repeatDayOfMonth
+repeatWeekendRule
+```
+
+### Duplicate JSX props
+
+Remove duplicate `onClick` handlers.
+
+### Duplicate monthly UI
+
+Remove the old monthly selector block if the new mode-based block has replaced it.
+
+### Broken function arguments
+
+Ensure all calls to `generateRecurringDates(...)` use the final argument order and valid commas.
+
+---
+
+# 4. Create shared recurrence utilities
+
+Move recurrence calculation out of mobile- or desktop-specific components.
+
+Create or update a shared utility, for example:
+
+```text
+utils/recurrence.js
+```
+
+or the project’s existing recurrence utility file.
+
+It should export:
+
+```js
+getNthWeekday
+applyWeekendRule
+generateRecurringDates
+formatOrdinal
+parseLocalDate
+```
+
+Both mobile and desktop must import the same functions.
+
+Do not maintain separate recurrence algorithms.
+
+---
+
+# 5. Use one shared recurrence data model
+
+Both mobile and desktop forms must use the same state shape:
+
+```js
+repeatFrequency
+repeatEnd
+repeatDays
+repeatMonthlyMode
+repeatMonthlyWeek
+repeatMonthlyDay
+repeatDayOfMonth
+repeatWeekendRule
+```
+
+Allowed monthly modes:
+
+```js
+'nth-weekday'
+'specific-date'
+```
+
+The final task payload should follow these rules.
+
+## Monthly nth-weekday mode
+
+```js
+repeatFrequency: 'Monthly',
+repeatMonthlyWeek,
+repeatMonthlyDay,
+repeatDayOfMonth: null,
+repeatWeekendRule: null
+```
+
+## Monthly specific-date mode
+
+```js
+repeatFrequency: 'Monthly',
+repeatMonthlyWeek: null,
+repeatMonthlyDay: null,
+repeatDayOfMonth: Number(repeatDayOfMonth),
+repeatWeekendRule
+```
+
+## Weekly mode
+
+```js
+repeatDays
+```
+
+Unused recurrence fields should be consistently set to `null` or omitted according to the existing data model.
+
+Do not let mobile and desktop store different schemas.
+
+---
+
+# 6. Make the desktop UI visible and functional
+
+When the desktop user selects:
+
+```text
+Monthly
+```
+
+show a mode switch:
+
+```text
+Nth weekday
+Specific date
+```
+
+## Nth weekday
+
+Show:
+
+* Week ordinal
+* Day of week
+
+Example:
+
+```text
+Second Tuesday of each month
+```
+
+## Specific date
+
+Show:
+
+* Day of month
+* Weekend rule
+
+Example:
+
+```text
+5th of every month
+```
+
+Weekend options:
+
+```text
+Keep date as-is
+Move to previous Friday
+Move to next Monday
+```
+
+The desktop UI should use the same terminology and defaults as mobile.
+
+---
+
+# 7. Fix responsive and modal layout issues
+
+Confirm the desktop controls are not being hidden by layout problems.
+
+Review:
+
+* `overflow-hidden`
+* Fixed modal heights
+* Scroll containers
+* Sticky footers
+* Responsive utility classes
+* Nested forms
+* Conditional panels
+
+Requirements:
+
+* Desktop modal content must scroll when necessary.
+* Repeat controls must remain above the footer.
+* The submit button must not cover the controls.
+* The monthly section must be visible at common laptop resolutions.
+* Mobile and desktop should not accidentally render two forms at once.
+
+---
+
+# 8. Preserve Client View prefilling
+
+When creating a task from Client View:
+
+* The client should remain preselected.
+* The form must still show the full recurrence section.
+* Prefilling the client must not skip the details or recurrence UI.
+* The submitted task must retain the correct client ID.
+* Monthly recurrence must work exactly as it does from other views.
+
+Trace the actual Client View task creation path and test it specifically.
+
+---
+
+# 9. Correct recurrence validation
+
+For repeating tasks:
+
+```text
+repeatEnd must be on or after dueDate
+```
+
+For specific-date monthly mode:
+
+```text
+repeatDayOfMonth is required
+```
+
+Validate it at runtime, not only through the input element.
+
+If the supported range remains 1–28:
+
+* Enforce 1–28 consistently.
+* Remove misleading clamping logic for 29–31.
+
+If supporting 1–31:
+
+* Define and test shorter-month behaviour.
+* Clamp to the last day of the month only if that is the intended rule.
+
+Do not mix a 1–28 UI with 1–31 recurrence logic.
+
+---
+
+# 10. Fix ordinal formatting
+
+Do not use logic that only handles 1st, 2nd and 3rd.
+
+Create a shared helper that correctly formats:
+
+```text
+1st
+2nd
+3rd
+4th
+11th
+12th
+13th
+21st
+22nd
+23rd
+```
+
+Use it in:
+
+* Mobile summary
+* Desktop summary
+* Review screen
+* Task detail display
+
+---
+
+# 11. Handle weekend adjustment clearly
+
+Confirm the intended business behaviour when weekend movement crosses a month boundary.
+
+Example:
+
+```text
+1st falls on Sunday
+Move to previous Friday
+```
+
+This may move the task into the previous month.
+
+Document and consistently apply the chosen behaviour.
+
+Do not let mobile and desktop behave differently.
+
+---
+
+# 12. Prevent silent recurrence fallback
+
+Do not use a fallback such as:
+
+```js
+const occurrences = dates.length > 0 ? dates : [startDate];
+```
+
+for an invalid repeating schedule.
+
+For:
+
+```js
+repeatFrequency !== 'Once'
+```
+
+if no valid dates are generated:
+
+* Show a validation error
+* Do not create a one-time task silently
+
+Use `[startDate]` only for non-repeating tasks.
+
+---
+
+# 13. Keep occurrence preview consistent
+
+Both mobile and desktop should show an occurrence count such as:
+
+```text
+6 tasks will be created
+```
+
+The preview must use the same shared `generateRecurringDates()` function used during submission.
+
+Do not calculate preview and submission differently.
+
+---
+
+# 14. Verify edit and display flows
+
+The task detail and edit interfaces must correctly display existing recurrence data.
+
+For example:
+
+```text
+Monthly — 5th of each month
+```
+
+or:
+
+```text
+Monthly — Second Tuesday
+```
+
+Check that editing an existing task correctly restores:
+
+```js
+repeatMonthlyMode
+repeatDayOfMonth
+repeatWeekendRule
+repeatMonthlyWeek
+repeatMonthlyDay
+```
+
+Do not only fix create mode.
+
+---
+
+# 15. Test all task creation views
+
+Test at minimum:
+
+## Mobile
+
+* Mobile general add task
+* Mobile Client View
+* Mobile Team View
+* Mobile quick-add
+* Mobile checklist-derived task
+
+## Desktop
+
+* Desktop general add task
+* Desktop Client View
+* Desktop Team View
+* Desktop My Tasks
+* Desktop quick-add
+* Desktop checklist-derived task
+
+For each view test:
+
+1. Once
+2. Weekly
+3. Monthly nth-weekday
+4. Monthly specific date
+5. Weekend adjustment
+6. Repeat end date
+7. Occurrence count
+8. Final saved payload
+
+---
+
+# 16. Required test cases
+
+Verify these exact scenarios:
+
+1. Monthly on the 5th appears on mobile.
+2. Monthly on the 5th appears on desktop.
+3. Client View desktop shows the new monthly controls.
+4. Client View mobile shows the new monthly controls.
+5. Second Tuesday recurrence works.
+6. Specific-date mode saves `repeatDayOfMonth`.
+7. Nth-weekday mode does not save `repeatDayOfMonth`.
+8. Specific-date mode clears nth-weekday fields.
+9. Weekend rule is saved and applied.
+10. Switching away from Monthly resets irrelevant fields safely.
+11. Switching between monthly modes does not corrupt state.
+12. Repeat end before due date is blocked.
+13. Preview count matches created task count.
+14. 21st displays as `21st`, not `21th`.
+15. No duplicate payload keys remain.
+16. No duplicate handlers remain.
+17. No duplicate recurrence functions remain.
+18. Mobile and desktop generate identical dates for the same inputs.
+19. Existing recurring tasks remain readable.
+20. Production build, lint and tests pass.
+
+---
+
+# Deliverables
+
+After completing the changes:
+
+1. Identify the exact reason the desktop controls were not showing.
+2. List every task creation component found.
+3. List every file changed.
+4. Explain which recurrence code was moved into shared utilities.
+5. Confirm mobile and desktop now use the same payload.
+6. Confirm Client View was tested separately.
+7. Provide example saved payloads for:
+
+   * Monthly on the 5th
+   * Second Tuesday of each month
+8. Report lint, tests and production build results.
+9. Mention any task creation view that could not be fully tested.

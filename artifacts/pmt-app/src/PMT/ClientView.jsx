@@ -3,12 +3,13 @@ import { useToast } from '../hooks/use-toast';
 import { Search, ChevronLeft, ChevronDown, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, AlertTriangle, Calendar, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus, Hourglass, Archive, ArchiveRestore, LayoutGrid, LayoutList, ClipboardList, LayoutTemplate, CheckSquare, Upload, Copy } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import DatePicker from "react-datepicker";
-import { format, subDays, parse, addDays, differenceInCalendarDays } from 'date-fns';
+import { format, subDays, parse, addDays, differenceInCalendarDays, isBefore } from 'date-fns';
 import "react-datepicker/dist/react-datepicker.css";
 import TaskDetailPanel from './TaskDetailPanel';
 import ChecklistGroupDetailPanel from './ChecklistGroupDetailPanel';
 import { sendNotification } from '../utils/notify';
 import { formatRepeatLabel, formatWeekendRuleLabel, repeatBadgeColor } from '../utils/repeatLabel';
+import { generateRecurringDates, formatOrdinal, WEEKDAY_SHORT, WEEKDAY_FULL, WEEK_ORDINALS } from '../utils/recurrence';
 import { ReminderPills } from './ReminderPills';
 import DueDateInput from './DueDateInput';
 import LeaveConflictModal from './LeaveConflictModal';
@@ -385,6 +386,9 @@ const ClientView = ({
   // Monthly nth-weekday picker
   const [newTaskRepeatMonthlyWeek, setNewTaskRepeatMonthlyWeek] = useState(1);
   const [newTaskRepeatMonthlyDay, setNewTaskRepeatMonthlyDay] = useState(0);
+  const [newTaskRepeatMonthlyMode, setNewTaskRepeatMonthlyMode] = useState('nth-weekday'); // 'nth-weekday' | 'specific-date'
+  const [newTaskRepeatDayOfMonth, setNewTaskRepeatDayOfMonth] = useState('');
+  const [newTaskRepeatWeekendRule, setNewTaskRepeatWeekendRule] = useState('none');
   // Estimated time for new task (hours + minutes inputs)
   const [newTaskEstimatedHrs, setNewTaskEstimatedHrs] = useState('');
   const [newTaskEstimatedMins, setNewTaskEstimatedMins] = useState('');
@@ -503,56 +507,6 @@ const ClientView = ({
       });
     }
   };
-
-  // ─── Recurrence helpers ────────────────────────────────────────────────────
-  const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
-  const WEEKDAY_FULL  = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-  const WEEK_ORDINALS = ['1st', '2nd', '3rd', '4th'];
-
-  const getNthWeekdayOfMonth = (year, month, weekNum, dayIdx) => {
-    const jsDay = dayIdx + 1; // 0=Mon → JS 1; 4=Fri → JS 5
-    let count = 0;
-    const d = new Date(year, month, 1);
-    while (d.getMonth() === month) {
-      if (d.getDay() === jsDay) { count++; if (count === weekNum) return new Date(d); }
-      d.setDate(d.getDate() + 1);
-    }
-    return null;
-  };
-
-  const generateRecurringDates = (startDate, endDate, freq, repeatDays, repeatMonthlyWeek, repeatMonthlyDay) => {
-    if (!endDate || !startDate) return startDate ? [startDate] : [];
-    const end = new Date(endDate); end.setHours(23, 59, 59, 999);
-    const dates = [];
-    if (freq === 'Daily') {
-      const d = new Date(startDate);
-      while (d <= end) {
-        const jd = d.getDay();
-        if (jd >= 1 && jd <= 5) dates.push(new Date(d));
-        d.setDate(d.getDate() + 1);
-      }
-    } else if (freq === 'Weekly') {
-      const days = (repeatDays && repeatDays.length > 0) ? repeatDays : [0];
-      const d = new Date(startDate);
-      while (d <= end) {
-        const jd = d.getDay();
-        if (jd >= 1 && jd <= 5 && days.includes(jd - 1)) dates.push(new Date(d));
-        d.setDate(d.getDate() + 1);
-      }
-    } else if (freq === 'Monthly') {
-      const wk = repeatMonthlyWeek || 1;
-      const di = repeatMonthlyDay !== undefined ? repeatMonthlyDay : 0;
-      let yr = startDate.getFullYear(), mo = startDate.getMonth();
-      const endYr = end.getFullYear(), endMo = end.getMonth();
-      while (yr < endYr || (yr === endYr && mo <= endMo)) {
-        const dt = getNthWeekdayOfMonth(yr, mo, wk, di);
-        if (dt && dt >= startDate && dt <= end) dates.push(dt);
-        mo++; if (mo > 11) { mo = 0; yr++; }
-      }
-    }
-    return dates.length > 0 ? dates : [startDate];
-  };
-  // ───────────────────────────────────────────────────────────────────────────
 
   const openEditModal = (log) => {
     const tryParse = (str) => {
@@ -853,6 +807,14 @@ const ClientView = ({
       setTaskFormError('Task name, description, category and assignee are all required.');
       return;
     }
+    if (newTaskRepeat === 'Monthly' && newTaskRepeatMonthlyMode === 'specific-date' && !newTaskRepeatDayOfMonth) {
+      setTaskFormError('Please enter a day of month (1–28) for the Specific date monthly schedule.');
+      return;
+    }
+    if (newTaskRepeat !== 'Once' && newTaskRepeatEnd && isBefore(newTaskRepeatEnd, selectedDate)) {
+      setTaskFormError('Repeat end date must be on or after the task start date.');
+      return;
+    }
     const newEstHrs = parseInt(newTaskEstimatedHrs || '0', 10) || 0;
     const newEstMins = parseInt(newTaskEstimatedMins || '0', 10) || 0;
     const newEstimatedMs = (newEstHrs * 60 + newEstMins) > 0 ? (newEstHrs * 3600000 + newEstMins * 60000) : null;
@@ -875,8 +837,10 @@ const ClientView = ({
       repeatFrequency: newTaskRepeat,
       repeatEnd: newTaskRepeat !== 'Once' && newTaskRepeatEnd ? format(newTaskRepeatEnd, 'do MMM yyyy') : null,
       repeatDays: newTaskRepeat === 'Weekly' ? newTaskRepeatDays : null,
-      repeatMonthlyWeek: newTaskRepeat === 'Monthly' ? newTaskRepeatMonthlyWeek : null,
-      repeatMonthlyDay: newTaskRepeat === 'Monthly' ? newTaskRepeatMonthlyDay : null,
+      repeatMonthlyWeek: (newTaskRepeat === 'Monthly' && newTaskRepeatMonthlyMode === 'nth-weekday') ? newTaskRepeatMonthlyWeek : null,
+      repeatMonthlyDay: (newTaskRepeat === 'Monthly' && newTaskRepeatMonthlyMode === 'nth-weekday') ? newTaskRepeatMonthlyDay : null,
+      repeatDayOfMonth: (newTaskRepeat === 'Monthly' && newTaskRepeatMonthlyMode === 'specific-date' && newTaskRepeatDayOfMonth) ? parseInt(newTaskRepeatDayOfMonth, 10) : null,
+      repeatWeekendRule: (newTaskRepeat === 'Monthly' && newTaskRepeatMonthlyMode === 'specific-date' && newTaskRepeatDayOfMonth) ? newTaskRepeatWeekendRule : null,
       lastSpawnedDate: null,
       timerState: 'idle',
       timerStartedAt: null,
@@ -920,8 +884,16 @@ const ClientView = ({
     if (newTaskRepeat !== 'Once' && newTaskRepeatEnd) {
       const dates = generateRecurringDates(
         selectedDate, newTaskRepeatEnd, newTaskRepeat,
-        newTaskRepeatDays, newTaskRepeatMonthlyWeek, newTaskRepeatMonthlyDay
+        newTaskRepeatDays,
+        newTaskRepeatMonthlyMode === 'nth-weekday' ? newTaskRepeatMonthlyWeek : null,
+        newTaskRepeatMonthlyMode === 'nth-weekday' ? newTaskRepeatMonthlyDay : null,
+        newTaskRepeatMonthlyMode === 'specific-date' ? newTaskRepeatDayOfMonth : null,
+        newTaskRepeatMonthlyMode === 'specific-date' ? newTaskRepeatWeekendRule : null
       );
+      if (dates.length === 0) {
+        setTaskFormError('No valid dates found for this repeat schedule. Try extending the end date or adjusting your settings.');
+        return;
+      }
       if (dates.length > 1) {
         logsToAdd = dates.map((dt) => ({
           ...newLog,
@@ -1128,9 +1100,24 @@ const ClientView = ({
       return;
     }
 
+    // Validate specific-date monthly tasks have a day-of-month set
+    const missingDay = tpl.tasks.some((taskItem, idx) => {
+      const cfg = perTaskConfig[idx] || {};
+      return (taskItem.repeatFrequency || 'Once') === 'Monthly'
+        && cfg.repeatMonthlyMode === 'specific-date'
+        && !cfg.repeatDayOfMonth;
+    });
+    if (missingDay) {
+      setTemplateApplyError('Please enter a day of month (1–28) for every Specific date monthly task.');
+      return;
+    }
+
     const creatorDept = currentUser?.department;
     const newTasks = [];
-    tpl.tasks.forEach((taskItem, idx) => {
+    // Use for...of so that `return` on an error truly aborts handleApplyTemplate.
+    // forEach callbacks cannot abort the outer function.
+    for (let idx = 0; idx < tpl.tasks.length; idx++) {
+      const taskItem = tpl.tasks[idx];
       const cfg = perTaskConfig[idx] || {};
       const assignee = (users || []).find(u => String(u.id) === String(cfg.assigneeId));
       const qcAssignee = cfg.qcAssigneeId ? (users || []).find(u => String(u.id) === String(cfg.qcAssigneeId)) : null;
@@ -1151,8 +1138,10 @@ const ClientView = ({
         category: taskItem.category || '',
         repeatFrequency: freq,
         repeatDays: freq === 'Weekly' ? (cfg.repeatDays || [0,1,2,3,4]) : null,
-        repeatMonthlyWeek: freq === 'Monthly' ? (cfg.repeatMonthlyWeek || 1) : null,
-        repeatMonthlyDay: freq === 'Monthly' ? (cfg.repeatMonthlyDay !== undefined ? cfg.repeatMonthlyDay : 0) : null,
+        repeatMonthlyWeek: (freq === 'Monthly' && (cfg.repeatMonthlyMode || 'nth-weekday') === 'nth-weekday') ? (cfg.repeatMonthlyWeek || 1) : null,
+        repeatMonthlyDay: (freq === 'Monthly' && (cfg.repeatMonthlyMode || 'nth-weekday') === 'nth-weekday') ? (cfg.repeatMonthlyDay !== undefined ? cfg.repeatMonthlyDay : 0) : null,
+        repeatDayOfMonth: (freq === 'Monthly' && cfg.repeatMonthlyMode === 'specific-date' && cfg.repeatDayOfMonth) ? parseInt(String(cfg.repeatDayOfMonth), 10) : null,
+        repeatWeekendRule: (freq === 'Monthly' && cfg.repeatMonthlyMode === 'specific-date' && cfg.repeatDayOfMonth) ? (cfg.repeatWeekendRule || 'none') : null,
         repeatEnd: freq !== 'Once' && cfg.repeatEnd ? format(cfg.repeatEnd, 'do MMM yyyy') : null,
         lastSpawnedDate: null,
         timerState: 'idle',
@@ -1171,24 +1160,34 @@ const ClientView = ({
         ? differenceInCalendarDays(cfg.dueDate, cfg.startDate)
         : null;
       if (freq !== 'Once' && cfg.repeatEnd && cfg.startDate) {
+        const tplMode = cfg.repeatMonthlyMode || 'nth-weekday';
         const dates = generateRecurringDates(
           cfg.startDate, cfg.repeatEnd, freq,
-          cfg.repeatDays, cfg.repeatMonthlyWeek, cfg.repeatMonthlyDay
+          cfg.repeatDays,
+          tplMode === 'nth-weekday' ? (cfg.repeatMonthlyWeek || 1) : null,
+          tplMode === 'nth-weekday' ? (cfg.repeatMonthlyDay !== undefined ? cfg.repeatMonthlyDay : 0) : null,
+          tplMode === 'specific-date' ? cfg.repeatDayOfMonth : null,
+          tplMode === 'specific-date' ? (cfg.repeatWeekendRule || 'none') : null
         );
-        dates.forEach((dt, i) => {
+        if (dates.length === 0) {
+          // Abort the entire apply — return here exits handleApplyTemplate
+          setTemplateApplyError(`"${taskItem.name || taskItem.comment}" generated no dates — try extending the end date or adjusting the repeat settings.`);
+          return;
+        }
+        for (const dt of dates) {
           newTasks.push({
             ...baseTask,
             date: format(dt, 'do MMM yyyy'),
             dueDate: tplDueDateOffset !== null ? format(addDays(dt, tplDueDateOffset), 'do MMM yyyy') : null,
           });
-        });
+        }
       } else {
         newTasks.push({
           ...baseTask,
           date: cfg.startDate ? format(cfg.startDate, 'do MMM yyyy') : format(new Date(), 'do MMM yyyy'),
         });
       }
-    });
+    }
 
     runTaskMutation(() => setClientLogs({
       ...clientLogs,
@@ -2445,7 +2444,7 @@ const ClientView = ({
                           <div className="flex gap-1">
                             {['Once', 'Daily', 'Weekly', 'Monthly'].map(freq => (
                               <button key={freq} type="button"
-                                onClick={() => { setNewTaskRepeat(freq); if (freq === 'Once') { setNewTaskRepeatEnd(null); setNewTaskRepeatDays([0,1,2,3,4]); } }}
+                                onClick={() => { setNewTaskRepeat(freq); if (freq === 'Once') { setNewTaskRepeatEnd(null); setNewTaskRepeatDays([0,1,2,3,4]); } if (freq !== 'Monthly') { setNewTaskRepeatMonthlyMode('nth-weekday'); setNewTaskRepeatDayOfMonth(''); setNewTaskRepeatWeekendRule('none'); } }}
                                 className={`flex-1 py-1.5 text-[11px] font-semibold rounded-lg border transition-all ${newTaskRepeat === freq ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-slate-200 text-slate-600 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600'}`}
                               >{freq}</button>
                             ))}
@@ -2467,17 +2466,61 @@ const ClientView = ({
                           {newTaskRepeat === 'Monthly' && (
                             <div className="space-y-1">
                               <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Repeat on</p>
-                              <div className="flex gap-2">
-                                <select value={newTaskRepeatMonthlyWeek} onChange={e => setNewTaskRepeatMonthlyWeek(Number(e.target.value))}
-                                  className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 bg-white">
-                                  {WEEK_ORDINALS.map((w, i) => <option key={i} value={i + 1}>{w}</option>)}
-                                </select>
-                                <select value={newTaskRepeatMonthlyDay} onChange={e => setNewTaskRepeatMonthlyDay(Number(e.target.value))}
-                                  className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 bg-white">
-                                  {WEEKDAY_FULL.map((d, i) => <option key={i} value={i}>{d}</option>)}
-                                </select>
+                              {/* Mode toggle */}
+                              <div className="flex rounded-lg border border-slate-200 overflow-hidden text-[10px] font-semibold">
+                                {[['nth-weekday', 'Nth weekday'], ['specific-date', 'Specific date']].map(([mode, label]) => (
+                                  <button key={mode} type="button"
+                                    onClick={() => setNewTaskRepeatMonthlyMode(mode)}
+                                    className={`flex-1 py-1.5 transition-all ${newTaskRepeatMonthlyMode === mode ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                                  >{label}</button>
+                                ))}
                               </div>
-                              <p className="text-[10px] text-blue-600 font-medium">{WEEK_ORDINALS[newTaskRepeatMonthlyWeek - 1]} {WEEKDAY_FULL[newTaskRepeatMonthlyDay]} of each month</p>
+                              {newTaskRepeatMonthlyMode === 'nth-weekday' ? (
+                                <>
+                                  <div className="flex gap-2">
+                                    <select value={newTaskRepeatMonthlyWeek} onChange={e => setNewTaskRepeatMonthlyWeek(Number(e.target.value))}
+                                      className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 bg-white">
+                                      {WEEK_ORDINALS.map((w, i) => <option key={i} value={i + 1}>{w}</option>)}
+                                    </select>
+                                    <select value={newTaskRepeatMonthlyDay} onChange={e => setNewTaskRepeatMonthlyDay(Number(e.target.value))}
+                                      className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 bg-white">
+                                      {WEEKDAY_FULL.map((d, i) => <option key={i} value={i}>{d}</option>)}
+                                    </select>
+                                  </div>
+                                  <p className="text-[10px] text-blue-600 font-medium">{WEEK_ORDINALS[newTaskRepeatMonthlyWeek - 1]} {WEEKDAY_FULL[newTaskRepeatMonthlyDay]} of each month</p>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="number" min="1" max="28"
+                                      value={newTaskRepeatDayOfMonth}
+                                      onChange={e => {
+                                        const v = e.target.value;
+                                        if (v === '' || (parseInt(v, 10) >= 1 && parseInt(v, 10) <= 28)) setNewTaskRepeatDayOfMonth(v);
+                                      }}
+                                      placeholder="e.g. 5"
+                                      className="w-20 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 bg-white"
+                                    />
+                                    <span className="text-[10px] text-slate-500 font-medium">of every month</span>
+                                  </div>
+                                  {newTaskRepeatDayOfMonth && (
+                                    <div className="space-y-1">
+                                      <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">If it falls on a weekend</p>
+                                      <select value={newTaskRepeatWeekendRule} onChange={e => setNewTaskRepeatWeekendRule(e.target.value)}
+                                        className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 bg-white">
+                                        <option value="none">Keep date as-is</option>
+                                        <option value="prev-friday">Move to previous Friday (same week)</option>
+                                        <option value="next-monday">Move to next Monday (next week)</option>
+                                      </select>
+                                      <p className="text-[10px] text-blue-600 font-medium">
+                                        {formatOrdinal(parseInt(newTaskRepeatDayOfMonth,10))} of each month
+                                        {newTaskRepeatWeekendRule !== 'none' ? ` · ${newTaskRepeatWeekendRule === 'prev-friday' ? 'moves to Friday if weekend' : 'moves to Monday if weekend'}` : ''}
+                                      </p>
+                                    </div>
+                                  )}
+                                </>
+                              )}
                             </div>
                           )}
                           {newTaskRepeat !== 'Once' && (
@@ -2492,7 +2535,14 @@ const ClientView = ({
                                 className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
                               />
                               {newTaskRepeatEnd && (() => {
-                                const previewDates = generateRecurringDates(selectedDate || new Date(), newTaskRepeatEnd, newTaskRepeat, newTaskRepeatDays, newTaskRepeatMonthlyWeek, newTaskRepeatMonthlyDay);
+                                const previewDates = generateRecurringDates(
+                                  selectedDate || new Date(), newTaskRepeatEnd, newTaskRepeat,
+                                  newTaskRepeatDays,
+                                  newTaskRepeatMonthlyMode === 'nth-weekday' ? newTaskRepeatMonthlyWeek : null,
+                                  newTaskRepeatMonthlyMode === 'nth-weekday' ? newTaskRepeatMonthlyDay : null,
+                                  newTaskRepeatMonthlyMode === 'specific-date' ? newTaskRepeatDayOfMonth : null,
+                                  newTaskRepeatMonthlyMode === 'specific-date' ? newTaskRepeatWeekendRule : null
+                                );
                                 return <p className="text-[10px] text-blue-600 font-medium">Will create {previewDates.length} task{previewDates.length !== 1 ? 's' : ''}</p>;
                               })()}
                               {newTaskRepeatEnd && (
@@ -3748,25 +3798,72 @@ const ClientView = ({
                             {taskItem.repeatFrequency === 'Monthly' && (
                               <div className="space-y-1.5 pt-1 border-t border-slate-100">
                                 <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Repeat on</label>
-                                <div className="flex gap-2">
-                                  <select
-                                    value={cfg.repeatMonthlyWeek || 1}
-                                    onChange={e => updateTaskConfig(idx, 'repeatMonthlyWeek', Number(e.target.value))}
-                                    className="border border-slate-200 rounded-lg px-2 py-1 text-xs font-medium text-slate-700 outline-none bg-white"
-                                  >
-                                    {WEEK_ORDINALS.map((w, i) => <option key={i} value={i + 1}>{w}</option>)}
-                                  </select>
-                                  <select
-                                    value={cfg.repeatMonthlyDay !== undefined ? cfg.repeatMonthlyDay : 0}
-                                    onChange={e => updateTaskConfig(idx, 'repeatMonthlyDay', Number(e.target.value))}
-                                    className="flex-1 border border-slate-200 rounded-lg px-2 py-1 text-xs font-medium text-slate-700 outline-none bg-white"
-                                  >
-                                    {WEEKDAY_FULL.map((d, i) => <option key={i} value={i}>{d}</option>)}
-                                  </select>
+                                {/* Mode toggle */}
+                                <div className="flex rounded-lg border border-slate-200 overflow-hidden text-[10px] font-semibold">
+                                  {[['nth-weekday', 'Nth weekday'], ['specific-date', 'Specific date']].map(([mode, label]) => (
+                                    <button key={mode} type="button"
+                                      onClick={() => updateTaskConfig(idx, 'repeatMonthlyMode', mode)}
+                                      className={`flex-1 py-1.5 transition-all ${(cfg.repeatMonthlyMode || 'nth-weekday') === mode ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                                    >{label}</button>
+                                  ))}
                                 </div>
-                                <p className="text-[10px] text-blue-600 font-medium">
-                                  {WEEK_ORDINALS[(cfg.repeatMonthlyWeek || 1) - 1]} {WEEKDAY_FULL[cfg.repeatMonthlyDay !== undefined ? cfg.repeatMonthlyDay : 0]} of each month
-                                </p>
+                                {(cfg.repeatMonthlyMode || 'nth-weekday') === 'nth-weekday' ? (
+                                  <>
+                                    <div className="flex gap-2">
+                                      <select
+                                        value={cfg.repeatMonthlyWeek || 1}
+                                        onChange={e => updateTaskConfig(idx, 'repeatMonthlyWeek', Number(e.target.value))}
+                                        className="border border-slate-200 rounded-lg px-2 py-1 text-xs font-medium text-slate-700 outline-none bg-white"
+                                      >
+                                        {WEEK_ORDINALS.map((w, i) => <option key={i} value={i + 1}>{w}</option>)}
+                                      </select>
+                                      <select
+                                        value={cfg.repeatMonthlyDay !== undefined ? cfg.repeatMonthlyDay : 0}
+                                        onChange={e => updateTaskConfig(idx, 'repeatMonthlyDay', Number(e.target.value))}
+                                        className="flex-1 border border-slate-200 rounded-lg px-2 py-1 text-xs font-medium text-slate-700 outline-none bg-white"
+                                      >
+                                        {WEEKDAY_FULL.map((d, i) => <option key={i} value={i}>{d}</option>)}
+                                      </select>
+                                    </div>
+                                    <p className="text-[10px] text-blue-600 font-medium">
+                                      {WEEK_ORDINALS[(cfg.repeatMonthlyWeek || 1) - 1]} {WEEKDAY_FULL[cfg.repeatMonthlyDay !== undefined ? cfg.repeatMonthlyDay : 0]} of each month
+                                    </p>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="number" min="1" max="28"
+                                        value={cfg.repeatDayOfMonth || ''}
+                                        onChange={e => {
+                                          const v = e.target.value;
+                                          if (v === '' || (parseInt(v, 10) >= 1 && parseInt(v, 10) <= 28)) updateTaskConfig(idx, 'repeatDayOfMonth', v);
+                                        }}
+                                        placeholder="e.g. 5"
+                                        className="w-20 border border-slate-200 rounded-lg px-2 py-1 text-xs font-medium text-slate-700 outline-none bg-white"
+                                      />
+                                      <span className="text-[10px] text-slate-500 font-medium">of every month</span>
+                                    </div>
+                                    {cfg.repeatDayOfMonth && (
+                                      <div className="space-y-1">
+                                        <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">If it falls on a weekend</p>
+                                        <select
+                                          value={cfg.repeatWeekendRule || 'none'}
+                                          onChange={e => updateTaskConfig(idx, 'repeatWeekendRule', e.target.value)}
+                                          className="w-full border border-slate-200 rounded-lg px-2 py-1 text-xs font-medium text-slate-700 outline-none bg-white"
+                                        >
+                                          <option value="none">Keep date as-is</option>
+                                          <option value="prev-friday">Move to previous Friday</option>
+                                          <option value="next-monday">Move to next Monday</option>
+                                        </select>
+                                        <p className="text-[10px] text-blue-600 font-medium">
+                                          {formatOrdinal(parseInt(String(cfg.repeatDayOfMonth), 10))} of each month
+                                          {(cfg.repeatWeekendRule || 'none') !== 'none' ? ` · ${cfg.repeatWeekendRule === 'prev-friday' ? 'moves to Friday if weekend' : 'moves to Monday if weekend'}` : ''}
+                                        </p>
+                                      </div>
+                                    )}
+                                  </>
+                                )}
                               </div>
                             )}
                             {taskItem.repeatFrequency !== 'Once' && (
@@ -3784,9 +3881,14 @@ const ClientView = ({
                                   className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 ring-blue-500/20"
                                 />
                                 {cfg.repeatEnd && cfg.startDate && (() => {
+                                  const _tplMode = cfg.repeatMonthlyMode || 'nth-weekday';
                                   const cnt = generateRecurringDates(
                                     cfg.startDate, cfg.repeatEnd, taskItem.repeatFrequency,
-                                    cfg.repeatDays, cfg.repeatMonthlyWeek, cfg.repeatMonthlyDay
+                                    cfg.repeatDays,
+                                    _tplMode === 'nth-weekday' ? (cfg.repeatMonthlyWeek || 1) : null,
+                                    _tplMode === 'nth-weekday' ? (cfg.repeatMonthlyDay !== undefined ? cfg.repeatMonthlyDay : 0) : null,
+                                    _tplMode === 'specific-date' ? cfg.repeatDayOfMonth : null,
+                                    _tplMode === 'specific-date' ? (cfg.repeatWeekendRule || 'none') : null
                                   ).length;
                                   return <p className="text-[10px] text-blue-600 font-medium">Will create {cnt} task{cnt !== 1 ? 's' : ''}</p>;
                                 })()}
@@ -3825,6 +3927,9 @@ const ClientView = ({
                             repeatDays: [0, 1, 2, 3, 4],
                             repeatMonthlyWeek: 1,
                             repeatMonthlyDay: 0,
+                            repeatMonthlyMode: 'nth-weekday',
+                            repeatDayOfMonth: '',
+                            repeatWeekendRule: 'none',
                             assigneeId: '',
                             qcAssigneeId: '',
                             _assigneeQuery: '',

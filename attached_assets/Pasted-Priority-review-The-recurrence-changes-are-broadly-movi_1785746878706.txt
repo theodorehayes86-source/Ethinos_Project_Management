@@ -1,0 +1,77 @@
+Priority review
+
+The recurrence changes are broadly moving in the right direction. I would only address these three functional risks before accepting the work.
+
+1. Blocker: TeamView recurring tasks bypass the normal persistence method
+
+For a repeating task with an end date, TeamView now uses:
+
+await setClientLogs(prev => ({
+  ...prev,
+  [selectedClientId]: [
+    ...logsToAdd,
+    ...(prev[selectedClientId] || []),
+  ],
+}));
+
+But single tasks use:
+
+await persistTaskCreate(selectedClientId, baseTaskData);
+
+This is risky because the recurring path:
+
+Bypasses persistTaskCreate
+May only update React state
+May not generate Firebase push-key IDs
+May not persist correctly
+Could create tasks without stable IDs
+
+The comment itself says persistTaskCreate is required to avoid temporary or unstable IDs, but the recurring branch bypasses it.
+
+Required fix: persist every generated occurrence through the proper Firebase task creation function, or create a proper bulk persistence function that returns stable IDs.
+
+For example:
+
+for (const task of logsToAdd) {
+  await persistTaskCreate(selectedClientId, task);
+}
+
+A bulk atomic write would be better, but individual persisted creates are acceptable if that matches the existing architecture.
+
+2. High: TeamView can silently save one task instead of the requested recurrence
+
+The recurring branch only runs when all three conditions are true:
+
+supportsRecurrence && taskRepeatEnd && setClientLogs
+
+If setClientLogs is unavailable, the code falls into the single-task branch and saves one task through persistTaskCreate.
+
+That means a user can select a repeating schedule and end date, but only one task may be created without an error.
+
+Change the condition so recurrence does not depend on setClientLogs:
+
+if (supportsRecurrence && taskRepeatEnd) {
+  // generate and persist occurrences
+}
+
+If recurrence cannot be persisted, show an error rather than silently creating one task.
+
+3. High: Teams webhook content fingerprint suppression is still active
+
+The comment says fingerprint deduplication was removed because it blocks legitimate repeated messages, but the implementation still:
+
+const fingerprint = ...
+const fpExists = await readFirebasePath(...)
+
+and skips the message when that fingerprint exists.
+
+Therefore, two legitimate messages such as:
+
+ok
+ok
+
+from the same sender within one minute can still result in the second message being discarded.
+
+The code and comment currently contradict each other.
+
+Required fix: actually remove the content-based fingerprint block and retain the Graph message-ID idempotency check, unless there is a reliable cross-subscription identity available.

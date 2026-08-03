@@ -3,6 +3,8 @@
  * Used across HomeView, ClientView (web) and referenced for mobile.
  */
 
+import { formatOrdinal } from './recurrence.js';
+
 const ORDINALS = ['1st', '2nd', '3rd', '4th'];
 const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 
@@ -20,8 +22,7 @@ export function formatRepeatLabel(task) {
   if (freq === 'Monthly') {
     if (task.repeatDayOfMonth) {
       const dom = Number(task.repeatDayOfMonth);
-      const suffix = dom === 1 ? 'st' : dom === 2 ? 'nd' : dom === 3 ? 'rd' : 'th';
-      return `Monthly · ${dom}${suffix}`;
+      return `Monthly · ${formatOrdinal(dom)}`;
     }
     if (task.repeatMonthlyWeek != null && task.repeatMonthlyDay != null) {
       const ord = ORDINALS[task.repeatMonthlyWeek - 1] || '';

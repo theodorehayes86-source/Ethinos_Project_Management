@@ -1,9 +1,12 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Users, ChevronRight, ChevronLeft, Plus, X, Search, Star, ArrowUp, ArrowDown, Filter, CalendarClock, CalendarCheck2, CalendarX2, AlertTriangle, BarChart2, ClipboardCheck, Clock, Link2, Link2Off, MessageSquare, CheckCircle } from 'lucide-react';
-import { format, isBefore, isAfter, startOfWeek, endOfWeek, startOfMonth, endOfMonth, parse } from 'date-fns';
+import { format, isBefore, isAfter, startOfWeek, endOfWeek, startOfMonth, endOfMonth, parse, addDays, differenceInCalendarDays } from 'date-fns';
+import DatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
 import TaskDetailPanel from './TaskDetailPanel';
 import ChecklistGroupDetailPanel from './ChecklistGroupDetailPanel';
 import { sendNotification } from '../utils/notify';
+import { formatOrdinal, generateRecurringDates, WEEKDAY_FULL, WEEK_ORDINALS } from '../utils/recurrence';
 import DueDateInput from './DueDateInput';
 import { getUserLeaveStatus, getUserLeaveData, getUserLeaveAndHolidayData, checkLeaveConflict, toDateKey, isFullDayLeaveOrHoliday, getUpcomingHolidays, getTodayAttendanceMap } from '../utils/leaveConflict';
 import LeaveConflictModal from './LeaveConflictModal';
@@ -91,7 +94,11 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
   const [taskDate] = useState(new Date());
   const [taskDueDate, setTaskDueDate] = useState(null);
   const [taskBillable, setTaskBillable] = useState(true);
-  const [taskRepeat, setTaskRepeat] = useState('Monthly');
+  const [taskRepeat, setTaskRepeat] = useState('Once');
+  const [taskRepeatEnd, setTaskRepeatEnd] = useState(null);
+  const [repeatMonthlyMode, setRepeatMonthlyMode] = useState('nth-weekday'); // 'nth-weekday' | 'specific-date'
+  const [repeatMonthlyWeek, setRepeatMonthlyWeek] = useState(1);
+  const [repeatMonthlyDay, setRepeatMonthlyDay] = useState(0);
   const [repeatDayOfMonth, setRepeatDayOfMonth] = useState('');
   const [repeatWeekendRule, setRepeatWeekendRule] = useState('none');
   const [estimatedHrs, setEstimatedHrs] = useState('');
@@ -129,10 +136,17 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
     if (!selectedClientId || !taskName.trim() || !taskCategory || !taskComment.trim()) {
       setError('Client, name, category and description are required.'); return;
     }
+    if (taskRepeat === 'Monthly' && repeatMonthlyMode === 'specific-date' && !repeatDayOfMonth) {
+      setError('Please enter a day of month (1–28) for the Specific date monthly schedule.'); return;
+    }
+    const supportsRecurrence = ['Daily', 'Weekly', 'Monthly'].includes(taskRepeat);
+    if (supportsRecurrence && taskRepeatEnd && isBefore(taskRepeatEnd, taskDate)) {
+      setError('Repeat end date must be on or after the task start date.'); return;
+    }
     const estHrs = parseInt(estimatedHrs || '0', 10) || 0;
     const estMins = parseInt(estimatedMins || '0', 10) || 0;
     const estimatedMs = (estHrs * 60 + estMins) > 0 ? (estHrs * 3600000 + estMins * 60000) : null;
-    const taskData = {
+    const baseTaskData = {
       name: taskName.trim(),
       date: format(taskDate, 'do MMM yyyy'),
       comment: taskComment.trim(),
@@ -145,8 +159,12 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
       creatorRole: currentUser?.role || '',
       category: taskCategory,
       repeatFrequency: taskRepeat,
-      repeatDayOfMonth: (taskRepeat === 'Monthly' && repeatDayOfMonth) ? parseInt(repeatDayOfMonth, 10) : null,
-      repeatWeekendRule: (taskRepeat === 'Monthly' && repeatDayOfMonth) ? repeatWeekendRule : null,
+      repeatEnd: supportsRecurrence && taskRepeatEnd ? format(taskRepeatEnd, 'do MMM yyyy') : null,
+      repeatDays: taskRepeat === 'Weekly' ? [0, 1, 2, 3, 4] : null,
+      repeatMonthlyWeek: (taskRepeat === 'Monthly' && repeatMonthlyMode === 'nth-weekday') ? repeatMonthlyWeek : null,
+      repeatMonthlyDay: (taskRepeat === 'Monthly' && repeatMonthlyMode === 'nth-weekday') ? repeatMonthlyDay : null,
+      repeatDayOfMonth: (taskRepeat === 'Monthly' && repeatMonthlyMode === 'specific-date' && repeatDayOfMonth) ? parseInt(repeatDayOfMonth, 10) : null,
+      repeatWeekendRule: (taskRepeat === 'Monthly' && repeatMonthlyMode === 'specific-date' && repeatDayOfMonth) ? repeatWeekendRule : null,
       dueDate: taskDueDate ? format(taskDueDate, 'do MMM yyyy') : null,
       timerState: 'idle', timerStartedAt: null, elapsedMs: 0, timeTaken: null,
       qcEnabled: false, qcAssigneeId: null, qcAssigneeName: null, qcStatus: null, qcRating: null, qcFeedback: null, qcReviewedAt: null,
@@ -157,12 +175,49 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
     setSubmitting(true);
     setError('');
     try {
-      if (persistTaskCreate) {
-        await persistTaskCreate(selectedClientId, taskData);
+      // Multi-occurrence path: generate and persist every occurrence through
+      // persistTaskCreate so each gets a stable Firebase push-key (P5).
+      // setClientLogs is NOT used here — it may only update React state and
+      // would bypass the push-key assignment that persistTaskCreate provides.
+      if (supportsRecurrence && taskRepeatEnd) {
+        if (!persistTaskCreate) {
+          // Must not fall back silently — the user asked for recurrence.
+          setError('Task creation service is unavailable — cannot create recurring tasks.');
+          setSubmitting(false);
+          return;
+        }
+        const dates = generateRecurringDates(
+          taskDate, taskRepeatEnd, taskRepeat,
+          [0, 1, 2, 3, 4],
+          repeatMonthlyMode === 'nth-weekday' ? repeatMonthlyWeek : null,
+          repeatMonthlyMode === 'nth-weekday' ? repeatMonthlyDay : null,
+          repeatMonthlyMode === 'specific-date' ? repeatDayOfMonth : null,
+          repeatMonthlyMode === 'specific-date' ? repeatWeekendRule : null
+        );
+        if (dates.length === 0) {
+          setError('No valid dates found for this repeat schedule. Try extending the end date.');
+          setSubmitting(false);
+          return;
+        }
+        const dueDateOffsetDays = taskDueDate ? differenceInCalendarDays(taskDueDate, taskDate) : null;
+        const repeatGroupId = `rg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        for (const dt of dates) {
+          await persistTaskCreate(selectedClientId, {
+            ...baseTaskData,
+            date: format(dt, 'do MMM yyyy'),
+            dueDate: dueDateOffsetDays !== null ? format(addDays(dt, dueDateOffsetDays), 'do MMM yyyy') : null,
+            repeatGroupId,
+          });
+        }
       } else {
-        // P5: persistTaskCreate is required — throw rather than fall back to
-        // a temporary Date.now() id that would bypass the stable push-key system.
-        throw new Error('Task creation service is unavailable');
+        // Single task — use the stable push-key creator
+        if (persistTaskCreate) {
+          await persistTaskCreate(selectedClientId, baseTaskData);
+        } else {
+          // P5: persistTaskCreate is required — throw rather than fall back to
+          // a temporary Date.now() id that would bypass the stable push-key system.
+          throw new Error('Task creation service is unavailable');
+        }
       }
       // Notify the assignee by email — skip if creator is assigning to themselves
       if (prefilledAssignee?.email && String(prefilledAssignee.id) !== String(currentUser?.id)) {
@@ -217,47 +272,108 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
             </div>
             <div className="flex-1">
               <label className="text-xs font-semibold text-slate-600 mb-1 block">Repeat</label>
-              <select value={taskRepeat} onChange={e => { setTaskRepeat(e.target.value); setRepeatDayOfMonth(''); setRepeatWeekendRule('none'); }} className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20">
-                {REPEAT_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              {/* Only expose frequencies that generateRecurringDates supports.
+                  Fortnightly/Quarterly/Yearly/One-time are not implemented in the
+                  recurrence utility and would silently save a single task. */}
+              <select value={taskRepeat} onChange={e => { const v = e.target.value; setTaskRepeat(v); setRepeatDayOfMonth(''); setRepeatWeekendRule('none'); setRepeatMonthlyMode('nth-weekday'); setRepeatMonthlyWeek(1); setRepeatMonthlyDay(0); if (v === 'Once') setTaskRepeatEnd(null); }} className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20">
+                <option value="Once">Once</option>
+                <option value="Daily">Daily</option>
+                <option value="Weekly">Weekly</option>
+                <option value="Monthly">Monthly</option>
               </select>
             </div>
           </div>
           {taskRepeat === 'Monthly' && (
             <div className="space-y-2 rounded-xl border border-blue-100 bg-blue-50/60 px-3 py-2.5">
               <p className="text-[10px] font-bold uppercase tracking-widest text-blue-500">Monthly schedule</p>
-              <div className="flex items-center gap-2">
-                <label className="text-xs font-semibold text-slate-600 whitespace-nowrap">Day of month</label>
-                <input
-                  type="number" min="1" max="28"
-                  value={repeatDayOfMonth}
-                  onChange={e => {
-                    const v = e.target.value;
-                    if (v === '' || (parseInt(v, 10) >= 1 && parseInt(v, 10) <= 28)) setRepeatDayOfMonth(v);
-                  }}
-                  placeholder="e.g. 5"
-                  className="w-20 px-2 py-1.5 text-xs bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20"
-                />
-                <span className="text-xs text-slate-400">of every month</span>
+              {/* Mode toggle */}
+              <div className="flex rounded-lg border border-slate-200 overflow-hidden text-[10px] font-semibold">
+                {[['nth-weekday', 'Nth weekday'], ['specific-date', 'Specific date']].map(([mode, label]) => (
+                  <button key={mode} type="button"
+                    onClick={() => setRepeatMonthlyMode(mode)}
+                    className={`flex-1 py-1.5 transition-all ${repeatMonthlyMode === mode ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                  >{label}</button>
+                ))}
               </div>
-              {repeatDayOfMonth && (
-                <div className="flex items-center gap-2">
-                  <label className="text-xs font-semibold text-slate-600 whitespace-nowrap">If weekend</label>
-                  <select
-                    value={repeatWeekendRule}
-                    onChange={e => setRepeatWeekendRule(e.target.value)}
-                    className="flex-1 px-2 py-1.5 text-xs bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20"
-                  >
-                    <option value="none">Keep date as-is</option>
-                    <option value="prev-friday">Move to previous Friday</option>
-                    <option value="next-monday">Move to next Monday</option>
-                  </select>
-                </div>
+              {repeatMonthlyMode === 'nth-weekday' ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    <select value={repeatMonthlyWeek} onChange={e => setRepeatMonthlyWeek(Number(e.target.value))}
+                      className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs bg-white outline-none focus:ring-2 ring-blue-500/20">
+                      {WEEK_ORDINALS.map((w, i) => <option key={i} value={i + 1}>{w}</option>)}
+                    </select>
+                    <select value={repeatMonthlyDay} onChange={e => setRepeatMonthlyDay(Number(e.target.value))}
+                      className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-xs bg-white outline-none focus:ring-2 ring-blue-500/20">
+                      {WEEKDAY_FULL.map((d, i) => <option key={i} value={i}>{d}</option>)}
+                    </select>
+                  </div>
+                  <p className="text-[10px] text-blue-600 font-medium">
+                    {WEEK_ORDINALS[repeatMonthlyWeek - 1]} {WEEKDAY_FULL[repeatMonthlyDay]} of each month
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-semibold text-slate-600 whitespace-nowrap">Day of month</label>
+                    <input
+                      type="number" min="1" max="28"
+                      value={repeatDayOfMonth}
+                      onChange={e => {
+                        const v = e.target.value;
+                        if (v === '' || (parseInt(v, 10) >= 1 && parseInt(v, 10) <= 28)) setRepeatDayOfMonth(v);
+                      }}
+                      placeholder="e.g. 5"
+                      className="w-20 px-2 py-1.5 text-xs bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20"
+                    />
+                    <span className="text-xs text-slate-400">of every month</span>
+                  </div>
+                  {repeatDayOfMonth && (
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs font-semibold text-slate-600 whitespace-nowrap">If weekend</label>
+                      <select value={repeatWeekendRule} onChange={e => setRepeatWeekendRule(e.target.value)}
+                        className="flex-1 px-2 py-1.5 text-xs bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20">
+                        <option value="none">Keep date as-is</option>
+                        <option value="prev-friday">Move to previous Friday</option>
+                        <option value="next-monday">Move to next Monday</option>
+                      </select>
+                    </div>
+                  )}
+                  {repeatDayOfMonth && (
+                    <p className="text-[10px] text-blue-600 font-medium">
+                      Repeats on the {formatOrdinal(parseInt(repeatDayOfMonth,10))} of each month
+                      {repeatWeekendRule !== 'none' ? ` · ${repeatWeekendRule === 'prev-friday' ? 'moves to Friday if weekend' : 'moves to Monday if weekend'}` : ''}
+                    </p>
+                  )}
+                </>
               )}
-              {repeatDayOfMonth && (
-                <p className="text-[10px] text-blue-600 font-medium">
-                  Repeats on the {repeatDayOfMonth}{['st','nd','rd'][parseInt(repeatDayOfMonth,10)-1]||'th'} of each month
-                  {repeatWeekendRule !== 'none' ? ` · ${repeatWeekendRule === 'prev-friday' ? 'moves to Friday if weekend' : 'moves to Monday if weekend'}` : ''}
-                </p>
+            </div>
+          )}
+          {['Daily', 'Weekly', 'Monthly'].includes(taskRepeat) && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-600 block">Repeat End Date <span className="font-normal text-slate-400">(optional — omit to save one task)</span></label>
+              <DatePicker
+                selected={taskRepeatEnd}
+                onChange={date => setTaskRepeatEnd(date)}
+                minDate={taskDate}
+                placeholderText="No end date"
+                dateFormat="dd MMM yyyy"
+                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20"
+              />
+              {taskRepeatEnd && (() => {
+                const count = generateRecurringDates(
+                  taskDate, taskRepeatEnd, taskRepeat,
+                  [0, 1, 2, 3, 4],
+                  repeatMonthlyMode === 'nth-weekday' ? repeatMonthlyWeek : null,
+                  repeatMonthlyMode === 'nth-weekday' ? repeatMonthlyDay : null,
+                  repeatMonthlyMode === 'specific-date' ? repeatDayOfMonth : null,
+                  repeatMonthlyMode === 'specific-date' ? repeatWeekendRule : null
+                ).length;
+                return count > 0
+                  ? <p className="text-[10px] text-blue-600 font-medium">{count} task{count !== 1 ? 's' : ''} will be created</p>
+                  : <p className="text-[10px] text-red-500 font-medium">No dates in this range — try extending the end date.</p>;
+              })()}
+              {taskRepeatEnd && (
+                <button type="button" onClick={() => setTaskRepeatEnd(null)} className="text-xs font-semibold text-red-600 hover:text-red-700">Clear end date</button>
               )}
             </div>
           )}
