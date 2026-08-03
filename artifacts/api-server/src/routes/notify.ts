@@ -1,6 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { timingSafeEqual } from "crypto";
-import { getAdminAuth } from "../lib/firebase-admin";
+import { getAdminAuth, getAdminDatabase } from "../lib/firebase-admin";
 import {
   sendEmail,
   isEmailConfigured,
@@ -925,7 +925,7 @@ router.post("/notify", requireFirebaseAuth, async (req: Request, res: Response) 
   }
 });
 
-/* ─── Admin: manual digest trigger ─── */
+/* ─── Admin: manual digest trigger (legacy) ─── */
 
 router.post("/admin/trigger-digest", async (req: Request, res: Response) => {
   const apiKey = req.header("x-admin-api-key");
@@ -938,22 +938,141 @@ router.post("/admin/trigger-digest", async (req: Request, res: Response) => {
     return res.status(401).json({ error: "Invalid or missing API key. Pass it as the x-admin-api-key header." });
   }
 
-  const toEmail = (req.body?.toEmail as string | undefined) || process.env.NOTIFY_TEST_EMAIL || null;
+  const toEmail    = (req.body?.toEmail    as string | undefined) || process.env.NOTIFY_TEST_EMAIL || null;
+  const targetUserId = (req.body?.userId as string | undefined) || null;
 
   if (!toEmail) {
     return res.status(400).json({
       error: "toEmail is required in the request body (or set NOTIFY_TEST_EMAIL env var)",
     });
   }
+  if (!targetUserId) {
+    return res.status(400).json({
+      error: "userId is required when using toEmail — prevents all user digests going to one address",
+    });
+  }
 
-  logger.info({ toEmail }, "[Admin] Manual digest trigger received");
+  logger.info({ toEmail, userId: targetUserId }, "[Admin] Manual digest trigger received");
 
   try {
-    await runWeeklyDigest({ force: true, toEmail });
-    return res.json({ ok: true, message: `Digest sent to ${toEmail}` });
+    const result = await runWeeklyDigest({ force: true, toEmail, userId: targetUserId });
+    if (result.sent === 0 && result.errors.length > 0) {
+      return res.status(500).json({ ok: false, ...result });
+    }
+    return res.json({ ok: true, message: `Digest sent to ${toEmail}`, ...result });
   } catch (err) {
     logger.error({ err }, "[Admin] Manual digest trigger failed");
     return res.status(500).json({ error: "Digest run failed — check server logs" });
+  }
+});
+
+/* ─── Weekly digest manual trigger endpoint ─── */
+
+const DIGEST_ADMIN_ROLES = new Set(["Super Admin", "Admin"]);
+
+/** Verify caller is either holding the PMT_EXPORT_API_KEY *or* is a
+ *  Firebase-authenticated user with a PMT admin role (Super Admin / Admin). */
+async function requireApiKeyOrAdminFirebaseAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
+  // 1) Accept PMT_EXPORT_API_KEY via x-api-key header (server-to-server use)
+  const apiKey = req.header("x-api-key");
+  const expected = process.env.PMT_EXPORT_API_KEY;
+  if (expected && apiKey && apiKeyMatches(apiKey, expected)) {
+    next();
+    return;
+  }
+
+  // 2) Firebase ID token — must belong to a PMT admin role
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith("Bearer ")) {
+    const idToken = authHeader.slice(7);
+    try {
+      const decoded = await getAdminAuth().verifyIdToken(idToken);
+      if (!decoded.email) {
+        logger.warn("[DigestRun] Token has no email claim — rejecting");
+        res.status(403).json({ error: "Token must carry an email claim" });
+        return;
+      }
+      const callerEmail = decoded.email.toLowerCase();
+      // Look up the user's PMT role from the Realtime Database (emails stored lowercase)
+      const db = getAdminDatabase();
+      const snap = await db.ref("users").orderByChild("email").equalTo(callerEmail).limitToFirst(1).once("value");
+      let pmtRole: string | null = null;
+      if (snap.exists()) {
+        snap.forEach((child) => { pmtRole = (child.val() as { role?: string }).role ?? null; });
+      }
+      if (!pmtRole || !DIGEST_ADMIN_ROLES.has(pmtRole)) {
+        logger.warn({ callerEmail, pmtRole }, "[DigestRun] Insufficient PMT role");
+        res.status(403).json({ error: "Admin role required to trigger the weekly digest" });
+        return;
+      }
+      next();
+      return;
+    } catch (err) {
+      logger.warn({ err }, "[DigestRun] Invalid Firebase ID token");
+    }
+  }
+  res.status(401).json({ error: "Unauthorized — provide a valid x-api-key or admin Firebase Bearer token" });
+}
+
+router.post("/notify/weekly-digest/run", requireApiKeyOrAdminFirebaseAuth, async (req: Request, res: Response) => {
+  const body = (req.body as Record<string, unknown>) ?? {};
+
+  // ── Runtime validation ──────────────────────────────────────────────────────
+  const rawUserId     = body.userId;
+  const rawWeekOffset = body.weekOffset;
+
+  // userId: non-empty string when supplied
+  if (rawUserId !== undefined) {
+    if (typeof rawUserId !== "string" || rawUserId.trim() === "") {
+      return res.status(400).json({ error: "userId must be a non-empty string" });
+    }
+  }
+
+  // weekOffset: integer in [-52, -1] when supplied; defaults to -1
+  const resolvedOffset = rawWeekOffset === undefined ? -1 : rawWeekOffset;
+  if (
+    typeof resolvedOffset !== "number" ||
+    !Number.isFinite(resolvedOffset) ||
+    !Number.isInteger(resolvedOffset) ||
+    resolvedOffset < -52 ||
+    resolvedOffset > -1
+  ) {
+    return res.status(400).json({
+      error: `weekOffset must be an integer between -52 and -1 (got: ${String(resolvedOffset)})`,
+    });
+  }
+
+  const userId = typeof rawUserId === "string" ? rawUserId.trim() : undefined;
+
+  logger.info({ userId: userId ?? "(bulk)", weekOffset: resolvedOffset }, "[DigestRun] Manual trigger received");
+
+  try {
+    const result = await runWeeklyDigest(
+      userId
+        ? {
+            // Targeted single-user: bypass schedule, cooldown, and that user's opt-in
+            skipSchedule:    true,
+            skipCooldown:    true,
+            ignoreUserOptIn: true,
+            userId,
+            weekOffset: resolvedOffset,
+          }
+        : {
+            // Bulk: bypass schedule + cooldown but respect each user's opt-in preference
+            skipSchedule: true,
+            skipCooldown: true,
+            weekOffset: resolvedOffset,
+          }
+    );
+
+    // HTTP 500 for complete failures; 200 for success or partial success
+    if (result.sent === 0 && result.errors.length > 0) {
+      return res.status(500).json(result);
+    }
+    return res.json(result);
+  } catch (err) {
+    logger.error({ err }, "[DigestRun] Manual trigger failed");
+    return res.status(500).json({ sent: 0, skipped: 0, errors: ["Digest run failed — check server logs"] });
   }
 });
 

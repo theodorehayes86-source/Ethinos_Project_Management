@@ -179,10 +179,61 @@ interface DigestSetting {
   lastSentIsoWeek?: string;
 }
 
-export async function runWeeklyDigest(opts?: { force?: boolean; toEmail?: string }): Promise<void> {
-  const force = opts?.force ?? false;
-  const overrideEmail = opts?.toEmail ?? null;
-  logger.info({ force, overrideEmail: overrideEmail ?? undefined }, "[WeeklyDigest] Running weekly hours digest check");
+export interface DigestRunResult {
+  sent: number;
+  skipped: number;
+  errors: string[];
+}
+
+export async function runWeeklyDigest(opts?: {
+  /**
+   * Legacy convenience flag: sets skipSchedule + skipCooldown + ignoreUserOptIn.
+   * Prefer the individual flags for new callers.
+   */
+  force?: boolean;
+  /** Skip the day-of-week and time-of-day schedule check. */
+  skipSchedule?: boolean;
+  /** Skip the already-sent-this-week cooldown guard. */
+  skipCooldown?: boolean;
+  /**
+   * Allow sending to a specific user regardless of their weeklyDigestEnabled opt-in.
+   * Only meaningful when userId is also set.
+   */
+  ignoreUserOptIn?: boolean;
+  /**
+   * Redirect all outgoing emails to this address (preview / test mode).
+   * Must be combined with userId — prevents one address receiving one email per user.
+   */
+  toEmail?: string;
+  /** Filter to a single user by their Firebase user ID. */
+  userId?: string;
+  /**
+   * Which week to report. Must be an integer between -52 and -1.
+   *   -1 = previous week (default)
+   *   -2 = two weeks ago
+   */
+  weekOffset?: number;
+}): Promise<DigestRunResult> {
+  const force           = opts?.force           ?? false;
+  const skipSchedule    = (opts?.skipSchedule   ?? false) || force;
+  const skipCooldown    = (opts?.skipCooldown   ?? false) || force;
+  const ignoreUserOptIn = (opts?.ignoreUserOptIn ?? false) || force;
+  const overrideEmail   = opts?.toEmail ?? null;
+  const filterUserId    = opts?.userId  ?? null;
+
+  // toEmail must be paired with userId — prevent one address receiving one email per user
+  if (overrideEmail && !filterUserId) {
+    return { sent: 0, skipped: 0, errors: ["toEmail requires userId to prevent duplicate sends"] };
+  }
+
+  // Validate weekOffset: must be an integer in [-52, -1]
+  const rawOffset = opts?.weekOffset ?? -1;
+  if (!Number.isInteger(rawOffset) || rawOffset < -52 || rawOffset > -1) {
+    return { sent: 0, skipped: 0, errors: [`weekOffset must be an integer between -52 and -1, got: ${rawOffset}`] };
+  }
+  const weeksBack = -rawOffset; // -1 → 1 week back, -2 → 2 weeks back
+
+  logger.info({ force, skipSchedule, skipCooldown, ignoreUserOptIn, filterUserId, weeksBack }, "[WeeklyDigest] Running weekly hours digest check");
 
   try {
     // Read digest settings first to check timezone / hour / cooldown
@@ -190,9 +241,9 @@ export async function runWeeklyDigest(opts?: { force?: boolean; toEmail?: string
       "settings/notifications/weekly-digest"
     );
 
-    if (!force && digestSetting && digestSetting.enabled === false) {
+    if (!skipSchedule && digestSetting && digestSetting.enabled === false) {
       logger.info("[WeeklyDigest] Globally disabled — skipping");
-      return;
+      return { sent: 0, skipped: 0, errors: [] };
     }
 
     const configuredTz = digestSetting?.scheduleTimezone || DEFAULT_TZ;
@@ -205,28 +256,29 @@ export async function runWeeklyDigest(opts?: { force?: boolean; toEmail?: string
     const localHour = nowInTz.getHours();
     const localDow = nowInTz.getDay(); // 0 = Sunday, 1 = Monday
 
-    if (!force) {
+    if (!skipSchedule) {
       // Only proceed if it's Monday and the right hour in the configured timezone
       if (localDow !== 1) {
         logger.debug({ localDow, configuredTz }, "[WeeklyDigest] Not Monday in configured timezone — skipping");
-        return;
+        return { sent: 0, skipped: 0, errors: [] };
       }
       if (localHour !== configuredHour) {
         logger.debug({ localHour, configuredHour, configuredTz }, "[WeeklyDigest] Not send hour — skipping");
-        return;
+        return { sent: 0, skipped: 0, errors: [] };
       }
     }
 
-    // Cooldown: skip if already sent this ISO week (bypassed when force=true)
-    const isoWeekKey = `${format(nowInTz, "yyyy")}-W${String(getISOWeek(nowInTz)).padStart(2, "0")}`;
-    if (!force && digestSetting?.lastSentIsoWeek === isoWeekKey) {
+    // Cooldown: skip if already sent this ISO week.
+    // Use ISO week-year format (RRRR) so the key is correct around New Year.
+    const isoWeekKey = format(nowInTz, "RRRR-'W'II");
+    if (!skipCooldown && digestSetting?.lastSentIsoWeek === isoWeekKey) {
       logger.info({ isoWeekKey }, "[WeeklyDigest] Already sent this ISO week — skipping");
-      return;
+      return { sent: 0, skipped: 0, errors: [] };
     }
 
     if (!isEmailConfigured()) {
       logger.warn("[WeeklyDigest] Email not configured — skipping");
-      return;
+      return { sent: 0, skipped: 0, errors: ["Email not configured"] };
     }
 
     logger.info({ configuredTz, configuredHour, isoWeekKey }, "[WeeklyDigest] Conditions met — sending digest");
@@ -259,9 +311,9 @@ export async function runWeeklyDigest(opts?: { force?: boolean; toEmail?: string
       clientNameMap[String(c.id)] = c.name || String(c.id);
     }
 
-    // Compute previous ISO week boundaries in the configured timezone
-    const prevMonday = startOfISOWeek(subWeeks(nowInTz, 1));
-    const prevSunday = endOfISOWeek(subWeeks(nowInTz, 1));
+    // Compute target ISO week boundaries in the configured timezone
+    const prevMonday = startOfISOWeek(subWeeks(nowInTz, weeksBack));
+    const prevSunday = endOfISOWeek(subWeeks(nowInTz, weeksBack));
     const days = [0, 1, 2, 3, 4].map(i => addDays(prevMonday, i)); // Mon–Fri
     const weekNumber = getISOWeek(prevMonday);
     const weekLabel = `${format(prevMonday, "d MMM yyyy")} – ${format(days[4], "d MMM yyyy")}`;
@@ -282,13 +334,18 @@ export async function runWeeklyDigest(opts?: { force?: boolean; toEmail?: string
 
     let emailsSent = 0;
     let emailsSkipped = 0;
+    const emailErrors: string[] = [];
 
     const eligibleUsers = users.filter((user) => {
+      // Filter by specific user first — unrelated users must not inflate the skipped count
+      if (filterUserId !== null && String(user.id) !== String(filterUserId)) {
+        return false;
+      }
       if (!user.email) {
         emailsSkipped++;
         return false;
       }
-      if (!force && !user.weeklyDigestEnabled) {
+      if (!ignoreUserOptIn && !user.weeklyDigestEnabled) {
         emailsSkipped++;
         return false;
       }
@@ -383,14 +440,17 @@ export async function runWeeklyDigest(opts?: { force?: boolean; toEmail?: string
         emailsSent++;
         logger.info({ to: sendTo, user: user.name, userId, weekNumber }, "[WeeklyDigest] Sent");
       } catch (err) {
+        const msg = `Failed to send to ${sendTo} (${user.name || userId}): ${err instanceof Error ? err.message : String(err)}`;
+        emailErrors.push(msg);
         logger.error({ err, to: sendTo, user: user.name, userId }, "[WeeklyDigest] Failed to send");
       }
     });
 
-    logger.info({ emailsSent, emailsSkipped }, "[WeeklyDigest] Complete");
+    logger.info({ emailsSent, emailsSkipped, errors: emailErrors.length }, "[WeeklyDigest] Complete");
 
-    // Write cooldown so subsequent hourly ticks skip this week
-    if (emailsSent > 0 || emailsSkipped > 0) {
+    // Write cooldown only when at least one email was sent — a full failure must remain eligible for retry.
+    // Never write cooldown for targeted single-user sends.
+    if (!filterUserId && emailsSent > 0) {
       try {
         await writeFirebasePath(
           "settings/notifications/weekly-digest/lastSentIsoWeek",
@@ -401,8 +461,11 @@ export async function runWeeklyDigest(opts?: { force?: boolean; toEmail?: string
         logger.warn({ err }, "[WeeklyDigest] Failed to write cooldown — may re-send next tick");
       }
     }
+
+    return { sent: emailsSent, skipped: emailsSkipped, errors: emailErrors };
   } catch (err) {
     logger.error({ err }, "[WeeklyDigest] Error during digest run");
+    return { sent: 0, skipped: 0, errors: [err instanceof Error ? err.message : String(err)] };
   }
 }
 
@@ -410,7 +473,7 @@ const DIGEST_LOCK_TTL_MS = 54 * 60 * 1000;
 
 export function startWeeklyDigestScheduler(): void {
   cron.schedule("0 * * * 1", () => {
-    withJobLock("weekly-digest-monday", DIGEST_LOCK_TTL_MS, () => runWeeklyDigest()).catch(err =>
+    withJobLock("weekly-digest-monday", DIGEST_LOCK_TTL_MS, async () => { await runWeeklyDigest(); }).catch(err =>
       logger.error({ err }, "[WeeklyDigest] Unhandled error")
     );
   });

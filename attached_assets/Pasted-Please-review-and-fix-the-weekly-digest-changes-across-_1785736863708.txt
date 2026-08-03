@@ -1,0 +1,286 @@
+Please review and fix the weekly digest changes across the API server and PMT frontend.
+
+The goal is to keep the new manual digest functionality while making the implementation safe, predictable, and production-ready.
+
+## Files involved
+
+* `artifacts/api-server/src/...weekly digest service file`
+* `artifacts/api-server/src/routes/notify.ts`
+* `artifacts/pmt-app/src/PMT/MasterDataView.jsx`
+
+## Required fixes
+
+### 1. Fix override-email duplicate sends
+
+The legacy endpoint currently calls:
+
+```ts
+runWeeklyDigest({ force: true, toEmail });
+```
+
+If the digest function still loops over every user, this can send multiple different user digests to the same override email.
+
+Change the behaviour so that `toEmail` can only be used with a specific `userId`, or remove the legacy behaviour and route testing through the new targeted-user endpoint.
+
+Do not allow one override email to receive one email per user unintentionally.
+
+### 2. Fix the ISO week cooldown key
+
+Do not combine `getISOWeek()` with the normal calendar year.
+
+Replace logic such as:
+
+```ts
+`${format(nowInTz, "yyyy")}-W${String(getISOWeek(nowInTz)).padStart(2, "0")}`
+```
+
+with a proper ISO week-year format, preferably:
+
+```ts
+format(nowInTz, "RRRR-'W'II")
+```
+
+This must work correctly around New Year.
+
+### 3. Do not write cooldown when no email was sent
+
+The cooldown must not be written merely because users were skipped.
+
+Only write `lastSentIsoWeek` when at least one email was successfully sent.
+
+Use logic similar to:
+
+```ts
+if (!filterUserId && emailsSent > 0) {
+  // write cooldown
+}
+```
+
+A complete failed run must remain eligible for retry.
+
+### 4. Filter the requested user before counting skips
+
+For targeted sends, check `userId` before checking whether unrelated users have emails or digest opt-in enabled.
+
+Unrelated users must not increase the `skipped` count.
+
+The filtering order should be:
+
+```ts
+if (filterUserId !== null && String(user.id) !== String(filterUserId)) {
+  return false;
+}
+
+if (!user.email) {
+  emailsSkipped++;
+  return false;
+}
+```
+
+### 5. Validate request input at runtime
+
+In:
+
+```ts
+POST /notify/weekly-digest/run
+```
+
+validate the request body instead of relying only on TypeScript types.
+
+Requirements:
+
+* `userId`, when supplied, must be a non-empty string.
+* `weekOffset`, when supplied, must be an integer.
+* `weekOffset` must be between `-52` and `-1`.
+* Reject `0`, positive values, decimals, objects, and invalid strings.
+* Handle an undefined or empty request body safely.
+
+Return HTTP 400 with a clear error message for invalid input.
+
+### 6. Make `weekOffset` behaviour consistent
+
+Remove the use of:
+
+```ts
+Math.abs(opts?.weekOffset ?? -1) || 1
+```
+
+This silently changes invalid values and makes positive and negative offsets behave identically.
+
+Validate the offset and convert it explicitly:
+
+```ts
+const weekOffset = opts?.weekOffset ?? -1;
+
+if (
+  !Number.isInteger(weekOffset) ||
+  weekOffset < -52 ||
+  weekOffset > -1
+) {
+  throw new Error("weekOffset must be an integer between -52 and -1");
+}
+
+const weeksBack = -weekOffset;
+```
+
+Update comments so that the parameter clearly means:
+
+```text
+-1 = previous week
+-2 = two weeks ago
+```
+
+### 7. Return an appropriate HTTP status for complete failures
+
+`runWeeklyDigest()` now returns errors rather than always throwing.
+
+Update both manual endpoints so that they do not return `ok: true` or a successful message when:
+
+```ts
+result.sent === 0 && result.errors.length > 0
+```
+
+For a complete failure, return HTTP 500 with the result.
+
+Partial success may return HTTP 200, but the response must retain the errors array.
+
+### 8. Clarify force and schedule bypass behaviour
+
+Keep the intended behaviour:
+
+* Scheduled run respects global enabled status.
+* Scheduled run respects user opt-in.
+* Bulk manual send bypasses day, hour, and cooldown but still respects user opt-in.
+* Targeted admin send may bypass that specific user’s opt-in.
+* Targeted sends must not update the global cooldown.
+
+Avoid using one ambiguous flag for unrelated behaviour where practical.
+
+Prefer explicit options such as:
+
+```ts
+skipSchedule?: boolean;
+skipCooldown?: boolean;
+ignoreUserOptIn?: boolean;
+```
+
+If changing the public function signature would be too disruptive, preserve compatibility but document the exact behaviour clearly.
+
+### 9. Improve admin authentication robustness
+
+For Firebase authentication:
+
+* Reject authenticated tokens without an email.
+* Normalize the token email to lowercase.
+* Ensure comparison with stored user emails is case-insensitive, or document and enforce lowercase storage.
+* Keep access limited to `Super Admin` and `Admin`.
+* Do not weaken the existing API-key authentication.
+* Do not log secret keys or bearer tokens.
+
+### 10. Improve frontend sending state
+
+Currently one global `digestRunning` state disables every send button.
+
+Change the UI to track the active target, for example:
+
+```js
+const [digestRunningFor, setDigestRunningFor] = useState(null);
+```
+
+Use:
+
+* `"all"` for bulk send.
+* The user ID for targeted send.
+* `null` when idle.
+
+Requirements:
+
+* Disable the relevant button while its request is running.
+* Prevent duplicate concurrent digest sends.
+* Show whether the result was for all users or a particular user.
+* Keep displaying `sent`, `skipped`, and error details.
+* Ensure `setDigestRunningFor(null)` runs in a `finally` block.
+
+### 11. Preserve the existing functionality
+
+Do not remove:
+
+* Scheduled Monday digest sending.
+* Per-user weekly digest opt-in.
+* Manual bulk sending to opted-in users.
+* Targeted manual sending to one user.
+* The structured result:
+
+```ts
+export interface DigestRunResult {
+  sent: number;
+  skipped: number;
+  errors: string[];
+}
+```
+
+## Expected endpoint behaviour
+
+### Bulk manual run
+
+```http
+POST /notify/weekly-digest/run
+Content-Type: application/json
+
+{
+  "weekOffset": -1
+}
+```
+
+Behaviour:
+
+* Sends to all opted-in eligible users.
+* Bypasses day, time, and cooldown.
+* Does not bypass individual opt-in.
+* Updates cooldown only if at least one email was sent.
+
+### Targeted manual run
+
+```http
+POST /notify/weekly-digest/run
+Content-Type: application/json
+
+{
+  "userId": "firebase-user-id",
+  "weekOffset": -1
+}
+```
+
+Behaviour:
+
+* Sends only to that user.
+* May bypass that user’s opt-in for admin resend/testing.
+* Does not count unrelated users as skipped.
+* Does not update global cooldown.
+* Returns a clear result if the user does not exist or has no email.
+
+## Testing required
+
+Add or update tests for:
+
+1. ISO week-year handling around 31 December and 1 January.
+2. Targeted send only processes one user.
+3. Override email cannot trigger multiple sends.
+4. A run with zero successful emails does not write cooldown.
+5. A run with one successful send does write cooldown.
+6. Targeted runs do not write cooldown.
+7. Bulk manual runs still respect user opt-in.
+8. Invalid `weekOffset` values return HTTP 400.
+9. Invalid or empty `userId` returns HTTP 400.
+10. Complete digest failure returns HTTP 500.
+11. Partial success returns counts and errors correctly.
+12. Frontend running state resets after both success and failure.
+
+After making the changes:
+
+* Run TypeScript type checking.
+* Run linting.
+* Run relevant tests.
+* Check for duplicate declarations introduced by the patch.
+* Provide a concise summary of every file changed.
+* Mention any behaviour that could not be tested locally.

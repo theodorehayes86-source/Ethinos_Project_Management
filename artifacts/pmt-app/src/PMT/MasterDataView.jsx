@@ -353,6 +353,11 @@ const MasterDataView = ({
   const [teamsPingResult, setTeamsPingResult] = useState(null); // null | 'success' | string(error)
   const [teamsInstalling, setTeamsInstalling] = useState(false);
   const [teamsInstallResult, setTeamsInstallResult] = useState(null); // null | 'installed' | 'already' | string(error)
+
+  // Weekly digest manual trigger state (Notifications tab)
+  // null = idle, "all" = bulk send in-flight, string = that userId's send in-flight
+  const [digestRunningFor, setDigestRunningFor] = useState(null);
+  const [digestRunResult, setDigestRunResult] = useState(null); // null | { sent, skipped, errors, target }
   const [kekaLoaded, setKekaLoaded] = useState(false);
 
   // ── Archive tab ──
@@ -577,6 +582,24 @@ const MasterDataView = ({
       setTeamsPingResult(String(e));
     }
     setTeamsPingTesting(false);
+  };
+
+  const triggerDigestNow = async (targetUserId) => {
+    // Prevent concurrent sends — any button in-flight blocks all others
+    if (digestRunningFor !== null) return;
+    const runKey = targetUserId || 'all';
+    setDigestRunningFor(runKey);
+    setDigestRunResult(null);
+    try {
+      const body = { weekOffset: -1 };
+      if (targetUserId) body.userId = targetUserId;
+      const result = await kekaAuthFetch('/notify/weekly-digest/run', { method: 'POST', body: JSON.stringify(body) });
+      setDigestRunResult({ ...result, target: runKey });
+    } catch (e) {
+      setDigestRunResult({ sent: 0, skipped: 0, errors: [String(e)], target: runKey });
+    } finally {
+      setDigestRunningFor(null);
+    }
   };
 
   const getEventEnabled = (eventId) => {
@@ -1579,22 +1602,35 @@ const MasterDataView = ({
                         </td>
                       )}
                       <td className="px-3 py-2.5 text-center">
-                        <button
-                          onClick={() => {
-                            const next = (users || []).map(u =>
-                              u.id === user.id ? { ...u, weeklyDigestEnabled: !u.weeklyDigestEnabled } : u
-                            );
-                            setUsers(next);
-                          }}
-                          title={user.weeklyDigestEnabled ? 'Disable weekly digest' : 'Enable weekly digest'}
-                          className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
-                            user.weeklyDigestEnabled ? 'bg-emerald-500' : 'bg-slate-200'
-                          }`}
-                        >
-                          <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ${
-                            user.weeklyDigestEnabled ? 'translate-x-4' : 'translate-x-0'
-                          }`}/>
-                        </button>
+                        <div className="inline-flex items-center gap-1.5">
+                          <button
+                            onClick={() => {
+                              const next = (users || []).map(u =>
+                                u.id === user.id ? { ...u, weeklyDigestEnabled: !u.weeklyDigestEnabled } : u
+                              );
+                              setUsers(next);
+                            }}
+                            title={user.weeklyDigestEnabled ? 'Disable weekly digest' : 'Enable weekly digest'}
+                            className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                              user.weeklyDigestEnabled ? 'bg-emerald-500' : 'bg-slate-200'
+                            }`}
+                          >
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ${
+                              user.weeklyDigestEnabled ? 'translate-x-4' : 'translate-x-0'
+                            }`}/>
+                          </button>
+                          <button
+                            onClick={() => triggerDigestNow(String(user.id))}
+                            disabled={digestRunningFor !== null}
+                            title={`Send digest to ${user.name || user.email} now`}
+                            className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            {digestRunningFor === String(user.id)
+                              ? <RefreshCw size={10} className="animate-spin" />
+                              : <Send size={10} />
+                            }
+                          </button>
+                        </div>
                       </td>
                       <td className="px-3 py-2.5 text-center">
                         <button
@@ -2686,6 +2722,15 @@ const MasterDataView = ({
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <button
+                          onClick={() => triggerDigestNow()}
+                          disabled={digestRunningFor !== null}
+                          title="Send digest to all opted-in users now (previous week)"
+                          className="text-[11px] text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed px-2.5 py-1 rounded-lg font-semibold flex items-center gap-1.5 transition-colors"
+                        >
+                          <Send size={10} />
+                          {digestRunningFor === 'all' ? 'Sending…' : 'Send now'}
+                        </button>
+                        <button
                           onClick={() => setExpandedEvents(prev => ({ ...prev, 'weekly-digest': !prev['weekly-digest'] }))}
                           className="text-[11px] text-slate-400 hover:text-slate-600 px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 transition-all"
                           title="Customise schedule"
@@ -2702,6 +2747,24 @@ const MasterDataView = ({
                         </button>
                       </div>
                     </div>
+
+                    {digestRunResult && (
+                      <div className={`mx-3 mb-2 px-3 py-2 rounded-lg text-[11px] font-medium flex items-start gap-2 ${digestRunResult.errors?.length > 0 ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+                        {digestRunResult.errors?.length > 0
+                          ? <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" />
+                          : <Check size={12} className="mt-0.5 flex-shrink-0" />
+                        }
+                        <span>
+                          {digestRunResult.target && digestRunResult.target !== 'all'
+                            ? `User ${digestRunResult.target}: `
+                            : 'All users: '
+                          }
+                          sent {digestRunResult.sent}, skipped {digestRunResult.skipped}
+                          {digestRunResult.errors?.length > 0 && ` — ${digestRunResult.errors.length} error${digestRunResult.errors.length !== 1 ? 's' : ''}: ${digestRunResult.errors[0]}`}
+                        </span>
+                        <button onClick={() => setDigestRunResult(null)} className="ml-auto flex-shrink-0 opacity-60 hover:opacity-100"><X size={11} /></button>
+                      </div>
+                    )}
 
                     {isDigestExpanded && (
                       <div className="border-t border-slate-100 p-3 space-y-3 bg-slate-50 rounded-b-lg">
