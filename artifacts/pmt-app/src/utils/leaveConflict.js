@@ -153,6 +153,7 @@ export async function getUserLeaveAndHolidayData(userId, region = "All") {
 /**
  * Get leave status for a user on today's date and within the next 14 days.
  * Distinguishes approved leaves from pending (requested, not yet approved).
+ * Also returns the first upcoming public holiday within 14 days.
  * Used for Team panel leave indicators.
  *
  * @param {string|number} userId
@@ -162,22 +163,35 @@ export async function getUserLeaveAndHolidayData(userId, region = "All") {
  *   onLeavePendingToday: boolean,
  *   upcomingLeaveDate: string|null,
  *   upcomingPendingDate: string|null,
+ *   upcomingHolidayDate: string|null,
  * }>}
  */
 export async function getUserLeaveStatus(userId, region = "All") {
-  if (!userId) return { onLeaveToday: false, onLeavePendingToday: false, upcomingLeaveDate: null, upcomingPendingDate: null };
+  if (!userId) return { onLeaveToday: false, onLeavePendingToday: false, upcomingLeaveDate: null, upcomingPendingDate: null, upcomingHolidayDate: null };
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   try {
-    const leaveSnap = await get(ref(db, `leaveData/${userId}`));
-    const leaveData = leaveSnap.val() || {};
-
     const todayKey = toDateKey(today);
+    const cutoff = new Date(today); cutoff.setDate(today.getDate() + 14);
+    const cutoffKey = toDateKey(cutoff);
+
+    const [leaveSnap, holidaySnap] = await Promise.all([
+      get(ref(db, `leaveData/${userId}`)),
+      get(ref(db, `publicHolidays/${region}`)),
+    ]);
+    const leaveData = leaveSnap.val() || {};
+    const holidayData = holidaySnap.val() || {};
+
     const todayRecord = leaveData[todayKey];
-    const onLeaveToday        = !!todayRecord && todayRecord.status !== "pending";
+    let onLeaveToday        = !!todayRecord && todayRecord.status !== "pending";
     const onLeavePendingToday = !!todayRecord && todayRecord.status === "pending";
+
+    // If user is not on leave today, check whether today is a public holiday
+    if (!onLeaveToday && !onLeavePendingToday && holidayData[todayKey]) {
+      onLeaveToday = true;
+    }
 
     let upcomingLeaveDate   = null;
     let upcomingPendingDate = null;
@@ -196,17 +210,15 @@ export async function getUserLeaveStatus(userId, region = "All") {
       if (upcomingLeaveDate && upcomingPendingDate) break;
     }
 
-    // Check public holiday for today only (upcoming holidays are fetched once per view)
-    if (!onLeaveToday && !onLeavePendingToday) {
-      const holidaySnap = await get(ref(db, `publicHolidays/${region}/${todayKey}`));
-      if (holidaySnap.val()) {
-        return { onLeaveToday: true, onLeavePendingToday: false, upcomingLeaveDate: null, upcomingPendingDate: null };
-      }
-    }
+    // Find the earliest upcoming public holiday within the 14-day window (tomorrow onward)
+    const tomorrowKey = toDateKey(new Date(today.getTime() + 86400000));
+    const upcomingHolidayDate = Object.keys(holidayData)
+      .filter(dk => dk >= tomorrowKey && dk <= cutoffKey && holidayData[dk])
+      .sort()[0] ?? null;
 
-    return { onLeaveToday, onLeavePendingToday, upcomingLeaveDate, upcomingPendingDate };
+    return { onLeaveToday, onLeavePendingToday, upcomingLeaveDate, upcomingPendingDate, upcomingHolidayDate };
   } catch {
-    return { onLeaveToday: false, onLeavePendingToday: false, upcomingLeaveDate: null, upcomingPendingDate: null };
+    return { onLeaveToday: false, onLeavePendingToday: false, upcomingLeaveDate: null, upcomingPendingDate: null, upcomingHolidayDate: null };
   }
 }
 

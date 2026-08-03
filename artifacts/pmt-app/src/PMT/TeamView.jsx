@@ -1294,14 +1294,14 @@ const TeamView = ({
         const status = leaveStatuses[String(t.assigneeId)];
         if (!status) return null;
         const dueKey = format(due, 'yyyy-MM-dd');
-        const holidayOnOrBeforeDue = Array.from(upcomingHolidays).some(hk => hk <= dueKey);
+        const isDueOnHoliday = upcomingHolidays.has(dueKey);
         let conflictType = null, badge = null, badgeStyle = null;
         if (status.onLeaveToday) {
           conflictType = 'hard'; badge = 'On Leave Today'; badgeStyle = 'bg-red-100 text-red-700';
         } else if (status.upcomingLeaveDate && status.upcomingLeaveDate <= dueKey) {
           conflictType = 'hard'; badge = 'Leave on Due Date'; badgeStyle = 'bg-orange-100 text-orange-700';
-        } else if (holidayOnOrBeforeDue) {
-          conflictType = 'hard'; badge = 'Leave on Due Date'; badgeStyle = 'bg-orange-100 text-orange-700';
+        } else if (isDueOnHoliday) {
+          conflictType = 'hard'; badge = 'Public Holiday'; badgeStyle = 'bg-rose-100 text-rose-700';
         } else if (status.onLeavePendingToday) {
           conflictType = 'soft'; badge = 'Pending Leave'; badgeStyle = 'bg-amber-100 text-amber-700';
         } else if (status.upcomingPendingDate && status.upcomingPendingDate <= dueKey) {
