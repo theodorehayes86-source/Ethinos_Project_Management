@@ -153,7 +153,7 @@ function isInFastWindow(hour: number, minute: number): boolean {
   return false;
 }
 
-async function runAttendanceSync(): Promise<void> {
+export async function runAttendanceSync(): Promise<void> {
   // Skip silently if Keka is not configured.
   const creds = await getKekaCredentials();
   if (!creds) {
@@ -260,6 +260,20 @@ async function runAttendanceSync(): Promise<void> {
 
     const employees =
       (todayResult.totalArrived ?? 0) + (todayResult.totalNotArrived ?? 0);
+
+    // ── Silent zero-write detection ───────────────────────────────────────────
+    // A sync can return success:true but write 0 records when the Firebase
+    // writes silently fail or are skipped. If Keka returned employees (> 0)
+    // but nothing was written, this is a failure — not a success.
+    if (todayResult.success && todayResult.recordsWritten === 0 && employees > 0) {
+      logger.error(
+        { recordsWritten: 0, employees },
+        `[Attendance] Zero records written despite ${employees} linked users — treating as failure`
+      );
+      finalStatus = "Failed";
+      lastError = `Zero records written despite ${employees} linked users`;
+    }
+
     const skipped = Math.max(0, employees - todayResult.recordsWritten);
     const durationMs = Date.now() - runStart;
     const durationSec = (durationMs / 1000).toFixed(1);
