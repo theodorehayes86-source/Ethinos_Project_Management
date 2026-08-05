@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Users, ChevronRight, ChevronLeft, Plus, X, Search, Star, ArrowUp, ArrowDown, Filter, CalendarClock, CalendarCheck2, CalendarX2, AlertTriangle, BarChart2, ClipboardCheck, Clock, Link2, Link2Off, MessageSquare, CheckCircle } from 'lucide-react';
+import { Users, ChevronRight, ChevronLeft, Plus, X, Search, Star, ArrowUp, ArrowDown, Filter, CalendarClock, CalendarCheck2, CalendarX2, AlertTriangle, BarChart2, ClipboardCheck, Clock, Link2, Link2Off, MessageSquare, CheckCircle, LayoutTemplate } from 'lucide-react';
 import { format, isBefore, isAfter, startOfWeek, endOfWeek, startOfMonth, endOfMonth, parse, addDays, differenceInCalendarDays } from 'date-fns';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
@@ -85,8 +85,9 @@ const getLevelsToShow = (parentRole, effectiveHierarchyOrder) => {
   return effectiveHierarchyOrder.slice(idx + 1);
 };
 
-const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCategories, currentUser, clientLogs, setClientLogs, persistTaskCreate = null, onClose }) => {
+const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCategories, currentUser, clientLogs, setClientLogs, persistTaskCreate = null, taskTemplates = [], onClose }) => {
   const allClients = [...(clients || []), ...(syntheticClients || [])];
+  const [mode, setMode] = useState('manual'); // 'manual' | 'template'
   const [selectedClientId, setSelectedClientId] = useState('');
   const [taskName, setTaskName] = useState('');
   const [taskComment, setTaskComment] = useState('');
@@ -109,6 +110,66 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
   const [leaveConflict, setLeaveConflict] = useState(null);
   const [leaveModalOpen, setLeaveModalOpen] = useState(false);
   const acknowledgedLeaveRef = useRef(null);
+
+  // Template picker state
+  const [templateFilter, setTemplateFilter] = useState('All');
+  const [selectedTemplateId, setSelectedTemplateId] = useState(null);
+  const [submittingTemplate, setSubmittingTemplate] = useState(false);
+  const [templateError, setTemplateError] = useState('');
+
+  // Templates filtered to the assignee's role
+  const assigneeRoleTemplates = useMemo(() => {
+    return (taskTemplates || []).filter(t => {
+      if (!t.isHomeTemplate) return false;
+      if (!t.targetRoles || t.targetRoles.length === 0) return true;
+      return t.targetRoles.includes(prefilledAssignee?.role);
+    });
+  }, [taskTemplates, prefilledAssignee?.role]);
+
+  const filteredTemplates = useMemo(() => {
+    if (templateFilter === 'All') return assigneeRoleTemplates;
+    return assigneeRoleTemplates.filter(t =>
+      (t.tasks || []).some(task => task.repeatFrequency === templateFilter)
+    );
+  }, [assigneeRoleTemplates, templateFilter]);
+
+  const handleApplyTemplate = async () => {
+    const tpl = assigneeRoleTemplates.find(t => t.id === selectedTemplateId);
+    if (!tpl || !persistTaskCreate) { setTemplateError('Template not found or creation service unavailable.'); return; }
+    setSubmittingTemplate(true);
+    setTemplateError('');
+    const today = format(new Date(), 'do MMM yyyy');
+    try {
+      for (const taskItem of (tpl.tasks || [])) {
+        await persistTaskCreate('__ethinos__', {
+          name: taskItem.name || taskItem.comment,
+          comment: taskItem.comment || '',
+          date: today,
+          dueDate: null,
+          status: 'Pending',
+          assigneeId: prefilledAssignee?.id || null,
+          assigneeName: prefilledAssignee?.name || null,
+          creatorId: currentUser?.id || null,
+          creatorName: currentUser?.name || 'Unassigned',
+          creatorRole: currentUser?.role || '',
+          category: taskItem.category || 'Other',
+          repeatFrequency: taskItem.repeatFrequency || 'Once',
+          billable: false,
+          departments: prefilledAssignee?.department ? [prefilledAssignee.department] : null,
+          timerState: 'idle', timerStartedAt: null, elapsedMs: 0, timeTaken: null,
+          result: '',
+          qcEnabled: false, qcAssigneeId: null, qcAssigneeName: null,
+          qcStatus: null, qcRating: null, qcFeedback: null, qcReviewedAt: null,
+        });
+      }
+      onClose();
+    } catch (err) {
+      console.error('[PMT] Template apply failed:', err);
+      setTemplateError('Could not save tasks — check your connection and try again.');
+    } finally {
+      setSubmittingTemplate(false);
+    }
+  };
 
   useEffect(() => {
     const id = prefilledAssignee?.id ? String(prefilledAssignee.id) : null;
@@ -251,6 +312,108 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={18}/></button>
         </div>
+
+        {/* Mode toggle */}
+        <div className="px-6 pt-4 flex-shrink-0">
+          <div className="flex gap-1 bg-slate-100 rounded-xl p-1">
+            {[['manual', 'Manual Task'], ['template', 'From Template']].map(([m, label]) => (
+              <button
+                key={m} type="button"
+                onClick={() => { setMode(m); setError(''); setTemplateError(''); setSelectedTemplateId(null); }}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  mode === m ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {m === 'template' && <LayoutTemplate size={11} />}
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Template picker */}
+        {mode === 'template' && (
+          <div className="flex flex-col flex-1 overflow-hidden">
+            <div className="px-6 pt-3 pb-2 flex-shrink-0">
+              <div className="flex gap-1 bg-slate-50 rounded-lg border border-slate-200 p-0.5">
+                {['All', 'Daily', 'Weekly', 'Monthly'].map(f => (
+                  <button key={f} type="button"
+                    onClick={() => { setTemplateFilter(f); setSelectedTemplateId(null); }}
+                    className={`flex-1 py-1 rounded-md text-[10px] font-semibold transition-all ${templateFilter === f ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                  >{f}</button>
+                ))}
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 pb-3 space-y-2">
+              {filteredTemplates.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-center">
+                  <LayoutTemplate size={28} className="text-slate-200 mb-2" />
+                  {assigneeRoleTemplates.length === 0 ? (
+                    <>
+                      <p className="text-xs font-semibold text-slate-500">No templates for {prefilledAssignee?.role || 'this role'}</p>
+                      <p className="text-[11px] text-slate-400 mt-1">Create role templates in the Control Centre and assign them to the <strong>{prefilledAssignee?.role}</strong> role.</p>
+                    </>
+                  ) : (
+                    <p className="text-xs font-semibold text-slate-500">No templates for this frequency — try All.</p>
+                  )}
+                </div>
+              ) : filteredTemplates.map(tpl => {
+                const isSelected = selectedTemplateId === tpl.id;
+                const tasksToShow = templateFilter === 'All' ? (tpl.tasks || []) : (tpl.tasks || []).filter(t => t.repeatFrequency === templateFilter);
+                return (
+                  <div key={tpl.id}
+                    onClick={() => setSelectedTemplateId(isSelected ? null : tpl.id)}
+                    className={`border rounded-xl p-3 cursor-pointer transition-all ${isSelected ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <div>
+                        <p className="text-xs font-bold text-slate-800">{tpl.name}</p>
+                        {tpl.description && <p className="text-[10px] text-slate-500 mt-0.5">{tpl.description}</p>}
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600">{tasksToShow.length} task{tasksToShow.length !== 1 ? 's' : ''}</span>
+                        <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${isSelected ? 'border-indigo-500 bg-indigo-500' : 'border-slate-300'}`}>
+                          {isSelected && <CheckCircle size={10} className="text-white" />}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      {tasksToShow.map((task, idx) => (
+                        <div key={idx} className="flex items-start gap-1.5 bg-white border border-slate-100 rounded-lg px-2.5 py-1.5">
+                          <span className="w-3.5 h-3.5 rounded-full bg-indigo-100 text-indigo-600 text-[8px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{idx + 1}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[10px] font-semibold text-slate-800 leading-snug">{task.name || task.comment}</p>
+                            {task.category && <span className="text-[9px] text-slate-400">{task.category}</span>}
+                          </div>
+                          <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
+                            task.repeatFrequency === 'Daily' ? 'bg-emerald-100 text-emerald-700' :
+                            task.repeatFrequency === 'Weekly' ? 'bg-blue-100 text-blue-700' :
+                            task.repeatFrequency === 'Monthly' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600'
+                          }`}>{task.repeatFrequency || 'Once'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {templateError && <p className="mx-6 text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2 flex-shrink-0">{templateError}</p>}
+            <div className="flex gap-3 px-6 py-4 border-t border-slate-100 flex-shrink-0">
+              <button type="button" onClick={onClose} className="flex-1 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-all">Cancel</button>
+              <button
+                type="button"
+                disabled={!selectedTemplateId || submittingTemplate}
+                onClick={handleApplyTemplate}
+                className="flex-1 py-2 text-xs font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+              >
+                <LayoutTemplate size={11} />
+                {submittingTemplate ? 'Applying…' : `Apply Template${selectedTemplateId ? ` (${(assigneeRoleTemplates.find(t => t.id === selectedTemplateId)?.tasks || []).length} tasks)` : ''}`}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {mode === 'manual' && (
         <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-4">
           {error && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>}
           <div>
@@ -420,6 +583,7 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
             <button type="submit" disabled={submitting} className="flex-1 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed">{submitting ? 'Saving…' : 'Add Task'}</button>
           </div>
         </form>
+        )}
       </div>
 
       {leaveConflict && leaveModalOpen && (
@@ -500,7 +664,7 @@ const CHECKLIST_CADENCE_COLORS = {
   Once:    'bg-slate-100 text-slate-600',
 };
 
-const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users, currentUser, clientLogs, setClientLogs, taskCategories, taskGroups = [], persistTaskCreate = null }) => {
+const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users, currentUser, clientLogs, setClientLogs, taskCategories, taskGroups = [], persistTaskCreate = null, taskTemplates = [] }) => {
   const [activeTab, setActiveTab] = useState('tasks');
   const [statusFilter, setStatusFilter] = useState('all');
   const [clientFilter, setClientFilter] = useState('all');
@@ -981,7 +1145,7 @@ const MemberStats = ({ member, allMemberTasks, clients, syntheticClients, users,
         </div>
       )}
       {showAddTask && (
-        <AddTaskModal prefilledAssignee={member} clients={clients} syntheticClients={syntheticClients} taskCategories={taskCategories} currentUser={currentUser} clientLogs={clientLogs} setClientLogs={setClientLogs} persistTaskCreate={persistTaskCreate} onClose={() => setShowAddTask(false)}/>
+        <AddTaskModal prefilledAssignee={member} clients={clients} syntheticClients={syntheticClients} taskCategories={taskCategories} currentUser={currentUser} clientLogs={clientLogs} setClientLogs={setClientLogs} persistTaskCreate={persistTaskCreate} taskTemplates={taskTemplates} onClose={() => setShowAddTask(false)}/>
       )}
       {showDm && (
         <TeamsChatModal
@@ -1119,6 +1283,7 @@ const TeamView = ({
   taskCategories = [],
   hierarchyOrder = [],
   taskGroups = [],
+  taskTemplates = [],
   onOpenClient = () => {},
   onGoToApprovals = () => {},
 }) => {
@@ -1610,6 +1775,7 @@ const TeamView = ({
             taskCategories={taskCategories}
             taskGroups={taskGroups}
             persistTaskCreate={persistTaskCreate}
+            taskTemplates={taskTemplates}
           />
         ) : (
           <div className="flex flex-col h-full overflow-hidden">
