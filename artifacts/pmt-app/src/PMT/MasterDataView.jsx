@@ -343,6 +343,8 @@ const MasterDataView = ({
   const [kekaSyncResult, setKekaSyncResult] = useState(null);
   const [kekaTesting, setKekaTesting] = useState(false);
   const [kekaTestResult, setKekaTestResult] = useState(null);
+  const [attendanceSyncing, setAttendanceSyncing] = useState(false);
+  const [attendanceSyncResult, setAttendanceSyncResult] = useState(null); // null | AttendanceSyncResult
 
   // Teams bulk-enable confirmation state
   const [teamsBulkConfirm, setTeamsBulkConfirm] = useState(null); // null | 'enable' | 'disable'
@@ -512,6 +514,20 @@ const MasterDataView = ({
       setKekaSyncResult({ success: false, error: String(e) });
     }
     setKekaSyncing(false);
+  };
+
+  const triggerAttendanceSync = async () => {
+    setAttendanceSyncing(true);
+    setAttendanceSyncResult(null);
+    try {
+      const data = await kekaAuthFetch('/admin/attendance/sync-now', { method: 'POST' });
+      setAttendanceSyncResult(data);
+    } catch (e) {
+      // Parse rate-limit message if present
+      const msg = String(e);
+      setAttendanceSyncResult({ success: false, error: msg });
+    }
+    setAttendanceSyncing(false);
   };
 
   // ── Teams DM OAuth handlers ──
@@ -4261,6 +4277,47 @@ const MasterDataView = ({
               )}
             </div>
           )}
+
+          {/* ─── Attendance Sync ─── */}
+          <div className="border border-slate-200 rounded-2xl bg-white/50 p-5">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <h4 className="text-xs font-bold text-slate-700">Attendance Sync</h4>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  Fetch today's clock-in / clock-out data from Keka and write it to Firebase.
+                  Runs automatically every 10 minutes; use this button to force an immediate refresh.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={triggerAttendanceSync}
+                disabled={attendanceSyncing || !kekaCredentialsReady}
+                className="flex-shrink-0 px-4 py-2 rounded-lg text-xs font-semibold bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-2"
+                title={!kekaCredentialsReady ? 'Save credentials first' : 'Sync today\'s attendance from Keka now'}
+              >
+                <RefreshCw size={12} className={attendanceSyncing ? 'animate-spin' : ''} />
+                {attendanceSyncing ? 'Syncing…' : 'Sync Attendance Now'}
+              </button>
+            </div>
+
+            {attendanceSyncResult && (
+              <div className={`flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs font-medium ${attendanceSyncResult.success ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                {attendanceSyncResult.success
+                  ? <Check size={13} className="flex-shrink-0 mt-0.5" />
+                  : <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />}
+                <span>
+                  {attendanceSyncResult.success
+                    ? `✓ ${attendanceSyncResult.recordsWritten} records written (${attendanceSyncResult.totalArrived ?? 0} arrived, ${attendanceSyncResult.totalNotArrived ?? 0} not arrived) for ${attendanceSyncResult.date}`
+                    : (attendanceSyncResult.error || 'Attendance sync failed')}
+                </span>
+                {attendanceSyncResult.syncedAt && (
+                  <span className="ml-auto flex-shrink-0 text-[10px] opacity-60">
+                    {new Date(attendanceSyncResult.syncedAt).toLocaleTimeString()}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
 
           <div className="border border-slate-200 rounded-2xl bg-white/50 p-5">
             <h4 className="text-xs font-bold text-slate-700 mb-2">How it works</h4>

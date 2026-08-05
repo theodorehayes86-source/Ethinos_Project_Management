@@ -6,6 +6,7 @@ import notifyRouter from "./notify";
 import kekaRouter from "./keka";
 import teamsAuthRouter from "./teams-auth";
 import teamsChatRouter from "./teams-chat";
+import adminAttendanceRouter from "./admin-attendance";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use(notifyRouter);
 router.use(kekaRouter);
 router.use(teamsAuthRouter);
 router.use(teamsChatRouter);
+router.use(adminAttendanceRouter);
 
 export default router;
