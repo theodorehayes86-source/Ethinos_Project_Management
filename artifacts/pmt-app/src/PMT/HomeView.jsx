@@ -871,6 +871,15 @@ const HomeView = ({
     setSelectMode(false);
   };
 
+  const handleDeleteTask = (task) => {
+    if (!window.confirm(`Delete "${task.name || task.comment}"? This cannot be undone.`)) return;
+    const updated = {};
+    Object.keys(clientLogs).forEach(cid => {
+      updated[cid] = (clientLogs[cid] || []).filter(t => t.id !== task.id);
+    });
+    setClientLogs({ ...clientLogs, ...updated });
+  };
+
   const handleBatchStatus = async (newStatus) => {
     if (selectedTaskIds.size === 0 || savingRef.current) return;
     savingRef.current = true;
@@ -1926,21 +1935,43 @@ const HomeView = ({
                                 >
                                   <Archive size={11}/>
                                 </button>
+                                {/* Delete */}
+                                {canFullyEditTaskFor(task, currentUser) && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleDeleteTask(task); }}
+                                    className="p-1 rounded-md text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition-all"
+                                    title="Delete task"
+                                  >
+                                    <Trash2 size={11}/>
+                                  </button>
+                                )}
                               </div>
                             )}
                             {!showTimer && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleArchiveTask(task); }}
-                                disabled={saving}
-                                className={`p-1 rounded-md transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
-                                  task.archived
-                                    ? 'text-amber-500 hover:text-amber-700 hover:bg-amber-50'
-                                    : 'text-slate-300 hover:text-amber-500 hover:bg-amber-50'
-                                }`}
-                                title={task.archived ? 'Unarchive task' : 'Archive task'}
-                              >
-                                {task.archived ? <ArchiveRestore size={11}/> : <Archive size={11}/>}
-                              </button>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleArchiveTask(task); }}
+                                  disabled={saving}
+                                  className={`p-1 rounded-md transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                                    task.archived
+                                      ? 'text-amber-500 hover:text-amber-700 hover:bg-amber-50'
+                                      : 'text-slate-300 hover:text-amber-500 hover:bg-amber-50'
+                                  }`}
+                                  title={task.archived ? 'Unarchive task' : 'Archive task'}
+                                >
+                                  {task.archived ? <ArchiveRestore size={11}/> : <Archive size={11}/>}
+                                </button>
+                                {/* Delete */}
+                                {canFullyEditTaskFor(task, currentUser) && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleDeleteTask(task); }}
+                                    className="p-1 rounded-md text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition-all"
+                                    title="Delete task"
+                                  >
+                                    <Trash2 size={11}/>
+                                  </button>
+                                )}
+                              </div>
                             )}
                           </div>
                         </div>
