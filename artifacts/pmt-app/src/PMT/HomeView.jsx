@@ -117,9 +117,7 @@ const HomeView = ({
     [syntheticClients, accessibleClients]
   );
   const [showAddTaskModal, setShowAddTaskModal] = useState(false);
-  const [selectedClientId, setSelectedClientId] = useState(
-    isManagement ? (accessibleClients[0]?.id || '__personal__') : '__personal__'
-  );
+  const [selectedClientId, setSelectedClientId] = useState('__personal__');
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [taskCategory, setTaskCategory] = useState('');
   const [taskCategoryQuery, setTaskCategoryQuery] = useState('');
@@ -245,6 +243,7 @@ const HomeView = ({
   // --- Edit task modal state ---
   const [editingTask, setEditingTask] = useState(null);
   const [editDraft, setEditDraft] = useState(null);
+  const [editDraftClientId, setEditDraftClientId] = useState(null);
   const [editDraftError, setEditDraftError] = useState('');
   const [editLeaveConflict, setEditLeaveConflict] = useState(null);
   const editAcknowledgedLeaveRef = useRef(null);
@@ -354,7 +353,7 @@ const HomeView = ({
   );
 
   const resetModal = () => {
-    const defaultClientId = isManagement ? (accessibleClients[0]?.id || '__personal__') : '__personal__';
+    const defaultClientId = '__personal__';
     setSelectedClientId(defaultClientId);
     setSelectedDate(new Date());
     setTaskCategory('');
@@ -966,6 +965,7 @@ const HomeView = ({
       dueDate: hvTryParse(task.dueDate) || null,
       status: task.status || 'Pending',
     });
+    setEditDraftClientId(task.cid || null);
     setEditDraftCategoryQuery(task.category || '');
     setEditDraftShowCategoryMenu(false);
     setEditDraftError('');
@@ -978,31 +978,44 @@ const HomeView = ({
       setEditDraftError('Task name, description and category are all required.');
       return;
     }
-    const cid = editingTask.cid;
-    if (!cid) return;
+    const oldCid = editingTask.cid;
+    const newCid = editDraftClientId || oldCid;
+    if (!oldCid) return;
     const updateAll = editScope === 'all' && editingTask.repeatGroupId;
     const sharedFields = {
       name: editDraft.name.trim(),
       comment: editDraft.comment.trim(),
       category: editDraft.category,
     };
-    const updated = (clientLogs[cid] || []).map(t => {
-      if (updateAll && t.repeatGroupId === editingTask.repeatGroupId && t.id !== editingTask.id) {
-        return { ...t, ...sharedFields };
-      }
-      if (t.id === editingTask.id) {
-        return {
-          ...t,
-          ...sharedFields,
-          dueDate: editDraft.dueDate ? format(editDraft.dueDate, 'do MMM yyyy') : null,
-          status: editDraft.status,
-        };
-      }
-      return t;
-    });
-    setClientLogs({ ...clientLogs, [cid]: updated });
+    const updatedTask = {
+      ...editingTask,
+      ...sharedFields,
+      dueDate: editDraft.dueDate ? format(editDraft.dueDate, 'do MMM yyyy') : null,
+      status: editDraft.status,
+      cid: newCid,
+    };
+
+    const newLogs = { ...clientLogs };
+
+    if (newCid !== oldCid) {
+      // Remove from old client
+      newLogs[oldCid] = (clientLogs[oldCid] || []).filter(t => t.id !== editingTask.id);
+      // Add to new client
+      newLogs[newCid] = [...(clientLogs[newCid] || []), updatedTask];
+    } else {
+      newLogs[oldCid] = (clientLogs[oldCid] || []).map(t => {
+        if (updateAll && t.repeatGroupId === editingTask.repeatGroupId && t.id !== editingTask.id) {
+          return { ...t, ...sharedFields };
+        }
+        if (t.id === editingTask.id) return updatedTask;
+        return t;
+      });
+    }
+
+    setClientLogs(newLogs);
     setEditingTask(null);
     setEditDraft(null);
+    setEditDraftClientId(null);
   };
 
   /** Reschedule a task from the board view. Called after user confirms the move modal. */
@@ -2837,6 +2850,28 @@ const HomeView = ({
                   <option value="Done">Done</option>
                 </select>
               </div>
+              {/* Client reassignment — only when no time logged */}
+              {(!editingTask.elapsedMs || editingTask.elapsedMs === 0) && (
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Client</label>
+                  <select
+                    value={editDraftClientId || ''}
+                    onChange={e => setEditDraftClientId(e.target.value)}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 bg-white"
+                  >
+                    {allClientOptions.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.isPersonal ? 'Personal (My Tasks)' : c.isEthinos ? 'Ethinos (Internal)' : c.name}
+                      </option>
+                    ))}
+                  </select>
+                  {editDraftClientId !== editingTask.cid && (
+                    <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
+                      Task will be moved to the selected client on save.
+                    </p>
+                  )}
+                </div>
+              )}
               {/* Repeat badge — read-only preview of this task's repeat schedule */}
               {editingTask.repeatFrequency && editingTask.repeatFrequency !== 'Once' && editingTask.repeatFrequency !== 'One-time' && (() => {
                 const label = formatRepeatLabel(editingTask);
