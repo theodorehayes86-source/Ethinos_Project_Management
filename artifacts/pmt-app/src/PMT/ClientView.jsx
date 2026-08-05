@@ -260,6 +260,7 @@ const ClientView = ({
   // Edit Task modal state
   const [editingTask, setEditingTask] = useState(null);
   const [editDraft, setEditDraft] = useState(null);
+  const [editDraftClientId, setEditDraftClientId] = useState(null);
   const [editDraftCategoryQuery, setEditDraftCategoryQuery] = useState('');
   const [editDraftShowCategoryMenu, setEditDraftShowCategoryMenu] = useState(false);
   const [editDraftAssigneeQuery, setEditDraftAssigneeQuery] = useState('');
@@ -526,6 +527,7 @@ const ClientView = ({
     const estHrs = Math.floor(estTotalMins / 60);
     const estMins = estTotalMins % 60;
     setEditingTask(log);
+    setEditDraftClientId(log.cid || selectedClient?.id || null);
     setEditDraft({
       name: log.name || '',
       comment: log.comment || '',
@@ -587,28 +589,39 @@ const ClientView = ({
       reminderOffsets: editDraft.reminderOffsets?.length > 0 ? editDraft.reminderOffsets : null,
     });
 
-    const updated = (clientLogs[selectedClient.id] || []).map(l => {
-      // "Update all" — apply shared fields to every sibling in the series
-      if (updateAll && l.repeatGroupId === editingTask.repeatGroupId && l.id !== editingTask.id) {
-        return { ...l, ...sharedFields(l) };
-      }
-      // Always fully update the task being edited (per-occurrence fields included)
-      if (l.id === editingTask.id) {
-        return {
-          ...l,
-          ...sharedFields(l),
-          date: format(editDraft.date || new Date(), 'do MMM yyyy'),
-          dueDate: editDraft.dueDate ? format(editDraft.dueDate, 'do MMM yyyy') : null,
-          repeatFrequency: editDraft.repeatFrequency,
-          repeatEnd: editDraft.repeatFrequency !== 'Once' && editDraft.repeatEnd ? format(editDraft.repeatEnd, 'do MMM yyyy') : null,
-          status: editDraft.status,
-        };
-      }
-      return l;
-    });
-    runTaskMutation(() => setClientLogs({ ...clientLogs, [selectedClient.id]: updated }));
+    const oldCid = selectedClient.id;
+    const newCid = editDraftClientId || oldCid;
+    const isCrossClientMove = newCid !== oldCid && !editingTask.elapsedMs;
+
+    const updatedTask = {
+      ...editingTask,
+      ...sharedFields(editingTask),
+      date: format(editDraft.date || new Date(), 'do MMM yyyy'),
+      dueDate: editDraft.dueDate ? format(editDraft.dueDate, 'do MMM yyyy') : null,
+      repeatFrequency: editDraft.repeatFrequency,
+      repeatEnd: editDraft.repeatFrequency !== 'Once' && editDraft.repeatEnd ? format(editDraft.repeatEnd, 'do MMM yyyy') : null,
+      status: editDraft.status,
+      cid: newCid,
+    };
+
+    if (isCrossClientMove) {
+      // Remove from current client list, add to target client list
+      const srcList = (clientLogs[oldCid] || []).filter(l => l.id !== editingTask.id);
+      const dstList = [...(clientLogs[newCid] || []), updatedTask];
+      runTaskMutation(() => setClientLogs({ ...clientLogs, [oldCid]: srcList, [newCid]: dstList }));
+    } else {
+      const updated = (clientLogs[oldCid] || []).map(l => {
+        if (updateAll && l.repeatGroupId === editingTask.repeatGroupId && l.id !== editingTask.id) {
+          return { ...l, ...sharedFields(l) };
+        }
+        if (l.id === editingTask.id) return updatedTask;
+        return l;
+      });
+      runTaskMutation(() => setClientLogs({ ...clientLogs, [oldCid]: updated }));
+    }
     setEditingTask(null);
     setEditDraft(null);
+    setEditDraftClientId(null);
   };
 
   /** Reschedule a task from the board view. Called after user confirms the move modal. */
@@ -3057,6 +3070,36 @@ const ClientView = ({
                           onChange={e => { setEditDraft(d => ({ ...d, comment: e.target.value })); setEditDraftError(''); }}
                         />
                       </div>
+                      {/* Move to another client — only when no time has been logged */}
+                      {!editingTask.elapsedMs && (() => {
+                        const allClientOptions = [
+                          ...clients.map(c => ({ id: c.id, label: c.name })),
+                          ...(syntheticClients || []).map(c => ({ id: c.id, label: c.isEthinos ? 'Ethinos (Internal)' : c.isPersonal ? 'Personal (My Tasks)' : c.name })),
+                        ];
+                        const isDifferentClient = editDraftClientId && editDraftClientId !== selectedClient.id;
+                        return (
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Client</label>
+                            <select
+                              value={editDraftClientId || selectedClient.id}
+                              onChange={e => setEditDraftClientId(e.target.value)}
+                              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                            >
+                              {allClientOptions.map(c => (
+                                <option key={c.id} value={c.id}>{c.label}</option>
+                              ))}
+                            </select>
+                            {isDifferentClient && (
+                              <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                                <AlertTriangle size={13} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                                <p className="text-[11px] font-medium text-amber-700 leading-snug">
+                                  This task will be moved to <strong>{allClientOptions.find(c => c.id === editDraftClientId)?.label}</strong>. It will disappear from this client on save.
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                       <div className="space-y-1.5">
                         <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Task Category <span className="text-red-500">*</span></label>
                         <div className="relative">
