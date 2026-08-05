@@ -77,6 +77,11 @@ function compareByDate(a, b) {
 const canFullyEditTaskFor = (task, currentUser) => {
   if (!currentUser || !task) return false;
   if (managementRoles.includes(currentUser.role)) return true;
+  // Personal tasks — anyone can fully edit their own assigned tasks
+  if (
+    (task.cid === '__personal__' || task.clientId === '__personal__') &&
+    String(task.assigneeId) === String(currentUser.id)
+  ) return true;
   const myLevel = roleRank(currentUser.role);
   const creatorLevel = roleRank(task.creatorRole);
   if (creatorLevel > myLevel) return false;
