@@ -13,6 +13,9 @@ import {
   getSubtreeStats,
 } from '../hooks/useFirebaseData.js';
 import { isTaskOverdue, isTaskLeaveAwareOverdue, getLeaveAndHolidayData, getLeaveDataForUser, getLeaveStatus, getTodayAttendanceMap } from '../utils/taskUtils.js';
+import TeamHeader from './team/TeamHeader.jsx';
+import TeamFilterSheet from './team/TeamFilterSheet.jsx';
+import CollapsibleSection from './team/CollapsibleSection.jsx';
 
 const STATUS_COLORS = {
   Pending: 'bg-amber-100 text-amber-700',
@@ -643,18 +646,18 @@ function PersonAtRiskCard({ user, tasks, isOnLeave, accent, onTaskClick }) {
   );
 }
 
-function AtRiskSection({ currentUser, users, clientLogs, clients, onTaskClick, leaveByUser, sectionRef }) {
+/**
+ * Compute at-risk (overdue / due today) tasks grouped by person for a given
+ * set of member ids. Pure helper — call from a useMemo in the container.
+ */
+function computeAtRisk(memberIds, users, clientLogs, clients, leaveByUser) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const todayEnd = new Date(today); todayEnd.setHours(23, 59, 59, 999);
   const todayKey = toDateKey(today);
-
-  const subtreeIds = getSubtreeIds(currentUser.id, users);
-  subtreeIds.delete(String(currentUser.id));
 
   const overdueByPerson = [];
   const dueTodayByPerson = [];
 
-  subtreeIds.forEach(uid => {
+  memberIds.forEach(uid => {
     const user = users.find(u => String(u.id) === uid);
     if (!user) return;
     const stats = getUserTaskStats(uid, clientLogs, clients);
@@ -669,14 +672,12 @@ function AtRiskSection({ currentUser, users, clientLogs, clients, onTaskClick, l
   const totalCount = overdueByPerson.reduce((s, p) => s + p.tasks.length, 0)
     + dueTodayByPerson.reduce((s, p) => s + p.tasks.length, 0);
 
-  return (
-    <div ref={sectionRef}>
-      <div className="flex items-center gap-2 mb-3">
-        <AlertTriangle size={13} className={totalCount > 0 ? 'text-red-400' : 'text-slate-300'} />
-        <h3 className={`text-xs font-black uppercase tracking-widest ${totalCount > 0 ? 'text-red-500' : 'text-slate-400'}`}>At Risk</h3>
-        <span className={`ml-auto text-xs font-bold rounded-full px-2 py-0.5 ${totalCount > 0 ? 'text-red-400 bg-red-50' : 'text-slate-400 bg-slate-100'}`}>{totalCount}</span>
-      </div>
+  return { overdueByPerson, dueTodayByPerson, totalCount };
+}
 
+function AtRiskBody({ overdueByPerson, dueTodayByPerson, totalCount, onTaskClick }) {
+  return (
+    <div>
       {totalCount === 0 && (
         <div className="flex items-center gap-2 py-3 px-3 rounded-xl bg-emerald-50 border border-emerald-100">
           <CheckCircle size={14} className="text-emerald-400 flex-shrink-0" />
@@ -711,37 +712,27 @@ function AtRiskSection({ currentUser, users, clientLogs, clients, onTaskClick, l
 
 const MISSING_INFO_PAGE = 20;
 
-function MissingInfoSection({ subtreeTasks, unassignedTasks, onTaskClick, sectionRef }) {
-  const [open, setOpen] = useState(true);
-  const [showAll, setShowAll] = useState(false);
+/** Dedupe unassigned + no-due-date tasks. Shared by KPI count and section body. */
+function computeMissingInfoTasks(subtreeTasks, unassignedTasks) {
+  const noDueDate = subtreeTasks.filter(t => !t.archived && t.status !== 'Done' && !t.dueDate);
+  const seen = new Set();
+  return [...unassignedTasks, ...noDueDate].filter(t => {
+    const key = `${t._clientId}-${t.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 
-  const missingTasks = useMemo(() => {
-    const noAssignee = unassignedTasks;
-    const noDueDate = subtreeTasks.filter(t => !t.archived && t.status !== 'Done' && !t.dueDate);
-    const seen = new Set();
-    return [...noAssignee, ...noDueDate].filter(t => {
-      const key = `${t._clientId}-${t.id}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }, [subtreeTasks, unassignedTasks]);
+function MissingInfoBody({ missingTasks, onTaskClick }) {
+  const [showAll, setShowAll] = useState(false);
 
   const visibleTasks = showAll ? missingTasks : missingTasks.slice(0, MISSING_INFO_PAGE);
   const hiddenCount = missingTasks.length - MISSING_INFO_PAGE;
 
   return (
-    <div ref={sectionRef}>
-      <button
-        onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center gap-2 mb-2 py-1 min-h-[44px]"
-      >
-        <Info size={13} className="text-amber-400" />
-        <h3 className="text-xs font-black text-amber-600 uppercase tracking-widest flex-1 text-left">Missing Info</h3>
-        <span className="text-xs font-bold text-amber-500 bg-amber-50 rounded-full px-2 py-0.5">{missingTasks.length}</span>
-        {open ? <ChevronUp size={13} className="text-slate-400" /> : <ChevronDown size={13} className="text-slate-400" />}
-      </button>
-      {open && (
+    <div>
+      {(
         missingTasks.length === 0 ? (
           <div className="flex items-center gap-2 py-3 px-3 rounded-xl bg-emerald-50 border border-emerald-100">
             <CheckCircle size={14} className="text-emerald-400 flex-shrink-0" />
@@ -777,48 +768,38 @@ function MissingInfoSection({ subtreeTasks, unassignedTasks, onTaskClick, sectio
   );
 }
 
-function LeaveConflictsSection({ subtreeTasks, leaveByUser, users, onTaskClick, sectionRef }) {
-  const [open, setOpen] = useState(true);
+/** Compute leave conflicts for the next 7 days. Pure helper for a useMemo. */
+function computeLeaveConflicts(subtreeTasks, leaveByUser) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const sevenDaysLater = new Date(today); sevenDaysLater.setDate(today.getDate() + 7);
+  const todayKey = toDateKey(today);
 
-  const conflicts = useMemo(() => {
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const sevenDaysLater = new Date(today); sevenDaysLater.setDate(today.getDate() + 7);
-    const todayKey = toDateKey(today);
+  return subtreeTasks
+    .filter(t => !t.archived && t.status !== 'Done' && t.dueDate && t.assigneeId)
+    .map(t => {
+      const due = parseDueDateLocal(t.dueDate);
+      if (!due || due < today || due > sevenDaysLater) return null;
+      const dueKey = toDateKey(due);
+      const ld = leaveByUser[String(t.assigneeId)] || {};
+      const conflictDate = Object.keys(ld)
+        .filter(dk => dk >= todayKey && dk <= dueKey)
+        .sort()
+        .find(dk => {
+          const rec = ld[dk];
+          return rec && !rec.name && rec.status && rec.status !== 'pending';
+        });
+      if (!conflictDate) return null;
+      const badge = conflictDate === dueKey ? 'Leave on Due Date' : 'On Leave';
+      return { ...t, due, dueKey, badge };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.due - b.due);
+}
 
-    return subtreeTasks
-      .filter(t => !t.archived && t.status !== 'Done' && t.dueDate && t.assigneeId)
-      .map(t => {
-        const due = parseDueDateLocal(t.dueDate);
-        if (!due || due < today || due > sevenDaysLater) return null;
-        const dueKey = toDateKey(due);
-        const ld = leaveByUser[String(t.assigneeId)] || {};
-        const conflictDate = Object.keys(ld)
-          .filter(dk => dk >= todayKey && dk <= dueKey)
-          .sort()
-          .find(dk => {
-            const rec = ld[dk];
-            return rec && !rec.name && rec.status && rec.status !== 'pending';
-          });
-        if (!conflictDate) return null;
-        const badge = conflictDate === dueKey ? 'Leave on Due Date' : 'On Leave';
-        return { ...t, due, dueKey, badge };
-      })
-      .filter(Boolean)
-      .sort((a, b) => a.due - b.due);
-  }, [subtreeTasks, leaveByUser]);
-
+function LeaveConflictsBody({ conflicts, users, onTaskClick }) {
   return (
-    <div ref={sectionRef}>
-      <button
-        onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center gap-2 mb-2 py-1 min-h-[44px]"
-      >
-        <Calendar size={13} className="text-rose-400" />
-        <h3 className="text-xs font-black text-rose-600 uppercase tracking-widest flex-1 text-left">Leave Conflicts</h3>
-        <span className="text-xs font-bold text-rose-500 bg-rose-50 rounded-full px-2 py-0.5">{conflicts.length}</span>
-        {open ? <ChevronUp size={13} className="text-slate-400" /> : <ChevronDown size={13} className="text-slate-400" />}
-      </button>
-      {open && (
+    <div>
+      {(
         conflicts.length === 0 ? (
           <div className="flex items-center gap-2 py-3 px-3 rounded-xl bg-emerald-50 border border-emerald-100">
             <CheckCircle size={14} className="text-emerald-400 flex-shrink-0" />
@@ -962,10 +943,13 @@ export default function ManagerDashboard({
   const [showAllDrillTasks, setShowAllDrillTasks] = useState(false);
   const [leaveByUser, setLeaveByUser] = useState({});
   const [attendanceByUser, setAttendanceByUser] = useState({});
-  const [selectedDept, setSelectedDept] = useState('All');
-  const [selectedRegion, setSelectedRegion] = useState('All');
-  const [attendanceFilter, setAttendanceFilter] = useState('all');
+  const DEFAULT_FILTERS = { dept: 'All', region: 'All', attendance: 'all', sort: 'name' };
+  const [filters, setFilters] = useState(DEFAULT_FILTERS);
+  const [showFilterSheet, setShowFilterSheet] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const selectedDept = filters.dept;
+  const selectedRegion = filters.region;
+  const attendanceFilter = filters.attendance;
 
   const isSuperAdmin = GLOBAL_ROLES.includes(currentUser?.role);
 
@@ -1018,23 +1002,41 @@ export default function ManagerDashboard({
         return true;
       });
     }
+    if (filters.sort === 'overdue') {
+      list = [...list].sort((a, b) =>
+        getUserTaskStats(b.id, clientLogs, clients).overdue - getUserTaskStats(a.id, clientLogs, clients).overdue
+      );
+    } else {
+      list = [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    }
     return list;
-  }, [directReports, selectedDept, selectedRegion, isSuperAdmin, searchQuery, attendanceFilter, attendanceByUser]);
+  }, [directReports, selectedDept, selectedRegion, isSuperAdmin, searchQuery, attendanceFilter, attendanceByUser, filters.sort, clientLogs, clients]);
+
+  // Active applied filters (search shown separately in the header)
+  const activeFilters = useMemo(() => {
+    const chips = [];
+    if (filters.dept !== 'All') chips.push({ key: 'dept', label: filters.dept });
+    if (filters.region !== 'All') chips.push({ key: 'region', label: filters.region });
+    if (filters.attendance !== 'all') {
+      const lbl = { in_office: 'In Office', left: 'Left', not_arrived: 'Not Arrived' }[filters.attendance];
+      chips.push({ key: 'attendance', label: lbl });
+    }
+    if (filters.sort !== 'name') chips.push({ key: 'sort', label: 'Most Overdue' });
+    return chips;
+  }, [filters]);
+
+  const removeFilter = (key) => setFilters(f => ({ ...f, [key]: DEFAULT_FILTERS[key] }));
 
   const drillIn = (user) => {
     setDrillStack(s => [...s, user]);
     setShowAllDrillTasks(false);
-    setSelectedDept('All');
-    setSelectedRegion('All');
-    setAttendanceFilter('all');
+    setFilters(DEFAULT_FILTERS);
     setSearchQuery('');
   };
   const drillOut = () => {
     setDrillStack(s => s.slice(0, -1));
     setShowAllDrillTasks(false);
-    setSelectedDept('All');
-    setSelectedRegion('All');
-    setAttendanceFilter('all');
+    setFilters(DEFAULT_FILTERS);
     setSearchQuery('');
   };
 
@@ -1067,24 +1069,50 @@ export default function ManagerDashboard({
     return () => { cancelled = true; };
   }, [clientLogs, subtreeIds, drillStack.length]);
 
+  // Member ids driving KPIs and secondary sections. With no filters this is
+  // the full permitted subtree (existing behaviour). When any filter/search is
+  // active it is EXACTLY the visible member cards, so every count matches the
+  // list. Always intersected with the permitted subtree — never expands access.
+  const filteredMemberIds = useMemo(() => {
+    const hasFilters = selectedDept !== 'All' || selectedRegion !== 'All' || attendanceFilter !== 'all' || !!searchQuery.trim();
+    if (!hasFilters) return subtreeIds;
+    const ids = new Set();
+    visibleReports.forEach(u => {
+      const id = String(u.id);
+      if (subtreeIds.has(id)) ids.add(id);
+    });
+    return ids;
+  }, [visibleReports, subtreeIds, selectedDept, selectedRegion, attendanceFilter, searchQuery]);
+
   const subtreeTasks = useMemo(() => {
     if (drillStack.length > 0) return [];
     const tasks = [];
     Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
       const client = clients.find(c => String(c.id) === String(clientId));
       Object.values(logs || {}).forEach(task => {
-        if (subtreeIds.has(String(task.assigneeId))) {
+        if (filteredMemberIds.has(String(task.assigneeId))) {
           tasks.push({ ...task, _clientId: clientId, _clientName: client?.name || clientId });
         }
       });
     });
     return tasks;
-  }, [clientLogs, clients, subtreeIds, drillStack.length]);
+  }, [clientLogs, clients, filteredMemberIds, drillStack.length]);
 
   const unassignedTasks = useMemo(() => {
     if (drillStack.length > 0) return [];
+    // Non-admin managers only see unassigned tasks on clients their team
+    // already works on; global roles see all unassigned tasks.
+    let allowedClients = null;
+    if (!isSuperAdmin) {
+      allowedClients = new Set();
+      Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
+        const hasTeamTask = Object.values(logs || {}).some(t => subtreeIds.has(String(t.assigneeId)));
+        if (hasTeamTask) allowedClients.add(clientId);
+      });
+    }
     const tasks = [];
     Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
+      if (allowedClients && !allowedClients.has(clientId)) return;
       const client = clients.find(c => String(c.id) === String(clientId));
       Object.values(logs || {}).forEach(task => {
         if (!task.assigneeId && !task.archived && task.status !== 'Done') {
@@ -1093,7 +1121,22 @@ export default function ManagerDashboard({
       });
     });
     return tasks;
-  }, [clientLogs, clients, drillStack.length]);
+  }, [clientLogs, clients, drillStack.length, isSuperAdmin, subtreeIds]);
+
+  const atRisk = useMemo(() => {
+    if (drillStack.length > 0) return { overdueByPerson: [], dueTodayByPerson: [], totalCount: 0 };
+    return computeAtRisk(filteredMemberIds, users, clientLogs, clients, leaveByUser);
+  }, [filteredMemberIds, users, clientLogs, clients, leaveByUser, drillStack.length]);
+
+  const missingInfoTasks = useMemo(() => {
+    if (drillStack.length > 0) return [];
+    return computeMissingInfoTasks(subtreeTasks, unassignedTasks);
+  }, [subtreeTasks, unassignedTasks, drillStack.length]);
+
+  const leaveConflicts = useMemo(() => {
+    if (drillStack.length > 0) return [];
+    return computeLeaveConflicts(subtreeTasks, leaveByUser);
+  }, [subtreeTasks, leaveByUser, drillStack.length]);
 
   const kpiCounts = useMemo(() => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -1106,16 +1149,8 @@ export default function ManagerDashboard({
       if (due && due >= today && due <= todayEnd) dueToday++;
       if (t.qcEnabled && t.qcStatus === 'sent') awaitingQC++;
     });
-    // Compute missingInfo with the same dedup as MissingInfoSection so chip matches list
-    const noDueDate = subtreeTasks.filter(t => !t.archived && t.status !== 'Done' && !t.dueDate);
-    const seen = new Set();
-    const missingInfo = [...unassignedTasks, ...noDueDate].filter(t => {
-      const key = `${t._clientId}-${t.id}`;
-      if (seen.has(key)) return false;
-      seen.add(key); return true;
-    }).length;
-    return { overdue, dueToday, awaitingQC, missingInfo };
-  }, [subtreeTasks, unassignedTasks]);
+    return { overdue, dueToday, awaitingQC, missingInfo: missingInfoTasks.length };
+  }, [subtreeTasks, missingInfoTasks]);
 
   const scrollTo = (target) => {
     const el = target === 'atRisk' ? atRiskRef.current : target === 'missingInfo' ? missingInfoRef.current : null;
@@ -1150,63 +1185,49 @@ export default function ManagerDashboard({
           <div className="flex-1 overflow-y-auto" ref={scrollContainerRef}>
           <div className="p-4 space-y-4" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 72px)' }}>
             {drillStack.length === 0 && (
+              <TeamHeader
+                visibleCount={visibleReports.length}
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+                activeFilterCount={activeFilters.length}
+                onOpenFilters={() => setShowFilterSheet(true)}
+              />
+            )}
+
+            {/* Active filter chips — removable, with +N more overflow */}
+            {drillStack.length === 0 && activeFilters.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {activeFilters.slice(0, 3).map(f => (
+                  <button
+                    key={f.key}
+                    type="button"
+                    onClick={() => removeFilter(f.key)}
+                    aria-label={`Remove ${f.label} filter`}
+                    className="flex items-center gap-1 text-xs font-bold px-3 py-2 min-h-[36px] rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100 max-w-full"
+                  >
+                    <span className="truncate">{f.label}</span>
+                    <X size={11} className="flex-shrink-0" />
+                  </button>
+                ))}
+                {activeFilters.length > 3 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowFilterSheet(true)}
+                    className="text-xs font-bold px-3 py-2 min-h-[36px] rounded-full bg-slate-100 text-slate-500"
+                  >
+                    +{activeFilters.length - 3} more
+                  </button>
+                )}
+              </div>
+            )}
+
+            {drillStack.length === 0 && (
               <KpiChipRow
                 overdue={kpiCounts.overdue}
                 dueToday={kpiCounts.dueToday}
                 awaitingQC={kpiCounts.awaitingQC}
                 missingInfo={kpiCounts.missingInfo}
                 onScrollTo={scrollTo}
-              />
-            )}
-
-            {drillStack.length === 0 && (() => {
-              const teamIds = [...subtreeIds];
-              if (teamIds.length === 0 || Object.keys(attendanceByUser).length === 0) return null;
-              const inOffice   = teamIds.filter(id => attendanceByUser[id]?.isInOffice).length;
-              const leftToday  = teamIds.filter(id => attendanceByUser[id]?.clockIn && !attendanceByUser[id]?.isInOffice).length;
-              const notArrived = teamIds.length - inOffice - leftToday;
-              return (
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-4 py-3">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2.5">Today's Attendance</p>
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 flex-shrink-0" />
-                      <div>
-                        <p className="text-sm font-black text-slate-900">{inOffice}</p>
-                        <p className="text-[9px] text-slate-400 uppercase tracking-wide leading-tight">In Office</p>
-                      </div>
-                    </div>
-                    <div className="w-px h-8 bg-slate-100" />
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-2.5 h-2.5 rounded-full bg-slate-400 flex-shrink-0" />
-                      <div>
-                        <p className="text-sm font-black text-slate-900">{leftToday}</p>
-                        <p className="text-[9px] text-slate-400 uppercase tracking-wide leading-tight">Left</p>
-                      </div>
-                    </div>
-                    <div className="w-px h-8 bg-slate-100" />
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-2.5 h-2.5 rounded-full bg-slate-200 flex-shrink-0" />
-                      <div>
-                        <p className="text-sm font-black text-slate-500">{notArrived}</p>
-                        <p className="text-[9px] text-slate-400 uppercase tracking-wide leading-tight">Not In</p>
-                      </div>
-                    </div>
-                    <p className="ml-auto text-[9px] text-slate-300">via Keka</p>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {drillStack.length === 0 && (
-              <AtRiskSection
-                currentUser={currentUser}
-                users={users}
-                clientLogs={clientLogs}
-                clients={clients}
-                onTaskClick={setSelectedTask}
-                leaveByUser={leaveByUser}
-                sectionRef={atRiskRef}
               />
             )}
 
@@ -1263,102 +1284,91 @@ export default function ManagerDashboard({
               </div>
             )}
 
-            {/* Search bar */}
-            <div className="relative">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Search employees…"
-                className="w-full pl-8 pr-8 py-2.5 text-sm rounded-xl border border-slate-200 bg-white text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center"
+            {/* Drilled-in view keeps a simple inline search (no TeamHeader there) */}
+            {drillStack.length > 0 && (
+              <div className="relative">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Search employees…"
+                  className="w-full pl-8 pr-9 py-2.5 min-h-[44px] text-sm rounded-xl border border-slate-200 bg-white text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    aria-label="Clear search"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center"
+                  >
+                    <X size={12} className="text-slate-500" />
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* At Risk — most important section, open by default */}
+            {drillStack.length === 0 && (
+              <CollapsibleSection
+                icon={<AlertTriangle size={13} className={atRisk.totalCount > 0 ? 'text-red-400' : 'text-slate-300'} />}
+                title="At Risk"
+                count={atRisk.totalCount}
+                critical={atRisk.totalCount > 0}
+                accent="slate"
+                defaultOpen
+                sectionRef={atRiskRef}
+              >
+                <AtRiskBody
+                  overdueByPerson={atRisk.overdueByPerson}
+                  dueTodayByPerson={atRisk.dueTodayByPerson}
+                  totalCount={atRisk.totalCount}
+                  onTaskClick={setSelectedTask}
+                />
+              </CollapsibleSection>
+            )}
+
+            {/* Today's Attendance — collapsible summary */}
+            {drillStack.length === 0 && filteredMemberIds.size > 0 && Object.keys(attendanceByUser).length > 0 && (() => {
+              const teamIds = [...filteredMemberIds];
+              const inOffice   = teamIds.filter(id => attendanceByUser[id]?.isInOffice).length;
+              const leftToday  = teamIds.filter(id => attendanceByUser[id]?.clockIn && !attendanceByUser[id]?.isInOffice).length;
+              const notArrived = teamIds.length - inOffice - leftToday;
+              return (
+                <CollapsibleSection
+                  icon={<Clock size={13} className="text-emerald-400" />}
+                  title="Today's Attendance"
+                  count={teamIds.length}
+                  accent="emerald"
                 >
-                  <X size={10} className="text-slate-600" />
-                </button>
-              )}
-            </div>
-
-            {/* Department filter — only at top level and when multiple depts exist */}
-            {drillStack.length === 0 && departments.length > 2 && (
-              <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 flex-shrink-0" style={{ scrollbarWidth: 'none' }}>
-                {departments.map((dept, i) => (
-                  <button
-                    key={`dept-${i}-${dept}`}
-                    onClick={() => setSelectedDept(dept)}
-                    className={`flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded-full whitespace-nowrap transition-colors ${
-                      selectedDept === dept
-                        ? 'bg-indigo-600 text-white shadow-sm'
-                        : 'bg-slate-100 text-slate-500'
-                    }`}
-                  >
-                    {dept}
-                    {dept !== 'All' && (
-                      <span className={`ml-1 text-[10px] ${selectedDept === dept ? 'text-indigo-200' : 'text-slate-400'}`}>
-                        {directReports.filter(u => u.department === dept).length}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Region filter — admins only, top level, multiple regions exist */}
-            {isSuperAdmin && drillStack.length === 0 && regions.length > 2 && (
-              <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 flex-shrink-0" style={{ scrollbarWidth: 'none' }}>
-                {regions.map((reg, i) => (
-                  <button
-                    key={`region-${i}-${reg}`}
-                    onClick={() => setSelectedRegion(reg)}
-                    className={`flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded-full whitespace-nowrap transition-colors ${
-                      selectedRegion === reg
-                        ? 'bg-sky-600 text-white shadow-sm'
-                        : 'bg-slate-100 text-slate-500'
-                    }`}
-                  >
-                    {reg === 'All' ? 'All Regions' : reg}
-                    {reg !== 'All' && (
-                      <span className={`ml-1 text-[10px] ${selectedRegion === reg ? 'text-sky-200' : 'text-slate-400'}`}>
-                        {directReports.filter(u => u.region === reg).length}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Attendance filter — shown when any data has loaded */}
-            {Object.keys(attendanceByUser).length > 0 && (
-              <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 flex-shrink-0" style={{ scrollbarWidth: 'none' }}>
-                {[
-                  { value: 'all',         label: 'All' },
-                  { value: 'in_office',   label: '● In Office' },
-                  { value: 'left',        label: '● Left' },
-                  { value: 'not_arrived', label: '✕ Not Arrived' },
-                ].map(({ value, label }) => {
-                  const active = attendanceFilter === value;
-                  const activeCls = value === 'in_office'   ? 'bg-emerald-500 text-white'
-                                  : value === 'left'        ? 'bg-slate-500 text-white'
-                                  : value === 'not_arrived' ? 'bg-red-500 text-white'
-                                  :                          'bg-indigo-600 text-white';
-                  return (
-                    <button
-                      key={value}
-                      onClick={() => setAttendanceFilter(value)}
-                      className={`flex-shrink-0 text-[10px] font-bold px-2.5 py-1 rounded-full whitespace-nowrap transition-colors ${
-                        active ? activeCls : 'bg-slate-100 text-slate-500'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 flex-shrink-0" />
+                      <div>
+                        <p className="text-sm font-black text-slate-900">{inOffice}</p>
+                        <p className="text-[9px] text-slate-400 uppercase tracking-wide leading-tight">In Office</p>
+                      </div>
+                    </div>
+                    <div className="w-px h-8 bg-slate-100" />
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-slate-400 flex-shrink-0" />
+                      <div>
+                        <p className="text-sm font-black text-slate-900">{leftToday}</p>
+                        <p className="text-[9px] text-slate-400 uppercase tracking-wide leading-tight">Left</p>
+                      </div>
+                    </div>
+                    <div className="w-px h-8 bg-slate-100" />
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-slate-200 flex-shrink-0" />
+                      <div>
+                        <p className="text-sm font-black text-slate-500">{notArrived}</p>
+                        <p className="text-[9px] text-slate-400 uppercase tracking-wide leading-tight">Not In</p>
+                      </div>
+                    </div>
+                    <p className="ml-auto text-[9px] text-slate-300">via Keka</p>
+                  </div>
+                </CollapsibleSection>
+              );
+            })()}
 
             {visibleReports.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -1414,25 +1424,42 @@ export default function ManagerDashboard({
             )}
 
             {drillStack.length === 0 && (
-              <MissingInfoSection
-                subtreeTasks={subtreeTasks}
-                unassignedTasks={unassignedTasks}
-                onTaskClick={setSelectedTask}
+              <CollapsibleSection
+                icon={<Info size={13} className="text-amber-400" />}
+                title="Missing Info"
+                count={missingInfoTasks.length}
+                accent="amber"
                 sectionRef={missingInfoRef}
-              />
+              >
+                <MissingInfoBody missingTasks={missingInfoTasks} onTaskClick={setSelectedTask} />
+              </CollapsibleSection>
             )}
 
             {drillStack.length === 0 && (
-              <LeaveConflictsSection
-                subtreeTasks={subtreeTasks}
-                leaveByUser={leaveByUser}
-                users={users}
-                onTaskClick={setSelectedTask}
-                sectionRef={null}
-              />
+              <CollapsibleSection
+                icon={<Calendar size={13} className="text-rose-400" />}
+                title="Leave Conflicts"
+                count={leaveConflicts.length}
+                accent="rose"
+              >
+                <LeaveConflictsBody conflicts={leaveConflicts} users={users} onTaskClick={setSelectedTask} />
+              </CollapsibleSection>
             )}
           </div>
           </div>
+
+          {showFilterSheet && (
+            <TeamFilterSheet
+              departments={departments}
+              deptCounts={Object.fromEntries(departments.filter(d => d !== 'All').map(d => [d, directReports.filter(u => u.department === d).length]))}
+              regions={isSuperAdmin ? regions : []}
+              regionCounts={Object.fromEntries(regions.filter(r => r !== 'All').map(r => [r, directReports.filter(u => u.region === r).length]))}
+              showAttendance={Object.keys(attendanceByUser).length > 0}
+              applied={filters}
+              onApply={setFilters}
+              onClose={() => setShowFilterSheet(false)}
+            />
+          )}
         </>
       )}
 

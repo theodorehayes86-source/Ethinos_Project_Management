@@ -1,0 +1,612 @@
+Please redesign the mobile Team View so it is clean, compact, and usable across different phone sizes.
+
+The current mobile Team View is too cluttered. Filters often extend beyond the screen, controls are cut off, and too much functionality is visible at once.
+
+This should be a focused mobile redesign, not a simple CSS patch.
+
+The desktop Team View should remain unchanged unless shared components require a small compatibility update.
+
+==================================================
+OBJECTIVE
+==================================================
+
+Create a responsive mobile Team View that:
+
+- Works across small, medium, and large phones
+- Never allows filters or controls to run off-screen
+- Prioritises the most important information
+- Moves secondary functionality into drawers, sheets, menus, or expandable sections
+- Preserves all existing Team View functionality
+- Respects current user visibility and reporting-hierarchy permissions
+- Supports the admin Region filter
+- Remains fast and easy to scan
+
+Do not remove functionality. Reorganise it.
+
+==================================================
+1. AUDIT THE CURRENT MOBILE TEAM VIEW
+==================================================
+
+First identify all Team View elements currently rendered on mobile, including:
+
+- Header
+- Search
+- Region filter
+- Department filter
+- Status filters
+- Date or attendance filters
+- Team KPIs
+- Leave conflicts
+- Attendance
+- Checklist summaries
+- Task summaries
+- Member cards
+- Sorting controls
+- Member-detail navigation
+- Quick actions
+- Any tabs or subviews
+
+Identify which controls are:
+
+- Essential and frequently used
+- Secondary
+- Admin-only
+- Contextual
+- Rarely used
+- Repeated elsewhere
+
+Do not simply shrink all existing desktop controls.
+
+==================================================
+2. MOBILE-FIRST INFORMATION HIERARCHY
+==================================================
+
+The initial mobile screen should show only the most useful information.
+
+Recommended top-level layout:
+
+1. Compact Team header
+2. Search
+3. Filter button with active-filter count
+4. Small KPI summary row
+5. Team member list
+6. Secondary sections below or inside expandable panels
+
+The user should not be confronted with every filter and metric at once.
+
+==================================================
+3. COMPACT HEADER
+==================================================
+
+Create a mobile-specific header containing:
+
+- Page title: Team
+- Visible member count
+- Search icon or inline search
+- Filter button
+- Optional compact overflow menu
+
+Avoid a tall desktop-style header.
+
+Example:
+
+Team                         Search   Filter (2)
+18 visible members
+
+The header must fit on narrow devices without horizontal overflow.
+
+==================================================
+4. MOVE FILTERS INTO A MOBILE FILTER SHEET
+==================================================
+
+Do not display all filters inline across the page.
+
+Create a bottom sheet, drawer, or full-screen mobile filter panel opened from a single Filter button.
+
+The filter sheet should contain the existing applicable filters, such as:
+
+- Region
+- Department
+- Search or keyword if not kept in the header
+- Status
+- Attendance
+- Leave
+- Checklist status
+- Task status
+- Any existing Team View filters
+
+Only show filters the logged-in user is authorised to use.
+
+For example:
+
+- Region should appear only for authorised admins
+- Managers should still be restricted to their direct and indirect reportees
+
+==================================================
+5. FILTER SHEET BEHAVIOUR
+==================================================
+
+The mobile filter sheet must include:
+
+- Clear title
+- Close button
+- Scrollable content
+- Apply button
+- Reset all button
+- Active filter indicators
+- Safe-area bottom padding
+
+Requirements:
+
+- No controls may be cut off
+- The keyboard must not hide actions
+- The sheet must scroll independently
+- Apply and Reset should remain reachable
+- Closing without applying should follow the existing filter behaviour or use temporary draft state
+
+Prefer draft filters inside the sheet:
+
+- User changes filters
+- Presses Apply
+- Team View updates
+- Cancel leaves previous filters unchanged
+
+==================================================
+6. ACTIVE FILTER CHIPS
+==================================================
+
+After applying filters, show only compact removable chips below the header.
+
+Examples:
+
+- Mumbai ×
+- Paid Media ×
+- On Leave ×
+
+Do not render the full filter controls again.
+
+If more than two or three filters are active, show:
+
+- First few chips
+- “+2 more”
+
+Tapping the summary should reopen the filter sheet.
+
+==================================================
+7. PREVENT HORIZONTAL OVERFLOW
+==================================================
+
+Review all mobile Team View containers for:
+
+- Fixed widths
+- `min-width`
+- `whitespace-nowrap`
+- Large tables
+- Non-wrapping flex rows
+- Oversized dropdowns
+- Absolute positioning
+- Fixed desktop gaps
+- Nested horizontal scrollers
+
+Requirements:
+
+- No page-level horizontal scrolling
+- No controls extending beyond the viewport
+- No clipped dropdowns
+- No content hidden behind side edges
+- No cards wider than the screen
+
+Use:
+
+- `min-w-0`
+- `max-w-full`
+- `flex-wrap`
+- `overflow-hidden`
+- responsive grid rules
+
+only where appropriate.
+
+==================================================
+8. RESPONSIVE BREAKPOINTS
+==================================================
+
+Test at least these widths:
+
+- 320px
+- 360px
+- 375px
+- 390px
+- 412px
+- 430px
+- Foldable narrow pane if supported
+
+The layout should adapt rather than rely on one phone width.
+
+Do not hard-code dimensions for one device.
+
+==================================================
+9. KPI SUMMARY
+==================================================
+
+Reduce the number of KPI cards shown initially.
+
+Show only the most useful summary metrics, for example:
+
+- Team members
+- Overdue tasks
+- Leave conflicts
+- Checklists due
+
+Use a compact two-column grid or horizontally scrollable cards if needed.
+
+Less important KPIs should be placed inside:
+
+- “More insights”
+- Expandable section
+- Secondary dashboard tab
+
+Do not display a crowded row of tiny unreadable cards.
+
+==================================================
+10. TEAM MEMBER LIST
+==================================================
+
+Make the member list the main focus.
+
+Each member card should show only essential information:
+
+- Name
+- Role or designation
+- Region or department where useful
+- Current attendance or leave state
+- Overdue task count
+- Checklist status
+- Compact chevron to open details
+
+Avoid showing every metric inside each card.
+
+Use a consistent card height where possible.
+
+==================================================
+11. EXPANDABLE MEMBER CARDS
+==================================================
+
+Consider allowing a member card to expand inline for a short summary.
+
+Collapsed state:
+
+- Name
+- Role
+- Key status
+- Critical count
+
+Expanded state:
+
+- Tasks
+- Checklists
+- Attendance
+- Leave
+- Quick navigation
+
+Only one card should expand at a time if this reduces clutter.
+
+Opening the full member detail view must still remain available.
+
+==================================================
+12. SECONDARY FUNCTIONALITY
+==================================================
+
+Move secondary actions into one of:
+
+- Three-dot menu
+- Bottom sheet
+- Expandable “More”
+- Member detail screen
+
+Examples that may be moved away from the main mobile list:
+
+- Detailed task breakdown
+- Full checklist statistics
+- Attendance history
+- Leave details
+- Advanced sorting
+- Low-frequency admin actions
+- Multiple quick-action buttons
+
+Do not remove the actions—reduce visual noise.
+
+==================================================
+13. TEAM VIEW SECTIONS
+==================================================
+
+Review sections such as:
+
+- Team Checklists
+- Pending QC
+- At-risk tasks
+- Leave conflicts
+- Attendance
+- Upcoming holidays
+- Team summaries
+
+On mobile, these should not all be fully expanded at once.
+
+Use collapsible sections with:
+
+- Title
+- Count
+- Critical status indicator
+- Chevron
+- Lazy rendering when opened
+
+Default open only the most important section.
+
+==================================================
+14. TABS OR SEGMENTED CONTROL
+==================================================
+
+If Team View currently contains too many categories, use a compact segmented control such as:
+
+- Members
+- Tasks
+- Checklists
+- Attendance
+
+Keep the number of top-level mobile tabs small.
+
+Do not create a long horizontally scrolling tab bar with clipped labels.
+
+If more categories exist, move them into a More menu.
+
+==================================================
+15. REGION FILTER
+==================================================
+
+Preserve the new Region filter for authorised admins.
+
+On mobile:
+
+- Region must live inside the filter sheet
+- It must not display as a wide inline dropdown
+- It must combine correctly with department, search, and other filters
+- Counts and KPIs must update based on the filtered visible member set
+
+The Region filter must not grant access to users outside the current user's permissions.
+
+==================================================
+16. REPORTING-HIERARCHY VISIBILITY
+==================================================
+
+Preserve the existing direct and indirect reportee logic.
+
+Example:
+
+- Ashi reports to Swati
+- Swati reports to Theo
+
+Then:
+
+- Swati sees Ashi
+- Theo sees Swati and Ashi
+- Managers do not see unrelated reporting branches
+- Admins retain their authorised broader access
+
+The redesign must use the same filtered visible-member dataset for:
+
+- Member list
+- KPI counts
+- Checklists
+- Tasks
+- Attendance
+- Leave
+- Search results
+
+==================================================
+17. SEARCH
+==================================================
+
+Keep search easy to access.
+
+Preferred options:
+
+- Compact search field below header
+- Search icon that expands into a field
+
+Search should match useful fields already supported, such as:
+
+- Name
+- Email
+- Role
+- Department
+- Region
+
+Do not create a second search implementation if one already exists.
+
+==================================================
+18. SORTING
+==================================================
+
+Move sorting into the filter sheet or a compact sort menu.
+
+Possible sort options:
+
+- Name
+- Role
+- Most overdue
+- Most tasks
+- Attendance status
+
+Do not place multiple sort buttons inline across the mobile header.
+
+==================================================
+19. MOBILE MEMBER DETAIL
+==================================================
+
+When a member is selected, use the existing mobile detail sheet or redesign it to fit the same principles.
+
+Requirements:
+
+- Clear close/back action
+- Scrollable content
+- Compact tabs or sections
+- No clipped filters
+- No desktop tables
+- No excessive nested scrolling
+
+Do not display the desktop member analytics layout unchanged on mobile.
+
+==================================================
+20. TOUCH TARGETS
+==================================================
+
+All mobile controls must have comfortable touch targets.
+
+Requirements:
+
+- Buttons approximately 40–44px high where practical
+- Enough spacing between actions
+- No tiny icon-only buttons without labels or tooltips
+- No drag-only or hover-only behaviour
+- Clear selected states
+
+==================================================
+21. SAFE AREAS AND FIXED NAVIGATION
+==================================================
+
+Ensure content is not hidden behind:
+
+- Bottom navigation
+- Device safe area
+- Fixed headers
+- Modal footers
+- On-screen keyboard
+
+Use appropriate padding such as:
+
+- `env(safe-area-inset-bottom)`
+- Existing app safe-area utilities
+
+==================================================
+22. ACCESSIBILITY
+==================================================
+
+Support:
+
+- Keyboard and screen-reader labels
+- Visible focus states
+- Accessible filter sheet title
+- Escape or back-button close
+- Correct dialog semantics
+- Clear active filter announcements
+- Sufficient contrast
+
+Do not rely only on colour for status.
+
+==================================================
+23. PERFORMANCE
+==================================================
+
+The redesign should not add extra Firebase listeners.
+
+Use already loaded Team View data.
+
+Optimise by:
+
+- Memoising visible users
+- Memoising filtered counts
+- Lazy rendering collapsed sections
+- Avoiding repeated task scans per member
+- Avoiding large hidden DOM trees
+- Reusing current data helpers
+
+The mobile Team View should feel faster, not just look cleaner.
+
+==================================================
+24. DESKTOP PROTECTION
+==================================================
+
+Do not break the existing desktop Team View.
+
+Prefer:
+
+- Shared data logic
+- Separate mobile presentation components
+- Responsive rendering based on existing breakpoint utilities
+
+Do not add mobile-only layout rules that accidentally affect desktop.
+
+==================================================
+25. SUGGESTED COMPONENT STRUCTURE
+==================================================
+
+Create or adapt reusable components such as:
+
+- MobileTeamHeader
+- MobileTeamFilterSheet
+- ActiveFilterChips
+- MobileTeamKpiGrid
+- MobileTeamMemberCard
+- MobileTeamSection
+- MobileMemberDetailSheet
+
+Keep permission and filtering logic outside purely visual components.
+
+==================================================
+26. REQUIRED TESTING
+==================================================
+
+Test mobile layout at:
+
+1. 320px width
+2. 360px width
+3. 375px width
+4. 390px width
+5. 412px width
+6. 430px width
+
+Test behaviour:
+
+7. No page-level horizontal overflow
+8. Filter button opens sheet
+9. Filter sheet scrolls fully
+10. Apply works
+11. Reset works
+12. Cancel preserves prior filters
+13. Region filter appears only for authorised admins
+14. Region combines with department and search
+15. Active filter chips display correctly
+16. Chips can be removed
+17. Manager sees only direct and indirect reportees
+18. Admin sees permitted broader team
+19. KPIs match visible members
+20. Member cards open correctly
+21. Collapsible sections work
+22. Member detail fits mobile screen
+23. Bottom navigation does not cover content
+24. Keyboard does not cover filter actions
+25. Desktop Team View remains unchanged
+26. Production mobile build passes
+27. Desktop build passes
+28. Lint and tests pass
+
+==================================================
+27. DELIVERABLES
+==================================================
+
+After implementation, provide:
+
+1. Exact mobile Team View components changed.
+2. Screens or sections moved into the filter sheet.
+3. Functionality moved into expandable sections or menus.
+4. How horizontal overflow was prevented.
+5. Breakpoints tested.
+6. Region filter behaviour.
+7. Reporting-hierarchy visibility confirmation.
+8. Mobile member-card design.
+9. Mobile member-detail behaviour.
+10. Performance impact.
+11. Desktop regression confirmation.
+12. Build and test results.
+13. Anything that could not be tested locally.
+
+The final mobile Team View should feel purpose-built for a phone, not like the desktop page compressed into a narrow screen.
