@@ -752,7 +752,7 @@ const ApprovalsView = ({ clientLogs, clients, syntheticClients = [], users, curr
   const allTasksFlat = [];
   Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
     const client = allClients.find(c => String(c.id) === String(clientId));
-    (logs || []).forEach(task => {
+    Object.values(logs || {}).forEach(task => {
       if (!isSuperAdmin && String(task.qcAssigneeId) !== String(currentUser.id)) return;
       if (!isCrossDept && Array.isArray(task.departments) && !task.departments.includes(userDept)) return;
       allTasksFlat.push({ ...task, _clientId: clientId, _client: client });
@@ -777,7 +777,7 @@ const ApprovalsView = ({ clientLogs, clients, syntheticClients = [], users, curr
   Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
     const client = allClients.find(c => String(c.id) === String(clientId));
     if (!isCrossDept && client && !myClientNames.includes(client.name)) return;
-    (logs || []).forEach(task => {
+    Object.values(logs || {}).forEach(task => {
       (task.assignmentRequests || []).forEach(req => {
         assignmentRequestItems.push({ task: { ...task, _clientId: clientId, _client: client }, client, request: req });
       });

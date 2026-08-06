@@ -205,7 +205,7 @@ function MainApp() {
     const subtreeIds = getSubtreeIds(currentUser.id, users);
     const allowedClientIds = new Set();
     Object.entries(clientLogs).forEach(([clientId, logs]) => {
-      (logs || []).forEach(task => {
+      Object.values(logs || {}).forEach(task => {
         if (subtreeIds.has(String(task.assigneeId))) allowedClientIds.add(String(clientId));
       });
     });

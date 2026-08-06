@@ -71,7 +71,7 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
       const entityName = clientRecord?.entityName || '-';
       const clientName = clientRecord?.name || 'Unknown Client';
 
-      (logs || []).forEach((log) => {
+      Object.values(logs || {}).forEach((log) => {
         const isoDate = parseTaskDateToISO(log?.date);
         if (dateFrom && isoDate && isoDate < dateFrom) return;
         if (dateTo && isoDate && isoDate > dateTo) return;

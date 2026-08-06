@@ -726,7 +726,7 @@ const HomeView = ({
   const childrenByGroupId = useMemo(() => {
     const map = new Map();
     Object.values(clientLogs).forEach(logs => {
-      (logs || []).forEach(t => {
+      Object.values(logs || {}).forEach(t => {
         if (t.taskGroupId) {
           const arr = map.get(t.taskGroupId);
           if (arr) arr.push(t);

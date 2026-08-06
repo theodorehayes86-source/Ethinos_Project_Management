@@ -202,7 +202,7 @@ const ChecklistDashboard = ({
     const map = {};
     Object.entries(clientLogs).forEach(([clientId, logs]) => {
       if (!scopedClientIds.has(String(clientId))) return;
-      (logs || []).forEach(task => {
+      Object.values(logs || {}).forEach(task => {
         if (task.taskType !== 'checklist' || !task.taskGroupId) return;
         const taskDate = resolveTaskDateYMD(task);
         if (taskDate) {

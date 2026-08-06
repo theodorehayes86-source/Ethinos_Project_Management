@@ -122,7 +122,7 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUse
     Object.entries(effectiveLogs || {}).forEach(([clientId, logs]) => {
       const projectName = clientNameById[clientId] || 'Unknown Project';
 
-      (logs || []).forEach(log => {
+      Object.values(logs || {}).forEach(log => {
         if (!isWithinRange(log.date)) return;
         const durationInSeconds = Math.floor((log.elapsedMs || 0) / 1000) || parseTimeTaken(log.timeTaken);
         if (!durationInSeconds) return;
@@ -252,7 +252,7 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUse
       const clientName = clientNameById[clientId] || clientId;
       if (qcClientFilter && clientId !== qcClientFilter) return;
 
-      (logs || []).forEach(log => {
+      Object.values(logs || {}).forEach(log => {
         if (!isWithinRange(log.date)) return;
         if (!log.qcEnabled) return;
         if (qcCategoryFilter && log.category !== qcCategoryFilter) return;

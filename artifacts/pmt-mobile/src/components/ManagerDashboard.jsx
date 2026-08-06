@@ -1059,7 +1059,7 @@ export default function ManagerDashboard({
     const tasks = [];
     Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
       const client = clients.find(c => String(c.id) === String(clientId));
-      (logs || []).forEach(task => {
+      Object.values(logs || {}).forEach(task => {
         if (subtreeIds.has(String(task.assigneeId))) {
           tasks.push({ ...task, _clientId: clientId, _clientName: client?.name || clientId });
         }
@@ -1073,7 +1073,7 @@ export default function ManagerDashboard({
     const tasks = [];
     Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
       const client = clients.find(c => String(c.id) === String(clientId));
-      (logs || []).forEach(task => {
+      Object.values(logs || {}).forEach(task => {
         if (!task.assigneeId && !task.archived && task.status !== 'Done') {
           tasks.push({ ...task, _clientId: clientId, _clientName: client?.name || clientId });
         }

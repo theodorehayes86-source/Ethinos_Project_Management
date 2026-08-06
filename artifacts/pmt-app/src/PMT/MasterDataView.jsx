@@ -4534,7 +4534,7 @@ const MasterDataView = ({
         const allArchivedTasks = [];
         Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
           const client = (clients || []).find(c => String(c.id) === String(clientId));
-          (logs || []).forEach(task => {
+          Object.values(logs || {}).forEach(task => {
             if (task.archived) allArchivedTasks.push({ ...task, _clientId: clientId, _clientName: client?.name || clientId });
           });
         });
@@ -4552,7 +4552,7 @@ const MasterDataView = ({
         const allArchivedApprovals = [];
         Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
           const client = (clients || []).find(c => String(c.id) === String(clientId));
-          (logs || []).forEach(task => {
+          Object.values(logs || {}).forEach(task => {
             if (task.approvalArchived) allArchivedApprovals.push({ ...task, _clientId: clientId, _clientName: client?.name || clientId });
           });
         });

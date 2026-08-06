@@ -63,7 +63,7 @@ export function getUserTaskStats(userId, clientLogs, clients) {
   const tasks = [];
   Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
     const client = clients.find(c => String(c.id) === String(clientId));
-    (logs || []).forEach(task => {
+    Object.values(logs || {}).forEach(task => {
       if (String(task.assigneeId) === uid) {
         tasks.push({ ...task, _clientId: clientId, _clientName: client?.name || clientId });
       }
@@ -163,7 +163,7 @@ export function useMyTasks(currentUser, clientLogs, clients) {
   const allTasks = [];
   Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
     const client = clients.find(c => String(c.id) === String(clientId));
-    (logs || []).forEach(task => {
+    Object.values(logs || {}).forEach(task => {
       if (String(task.assigneeId) === String(currentUser.id) && !task.archived) {
         allTasks.push({ ...task, _clientId: clientId, _clientName: client?.name || clientId });
       }
@@ -191,7 +191,7 @@ export function usePendingApprovals(currentUser, clientLogs, clients) {
   const pending = [];
   Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
     const client = clients.find(c => String(c.id) === String(clientId));
-    (logs || []).forEach(task => {
+    Object.values(logs || {}).forEach(task => {
       if (task.qcStatus !== 'sent') return;
       if (!isSuperAdmin && String(task.qcAssigneeId) !== String(currentUser.id)) return;
       pending.push({ ...task, _clientId: clientId, _clientName: client?.name || clientId });
@@ -204,7 +204,7 @@ export function useEmployeeNotifications(currentUser, clientLogs) {
   if (!currentUser) return [];
   const items = [];
   Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
-    (logs || []).forEach(task => {
+    Object.values(logs || {}).forEach(task => {
       if (String(task.assigneeId) === String(currentUser.id)) {
         if (task.qcStatus === 'rejected') items.push({ ...task, _type: 'returned', _clientId: clientId });
         if (task.qcStatus === 'approved') items.push({ ...task, _type: 'approved', _clientId: clientId });
@@ -223,7 +223,7 @@ export function useTeamTasks(currentUser, users, clientLogs, clients) {
   const allTeamTasks = [];
   Object.entries(clientLogs || {}).forEach(([clientId, logs]) => {
     const client = clients.find(c => String(c.id) === String(clientId));
-    (logs || []).forEach(task => {
+    Object.values(logs || {}).forEach(task => {
       if (allTeamIds.has(String(task.assigneeId))) {
         allTeamTasks.push({ ...task, _clientId: clientId, _clientName: client?.name || clientId });
       }
