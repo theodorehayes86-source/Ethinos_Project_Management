@@ -45,6 +45,8 @@ vi.mock("../lib/logger.js", () => ({
 vi.mock("../lib/keka-client.js", () => ({
   syncAttendanceToday: (...args: unknown[]) => mockSyncAttendanceToday(...args),
   getKekaCredentials: () => mockGetKekaCredentials(),
+  readKekaClientId: () => "test-client-id",
+  readKekaClientSecret: () => "test-client-secret",
 }));
 
 vi.mock("../lib/firebase-admin.js", () => ({

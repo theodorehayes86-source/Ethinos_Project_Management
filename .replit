@@ -30,6 +30,14 @@ args = "api-server-typecheck"
 task = "workflow.run"
 args = "teams-header-check"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "api-tests"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "attendance-freshness"
+
 [[workflows.workflow]]
 name = "api-server-typecheck"
 author = "agent"
@@ -48,6 +56,28 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "bash scripts/check-teams-headers.sh https://project.ethinos.com"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "api-tests"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd artifacts/api-server && pnpm run test"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "attendance-freshness"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd artifacts/api-server && node scripts/check-attendance-freshness.mjs"
 
 [workflows.workflow.metadata]
 isValidation = true
