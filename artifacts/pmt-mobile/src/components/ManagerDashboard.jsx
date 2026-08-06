@@ -1392,8 +1392,10 @@ export default function ManagerDashboard({
                   </div>
                 </div>
                 {(() => {
+                  const todayTasks = filterVisiblePersonTasks(drillPersonalStats.todayTasks);
+                  const overdueTasks = filterVisiblePersonTasks(drillPersonalStats.overdueTasks);
                   const visibleAll = filterVisiblePersonTasks(drillPersonalStats.allTasks);
-                  const prioritised = [...drillPersonalStats.todayTasks, ...drillPersonalStats.overdueTasks, ...visibleAll.filter(t => !drillPersonalStats.todayTasks.includes(t) && !drillPersonalStats.overdueTasks.includes(t))];
+                  const prioritised = [...todayTasks, ...overdueTasks, ...visibleAll.filter(t => !todayTasks.includes(t) && !overdueTasks.includes(t))];
                   if (prioritised.length === 0) {
                     return <p className="text-xs text-indigo-400 text-center py-2">No tasks assigned</p>;
                   }
