@@ -580,12 +580,12 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
   );
 }
 
-function KpiChipRow({ overdue, dueToday, awaitingQC, missingInfo, onScrollTo }) {
+function KpiChipRow({ overdue, dueToday, awaitingQC, missingInfo, onScrollTo, onKpiFocus, focusType }) {
   const chips = [
-    overdue > 0 && { label: 'Overdue', value: overdue, target: 'atRisk', bg: 'bg-red-50', border: 'border-red-100', valueCls: 'text-red-500', labelCls: 'text-red-400' },
-    dueToday > 0 && { label: 'Due Today', value: dueToday, target: 'atRisk', bg: 'bg-indigo-50', border: 'border-indigo-100', valueCls: 'text-indigo-600', labelCls: 'text-indigo-400' },
+    overdue > 0 && { label: 'Overdue', value: overdue, focus: 'overdue', bg: 'bg-red-50', border: 'border-red-100', valueCls: 'text-red-500', labelCls: 'text-red-400', ring: 'ring-2 ring-red-400' },
+    dueToday > 0 && { label: 'Due Today', value: dueToday, focus: 'dueToday', bg: 'bg-indigo-50', border: 'border-indigo-100', valueCls: 'text-indigo-600', labelCls: 'text-indigo-400', ring: 'ring-2 ring-indigo-400' },
     awaitingQC > 0 && { label: 'Awaiting QC', value: awaitingQC, target: 'atRisk', bg: 'bg-amber-50', border: 'border-amber-100', valueCls: 'text-amber-600', labelCls: 'text-amber-400' },
-    missingInfo > 0 && { label: 'Missing Info', value: missingInfo, target: 'missingInfo', bg: 'bg-slate-50', border: 'border-slate-200', valueCls: 'text-slate-600', labelCls: 'text-slate-400' },
+    missingInfo > 0 && { label: 'Missing Info', value: missingInfo, focus: 'missingInfo', bg: 'bg-slate-50', border: 'border-slate-200', valueCls: 'text-slate-600', labelCls: 'text-slate-400', ring: 'ring-2 ring-slate-400' },
   ].filter(Boolean);
 
   if (chips.length === 0) return null;
@@ -595,13 +595,42 @@ function KpiChipRow({ overdue, dueToday, awaitingQC, missingInfo, onScrollTo }) 
       {chips.map(chip => (
         <button
           key={chip.label}
-          onClick={() => onScrollTo(chip.target)}
-          className={`flex-shrink-0 flex flex-col items-center px-4 py-2.5 rounded-xl ${chip.bg} border ${chip.border} min-h-[44px] min-w-[76px] active:opacity-70 transition-opacity`}
+          onClick={() => chip.focus ? onKpiFocus(chip.focus) : onScrollTo(chip.target)}
+          className={`flex-shrink-0 flex flex-col items-center px-4 py-2.5 rounded-xl ${chip.bg} border ${chip.border} min-h-[44px] min-w-[76px] active:opacity-70 transition-opacity ${focusType && chip.focus === focusType ? chip.ring : ''}`}
         >
           <span className={`text-base font-black leading-none ${chip.valueCls}`}>{chip.value}</span>
           <span className={`text-[9px] uppercase tracking-wide mt-0.5 ${chip.labelCls}`}>{chip.label}</span>
         </button>
       ))}
+    </div>
+  );
+}
+
+const KPI_FOCUS_META = {
+  overdue:     { label: 'Overdue',      bar: 'bg-red-600',    ring: 'ring-red-400' },
+  dueToday:    { label: 'Due Today',    bar: 'bg-indigo-600', ring: 'ring-indigo-400' },
+  missingInfo: { label: 'Missing Info', bar: 'bg-slate-700',  ring: 'ring-amber-400' },
+};
+
+/** Fixed bar shown while stepping through KPI-matching members. */
+function KpiFocusBar({ type, index, total, onPrev, onNext, onExit }) {
+  const meta = KPI_FOCUS_META[type];
+  return (
+    <div
+      className={`fixed left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 ${meta.bar} text-white rounded-full shadow-lg pl-4 pr-1 py-1 max-w-[calc(100vw-16px)]`}
+      style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 64px)' }}
+    >
+      <span className="text-xs font-black whitespace-nowrap">{meta.label}</span>
+      <span className="text-xs font-medium text-white/70 whitespace-nowrap mr-1">{index + 1} of {total}</span>
+      <button onClick={onPrev} aria-label="Previous member" className="w-11 h-11 rounded-full flex items-center justify-center active:bg-white/20">
+        <ChevronUp size={17} />
+      </button>
+      <button onClick={onNext} aria-label="Next member" className="w-11 h-11 rounded-full flex items-center justify-center active:bg-white/20">
+        <ChevronDown size={17} />
+      </button>
+      <button onClick={onExit} aria-label="Exit focus mode" className="w-11 h-11 rounded-full bg-white/15 flex items-center justify-center active:bg-white/30 ml-0.5">
+        <X size={16} />
+      </button>
     </div>
   );
 }
@@ -950,6 +979,10 @@ export default function ManagerDashboard({
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [showFilterSheet, setShowFilterSheet] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [kpiFocus, setKpiFocus] = useState(null); // { type, ids, index } | null
+  const [flashUserId, setFlashUserId] = useState(null);
+  const cardRefs = useRef({});
+  const flashTimerRef = useRef(null);
   const selectedDept = filters.dept;
   const selectedRegion = filters.region;
   const attendanceFilter = filters.attendance;
@@ -1165,6 +1198,74 @@ export default function ManagerDashboard({
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
+  // ---- KPI focus mode: step through members matching a KPI chip ----
+  // Match predicates mirror the displayed KPI/At-Risk logic (leave-aware overdue).
+  const kpiMatchIds = useMemo(() => {
+    const overdue = [], dueToday = [], missingInfo = [];
+    visibleReports.forEach(u => {
+      const uid = String(u.id);
+      const stats = getUserTaskStats(uid, clientLogs, clients);
+      const ld = leaveByUser[uid] || {};
+      if (stats.overdueTasks.some(t => isTaskLeaveAwareOverdue(t, undefined, ld))) overdue.push(uid);
+      if (stats.todayTasks.some(t => t.status !== 'Done' && !t.archived)) dueToday.push(uid);
+      if (stats.allTasks.some(t => !t.archived && t.status !== 'Done' && !t.dueDate)) missingInfo.push(uid);
+    });
+    return { overdue, dueToday, missingInfo };
+  }, [visibleReports, clientLogs, clients, leaveByUser]);
+
+  // Live focus list — kpiFocus stores { type, index } only, so data updates
+  // (Firebase) are picked up automatically instead of navigating a stale list.
+  const focusIds = kpiFocus ? (kpiMatchIds[kpiFocus.type] || []) : [];
+  const focusTargetId = kpiFocus ? focusIds[kpiFocus.index] ?? null : null;
+
+  const enterKpiFocus = (type) => {
+    const ids = kpiMatchIds[type] || [];
+    if (ids.length === 0) {
+      // Nothing to step through (e.g. only unassigned Missing Info tasks) —
+      // fall back to scrolling to the relevant section.
+      scrollTo(type === 'missingInfo' ? 'missingInfo' : 'atRisk');
+      return;
+    }
+    setKpiFocus({ type, index: 0 });
+  };
+
+  const stepKpiFocus = (dir) => {
+    if (!kpiFocus || focusIds.length === 0) return;
+    setKpiFocus({ type: kpiFocus.type, index: (kpiFocus.index + dir + focusIds.length) % focusIds.length });
+  };
+
+  const exitKpiFocus = () => {
+    setKpiFocus(null);
+    setFlashUserId(null);
+  };
+
+  // Reconcile focus when the underlying match list changes: exit when empty,
+  // clamp the index when the list shrinks.
+  useEffect(() => {
+    if (!kpiFocus) return;
+    if (focusIds.length === 0) { setKpiFocus(null); setFlashUserId(null); return; }
+    if (kpiFocus.index >= focusIds.length) setKpiFocus({ type: kpiFocus.type, index: focusIds.length - 1 });
+  }, [kpiFocus, focusIds.length]);
+
+  // Scroll + flash as a committed-state effect (never inside a state updater)
+  useEffect(() => {
+    if (!focusTargetId) return;
+    const container = scrollContainerRef.current;
+    const el = cardRefs.current[focusTargetId];
+    if (container && el) {
+      const top = el.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop - 96;
+      container.scrollTo({ top: Math.max(top, 0), behavior: 'smooth' });
+    }
+    setFlashUserId(focusTargetId);
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    flashTimerRef.current = setTimeout(() => setFlashUserId(null), 1600);
+  }, [focusTargetId, kpiFocus?.index]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Leave focus mode whenever the visible set changes under it
+  useEffect(() => { exitKpiFocus(); }, [filters, searchQuery, drillStack.length, activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => () => { if (flashTimerRef.current) clearTimeout(flashTimerRef.current); }, []);
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {activeTab === 'team' && (
@@ -1190,7 +1291,7 @@ export default function ManagerDashboard({
               </div>
             </div>
           )}
-          <div className="flex-1 overflow-y-auto" ref={scrollContainerRef}>
+          <div className={`flex-1 ${kpiFocus ? 'overflow-y-hidden' : 'overflow-y-auto'}`} ref={scrollContainerRef}>
           <div className="p-4 space-y-4" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 72px)' }}>
             {drillStack.length === 0 && (
               <TeamHeader
@@ -1236,6 +1337,8 @@ export default function ManagerDashboard({
                 awaitingQC={kpiCounts.awaitingQC}
                 missingInfo={kpiCounts.missingInfo}
                 onScrollTo={scrollTo}
+                onKpiFocus={enterKpiFocus}
+                focusType={kpiFocus?.type || null}
               />
             )}
 
@@ -1414,20 +1517,33 @@ export default function ManagerDashboard({
                     All Members ({visibleReports.length}{selectedDept !== 'All' ? ` · ${selectedDept}` : ''})
                   </p>
                 )}
-                {visibleReports.map(u => (
-                  <PersonCard
-                    key={u.id}
-                    user={u}
-                    clientLogs={clientLogs}
-                    clients={clients}
-                    users={users}
-                    allUsers={users}
-                    onDrillIn={drillIn}
-                    onTaskClick={setSelectedTask}
-                    attendanceStatus={attendanceByUser[String(u.id)] ?? null}
-                    currentUser={currentUser}
-                  />
-                ))}
+                {visibleReports.map(u => {
+                  const uid = String(u.id);
+                  const isFocusTarget = focusTargetId === uid;
+                  const isFlashing = flashUserId === uid;
+                  const ringCls = kpiFocus ? KPI_FOCUS_META[kpiFocus.type].ring : '';
+                  return (
+                    <div
+                      key={u.id}
+                      ref={el => { if (el) cardRefs.current[uid] = el; else delete cardRefs.current[uid]; }}
+                      className={`rounded-2xl transition-all duration-300 ${
+                        isFocusTarget ? `ring-2 ${ringCls} ${isFlashing ? 'animate-pulse' : ''}` : ''
+                      } ${kpiFocus && !isFocusTarget ? 'opacity-50' : ''}`}
+                    >
+                      <PersonCard
+                        user={u}
+                        clientLogs={clientLogs}
+                        clients={clients}
+                        users={users}
+                        allUsers={users}
+                        onDrillIn={drillIn}
+                        onTaskClick={setSelectedTask}
+                        attendanceStatus={attendanceByUser[uid] ?? null}
+                        currentUser={currentUser}
+                      />
+                    </div>
+                  );
+                })}
               </>
             )}
 
@@ -1471,13 +1587,24 @@ export default function ManagerDashboard({
         </>
       )}
 
-      {activeTab === 'team' && (
+      {activeTab === 'team' && !kpiFocus && (
         <button
           onClick={() => setShowAddTask(true)}
           className="fixed bottom-20 right-4 w-14 h-14 rounded-full bg-indigo-600 shadow-lg flex items-center justify-center text-white z-30 active:scale-95 transition-transform"
         >
           <Plus size={24} />
         </button>
+      )}
+
+      {activeTab === 'team' && kpiFocus && focusIds.length > 0 && (
+        <KpiFocusBar
+          type={kpiFocus.type}
+          index={Math.min(kpiFocus.index, focusIds.length - 1)}
+          total={focusIds.length}
+          onPrev={() => stepKpiFocus(-1)}
+          onNext={() => stepKpiFocus(1)}
+          onExit={exitKpiFocus}
+        />
       )}
 
       {activeTab === 'approvals' && (
