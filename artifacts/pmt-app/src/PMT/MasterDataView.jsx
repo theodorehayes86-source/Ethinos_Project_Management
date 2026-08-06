@@ -345,6 +345,7 @@ const MasterDataView = ({
   const [kekaTestResult, setKekaTestResult] = useState(null);
   const [attendanceSyncing, setAttendanceSyncing] = useState(false);
   const [attendanceSyncResult, setAttendanceSyncResult] = useState(null); // null | AttendanceSyncResult
+  const [lastAttendanceSync, setLastAttendanceSync] = useState(null); // persisted metadata from Firebase
 
   // Teams bulk-enable confirmation state
   const [teamsBulkConfirm, setTeamsBulkConfirm] = useState(null); // null | 'enable' | 'disable'
@@ -449,6 +450,7 @@ const MasterDataView = ({
       if (data.clientSecretConfigured) setKekaClientSecretPlaceholder('••••••••••••••••');
       if (data.credentialsReady) setKekaCredentialsReady(true);
       if (data.lastSync) setKekaSyncResult(data.lastSync);
+      if (data.lastAttendanceSync) setLastAttendanceSync(data.lastAttendanceSync);
     } catch { /* silent — API not reachable in dev */ }
     setKekaLoaded(true);
   }, [kekaLoaded]);
@@ -522,6 +524,13 @@ const MasterDataView = ({
     try {
       const data = await kekaAuthFetch('/admin/attendance/sync-now', { method: 'POST' });
       setAttendanceSyncResult(data);
+      // Refresh the persisted last-sync metadata so it stays current without a page reload
+      if (data.success) {
+        try {
+          const fresh = await kekaAuthFetch('/keka/settings');
+          if (fresh.lastAttendanceSync) setLastAttendanceSync(fresh.lastAttendanceSync);
+        } catch { /* non-critical */ }
+      }
     } catch (e) {
       // Parse rate-limit message if present
       const msg = String(e);
@@ -4300,6 +4309,7 @@ const MasterDataView = ({
               </button>
             </div>
 
+            {/* Result from the current manual sync run */}
             {attendanceSyncResult && (
               <div className={`flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs font-medium ${attendanceSyncResult.success ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
                 {attendanceSyncResult.success
@@ -4313,6 +4323,25 @@ const MasterDataView = ({
                 {attendanceSyncResult.syncedAt && (
                   <span className="ml-auto flex-shrink-0 text-[10px] opacity-60">
                     {new Date(attendanceSyncResult.syncedAt).toLocaleTimeString()}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Persisted last-sync status — visible on every page load */}
+            {!attendanceSyncResult && lastAttendanceSync && (
+              <div className={`flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs font-medium ${lastAttendanceSync.success !== false ? 'bg-slate-50 text-slate-600 border border-slate-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                {lastAttendanceSync.success !== false
+                  ? <Clock size={13} className="flex-shrink-0 mt-0.5" />
+                  : <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />}
+                <span>
+                  {lastAttendanceSync.success !== false
+                    ? `Last sync: ${lastAttendanceSync.recordsWritten ?? 0} records written (${lastAttendanceSync.totalArrived ?? 0} arrived, ${lastAttendanceSync.totalNotArrived ?? 0} not arrived) for ${lastAttendanceSync.date || '—'}`
+                    : (lastAttendanceSync.error || 'Last sync failed')}
+                </span>
+                {lastAttendanceSync.syncedAt && (
+                  <span className="ml-auto flex-shrink-0 text-[10px] opacity-60 whitespace-nowrap">
+                    {new Date(lastAttendanceSync.syncedAt).toLocaleString()}
                   </span>
                 )}
               </div>

@@ -99,7 +99,7 @@ router.post("/keka/test-connection", requireAdminRole, async (_req: Request, res
 
 router.get("/keka/settings", requireAdminRole, async (_req: Request, res: Response) => {
   try {
-    const config = await readFirebasePath<{ baseUrl?: string; region?: string; apiKey?: string; lastSync?: unknown } | null>(
+    const config = await readFirebasePath<{ baseUrl?: string; region?: string; apiKey?: string; lastSync?: unknown; lastAttendanceSync?: unknown } | null>(
       "settings/integrations/keka"
     );
 
@@ -126,6 +126,7 @@ router.get("/keka/settings", requireAdminRole, async (_req: Request, res: Respon
       clientSecretConfigured,
       credentialsReady,
       lastSync: config?.lastSync ?? null,
+      lastAttendanceSync: config?.lastAttendanceSync ?? null,
     };
     res.json(safe);
   } catch (err) {
