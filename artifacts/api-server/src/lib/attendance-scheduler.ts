@@ -1,7 +1,7 @@
 import cron from "node-cron";
 import { format } from "date-fns";
 import { toZonedTime } from "date-fns-tz";
-import { syncAttendanceToday, getKekaCredentials } from "./keka-client";
+import { syncAttendanceToday, getKekaCredentials, readKekaClientId, readKekaClientSecret } from "./keka-client";
 import { readFirebasePath, writeFirebasePath, multiPathUpdate } from "./firebase-admin";
 import { sendEmail, isEmailConfigured } from "./microsoft-graph";
 import { logger } from "./logger";
@@ -343,17 +343,37 @@ export async function startAttendanceScheduler(): Promise<void> {
   // The normal transaction inside withJobLock will reclaim it on the next tick,
   // but clearing it here means the very first tick after a restart is never
   // blocked by a lock from a previous process.
-  await clearExpiredLock("attendance-10min");
+  // NOTE: lock renamed to "attendance-10min-v2". The previous name is still
+  // being acquired every tick by older builds that take the lock BEFORE
+  // checking credentials — an unconfigured instance (e.g. a deployment
+  // missing KEKA_API_KEY) would win the lock race and silently skip, starving
+  // every properly configured instance. Using a fresh lock name makes locks
+  // held by old builds irrelevant.
+  await clearExpiredLock("attendance-10min-v2");
 
   // Runs every 10 minutes; the handler decides whether to proceed based on
   // the active window (10-min during 09:30–11:30 and 17:00–20:00, 30-min
   // otherwise within the 06:00–22:00 gate; 21:30 provides the end-of-day pass).
-  cron.schedule("*/10 * * * *", () => {
-    withJobLock("attendance-10min", ATTENDANCE_LOCK_TTL_MS, () =>
-      runAttendanceSync()
-    ).catch((err) =>
-      logger.error({ err }, "[Attendance] Unhandled scheduler error")
-    );
+  cron.schedule("*/10 * * * *", async () => {
+    try {
+      // Credentials gate BEFORE the lock: an instance that cannot sync must
+      // never acquire the lock, or it blocks instances that can.
+      // The OAuth token exchange needs client ID + secret + API key, so all
+      // three must be present — a partial credential set would still acquire
+      // the lock, fail the sync, and starve fully configured instances.
+      const creds = await getKekaCredentials();
+      if (!creds || !readKekaClientId() || !readKekaClientSecret()) {
+        logger.warn(
+          "[Attendance] Keka not configured on this instance — skipping tick without acquiring lock"
+        );
+        return;
+      }
+      await withJobLock("attendance-10min-v2", ATTENDANCE_LOCK_TTL_MS, () =>
+        runAttendanceSync()
+      );
+    } catch (err) {
+      logger.error({ err }, "[Attendance] Unhandled scheduler error");
+    }
   });
 
   // Runs once per hour — checks consecutive failure count and emails the admin

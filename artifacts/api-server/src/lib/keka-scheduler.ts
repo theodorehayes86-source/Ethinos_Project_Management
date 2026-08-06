@@ -1,9 +1,9 @@
 import cron from "node-cron";
 import { toZonedTime } from "date-fns-tz";
-import { syncKekaData, checkLeaveConflict } from "./keka-client";
+import { syncKekaData, checkLeaveConflict, getKekaCredentials, readKekaClientId, readKekaClientSecret } from "./keka-client";
 import { readFirebasePath } from "./firebase-admin";
 import { logger } from "./logger";
-import { withJobLock } from "./job-lock";
+import { withJobLock, clearExpiredLock } from "./job-lock";
 
 export { checkLeaveConflict };
 
@@ -53,10 +53,25 @@ async function runScheduledKekaSync(): Promise<void> {
 const KEKA_LOCK_TTL_MS = 54 * 60 * 1000;
 
 export function startKekaScheduler(): void {
-  cron.schedule("0 * * * *", () => {
-    withJobLock("keka-nightly", KEKA_LOCK_TTL_MS, () => runScheduledKekaSync()).catch((err) =>
-      logger.error({ err }, "[Keka] Unhandled scheduler error")
-    );
+  // Lock renamed to "keka-nightly-v2" — see attendance-scheduler.ts for why:
+  // old builds acquire the previous lock name before checking credentials,
+  // starving configured instances.
+  clearExpiredLock("keka-nightly-v2").catch(() => {});
+
+  cron.schedule("0 * * * *", async () => {
+    try {
+      // Credentials gate BEFORE the lock — an unconfigured instance must not
+      // hold the lock and block configured ones. OAuth needs client ID +
+      // secret + API key; a partial set would fail after taking the lock.
+      const creds = await getKekaCredentials();
+      if (!creds || !readKekaClientId() || !readKekaClientSecret()) {
+        logger.warn("[Keka] Keka not configured on this instance — skipping tick without acquiring lock");
+        return;
+      }
+      await withJobLock("keka-nightly-v2", KEKA_LOCK_TTL_MS, () => runScheduledKekaSync());
+    } catch (err) {
+      logger.error({ err }, "[Keka] Unhandled scheduler error");
+    }
   });
 
   logger.info("[Keka] Scheduler started — nightly sync at 02:00 local time");
