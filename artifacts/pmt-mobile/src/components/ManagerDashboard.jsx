@@ -1130,8 +1130,13 @@ export default function ManagerDashboard({
 
   const missingInfoTasks = useMemo(() => {
     if (drillStack.length > 0) return [];
-    return computeMissingInfoTasks(subtreeTasks, unassignedTasks);
-  }, [subtreeTasks, unassignedTasks, drillStack.length]);
+    // Product rule: unassigned tasks have no member to match against, so they
+    // are only included when NO member-level filter/search is active. When a
+    // filter is applied, Missing Info shows only no-due-date tasks belonging
+    // to the filtered visible members, keeping counts consistent with the list.
+    const hasFilters = selectedDept !== 'All' || selectedRegion !== 'All' || attendanceFilter !== 'all' || !!searchQuery.trim();
+    return computeMissingInfoTasks(subtreeTasks, hasFilters ? [] : unassignedTasks);
+  }, [subtreeTasks, unassignedTasks, drillStack.length, selectedDept, selectedRegion, attendanceFilter, searchQuery]);
 
   const leaveConflicts = useMemo(() => {
     if (drillStack.length > 0) return [];
