@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useToast } from '../hooks/use-toast';
 import TaskViewToggle from './shared/TaskViewToggle';
 import WeeklyTaskBoard from './shared/WeeklyTaskBoard';
-import { Search, ChevronLeft, ChevronDown, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, AlertTriangle, Calendar, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus, Hourglass, Archive, ArchiveRestore, LayoutGrid, LayoutList, ClipboardList, LayoutTemplate, CheckSquare, Upload, Copy } from 'lucide-react';
+import { Search, ChevronLeft, ChevronDown, Plus, Clock, Activity, CheckCircle, X, Star, Edit2, Trash2, Eye, Crown, AlertCircle, AlertTriangle, Calendar, Play, Pause, Square, Check, Users, ShieldCheck, RotateCcw, ThumbsUp, ThumbsDown, Send, UserPlus, Hourglass, Archive, ArchiveRestore, LayoutGrid, LayoutList, ClipboardList, LayoutTemplate, CheckSquare, Upload, Copy, Type, ToggleLeft } from 'lucide-react';
 import UserPickerModal from './UserPickerModal';
 import DatePicker from "react-datepicker";
 import { format, subDays, parse, addDays, differenceInCalendarDays, isBefore } from 'date-fns';
@@ -413,6 +413,7 @@ const ClientView = ({
   const [clAssigneeQuery, setClAssigneeQuery] = useState('');
   const [clShowAssigneeMenu, setClShowAssigneeMenu] = useState(false);
   const [clError, setClError] = useState('');
+  const [clShowTemplatePreview, setClShowTemplatePreview] = useState(false);
 
   // QC review state (for management reviewing a sent task)
   const [qcReviewingTaskId, setQcReviewingTaskId] = useState(null);
@@ -1016,6 +1017,7 @@ const ClientView = ({
     setClAssigneeQuery(isManagement ? '' : (currentUser?.name || ''));
     setClShowAssigneeMenu(false);
     setClError('');
+    setClShowTemplatePreview(false);
   };
   const openNewChecklistModal = () => { setDetailGroup(null); resetClModal(); setShowNewChecklistModal(true); };
   const closeNewChecklistModal = () => { setShowNewChecklistModal(false); resetClModal(); };
@@ -4135,7 +4137,16 @@ const ClientView = ({
                 {clSelectedTemplateId && (() => {
                   const tpl = checklistTemplates.find(t => t.id === clSelectedTemplateId);
                   return tpl ? (
-                    <p className="text-[11px] text-slate-500">{(tpl.questions || []).length} question{(tpl.questions || []).length !== 1 ? 's' : ''} · {tpl.cadence}</p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-[11px] text-slate-500">{(tpl.questions || []).length} question{(tpl.questions || []).length !== 1 ? 's' : ''} · {tpl.cadence}</p>
+                      <button
+                        type="button"
+                        onClick={() => setClShowTemplatePreview(true)}
+                        className="flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-700 hover:underline transition-colors"
+                      >
+                        <Eye size={11} /> Preview
+                      </button>
+                    </div>
                   ) : null;
                 })()}
               </div>
@@ -4242,6 +4253,68 @@ const ClientView = ({
           </div>
         </div>
       )}
+
+      {/* CHECKLIST TEMPLATE PREVIEW MODAL */}
+      {clShowTemplatePreview && (() => {
+        const tpl = checklistTemplates.find(t => t.id === clSelectedTemplateId);
+        if (!tpl) return null;
+        return (
+          <div className="fixed inset-0 z-[900] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+            <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 flex flex-col" style={{ maxHeight: '85vh' }}>
+              {/* Header */}
+              <div className="flex items-start justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
+                <div>
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <Eye size={15} className="text-teal-600" />
+                    <h4 className="text-sm font-bold text-slate-800">{tpl.name}</h4>
+                  </div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-teal-100 text-teal-700">{tpl.cadence}</span>
+                    {tpl.departmentId && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{tpl.departmentId}</span>}
+                    <span className="text-[10px] text-slate-400">{(tpl.questions || []).length} question{(tpl.questions || []).length !== 1 ? 's' : ''}</span>
+                  </div>
+                </div>
+                <button onClick={() => setClShowTemplatePreview(false)} className="p-1.5 hover:bg-slate-100 rounded-lg transition-all flex-shrink-0">
+                  <X size={15} />
+                </button>
+              </div>
+              {/* Question list */}
+              <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
+                {(tpl.questions || []).length === 0 ? (
+                  <p className="text-sm text-slate-400 text-center py-8">This template has no questions yet.</p>
+                ) : (tpl.questions || []).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map((q, idx) => (
+                  <div key={q.id || idx} className="flex items-start gap-3 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
+                    <span className="w-5 h-5 rounded-full bg-teal-100 text-teal-700 text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{idx + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-800 leading-snug">{q.text}</p>
+                      {q.requiresInput ? (
+                        <div className="flex items-center gap-1 mt-1">
+                          <Type size={10} className="text-blue-500" />
+                          <span className="text-[10px] font-semibold text-blue-600">{q.inputLabel || 'Text input'}</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1 mt-1">
+                          <ToggleLeft size={10} className="text-emerald-500" />
+                          <span className="text-[10px] font-semibold text-emerald-600">Yes / No</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* Footer */}
+              <div className="px-6 py-4 border-t border-slate-100 flex-shrink-0">
+                <button
+                  onClick={() => setClShowTemplatePreview(false)}
+                  className="w-full py-2 text-sm font-semibold text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-50 transition-all"
+                >
+                  Close Preview
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {showCsvImport && (
         <CsvImportModal
