@@ -1,0 +1,50 @@
+[
+  {
+    "id": "6f1c2a2e-9b1d-4c1a-8a4e-1a2b3c4d5e01",
+    "position": 1,
+    "filepath": "src/pages/slides/TitleSlide.tsx",
+    "title": "Ethinos Flow Pro — User Permissions",
+    "description": "Title slide: who can see what, role by role, desktop & mobile.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "6f1c2a2e-9b1d-4c1a-8a4e-1a2b3c4d5e02",
+    "position": 2,
+    "filepath": "src/pages/slides/BuildingBlocks.tsx",
+    "title": "The Building Blocks of Access",
+    "description": "The four mechanisms that decide access, plus desktop/mobile parity.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "6f1c2a2e-9b1d-4c1a-8a4e-1a2b3c4d5e03",
+    "position": 3,
+    "filepath": "src/pages/slides/Employees.tsx",
+    "title": "Employees & Executives",
+    "description": "Own tasks and assigned clients only.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "6f1c2a2e-9b1d-4c1a-8a4e-1a2b3c4d5e04",
+    "position": 4,
+    "filepath": "src/pages/slides/Managers.tsx",
+    "title": "Managers, Snr Managers & Project Managers",
+    "description": "Reporting-subtree scope for team, tasks, checklists and QC.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "6f1c2a2e-9b1d-4c1a-8a4e-1a2b3c4d5e05",
+    "position": 5,
+    "filepath": "src/pages/slides/ClientOwners.tsx",
+    "title": "Business Heads & CSMs — Client Owners",
+    "description": "Client-owner visibility and its restrictions.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "6f1c2a2e-9b1d-4c1a-8a4e-1a2b3c4d5e06",
+    "position": 6,
+    "filepath": "src/pages/slides/Admins.tsx",
+    "title": "Super Admin & Director",
+    "description": "Global roles, Control Centre access, and universal restrictions.",
+    "speakerNotes": ""
+  }
+]

@@ -1,0 +1,28 @@
+kind = "slides"
+previewPath = "/user-permissions/"
+title = "Flow Pro User Permissions"
+description = "Internal reference deck: who can see what in Ethinos Flow Pro — roles, visibility rules, and restrictions across desktop & mobile."
+version = "1.0.0"
+id = "artifacts/user-permissions"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/user-permissions/" ]
+localPort = 20362
+
+[services.development]
+run = "pnpm --filter @workspace/user-permissions run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/user-permissions", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/user-permissions/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20362"
+BASE_PATH = "/user-permissions/"
