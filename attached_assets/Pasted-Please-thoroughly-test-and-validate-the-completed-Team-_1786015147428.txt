@@ -1,0 +1,271 @@
+Please thoroughly test and validate the completed Team View permission implementation for CSMs and Business Heads. This is primarily a QA and verification exercise, not a redesign or refactor. Only recommend code changes where the implementation does not meet the business requirements below. Do not suggest low-priority improvements or cosmetic changes if the functionality is correct.
+
+==================================================
+BUSINESS REQUIREMENT
+==================================================
+
+For users with the role:
+
+• Business Head (BH)
+• Client Success Manager (CSM)
+
+Team View should include:
+
+1. Their direct reportee CSMs.
+2. Team members allocated to clients owned by those direct-reportee CSMs.
+3. Team members allocated to clients owned directly by the logged-in Business Head or CSM.
+
+However, task visibility must always remain CLIENT-SPECIFIC.
+
+They should ONLY see:
+
+• Tasks belonging to those authorised clients.
+
+They should NEVER see:
+
+• Personal tasks
+• Ethinos Internal tasks (unless that client is explicitly authorised)
+• Tasks belonging to any other clients
+• Tasks belonging to unrelated reporting branches
+• All tasks for a visible employee simply because that employee is visible
+
+Person visibility and task visibility are two separate permission checks.
+
+==================================================
+EXAMPLE
+==================================================
+
+Theo = Business Head
+
+Swati = CSM reporting directly to Theo
+
+Ashi = Team member allocated to Client A (owned by Swati)
+
+Rohan = Team member allocated to Client B (owned directly by Theo)
+
+Priya = Team member allocated to Client C (owned by another unrelated CSM)
+
+Tasks
+
+Ashi
+- Client A task
+- Client D task
+- Personal task
+
+Rohan
+- Client B task
+- Personal task
+
+Priya
+- Client C task
+
+Expected for Theo
+
+Visible people
+
+✓ Swati
+✓ Ashi
+✓ Rohan
+
+Hidden
+
+✗ Priya
+
+Visible tasks
+
+✓ Ashi Client A task
+✓ Rohan Client B task
+
+Hidden tasks
+
+✗ Ashi Client D task
+✗ Ashi Personal task
+✗ Rohan Personal task
+✗ Priya Client C task
+
+Expected for Swati
+
+Visible people
+
+✓ Team allocated to Swati's clients
+
+Visible tasks
+
+✓ Client A tasks only
+
+Hidden
+
+✗ Personal tasks
+✗ Client B tasks
+✗ Client C tasks
+✗ Client D tasks
+
+==================================================
+TEST THE IMPLEMENTATION
+==================================================
+
+Review the completed implementation and confirm:
+
+1. The reporting hierarchy is correct.
+2. Direct-reportee CSMs are correctly included.
+3. Team members allocated to authorised clients are included.
+4. Unrelated client teams are excluded.
+5. Person visibility is calculated independently from task visibility.
+6. A visible employee does NOT expose all of their tasks.
+7. Task visibility is filtered using permitted client IDs.
+8. Personal tasks never appear.
+9. Internal tasks only appear if they belong to an authorised client.
+10. Other-client tasks never appear.
+11. KPI cards use only permitted tasks.
+12. Member detail screens use only permitted tasks.
+13. Weekly dashboards use only permitted tasks.
+14. Search respects permissions.
+15. Desktop and mobile behave identically.
+16. Existing Admin visibility has not been broken.
+17. Existing Manager hierarchy permissions have not been broken.
+
+==================================================
+VERIFY THE PERMITTED CLIENT SET
+==================================================
+
+Confirm the implementation builds the permitted client set using:
+
+• Clients owned directly by the logged-in user
+PLUS
+• Clients owned by direct-reportee CSMs
+
+Verify unrelated client IDs are never added.
+
+==================================================
+VERIFY TASK FILTERING
+==================================================
+
+For every visible employee, confirm only tasks whose client belongs to the permitted client set are displayed.
+
+Example
+
+Visible employee
+
+Client A task
+Client D task
+Personal task
+
+Expected
+
+✓ Client A task
+
+Hidden
+
+✗ Client D task
+✗ Personal task
+
+Confirm this rule is applied everywhere:
+
+• Task list
+• Dashboard cards
+• Weekly board
+• KPI cards
+• Member detail
+• Search
+• Overdue lists
+• Pending lists
+• Team summaries
+
+==================================================
+VERIFY KPI COUNTS
+==================================================
+
+KPIs should only include visible permitted client tasks.
+
+Example
+
+Ashi
+
+2 permitted client tasks
+3 unrelated client tasks
+1 personal task
+
+Theo should see
+
+2 tasks
+
+NOT
+
+6 tasks
+
+==================================================
+VERIFY DESKTOP AND MOBILE
+==================================================
+
+Run exactly the same permission tests on:
+
+• Desktop Team View
+• Mobile Team View
+• Desktop Member Detail
+• Mobile Member Detail
+• List View
+• Dashboard/Card View
+
+The visible users and visible task IDs should be identical across devices.
+
+==================================================
+VERIFY REGRESSION
+==================================================
+
+Ensure the completed implementation has not broken:
+
+• Super Admin permissions
+• Director permissions
+• Existing Manager hierarchy
+• Attendance
+• Checklists
+• Leave
+• Team KPIs
+• Region filtering
+• Existing Team View functionality
+
+==================================================
+AUTOMATED TESTS
+==================================================
+
+Confirm there is coverage for:
+
+✓ BH sees direct-reportee CSM
+✓ BH sees teams allocated to own clients
+✓ BH sees teams allocated to direct-reportee clients
+✓ CSM sees teams allocated to own clients
+✓ Unrelated client teams hidden
+✓ Personal tasks hidden
+✓ Other-client tasks hidden
+✓ Permitted client tasks visible
+✓ KPI counts exclude hidden tasks
+✓ Member detail excludes hidden tasks
+✓ Dashboard excludes hidden tasks
+✓ Desktop and mobile return identical visible task IDs
+✓ Admin permissions unchanged
+✓ Manager permissions unchanged
+✓ Archived users excluded
+✓ Missing client IDs do not expose tasks
+✓ Multi-client allocations only expose authorised client tasks
+
+==================================================
+OUTPUT
+==================================================
+
+Do not refactor working code.
+
+Do not recommend cosmetic improvements.
+
+Do not recommend architecture changes unless they are required to satisfy the business rules.
+
+Only report genuine functional defects.
+
+Provide:
+
+1. PASS / FAIL for each business rule.
+2. Any failing scenarios.
+3. Root cause of each failure.
+4. The minimum code change required to fix each failure.
+5. Confirmation that desktop and mobile produce identical results.
+6. Confirmation that no unrelated functionality has been broken.
+7. Confirmation that the implementation is production-ready if all tests pass.

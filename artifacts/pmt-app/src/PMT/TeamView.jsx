@@ -1330,7 +1330,8 @@ const TeamView = ({
   const isOwnerScoped = isBH || currentUser?.role === 'CSM';
   const ownerScope = useMemo(() => {
     if (!isOwnerScoped) return null;
-    const directs = getDirectReports(currentUser.id, users);
+    const isActiveUser = (u) => !u.archived && u.active !== false;
+    const directs = getDirectReports(currentUser.id, users).filter(isActiveUser);
     const directIdSet = new Set(directs.map(d => String(d.id)));
     const ownedBy = (uid) => (clients || []).filter(c => (c.ownerIds || []).map(String).includes(String(uid)));
     const relevant = new Map();
@@ -1339,12 +1340,31 @@ const TeamView = ({
     const clientIds = new Set(relevant.keys());
     const clientNames = new Set([...relevant.values()].map(c => c.name));
     const teamMembers = users.filter(u =>
+      isActiveUser(u) &&
       String(u.id) !== String(currentUser.id) &&
       !directIdSet.has(String(u.id)) &&
       (u.assignedProjects || []).some(p => clientNames.has(p))
     );
-    return { clientIds, teamMembers };
+    return { clientIds, teamMembers, directIdSet };
   }, [isOwnerScoped, currentUser?.id, users, clients]);
+
+  // Read-only, client-scoped view of clientLogs for BH/CSM aggregations.
+  // NEVER pass this to setClientLogs — the diff writer treats missing client
+  // buckets as deletions; write paths must always use the full clientLogs.
+  const scopedClientLogs = useMemo(() => {
+    if (!ownerScope) return clientLogs;
+    const out = {};
+    Object.entries(clientLogs).forEach(([cid, logs]) => {
+      if (ownerScope.clientIds.has(String(cid))) out[cid] = logs;
+    });
+    return out;
+  }, [clientLogs, ownerScope]);
+
+  // Checklist groups restricted to permitted clients for BH/CSM
+  const scopedTaskGroups = useMemo(() => {
+    if (!ownerScope) return taskGroups;
+    return (taskGroups || []).filter(g => ownerScope.clientIds.has(String(g.clientId)));
+  }, [taskGroups, ownerScope]);
 
   // Pre-built user→tasks index so MemberCard lookups are O(1) instead of
   // iterating all clientLogs on every render. Recomputed only when clientLogs
@@ -1386,7 +1406,7 @@ const TeamView = ({
     const sortByName = (arr) => [...arr].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
     if (isBH) {
-      const csReports = sortByName(filterByDept(getDirectReports(currentUser.id, users).filter(u => CS_REPORT_ROLES.has(u.role))));
+      const csReports = sortByName(filterByDept(getDirectReports(currentUser.id, users).filter(u => CS_REPORT_ROLES.has(u.role) && !u.archived && u.active !== false)));
       const groups = [{ role: 'CSM / Project Manager', members: csReports, isDrillable: false }];
       if (ownerScope?.teamMembers.length) {
         groups.push({ role: 'Client Teams', members: sortByName(filterByDept(ownerScope.teamMembers)), isDrillable: false });
@@ -1395,7 +1415,7 @@ const TeamView = ({
     }
 
     if (isCSMPM) {
-      const direct = sortByName(filterByDept(getDirectReports(currentUser.id, users)));
+      const direct = sortByName(filterByDept(getDirectReports(currentUser.id, users).filter(u => !isOwnerScoped || (!u.archived && u.active !== false))));
       const groups = [{ role: 'Direct Reports', members: direct, isDrillable: false }];
       if (ownerScope?.teamMembers.length) {
         groups.push({ role: 'Client Teams', members: sortByName(filterByDept(ownerScope.teamMembers)), isDrillable: false });
@@ -1512,7 +1532,7 @@ const TeamView = ({
 
   const visibleTasks = useMemo(() => {
     const result = [];
-    Object.entries(clientLogs).forEach(([cid, tasks]) => {
+    Object.entries(scopedClientLogs).forEach(([cid, tasks]) => {
       const clientObj = allClients.find(c => String(c.id) === String(cid));
       (tasks || []).forEach(t => {
         if (visibleMemberIds.has(String(t.assigneeId))) {
@@ -1521,7 +1541,7 @@ const TeamView = ({
       });
     });
     return result;
-  }, [clientLogs, visibleMemberIds, allClients]);
+  }, [scopedClientLogs, visibleMemberIds, allClients]);
 
   const clientById = useMemo(() => {
     const map = {};
@@ -1531,7 +1551,7 @@ const TeamView = ({
 
   const unassignedTasks = useMemo(() => {
     const result = [];
-    Object.entries(clientLogs).forEach(([cid, tasks]) => {
+    Object.entries(scopedClientLogs).forEach(([cid, tasks]) => {
       const clientObj = clientById[String(cid)];
       (tasks || []).forEach(t => {
         if (!t.assigneeId && !t.archived && t.status !== 'Done') {
@@ -1540,7 +1560,7 @@ const TeamView = ({
       });
     });
     return result;
-  }, [clientLogs, clientById]);
+  }, [scopedClientLogs, clientById]);
 
   const kpiMetrics = useMemo(() => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -1669,10 +1689,10 @@ const TeamView = ({
 
   // Team-wide checklist groups for the overview panel
   const teamChecklistGroups = useMemo(() => {
-    return taskGroups
+    return scopedTaskGroups
       .filter(g => !g.archived && visibleMemberIds.has(String(g.assigneeId)))
-      .map(g => enrichChecklistGroup(g, clientLogs));
-  }, [taskGroups, visibleMemberIds, clientLogs]);
+      .map(g => enrichChecklistGroup(g, scopedClientLogs));
+  }, [scopedTaskGroups, visibleMemberIds, scopedClientLogs]);
 
   const teamChecklistKpis = useMemo(() => {
     const total = teamChecklistGroups.length;
@@ -1832,7 +1852,7 @@ const TeamView = ({
             clientLogs={clientLogs}
             setClientLogs={setClientLogs}
             taskCategories={taskCategories}
-            taskGroups={taskGroups}
+            taskGroups={scopedTaskGroups}
             persistTaskCreate={persistTaskCreate}
             taskTemplates={taskTemplates}
           />

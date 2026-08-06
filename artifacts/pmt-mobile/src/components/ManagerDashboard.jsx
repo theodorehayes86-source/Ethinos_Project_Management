@@ -1033,7 +1033,8 @@ export default function ManagerDashboard({
   // reportees, and every user allocated (assignedProjects) to those clients.
   const ownerScope = useMemo(() => {
     if (!isClientOwner) return null;
-    const directs = getDirectReports(currentUser.id, users);
+    const isActiveUser = (u) => !u.archived && u.active !== false;
+    const directs = getDirectReports(currentUser.id, users).filter(isActiveUser);
     const ownedBy = (uid) => clients.filter(c => (c.ownerIds || []).map(String).includes(String(uid)));
     const relevantClients = new Map();
     ownedBy(currentUser.id).forEach(c => relevantClients.set(String(c.id), c));
@@ -1042,6 +1043,7 @@ export default function ManagerDashboard({
     const clientNames = new Set([...relevantClients.values()].map(c => c.name));
     const memberIds = new Set(directs.map(r => String(r.id)));
     users.forEach(u => {
+      if (!isActiveUser(u)) return;
       if (String(u.id) === String(currentUser.id)) return;
       if ((u.assignedProjects || []).some(p => clientNames.has(p))) memberIds.add(String(u.id));
     });
