@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Search, Edit2, Trash2, Crown, Users, RefreshCw, Check, AlertTriangle, Link2 } from 'lucide-react';
+import { Search, Edit2, Trash2, Crown, Users, RefreshCw, Check, AlertTriangle, Link2, X } from 'lucide-react';
 import { auth } from '../firebase.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
@@ -37,6 +37,8 @@ const SettingsView = ({ users = [], setUsers, currentUser, clients = [], setClie
   const [editClientIndustry, setEditClientIndustry] = useState('');
   const [clientEditError, setClientEditError] = useState('');
   const [draftAssignedMemberIds, setDraftAssignedMemberIds] = useState([]);
+  const [draftOwnerIds, setDraftOwnerIds] = useState([]);
+  const [ownerSearch, setOwnerSearch] = useState('');
 
   const [kekaBaseUrl, setKekaBaseUrl] = useState('');
   const [kekaApiKey, setKekaApiKey] = useState('');
@@ -52,6 +54,10 @@ const SettingsView = ({ users = [], setUsers, currentUser, clients = [], setClie
   const [kekaLoaded, setKekaLoaded] = useState(false);
 
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
+  // Aug 2026 policy: Business Heads and CSMs are client-specific — they own
+  // specific clients and see ALL tasks for those clients regardless of the
+  // assignee's department or reporting line.
+  const ownerEligibleRoles = ['Business Head', 'CSM'];
 
   const availableRoles = [
     { id: 'Super Admin', label: 'Super Admin' },
@@ -93,7 +99,9 @@ const SettingsView = ({ users = [], setUsers, currentUser, clients = [], setClie
       setClientEditError('');
       setLeadershipSearch('');
       setTeamSearch('');
+      setOwnerSearch('');
       setDraftAssignedMemberIds([]);
+      setDraftOwnerIds([]);
       return;
     }
 
@@ -103,7 +111,9 @@ const SettingsView = ({ users = [], setUsers, currentUser, clients = [], setClie
     setClientEditError('');
     setLeadershipSearch('');
     setTeamSearch('');
+    setOwnerSearch('');
     setDraftAssignedMemberIds(assignedUsers.map(user => user.id));
+    setDraftOwnerIds((selectedClient.ownerIds || []).map(String));
   }, [selectedClient, users]);
 
   const loadKekaSettings = useCallback(async () => {
@@ -262,10 +272,26 @@ const SettingsView = ({ users = [], setUsers, currentUser, clients = [], setClie
         .slice(0, 8)
         .map(({ user }) => user);
 
+  const ownerSearchResults = !selectedClient || !ownerSearch.trim()
+    ? []
+    : users
+        .map(user => ({ user, score: ownerEligibleRoles.includes(user.role) ? getUserSearchScore(user, ownerSearch) : Number.POSITIVE_INFINITY }))
+        .filter(({ score }) => Number.isFinite(score))
+        .sort((left, right) => left.score - right.score || left.user.name.localeCompare(right.user.name))
+        .slice(0, 8)
+        .map(({ user }) => user);
+
+  const toggleOwnerForClient = (memberId) => {
+    if (!canManageClients || !selectedClient) return;
+    const id = String(memberId);
+    setDraftOwnerIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
   const openClientEditor = (clientId) => {
     setSelectedClientId(clientId);
     setLeadershipSearch('');
     setTeamSearch('');
+    setOwnerSearch('');
     setClientEditError('');
     setShowEditClientModal(true);
   };
@@ -274,6 +300,7 @@ const SettingsView = ({ users = [], setUsers, currentUser, clients = [], setClie
     setShowEditClientModal(false);
     setLeadershipSearch('');
     setTeamSearch('');
+    setOwnerSearch('');
     setClientEditError('');
   };
 
@@ -311,7 +338,7 @@ const SettingsView = ({ users = [], setUsers, currentUser, clients = [], setClie
 
     setClients(prevClients => prevClients.map(client =>
       client.id === selectedClient.id
-        ? { ...client, name: trimmedName, industry: trimmedIndustry }
+        ? { ...client, name: trimmedName, industry: trimmedIndustry, ownerIds: draftOwnerIds }
         : client
     ));
 
@@ -340,7 +367,9 @@ const SettingsView = ({ users = [], setUsers, currentUser, clients = [], setClie
     setClientEditError('');
     setLeadershipSearch('');
     setTeamSearch('');
+    setOwnerSearch('');
     setDraftAssignedMemberIds(assignedUsers.map(user => user.id));
+    setDraftOwnerIds((selectedClient.ownerIds || []).map(String));
   };
 
   const deleteSelectedClient = () => {
@@ -731,6 +760,73 @@ const SettingsView = ({ users = [], setUsers, currentUser, clients = [], setClie
                     disabled={!canManageClients}
                   />
                 </div>
+              </div>
+
+              {/* Client owners (Business Head / CSM) — full task visibility for this client */}
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-wide text-indigo-700 mb-1.5">Client Owners (Business Head / CSM)</label>
+                <p className="text-[11px] text-slate-400 mb-2">Owners see every task for this client, regardless of the assignee's department or reporting line.</p>
+                <div className="relative">
+                  <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"/>
+                  <input
+                    type="text"
+                    placeholder="Search Business Heads or CSMs…"
+                    className="w-full bg-white border border-slate-200 rounded-lg pl-12 pr-4 py-2 text-sm outline-none focus:border-indigo-500 font-medium"
+                    value={ownerSearch}
+                    onChange={(e) => setOwnerSearch(e.target.value)}
+                    disabled={!canManageClients}
+                  />
+                  {!!ownerSearch.trim() && (
+                    <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-20 max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+                      {ownerSearchResults.length ? ownerSearchResults.map(member => {
+                        const isOwner = draftOwnerIds.includes(String(member.id));
+                        return (
+                          <button
+                            key={member.id}
+                            type="button"
+                            disabled={!canManageClients || isOwner}
+                            onClick={() => {
+                              if (!isOwner) {
+                                toggleOwnerForClient(member.id);
+                                setOwnerSearch('');
+                              }
+                            }}
+                            className={`w-full text-left px-3 py-2.5 flex items-center justify-between gap-3 border-b border-slate-100 last:border-b-0 ${!canManageClients ? 'opacity-70 cursor-not-allowed' : 'hover:bg-slate-50'} ${isOwner ? 'bg-indigo-50/50' : 'bg-white'}`}
+                          >
+                            <div>
+                              <div className="text-sm font-semibold text-slate-900">{member.name}</div>
+                              <div className="text-xs text-slate-500">{member.role} • {member.email}</div>
+                            </div>
+                            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${isOwner ? 'bg-indigo-100 text-indigo-700' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+                              {isOwner ? 'Owner' : 'Add'}
+                            </span>
+                          </button>
+                        );
+                      }) : (
+                        <div className="px-3 py-3 text-xs text-slate-400">No matching Business Heads or CSMs found.</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {draftOwnerIds.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {draftOwnerIds.map(id => {
+                      const member = users.find(u => String(u.id) === id);
+                      if (!member) return null;
+                      return (
+                        <span key={id} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-xs font-semibold text-indigo-700">
+                          {member.name}
+                          <span className="text-[10px] font-normal text-indigo-400">{member.role}</span>
+                          {canManageClients && (
+                            <button type="button" onClick={() => toggleOwnerForClient(id)} className="text-indigo-400 hover:text-indigo-700" aria-label={`Remove ${member.name} as owner`}>
+                              <X size={12} />
+                            </button>
+                          )}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {clientEditError && (

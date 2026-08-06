@@ -18,7 +18,10 @@ import ChecklistDashboardScreen from './components/ChecklistDashboardScreen.jsx'
 import { Bell, LogOut, Loader2, Maximize2, Minimize2 } from 'lucide-react';
 
 const MANAGEMENT_ROLES = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
-const GLOBAL_ROLES = ['Super Admin', 'Director', 'Business Head'];
+// Aug 2026 policy: Business Heads are client-specific — they see their owned
+// clients (clients.ownerIds) rather than the whole org.
+const GLOBAL_ROLES = ['Super Admin', 'Director'];
+const CLIENT_OWNER_ROLES = ['Business Head', 'CSM'];
 
 const SYNTHETIC_CLIENTS = [
   { id: '__personal__', name: 'Personal', synthetic: true, isPersonal: true },
@@ -209,6 +212,14 @@ function MainApp() {
         if (subtreeIds.has(String(task.assigneeId))) allowedClientIds.add(String(clientId));
       });
     });
+    // Client owners (BH/CSM) additionally see every task for their owned clients.
+    if (CLIENT_OWNER_ROLES.includes(currentUser.role)) {
+      allClients.forEach(c => {
+        if ((c.ownerIds || []).map(String).includes(String(currentUser.id))) {
+          allowedClientIds.add(String(c.id));
+        }
+      });
+    }
     return allClients.filter(c => allowedClientIds.has(String(c.id)));
   }, [currentUser, users, clientLogs, allClients]);
 

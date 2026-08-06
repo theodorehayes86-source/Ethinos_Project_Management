@@ -997,8 +997,14 @@ function ApprovalsTab({ pendingApprovals, isSuperAdmin, onApprove }) {
 // reporting tree in Team View, matching the desktop app.
 const GLOBAL_ROLES = ['Super Admin'];
 
+// Aug 2026 policy: Business Heads and CSMs are client-specific. Their Team View
+// shows direct reportees PLUS the teams allocated to their own clients and to
+// the clients of their direct reportees — and they only see tasks belonging to
+// those clients (no personal tasks, no tasks of other clients).
+const CLIENT_OWNER_ROLES = ['Business Head', 'CSM'];
+
 export default function ManagerDashboard({
-  currentUser, users, clients, clientLogs, categories,
+  currentUser, users, clients, clientLogs: rawClientLogs, categories,
   pendingApprovals, activeTab, onTabChange,
 }) {
   const [drillStack, setDrillStack] = useState([]);
@@ -1021,6 +1027,37 @@ export default function ManagerDashboard({
   const attendanceFilter = filters.attendance;
 
   const isSuperAdmin = GLOBAL_ROLES.includes(currentUser?.role);
+  const isClientOwner = !isSuperAdmin && CLIENT_OWNER_ROLES.includes(currentUser?.role);
+
+  // BH/CSM scope: their own owned clients + clients owned by their direct
+  // reportees, and every user allocated (assignedProjects) to those clients.
+  const ownerScope = useMemo(() => {
+    if (!isClientOwner) return null;
+    const directs = getDirectReports(currentUser.id, users);
+    const ownedBy = (uid) => clients.filter(c => (c.ownerIds || []).map(String).includes(String(uid)));
+    const relevantClients = new Map();
+    ownedBy(currentUser.id).forEach(c => relevantClients.set(String(c.id), c));
+    directs.forEach(r => ownedBy(r.id).forEach(c => relevantClients.set(String(c.id), c)));
+    const clientIds = new Set(relevantClients.keys());
+    const clientNames = new Set([...relevantClients.values()].map(c => c.name));
+    const memberIds = new Set(directs.map(r => String(r.id)));
+    users.forEach(u => {
+      if (String(u.id) === String(currentUser.id)) return;
+      if ((u.assignedProjects || []).some(p => clientNames.has(p))) memberIds.add(String(u.id));
+    });
+    return { clientIds, memberIds };
+  }, [isClientOwner, currentUser.id, users, clients]);
+
+  // BH/CSM only see tasks belonging to their relevant clients — personal tasks
+  // and tasks of other clients are excluded from everything below.
+  const clientLogs = useMemo(() => {
+    if (!ownerScope) return rawClientLogs;
+    const out = {};
+    Object.entries(rawClientLogs || {}).forEach(([cid, logs]) => {
+      if (ownerScope.clientIds.has(String(cid))) out[cid] = logs;
+    });
+    return out;
+  }, [rawClientLogs, ownerScope]);
 
   const scrollContainerRef = useRef(null);
   const atRiskRef = useRef(null);
@@ -1034,8 +1071,16 @@ export default function ManagerDashboard({
     if (isSuperAdmin && drillStack.length === 0) {
       return users.filter(u => String(u.id) !== String(currentUser.id));
     }
+    // BH/CSM top level: direct reportees + teams allocated to relevant clients
+    if (ownerScope && drillStack.length === 0) {
+      return users.filter(u => ownerScope.memberIds.has(String(u.id)));
+    }
+    // BH/CSM drilled in: never expose people outside the owner scope
+    if (ownerScope) {
+      return getDirectReports(displayUser.id, users).filter(u => ownerScope.memberIds.has(String(u.id)));
+    }
     return getDirectReports(displayUser.id, users);
-  }, [isSuperAdmin, drillStack.length, displayUser.id, users, currentUser.id]);
+  }, [isSuperAdmin, ownerScope, drillStack.length, displayUser.id, users, currentUser.id]);
 
   // Departments derived from visible pool — exclude 'All' as a real dept name
   const departments = useMemo(() => {
@@ -1117,10 +1162,12 @@ export default function ManagerDashboard({
       ids.delete(String(currentUser.id));
       return ids;
     }
+    // BH/CSM: the member pool is client-scoped, not reporting-tree-scoped
+    if (ownerScope) return new Set(ownerScope.memberIds);
     const ids = getSubtreeIds(currentUser.id, users);
     ids.delete(String(currentUser.id));
     return ids;
-  }, [currentUser.id, users, isSuperAdmin]);
+  }, [currentUser.id, users, isSuperAdmin, ownerScope]);
 
   useEffect(() => {
     if (drillStack.length > 0 || subtreeIds.size === 0) return;

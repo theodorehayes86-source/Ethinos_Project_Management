@@ -126,7 +126,10 @@ const MetricCard = ({ label, value, sub, accent }) => (
   </div>
 );
 
-const GLOBAL_ROLES = ['Super Admin', 'Director', 'Business Head'];
+// Aug 2026 policy: Business Heads are client-specific (they see their owned
+// clients via accessibleClients / clients.ownerIds), so they are no longer a
+// global role here.
+const GLOBAL_ROLES = ['Super Admin', 'Director'];
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 

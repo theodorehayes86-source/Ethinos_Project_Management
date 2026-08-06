@@ -1640,11 +1640,19 @@ const App = () => {
   const canSeeReports = reportsAccessRoles.includes(currentUser?.role);
   const availableRoles = [...new Set(users.map(u => u.role))];
 
+  // Aug 2026 policy: Business Heads and CSMs are client-specific — they see ALL
+  // tasks for clients they own (clients.ownerIds), regardless of the assignee's
+  // department or reporting line, in addition to their assigned projects.
+  const CLIENT_OWNER_ROLES = ['Business Head', 'CSM'];
   const accessibleClients = !currentUser
     ? []
     : currentUser.role === 'Super Admin'
       ? clients
-      : clients.filter(c => currentUser.assignedProjects?.includes(c.name) || currentUser.assignedProjects?.includes('All'));
+      : clients.filter(c =>
+          currentUser.assignedProjects?.includes(c.name) ||
+          currentUser.assignedProjects?.includes('All') ||
+          (CLIENT_OWNER_ROLES.includes(currentUser.role) && (c.ownerIds || []).map(String).includes(String(currentUser.id)))
+        );
 
   const SYNTHETIC_CLIENTS = [
     { id: '__personal__', name: 'Personal', synthetic: true, isPersonal: true },

@@ -1323,12 +1323,38 @@ const TeamView = ({
 
   const allClients = useMemo(() => [...(clients || []), ...(syntheticClients || [])], [clients, syntheticClients]);
 
+  // Aug 2026 policy: Business Heads and CSMs are client-specific. Their Team
+  // View shows direct reportees PLUS the teams allocated to their own clients
+  // and to the clients of their direct reportees — and they only see tasks
+  // belonging to those clients (no personal tasks, no other clients' tasks).
+  const isOwnerScoped = isBH || currentUser?.role === 'CSM';
+  const ownerScope = useMemo(() => {
+    if (!isOwnerScoped) return null;
+    const directs = getDirectReports(currentUser.id, users);
+    const directIdSet = new Set(directs.map(d => String(d.id)));
+    const ownedBy = (uid) => (clients || []).filter(c => (c.ownerIds || []).map(String).includes(String(uid)));
+    const relevant = new Map();
+    ownedBy(currentUser.id).forEach(c => relevant.set(String(c.id), c));
+    directs.forEach(r => ownedBy(r.id).forEach(c => relevant.set(String(c.id), c)));
+    const clientIds = new Set(relevant.keys());
+    const clientNames = new Set([...relevant.values()].map(c => c.name));
+    const teamMembers = users.filter(u =>
+      String(u.id) !== String(currentUser.id) &&
+      !directIdSet.has(String(u.id)) &&
+      (u.assignedProjects || []).some(p => clientNames.has(p))
+    );
+    return { clientIds, teamMembers };
+  }, [isOwnerScoped, currentUser?.id, users, clients]);
+
   // Pre-built user→tasks index so MemberCard lookups are O(1) instead of
   // iterating all clientLogs on every render. Recomputed only when clientLogs
   // or the clients list changes — not on every task-level field update.
   const userTasksIndex = useMemo(() => {
     const index = new Map();
     Object.entries(clientLogs).forEach(([cid, tasks]) => {
+      // Owner-scoped roles (BH/CSM) only see tasks of their relevant clients —
+      // this also excludes personal/synthetic buckets.
+      if (ownerScope && !ownerScope.clientIds.has(String(cid))) return;
       const clientObj = allClients.find(c => String(c.id) === String(cid));
       const cName = clientObj?.name || cid;
       (tasks || []).forEach(t => {
@@ -1340,7 +1366,7 @@ const TeamView = ({
       });
     });
     return index;
-  }, [clientLogs, allClients]);
+  }, [clientLogs, allClients, ownerScope]);
 
   const allTasksForUser = useCallback((userId) => {
     return userTasksIndex.get(String(userId)) ?? [];
@@ -1361,12 +1387,20 @@ const TeamView = ({
 
     if (isBH) {
       const csReports = sortByName(filterByDept(getDirectReports(currentUser.id, users).filter(u => CS_REPORT_ROLES.has(u.role))));
-      return [{ role: 'CSM / Project Manager', members: csReports, isDrillable: false }];
+      const groups = [{ role: 'CSM / Project Manager', members: csReports, isDrillable: false }];
+      if (ownerScope?.teamMembers.length) {
+        groups.push({ role: 'Client Teams', members: sortByName(filterByDept(ownerScope.teamMembers)), isDrillable: false });
+      }
+      return groups;
     }
 
     if (isCSMPM) {
       const direct = sortByName(filterByDept(getDirectReports(currentUser.id, users)));
-      return [{ role: 'Direct Reports', members: direct, isDrillable: false }];
+      const groups = [{ role: 'Direct Reports', members: direct, isDrillable: false }];
+      if (ownerScope?.teamMembers.length) {
+        groups.push({ role: 'Client Teams', members: sortByName(filterByDept(ownerScope.teamMembers)), isDrillable: false });
+      }
+      return groups;
     }
 
     if (isSuperAdmin && currentParent?.role === 'Business Head') {

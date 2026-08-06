@@ -123,6 +123,10 @@ const MasterDataView = ({
   const { toast } = useToast();
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
   const executionRoles = ['Employee', 'Snr Executive', 'Executive', 'Intern'];
+  // Aug 2026 policy: Business Heads and CSMs are client-specific — client owners
+  // (clients.ownerIds) see every task for their owned clients regardless of the
+  // assignee's department or reporting line.
+  const ownerEligibleRoles = ['Business Head', 'CSM'];
 
   const canSeeIntegrations = ['Super Admin', 'Director'].includes(currentUser?.role) || (controlCenterTabAccess['integrations'] || []).includes(currentUser?.role);
 
@@ -167,11 +171,13 @@ const MasterDataView = ({
   const [editClientName, setEditClientName] = useState('');
   const [editClientAdmins, setEditClientAdmins] = useState([]);
   const [editClientEmployees, setEditClientEmployees] = useState([]);
+  const [editClientOwners, setEditClientOwners] = useState([]);
   // Add
   const [showAddClientModal, setShowAddClientModal] = useState(false);
   const [addEntityName, setAddEntityName] = useState('');
   const [addClientName, setAddClientName] = useState('');
   const [addClientAdmins, setAddClientAdmins] = useState([]);
+  const [addClientOwners, setAddClientOwners] = useState([]);
   const [addClientEmployees, setAddClientEmployees] = useState([]);
   // Shared picker — mode: 'edit-leadership' | 'edit-team' | 'add-leadership' | 'add-team'
   const [activePicker, setActivePicker] = useState(null);
@@ -992,6 +998,7 @@ const MasterDataView = ({
     setEditClientName(client.name);
     setEditClientAdmins(staff.admins.map(a => a.id));
     setEditClientEmployees(staff.employees.map(e => e.id));
+    setEditClientOwners((client.ownerIds || []).map(String));
     setPickerSearch('');
     setActivePicker(null);
   };
@@ -1004,7 +1011,7 @@ const MasterDataView = ({
 
     // Update client record
     const updatedClients = clients.map(c =>
-      c.id === editingClientId ? { ...c, entityName: editEntityName.trim(), name: newName } : c
+      c.id === editingClientId ? { ...c, entityName: editEntityName.trim(), name: newName, ownerIds: editClientOwners.map(String) } : c
     );
     if (setClients) setClients(updatedClients);
 
@@ -1039,6 +1046,7 @@ const MasterDataView = ({
     setEditClientName('');
     setEditClientAdmins([]);
     setEditClientEmployees([]);
+    setEditClientOwners([]);
     setActivePicker(null);
     setPickerSearch('');
   };
@@ -1048,6 +1056,7 @@ const MasterDataView = ({
     setAddClientName('');
     setAddClientAdmins([]);
     setAddClientEmployees([]);
+    setAddClientOwners([]);
     setActivePicker(null);
     setPickerSearch('');
     setShowAddClientModal(true);
@@ -1059,6 +1068,7 @@ const MasterDataView = ({
     setAddClientName('');
     setAddClientAdmins([]);
     setAddClientEmployees([]);
+    setAddClientOwners([]);
     setActivePicker(null);
     setPickerSearch('');
   };
@@ -1066,7 +1076,7 @@ const MasterDataView = ({
   const handleSaveNewClient = (e) => {
     e.preventDefault();
     if (!addEntityName.trim() || !addClientName.trim()) return;
-    const newClient = { id: `client-${Date.now()}`, name: addClientName.trim(), entityName: addEntityName.trim() };
+    const newClient = { id: `client-${Date.now()}`, name: addClientName.trim(), entityName: addEntityName.trim(), ownerIds: addClientOwners.map(String) };
     if (setClients) setClients([...(clients || []), newClient]);
     if (setUsers) {
       const allAssigned = new Set([...addClientAdmins, ...addClientEmployees]);
@@ -1108,16 +1118,23 @@ const MasterDataView = ({
   const pickerSelected =
     activePicker === 'edit-leadership' ? editClientAdmins :
     activePicker === 'edit-team' ? editClientEmployees :
+    activePicker === 'edit-owners' ? editClientOwners :
     activePicker === 'add-leadership' ? addClientAdmins :
-    activePicker === 'add-team' ? addClientEmployees : [];
+    activePicker === 'add-team' ? addClientEmployees :
+    activePicker === 'add-owners' ? addClientOwners : [];
   const pickerSetSelected =
     activePicker === 'edit-leadership' ? setEditClientAdmins :
     activePicker === 'edit-team' ? setEditClientEmployees :
+    activePicker === 'edit-owners' ? setEditClientOwners :
     activePicker === 'add-leadership' ? setAddClientAdmins :
-    activePicker === 'add-team' ? setAddClientEmployees : () => {};
+    activePicker === 'add-team' ? setAddClientEmployees :
+    activePicker === 'add-owners' ? setAddClientOwners : () => {};
   const pickerTitle =
     activePicker === 'edit-leadership' || activePicker === 'add-leadership'
-      ? 'Select Leadership' : 'Select Team Members';
+      ? 'Select Leadership'
+      : activePicker === 'edit-owners' || activePicker === 'add-owners'
+        ? 'Select Client Owners (BH / CSM)'
+        : 'Select Team Members';
 
   // --- USER HELPERS ---
   const getRoleStyle = (role) => {
@@ -3712,6 +3729,39 @@ const MasterDataView = ({
                     }
                   </div>
                 </div>
+
+                {/* Client Owners (Business Head / CSM) */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-700">Client Owners <span className="font-normal text-slate-400">(Business Head / CSM)</span></label>
+                      <p className="text-[11px] text-slate-400">Owners see every task for this client, regardless of assignee department or reporting line.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setPickerSearch(''); setActivePicker('edit-owners'); }}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-all"
+                    >
+                      <Users size={12}/> Select Owners
+                    </button>
+                  </div>
+                  <div className="min-h-[52px] max-h-28 overflow-y-auto border border-slate-200 rounded-xl p-2.5 bg-slate-50/50 flex flex-wrap gap-1.5 items-start content-start">
+                    {editClientOwners.length === 0
+                      ? <p className="text-xs text-slate-400 italic">No owners selected</p>
+                      : editClientOwners.map(id => {
+                          const u = (users || []).find(x => String(x.id) === String(id));
+                          return u ? (
+                            <span key={id} className="inline-flex items-center gap-1 bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-semibold px-2 py-1 rounded-full">
+                              <Crown size={10} className="text-indigo-500"/>
+                              {u.name}
+                              <span className="text-[10px] font-normal text-indigo-400">{u.role}</span>
+                              <button type="button" onClick={() => setEditClientOwners(prev => prev.filter(x => String(x) !== String(id)))} className="ml-0.5 hover:text-indigo-900"><X size={10}/></button>
+                            </span>
+                          ) : null;
+                        })
+                    }
+                  </div>
+                </div>
               </div>
 
               <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100">
@@ -3814,6 +3864,39 @@ const MasterDataView = ({
                     }
                   </div>
                 </div>
+
+                {/* Client Owners (Business Head / CSM) */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-700">Client Owners <span className="font-normal text-slate-400">(Business Head / CSM)</span></label>
+                      <p className="text-[11px] text-slate-400">Owners see every task for this client, regardless of assignee department or reporting line.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setPickerSearch(''); setActivePicker('add-owners'); }}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-all"
+                    >
+                      <Users size={12}/> Select Owners
+                    </button>
+                  </div>
+                  <div className="min-h-[52px] max-h-28 overflow-y-auto border border-slate-200 rounded-xl p-2.5 bg-slate-50/50 flex flex-wrap gap-1.5 items-start content-start">
+                    {addClientOwners.length === 0
+                      ? <p className="text-xs text-slate-400 italic">No owners selected</p>
+                      : addClientOwners.map(id => {
+                          const u = (users || []).find(x => String(x.id) === String(id));
+                          return u ? (
+                            <span key={id} className="inline-flex items-center gap-1 bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-semibold px-2 py-1 rounded-full">
+                              <Crown size={10} className="text-indigo-500"/>
+                              {u.name}
+                              <span className="text-[10px] font-normal text-indigo-400">{u.role}</span>
+                              <button type="button" onClick={() => setAddClientOwners(prev => prev.filter(x => String(x) !== String(id)))} className="ml-0.5 hover:text-indigo-900"><X size={10}/></button>
+                            </span>
+                          ) : null;
+                        })
+                    }
+                  </div>
+                </div>
               </div>
 
               <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100">
@@ -3832,10 +3915,12 @@ const MasterDataView = ({
           users={(users || []).filter(u =>
             (activePicker === 'edit-leadership' || activePicker === 'add-leadership')
               ? managementRoles.includes(u.role)
-              : executionRoles.includes(u.role)
+              : (activePicker === 'edit-owners' || activePicker === 'add-owners')
+                ? ownerEligibleRoles.includes(u.role)
+                : executionRoles.includes(u.role)
           )}
-          selected={pickerSelected}
-          onToggle={id => pickerSetSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])}
+          selected={(users || []).filter(u => pickerSelected.some(x => String(x) === String(u.id))).map(u => u.id)}
+          onToggle={id => pickerSetSelected(prev => prev.some(x => String(x) === String(id)) ? prev.filter(x => String(x) !== String(id)) : [...prev, id])}
           onClose={() => setActivePicker(null)}
           pickerSearch={pickerSearch}
           setPickerSearch={setPickerSearch}
