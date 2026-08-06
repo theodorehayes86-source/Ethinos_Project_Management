@@ -887,6 +887,8 @@ export interface AttendanceSyncResult {
   error?: string;
   totalArrived?: number;
   totalNotArrived?: number;
+  /** PMT users skipped because they have no kekaEmployeeId linked. */
+  skippedNoKekaId?: number;
   /** Total number of Keka API retries used during this sync run. */
   retriesUsed?: number;
 }
@@ -936,6 +938,7 @@ export async function syncAttendanceToday(
     // ── Step 1: Load all PMT users with a kekaEmployeeId ─────────────────────
     const usersRaw = await readFirebasePath<unknown>("users");
     const kekaIdToUserId: Record<string, string> = {};
+    let skippedNoKekaId = 0;
     if (usersRaw) {
       const userList: PMTUser[] = Array.isArray(usersRaw)
         ? (usersRaw as PMTUser[]).filter(Boolean)
@@ -943,12 +946,15 @@ export async function syncAttendanceToday(
       for (const u of userList) {
         if (u.kekaEmployeeId && u.id != null) {
           kekaIdToUserId[u.kekaEmployeeId] = String(u.id);
+        } else if (u.id != null) {
+          // User exists in PMT but has no Keka Employee ID linked — will be skipped
+          skippedNoKekaId++;
         }
       }
     }
     const totalKekaUsers = Object.keys(kekaIdToUserId).length;
     if (totalKekaUsers === 0) {
-      return { success: true, recordsWritten: 0, date: today, syncedAt, totalArrived: 0, totalNotArrived: 0, retriesUsed: 0 };
+      return { success: true, recordsWritten: 0, date: today, syncedAt, totalArrived: 0, totalNotArrived: 0, skippedNoKekaId, retriesUsed: 0 };
     }
 
     // ── Step 2: Fetch attendance records from Keka (paginated) ──────────────
@@ -1023,19 +1029,20 @@ export async function syncAttendanceToday(
       recordsWritten,
       totalArrived,
       totalNotArrived,
+      skippedNoKekaId,
       date: today,
     };
 
     await multiPathUpdate(updates);
 
     logger.info(
-      { recordsWritten, totalArrived, totalNotArrived, date: today, retriesUsed: totalRetries },
+      { recordsWritten, totalArrived, totalNotArrived, skippedNoKekaId, date: today, retriesUsed: totalRetries },
       "[Keka] Attendance sync complete"
     );
-    return { success: true, recordsWritten, date: today, syncedAt, totalArrived, totalNotArrived, retriesUsed: totalRetries };
+    return { success: true, recordsWritten, date: today, syncedAt, totalArrived, totalNotArrived, skippedNoKekaId, retriesUsed: totalRetries };
   } catch (err) {
     logger.error({ err, date: today }, "[Keka] Attendance sync failed");
-    return { success: false, recordsWritten: 0, date: today, syncedAt, error: String(err), retriesUsed: totalRetries };
+    return { success: false, recordsWritten: 0, date: today, syncedAt, error: String(err), skippedNoKekaId: 0, retriesUsed: totalRetries };
   }
 }
 

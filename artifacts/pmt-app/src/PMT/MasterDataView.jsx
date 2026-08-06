@@ -4402,7 +4402,7 @@ const MasterDataView = ({
                   : <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />}
                 <span>
                   {attendanceSyncResult.success
-                    ? `✓ ${attendanceSyncResult.recordsWritten} records written (${attendanceSyncResult.totalArrived ?? 0} arrived, ${attendanceSyncResult.totalNotArrived ?? 0} not arrived) for ${attendanceSyncResult.date}`
+                    ? `✓ ${attendanceSyncResult.recordsWritten} records written (${attendanceSyncResult.totalArrived ?? 0} arrived, ${attendanceSyncResult.totalNotArrived ?? 0} not arrived) for ${attendanceSyncResult.date}${attendanceSyncResult.skippedNoKekaId ? ` · ${attendanceSyncResult.skippedNoKekaId} user${attendanceSyncResult.skippedNoKekaId !== 1 ? 's' : ''} skipped — no Keka ID` : ''}`
                     : (attendanceSyncResult.error || 'Attendance sync failed')}
                 </span>
                 {attendanceSyncResult.syncedAt && (
@@ -4421,7 +4421,7 @@ const MasterDataView = ({
                   : <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />}
                 <span>
                   {lastAttendanceSync.success !== false
-                    ? `Last sync: ${lastAttendanceSync.recordsWritten ?? 0} records written (${lastAttendanceSync.totalArrived ?? 0} arrived, ${lastAttendanceSync.totalNotArrived ?? 0} not arrived) for ${lastAttendanceSync.date || '—'}`
+                    ? `Last sync: ${lastAttendanceSync.recordsWritten ?? 0} records written (${lastAttendanceSync.totalArrived ?? 0} arrived, ${lastAttendanceSync.totalNotArrived ?? 0} not arrived) for ${lastAttendanceSync.date || '—'}${lastAttendanceSync.skippedNoKekaId ? ` · ${lastAttendanceSync.skippedNoKekaId} user${lastAttendanceSync.skippedNoKekaId !== 1 ? 's' : ''} skipped — no Keka ID` : ''}`
                     : (lastAttendanceSync.error || 'Last sync failed')}
                 </span>
                 {lastAttendanceSync.syncedAt && (
