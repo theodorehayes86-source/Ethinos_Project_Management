@@ -963,6 +963,7 @@ export default function ManagerDashboard({
   const [leaveByUser, setLeaveByUser] = useState({});
   const [attendanceByUser, setAttendanceByUser] = useState({});
   const [selectedDept, setSelectedDept] = useState('All');
+  const [selectedRegion, setSelectedRegion] = useState('All');
   const [attendanceFilter, setAttendanceFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -990,9 +991,19 @@ export default function ManagerDashboard({
     return ['All', ...depts];
   }, [directReports, users, isSuperAdmin, drillStack.length]);
 
+  // Regions derived from the visible pool — admin-only filter (GLOBAL_ROLES
+  // already see across regions; the filter only narrows, never expands).
+  const regions = useMemo(() => {
+    const regs = [...new Set(directReports.map(u => u.region).filter(r => r && r !== 'All'))].sort();
+    return ['All', ...regs];
+  }, [directReports]);
+
   // Cards shown after search + department + attendance filter
   const visibleReports = useMemo(() => {
     let list = selectedDept === 'All' ? directReports : directReports.filter(u => u.department === selectedDept);
+    if (isSuperAdmin && selectedRegion !== 'All') {
+      list = list.filter(u => u.region === selectedRegion);
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
       list = list.filter(u => u.name?.toLowerCase().includes(q) || u.role?.toLowerCase().includes(q));
@@ -1008,12 +1019,13 @@ export default function ManagerDashboard({
       });
     }
     return list;
-  }, [directReports, selectedDept, searchQuery, attendanceFilter, attendanceByUser]);
+  }, [directReports, selectedDept, selectedRegion, isSuperAdmin, searchQuery, attendanceFilter, attendanceByUser]);
 
   const drillIn = (user) => {
     setDrillStack(s => [...s, user]);
     setShowAllDrillTasks(false);
     setSelectedDept('All');
+    setSelectedRegion('All');
     setAttendanceFilter('all');
     setSearchQuery('');
   };
@@ -1021,6 +1033,7 @@ export default function ManagerDashboard({
     setDrillStack(s => s.slice(0, -1));
     setShowAllDrillTasks(false);
     setSelectedDept('All');
+    setSelectedRegion('All');
     setAttendanceFilter('all');
     setSearchQuery('');
   };
@@ -1287,6 +1300,30 @@ export default function ManagerDashboard({
                     {dept !== 'All' && (
                       <span className={`ml-1 text-[10px] ${selectedDept === dept ? 'text-indigo-200' : 'text-slate-400'}`}>
                         {directReports.filter(u => u.department === dept).length}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Region filter — admins only, top level, multiple regions exist */}
+            {isSuperAdmin && drillStack.length === 0 && regions.length > 2 && (
+              <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 flex-shrink-0" style={{ scrollbarWidth: 'none' }}>
+                {regions.map((reg, i) => (
+                  <button
+                    key={`region-${i}-${reg}`}
+                    onClick={() => setSelectedRegion(reg)}
+                    className={`flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded-full whitespace-nowrap transition-colors ${
+                      selectedRegion === reg
+                        ? 'bg-sky-600 text-white shadow-sm'
+                        : 'bg-slate-100 text-slate-500'
+                    }`}
+                  >
+                    {reg === 'All' ? 'All Regions' : reg}
+                    {reg !== 'All' && (
+                      <span className={`ml-1 text-[10px] ${selectedRegion === reg ? 'text-sky-200' : 'text-slate-400'}`}>
+                        {directReports.filter(u => u.region === reg).length}
                       </span>
                     )}
                   </button>

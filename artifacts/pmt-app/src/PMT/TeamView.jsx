@@ -11,6 +11,7 @@ import DueDateInput from './DueDateInput';
 import { getUserLeaveStatus, getUserLeaveData, getUserLeaveAndHolidayData, checkLeaveConflict, toDateKey, isFullDayLeaveOrHoliday, getUpcomingHolidays, getTodayAttendanceMap } from '../utils/leaveConflict';
 import LeaveConflictModal from './LeaveConflictModal';
 import TeamsChatModal from './TeamsChatModal';
+import { getDirectReports, TEAM_ADMIN_ROLES } from './shared/reportingTree';
 
 const DEFAULT_STANDARD_TRACK = ['Director', 'Snr Manager', 'Manager', 'Asst Manager', 'Snr Executive', 'Executive', 'Employee', 'Intern'];
 const CS_REPORT_ROLES = new Set(['CSM', 'Project Manager', 'PM/CSM']);
@@ -1290,6 +1291,7 @@ const TeamView = ({
   const [drillStack, setDrillStack] = useState([]);
   const [selectedMember, setSelectedMember] = useState(null);
   const [deptFilter, setDeptFilter] = useState('all');
+  const [regionFilter, setRegionFilter] = useState('all');
   const [attendanceFilter, setAttendanceFilter] = useState('all');
   const [leaveStatuses, setLeaveStatuses] = useState({});
   const [leaveLoaded, setLeaveLoaded] = useState(false);
@@ -1305,12 +1307,18 @@ const TeamView = ({
   const isSuperAdmin = currentUser?.role === 'Super Admin';
   const isBH = currentUser?.role === 'Business Head';
   const isCSMPM = CS_REPORT_ROLES.has(currentUser?.role);
+  // Region filter is only for roles that already see users across regions.
+  const isTeamAdmin = TEAM_ADMIN_ROLES.includes(currentUser?.role);
 
   const effectiveHierarchyOrder = useMemo(() => (hierarchyOrder?.length > 0 ? hierarchyOrder : DEFAULT_STANDARD_TRACK), [hierarchyOrder]);
 
   const allDepartments = useMemo(() => {
     const depts = [...new Set(users.map(u => u.department).filter(Boolean))].sort();
     return depts;
+  }, [users]);
+
+  const allRegions = useMemo(() => {
+    return [...new Set(users.map(u => u.region).filter(Boolean))].sort();
   }, [users]);
 
   const allClients = useMemo(() => [...(clients || []), ...(syntheticClients || [])], [clients, syntheticClients]);
@@ -1342,23 +1350,27 @@ const TeamView = ({
 
   const leftPanelGroups = useMemo(() => {
     const filterByDept = (members) => {
-      if (deptFilter === 'all') return members;
-      return members.filter(u => u.department === deptFilter);
+      let out = members;
+      if (deptFilter === 'all') { /* no dept restriction */ }
+      else out = out.filter(u => u.department === deptFilter);
+      // Region filter — admins only; combines with (never replaces) other filters.
+      if (isTeamAdmin && regionFilter !== 'all') out = out.filter(u => u.region === regionFilter);
+      return out;
     };
     const sortByName = (arr) => [...arr].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
     if (isBH) {
-      const csReports = sortByName(filterByDept(users.filter(u => String(u.managerId) === String(currentUser.id) && CS_REPORT_ROLES.has(u.role))));
+      const csReports = sortByName(filterByDept(getDirectReports(currentUser.id, users).filter(u => CS_REPORT_ROLES.has(u.role))));
       return [{ role: 'CSM / Project Manager', members: csReports, isDrillable: false }];
     }
 
     if (isCSMPM) {
-      const direct = sortByName(filterByDept(users.filter(u => String(u.managerId) === String(currentUser.id))));
+      const direct = sortByName(filterByDept(getDirectReports(currentUser.id, users)));
       return [{ role: 'Direct Reports', members: direct, isDrillable: false }];
     }
 
     if (isSuperAdmin && currentParent?.role === 'Business Head') {
-      const csReports = sortByName(filterByDept(users.filter(u => String(u.managerId) === String(currentParent.id) && CS_REPORT_ROLES.has(u.role))));
+      const csReports = sortByName(filterByDept(getDirectReports(currentParent.id, users).filter(u => CS_REPORT_ROLES.has(u.role))));
       return [{ role: 'CSM / Project Manager', members: csReports, isDrillable: false }];
     }
 
@@ -1379,7 +1391,10 @@ const TeamView = ({
       return [bhGroup, ...standardGroups];
     }
 
-    const directReports = users.filter(u => String(u.managerId) === String(rootId));
+    // Shared helper: supports array-valued managerId and secondary managerId2,
+    // identical semantics to the mobile app. Drill-down only ever exposes the
+    // drilled parent's reports, so managers stay within their own subtree.
+    const directReports = getDirectReports(rootId, users);
     const levelsToShow = getLevelsToShow(parentRole, effectiveHierarchyOrder);
     const groups = levelsToShow.map(role => ({
       role,
@@ -1394,7 +1409,7 @@ const TeamView = ({
       isDrillable: true,
     }));
     return groups;
-  }, [currentParent, isSuperAdmin, isBH, isCSMPM, users, currentUser, effectiveHierarchyOrder, deptFilter]);
+  }, [currentParent, isSuperAdmin, isBH, isCSMPM, users, currentUser, effectiveHierarchyOrder, deptFilter, regionFilter, isTeamAdmin]);
 
   useEffect(() => {
     const allMembers = leftPanelGroups.flatMap(g => g.members || []);
@@ -1432,7 +1447,7 @@ const TeamView = ({
     if (!selectedMember) return false;
     if (isBH || isCSMPM) return false;
     if (currentParent?.role === 'Business Head') return false;
-    return users.some(u => String(u.managerId) === String(selectedMember.id));
+    return getDirectReports(selectedMember.id, users).length > 0;
   }, [selectedMember, isBH, isCSMPM, currentParent, users]);
 
   const drillInto = () => {
@@ -1711,6 +1726,16 @@ const TeamView = ({
                 className="flex-1 text-[10px] border border-slate-200 rounded-lg px-2 py-1.5 bg-slate-50 outline-none focus:ring-2 ring-blue-500/20 text-slate-700">
                 <option value="all">All Departments</option>
                 {allDepartments.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+          )}
+          {isTeamAdmin && allRegions.length > 1 && (
+            <div className="flex items-center gap-1.5">
+              <Filter size={11} className="text-slate-400 flex-shrink-0"/>
+              <select value={regionFilter} onChange={e => { setRegionFilter(e.target.value); setSelectedMember(null); }}
+                className="flex-1 text-[10px] border border-slate-200 rounded-lg px-2 py-1.5 bg-slate-50 outline-none focus:ring-2 ring-blue-500/20 text-slate-700">
+                <option value="all">All Regions</option>
+                {allRegions.map(r => <option key={r} value={r}>{r}</option>)}
               </select>
             </div>
           )}

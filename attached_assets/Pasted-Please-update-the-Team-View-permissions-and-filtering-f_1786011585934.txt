@@ -1,0 +1,114 @@
+Please update the Team View permissions and filtering for both desktop and mobile.
+
+The required changes are:
+
+1. Add a Region filter for admins in Team View.
+2. Restrict managers so they can only see their direct and indirect reportees.
+3. Apply the same hierarchy and visibility rules consistently across desktop and mobile.
+4. Do not weaken existing role permissions or expose users outside the permitted reporting tree.
+
+==================================================
+OBJECTIVE
+==================================================
+
+Team View should behave differently based on the logged-in user’s role.
+
+Admins should be able to:
+
+- View all permitted users
+- Filter users by Region
+- Switch between regions without losing other filters
+- Use the same Region filter on desktop and mobile
+
+Managers should be able to:
+
+- See their direct reportees
+- See all indirect reportees below those users
+- Not see unrelated users outside their reporting hierarchy
+
+Example:
+
+Ashi reports to Swati.
+Swati reports to Theo.
+
+Therefore:
+
+- Swati can see Ashi.
+- Theo can see Swati.
+- Theo can also see Ashi as an indirect reportee.
+- Ashi cannot see Swati or Theo through Team View unless another permission explicitly allows it.
+- A manager must not see employees belonging to another unrelated reporting branch.
+
+==================================================
+PART 1 — AUDIT THE CURRENT DATA MODEL
+==================================================
+
+First inspect how reporting relationships and regions are currently stored.
+
+Search for fields such as:
+
+- managerId
+- reportingManagerId
+- reportsTo
+- managerEmail
+- parentUserId
+- supervisorId
+- region
+- office
+- location
+- department
+- role
+- hierarchyOrder
+
+Identify:
+
+- The canonical reporting-manager field
+- The canonical Region field
+- Whether manager references use user IDs, Firebase IDs, email addresses or names
+- Whether archived or inactive users are already excluded
+- Existing Team View permission logic
+- Existing admin role checks
+- Existing direct-report filtering
+
+Do not invent a second reporting structure.
+
+Use the existing canonical fields.
+
+==================================================
+PART 2 — DEFINE ADMIN ROLES
+==================================================
+
+Use the application’s existing role and permission system.
+
+At minimum, confirm whether the following should be treated as admins for Region filtering:
+
+- Super Admin
+- Director
+- Business Head
+
+Do not assume every senior role has global access.
+
+If the application already has a helper such as:
+
+- isAdmin
+- canViewAllUsers
+- hasTeamAccess
+- ROLE_LEVELS
+- hierarchyOrder
+
+reuse it.
+
+Do not hard-code a second inconsistent role list if a central permission helper already exists.
+
+The Region filter should only appear for users who already have permission to see users across multiple regions.
+
+==================================================
+PART 3 — BUILD THE REPORTING TREE
+==================================================
+
+Create a shared helper that returns all direct and indirect reportees for a given manager.
+
+Suggested interface:
+
+```js
+getReporteeIds(managerId, users)
