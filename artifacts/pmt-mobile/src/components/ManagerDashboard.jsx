@@ -67,7 +67,28 @@ async function getIdToken() {
   return auth.currentUser?.getIdToken() ?? '';
 }
 
-function PersonTaskSheet({ user, tasks, onClose, onTaskClick, currentUser }) {
+/** Done but still waiting on a QC review. */
+function isAwaitingQC(t) {
+  return !!t.qcEnabled && t.qcStatus === 'sent';
+}
+
+/**
+ * Visibility rule for a member's task list: hide completed tasks that are
+ * neither due today/in the future nor awaiting QC. Keeps the list focused on
+ * actionable work instead of historical done tasks.
+ */
+function filterVisiblePersonTasks(tasks) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return tasks.filter(t => {
+    if (t.status !== 'Done') return true;
+    if (isAwaitingQC(t)) return true;
+    const due = parseDueDateLocal(t.dueDate);
+    return !!due && due >= today;
+  });
+}
+
+function PersonTaskSheet({ user, tasks: rawTasks, onClose, onTaskClick, currentUser }) {
+  const tasks = useMemo(() => filterVisiblePersonTasks(rawTasks), [rawTasks]);
   const [showChat, setShowChat] = useState(false);
 
   // ── Chat state ────────────────────────────────────────────────────────────
@@ -339,9 +360,15 @@ function PersonTaskSheet({ user, tasks, onClose, onTaskClick, currentUser }) {
                         )}
                       </div>
                       <div className="flex flex-col items-end gap-1 flex-shrink-0 mt-0.5">
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${TASK_STATUS_COLORS[t.status] || 'bg-slate-100 text-slate-500'}`}>
-                          {t.status || 'Pending'}
-                        </span>
+                        {isAwaitingQC(t) ? (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                            Awaiting QC
+                          </span>
+                        ) : (
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${TASK_STATUS_COLORS[t.status] || 'bg-slate-100 text-slate-500'}`}>
+                            {t.status || 'Pending'}
+                          </span>
+                        )}
                         {taskOverdue && (
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-600 flex items-center gap-0.5">
                             <AlertTriangle size={9} /> Overdue
@@ -376,13 +403,15 @@ function FilterBadge({ label, value, active, red, onClick }) {
 
 function TaskRow({ task, onTaskClick }) {
   const overdue = isTaskOverdue(task);
+  const awaitingQC = isAwaitingQC(task);
   return (
     <button
       onClick={() => onTaskClick(task)}
       className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl border bg-white text-left active:bg-slate-50 transition-colors ${overdue ? 'border-red-200' : 'border-slate-100'}`}
     >
-      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${task.status === 'Done' ? 'bg-emerald-500' : task.status === 'WIP' ? 'bg-blue-500' : 'bg-amber-400'}`} />
+      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${awaitingQC ? 'bg-amber-400' : task.status === 'Done' ? 'bg-emerald-500' : task.status === 'WIP' ? 'bg-blue-500' : 'bg-amber-400'}`} />
       <span className="text-xs font-semibold text-slate-700 flex-1 truncate">{task.name || task.comment}</span>
+      {awaitingQC && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 flex-shrink-0">Awaiting QC</span>}
       {task._clientName && <span className="text-[10px] text-slate-400 flex-shrink-0 truncate max-w-[80px]">· {task._clientName}</span>}
       {overdue && <AlertTriangle size={10} className="text-red-400 flex-shrink-0" />}
     </button>
@@ -546,25 +575,29 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
           </div>
         )}
 
-        {overridePersonal.allTasks.length > 0 && (
-          <div className="border-t border-slate-100">
-            <button
-              onClick={() => setShowAllTasks(v => !v)}
-              className="w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-slate-50 transition-colors"
-            >
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">All Tasks</span>
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] font-bold text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">{overridePersonal.allTasks.length}</span>
-                {showAllTasks ? <ChevronUp size={13} className="text-slate-400" /> : <ChevronDown size={13} className="text-slate-400" />}
-              </div>
-            </button>
-            {showAllTasks && (
-              <div className="px-3 pb-3 space-y-1.5">
-                {overridePersonal.allTasks.map(t => <TaskRow key={`all-${t._clientId}-${t.id}`} task={t} onTaskClick={onTaskClick} />)}
-              </div>
-            )}
-          </div>
-        )}
+        {(() => {
+          const visibleAllTasks = filterVisiblePersonTasks(overridePersonal.allTasks);
+          if (visibleAllTasks.length === 0) return null;
+          return (
+            <div className="border-t border-slate-100">
+              <button
+                onClick={() => setShowAllTasks(v => !v)}
+                className="w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-slate-50 transition-colors"
+              >
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">All Tasks</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">{visibleAllTasks.length}</span>
+                  {showAllTasks ? <ChevronUp size={13} className="text-slate-400" /> : <ChevronDown size={13} className="text-slate-400" />}
+                </div>
+              </button>
+              {showAllTasks && (
+                <div className="px-3 pb-3 space-y-1.5">
+                  {visibleAllTasks.map(t => <TaskRow key={`all-${t._clientId}-${t.id}`} task={t} onTaskClick={onTaskClick} />)}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {showTaskSheet && (
@@ -1358,40 +1391,42 @@ export default function ManagerDashboard({
                     <RollupBadge label="Overdue" value={drillPersonalStats.overdue} red />
                   </div>
                 </div>
-                {drillPersonalStats.allTasks.length > 0 ? (
-                  <div className="space-y-1.5">
-                    {(() => {
-                      const prioritised = [...drillPersonalStats.todayTasks, ...drillPersonalStats.overdueTasks, ...drillPersonalStats.allTasks.filter(t => !drillPersonalStats.todayTasks.includes(t) && !drillPersonalStats.overdueTasks.includes(t))];
-                      const visible = showAllDrillTasks ? prioritised : prioritised.slice(0, 4);
-                      return visible.map(t => {
+                {(() => {
+                  const visibleAll = filterVisiblePersonTasks(drillPersonalStats.allTasks);
+                  const prioritised = [...drillPersonalStats.todayTasks, ...drillPersonalStats.overdueTasks, ...visibleAll.filter(t => !drillPersonalStats.todayTasks.includes(t) && !drillPersonalStats.overdueTasks.includes(t))];
+                  if (prioritised.length === 0) {
+                    return <p className="text-xs text-indigo-400 text-center py-2">No tasks assigned</p>;
+                  }
+                  const visible = showAllDrillTasks ? prioritised : prioritised.slice(0, 4);
+                  return (
+                    <div className="space-y-1.5">
+                      {visible.map(t => {
                         const taskOverdue = isTaskOverdue(t);
+                        const awaitingQC = isAwaitingQC(t);
                         return (
                           <button
                             key={`${t._clientId}-${t.id}`}
                             onClick={() => setSelectedTask(t)}
                             className={`w-full flex items-center gap-2 px-3 py-2 bg-white rounded-xl border text-left hover:border-indigo-300 transition-colors ${taskOverdue ? 'border-red-200' : 'border-indigo-100'}`}
                           >
-                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${t.status === 'Done' ? 'bg-emerald-500' : t.status === 'WIP' ? 'bg-blue-500' : 'bg-amber-400'}`} />
+                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${awaitingQC ? 'bg-amber-400' : t.status === 'Done' ? 'bg-emerald-500' : t.status === 'WIP' ? 'bg-blue-500' : 'bg-amber-400'}`} />
                             <span className="text-xs text-indigo-800 font-medium flex-1 truncate">{t.name || t.comment}</span>
+                            {awaitingQC && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 flex-shrink-0">Awaiting QC</span>}
                             {t._clientName && <span className="text-[10px] text-indigo-400 flex-shrink-0 truncate max-w-[80px]">{t._clientName}</span>}
                           </button>
                         );
-                      });
-                    })()}
-                    {drillPersonalStats.allTasks.length > 4 && (
-                      <button
-                        onClick={() => setShowAllDrillTasks(v => !v)}
-                        className="w-full text-center text-xs text-indigo-500 font-semibold py-1.5 hover:text-indigo-700"
-                      >
-                        {showAllDrillTasks
-                          ? 'Show less'
-                          : `+${drillPersonalStats.allTasks.length - 4} more tasks`}
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-xs text-indigo-400 text-center py-2">No tasks assigned</p>
-                )}
+                      })}
+                      {prioritised.length > 4 && (
+                        <button
+                          onClick={() => setShowAllDrillTasks(v => !v)}
+                          className="w-full text-center text-xs text-indigo-500 font-semibold py-1.5 hover:text-indigo-700"
+                        >
+                          {showAllDrillTasks ? 'Show less' : `+${prioritised.length - 4} more tasks`}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
