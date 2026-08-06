@@ -930,7 +930,10 @@ function ApprovalsTab({ pendingApprovals, isSuperAdmin, onApprove }) {
   );
 }
 
-const GLOBAL_ROLES = ['Super Admin', 'Director', 'Business Head'];
+// Confirmed policy (Aug 2026): only Super Admin sees the whole organization
+// and the region filter. Director / Business Head see just their own
+// reporting tree in Team View, matching the desktop app.
+const GLOBAL_ROLES = ['Super Admin'];
 
 export default function ManagerDashboard({
   currentUser, users, clients, clientLogs, categories,
