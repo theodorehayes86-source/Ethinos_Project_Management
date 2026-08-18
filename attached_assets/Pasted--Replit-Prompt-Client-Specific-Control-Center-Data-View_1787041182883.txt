@@ -1,0 +1,693 @@
+# Replit Prompt — Client-Specific Control Center & Data View Access for CSM and Business Head Roles
+
+Please update the **Control Center** and **Data View** permissions and reporting logic for the **CSM** and **Business Head (BH)** roles.
+
+The key requirement is that CSMs and BHs should be able to access **Metrics and Reports across all departments**, but **only for clients they are permitted to see**.
+
+## 1. Control Center — Replace Department Toggle with Client Selection
+
+For the following roles:
+
+* CSM
+* Business Head / BH
+
+In **Control Center**, replace the existing **Department Toggle** with a **Client selector/filter**.
+
+The user should no longer be choosing a department as their primary reporting scope.
+
+Instead:
+
+**CSM/BH → Client → Metrics/Reports across all relevant departments**
+
+Example:
+
+If a CSM has access to:
+
+* Client A
+* Client B
+* Client C
+
+They should be able to select **Client A** and then see reporting covering all relevant departments for Client A, such as:
+
+* Paid Media
+* Programmatic
+* SEO / GEO / AEO
+* Social
+* Design
+* Marketing Automation
+* Analytics / Data
+* Any other department attached to that client
+
+They must **not** be able to see Client D if Client D is outside their permitted client scope.
+
+Existing department-level behaviour for other roles should remain unchanged unless required by the current permission model.
+
+---
+
+## 2. Client Access Must Drive Reporting Permissions
+
+For CSM and BH roles, the client permission must become the primary scope applied to:
+
+* Control Center
+* Data View
+* Metrics
+* Reports
+* Reporting hours
+* Department breakdowns
+* Team/resource reporting where applicable
+* Charts
+* Summary cards
+* Tables
+* Totals
+* Trends
+* Exports
+* Drill-down views
+
+Do not simply hide clients from the UI.
+
+The client restriction must be enforced in the **backend/API/query layer** as well.
+
+A CSM/BH must never be able to retrieve reporting data for an unauthorised client by:
+
+* Editing a URL
+* Changing request parameters
+* Calling an API manually
+* Manipulating frontend state
+* Using an old cached filter
+* Selecting "All"
+* Accessing a saved report
+* Using an export endpoint
+
+---
+
+## 3. CSM Client Visibility
+
+Use the existing client-assignment logic.
+
+A CSM should see:
+
+* Their own assigned clients
+* Any additional clients already permitted under the current hierarchy/business rules
+
+However, reporting must remain **client-specific**.
+
+The user should not receive department-wide reporting containing data from clients outside their permitted client list.
+
+---
+
+## 4. Business Head Client Visibility
+
+BH access should follow the existing Business Head hierarchy and client-allocation rules.
+
+A BH should be able to see the clients that fall within their permitted business scope, including clients belonging to relevant direct-report CSMs where that is already part of the application's permission model.
+
+Again, access is:
+
+**All departments for permitted clients**
+
+not:
+
+**All clients for permitted departments**
+
+---
+
+# Critical Requirement: Reporting Accuracy
+
+This change is high risk because incorrect filtering may not be obvious to CSMs or BHs.
+
+We therefore need a **definite automated method to prove that Metrics, Reports and Reporting Hours are correct**.
+
+Do not rely only on manual UI testing.
+
+Create backend test data and automated verification.
+
+---
+
+# 5. Create a Dedicated Dummy Reporting Dataset
+
+Create a controlled dummy dataset in the backend specifically for permission and reporting testing.
+
+Use clearly identifiable test entities so they cannot be confused with production data.
+
+For example:
+
+### Users
+
+**Test CSM 1**
+
+* Role: CSM
+* Allowed clients: Test Client Alpha and Test Client Beta
+
+**Test CSM 2**
+
+* Role: CSM
+* Allowed client: Test Client Gamma
+
+**Test BH 1**
+
+* Role: BH
+* Has Test CSM 1 as a direct/indirect report
+* Should therefore have access to Alpha and Beta according to the hierarchy rules
+
+**Test BH 2**
+
+* Role: BH
+* Separate hierarchy
+* Allowed client: Gamma
+
+### Clients
+
+* Test Client Alpha
+* Test Client Beta
+* Test Client Gamma
+* Test Client Restricted
+
+`Test Client Restricted` must deliberately be unavailable to all of the above users so we can test data leakage.
+
+---
+
+# 6. Create Known Reporting Values
+
+Populate deterministic dummy records across multiple departments.
+
+Do not use random values.
+
+Use values that are very easy to manually calculate.
+
+Example:
+
+## Test Client Alpha
+
+### Paid Media
+
+* Reporting Hours: 10
+* Tasks Completed: 5
+* Planned Hours: 12
+* Metric A: 100
+
+### SEO
+
+* Reporting Hours: 20
+* Tasks Completed: 10
+* Planned Hours: 24
+* Metric A: 200
+
+### Social
+
+* Reporting Hours: 30
+* Tasks Completed: 15
+* Planned Hours: 36
+* Metric A: 300
+
+Expected Alpha total:
+
+* Reporting Hours = **60**
+* Tasks Completed = **30**
+* Planned Hours = **72**
+* Metric A = **600**
+
+---
+
+## Test Client Beta
+
+### Paid Media
+
+* Reporting Hours: 7
+* Tasks Completed: 3
+* Metric A: 70
+
+### Design
+
+* Reporting Hours: 13
+* Tasks Completed: 7
+* Metric A: 130
+
+Expected Beta total:
+
+* Reporting Hours = **20**
+* Tasks Completed = **10**
+* Metric A = **200**
+
+---
+
+## Test Client Gamma
+
+Use another unique set of values, for example:
+
+* Reporting Hours = **37**
+* Tasks Completed = **17**
+* Metric A = **370**
+
+---
+
+## Restricted Client
+
+Use extremely obvious values so accidental leakage is immediately detectable:
+
+* Reporting Hours = **9,999**
+* Metric A = **99,999**
+* Tasks Completed = **999**
+
+If any CSM/BH report unexpectedly contains these values, the test should immediately fail.
+
+---
+
+# 7. Automated Backend Assertions
+
+Create automated tests that calculate expected values directly from the seeded dummy records and compare them against the actual reporting APIs.
+
+Do not merely check that the API returns HTTP 200.
+
+Test the actual numbers.
+
+For example:
+
+### Test CSM 1 + Alpha
+
+Expected:
+
+```text
+Reporting Hours = 60
+Tasks Completed = 30
+Planned Hours = 72
+Metric A = 600
+```
+
+API response must exactly match these values.
+
+### Test CSM 1 + Beta
+
+Expected:
+
+```text
+Reporting Hours = 20
+Tasks Completed = 10
+Metric A = 200
+```
+
+### Test CSM 1 + Gamma
+
+Expected result:
+
+```text
+403 / access denied
+```
+
+or an empty authorised response according to the application's standard permission handling.
+
+It must never return Gamma data.
+
+### Test CSM 1 + Restricted Client
+
+Must return no Restricted Client information.
+
+---
+
+# 8. Test Aggregation Across Departments
+
+This is particularly important.
+
+For a permitted client, verify that CSM/BH reporting correctly combines data from **all departments belonging to that client**.
+
+Example:
+
+Alpha has:
+
+```text
+Paid Media = 10 hours
+SEO = 20 hours
+Social = 30 hours
+```
+
+Client total must be:
+
+```text
+60 hours
+```
+
+It must NOT accidentally:
+
+* Return only one department
+* Double-count departments
+* Drop a department because of the old department filter
+* Include another client's department
+* Apply an old department permission
+* Count deleted/inactive records incorrectly
+
+Also test the department breakdown:
+
+```text
+Paid Media    10
+SEO           20
+Social        30
+TOTAL         60
+```
+
+The breakdown total must always reconcile with the headline total.
+
+---
+
+# 9. Reporting Hours Reconciliation Test
+
+Create a dedicated reconciliation test for **Reporting Hours**.
+
+For every dummy client:
+
+```text
+SUM(individual underlying reporting-hour records)
+=
+SUM(department reporting hours)
+=
+Client-level reporting hours
+=
+Control Center reporting hours
+=
+Data View reporting hours
+=
+Report total
+```
+
+All of these should match exactly.
+
+If there are legitimate differences between report definitions, document those definitions explicitly and test against the correct expected value.
+
+Do not allow different parts of the application to independently calculate the same metric using different undocumented logic.
+
+Where possible, centralise the calculation.
+
+---
+
+# 10. Metric Reconciliation
+
+Perform the same reconciliation for every important metric exposed in Control Center and Data View.
+
+For each metric determine:
+
+1. Source table/data
+2. Calculation/formula
+3. Filters applied
+4. Date logic
+5. Client logic
+6. Department logic
+7. Expected dummy value
+8. Actual API value
+9. Actual UI value
+
+Create tests confirming:
+
+```text
+Backend source data
+→ aggregation/query
+→ API
+→ frontend display
+```
+
+all produce the same result.
+
+---
+
+# 11. Date Range Testing
+
+Test reporting using multiple date ranges.
+
+Create dummy records across at least:
+
+* Today
+* Yesterday
+* Current week
+* Previous week
+* Current month
+* Previous month
+
+Then verify that date filters do not:
+
+* Include records outside the selected period
+* Lose records on date boundaries
+* Double-count records
+* Change because of timezone handling
+* Use created_at instead of reporting date incorrectly
+
+Use the application's configured timezone consistently.
+
+---
+
+# 12. Test "All Clients"
+
+If CSM/BH are allowed an **All Clients** option, it must mean:
+
+> All clients this particular user is authorised to access.
+
+It must never mean every client in the database.
+
+For Test CSM 1:
+
+```text
+Alpha hours = 60
+Beta hours = 20
+
+All Clients expected = 80
+```
+
+It must not include:
+
+```text
+Gamma
+Restricted Client
+or any other unauthorised client
+```
+
+---
+
+# 13. Cross-Client Leakage Tests
+
+Explicitly create automated security tests for client leakage.
+
+Try:
+
+```text
+/client/test-client-restricted
+```
+
+and direct API calls using the restricted client ID.
+
+Try changing:
+
+```text
+clientId
+client_id
+reportId
+departmentId
+userId
+date range
+```
+
+where relevant.
+
+The backend must independently confirm the logged-in user's client permission.
+
+Never trust the client ID supplied by the frontend.
+
+---
+
+# 14. Report-Level Regression Testing
+
+Review every report affected by this change.
+
+Check for bugs caused by replacing department scope with client scope.
+
+Specifically test:
+
+* Report totals
+* Reporting hours
+* Department breakdown
+* Employee/resource breakdown
+* Client totals
+* Trend charts
+* Previous-period comparisons
+* Percentage changes
+* Average calculations
+* Productivity/utilisation calculations
+* Filters
+* Pagination
+* Sorting
+* Search
+* Exports
+* CSV/XLSX exports if present
+* Empty states
+* Client switching
+* Date switching
+* Refreshing the page
+* Deep-linked URLs
+
+---
+
+# 15. Frontend vs Backend Verification
+
+For the dummy dataset, create automated browser/end-to-end tests where practical.
+
+The test should:
+
+1. Log in as Test CSM 1.
+2. Open Control Center.
+3. Confirm Department Toggle is replaced with Client selector.
+4. Confirm only Alpha and Beta appear.
+5. Select Alpha.
+6. Check displayed Reporting Hours = 60.
+7. Check other known metrics.
+8. Open Data View.
+9. Verify the same totals.
+10. Open Reports.
+11. Verify the same totals.
+12. Switch to Beta.
+13. Verify Beta values.
+14. Try to access Gamma directly.
+15. Confirm access is blocked.
+16. Try Restricted Client.
+17. Confirm access is blocked.
+18. Log in as Test BH 1.
+19. Repeat the hierarchy/client-access tests.
+
+---
+
+# 16. Build a Reporting Integrity Test Command
+
+Create one simple developer/admin command that can be run after future reporting changes.
+
+For example:
+
+```bash
+npm run test:reporting-integrity
+```
+
+or equivalent for the existing stack.
+
+It should run:
+
+* Permission tests
+* Client access tests
+* Metric reconciliation
+* Reporting-hour reconciliation
+* Department aggregation
+* Date range tests
+* Restricted-client leakage tests
+* CSM tests
+* BH tests
+* Relevant regression tests
+
+At the end output something clear such as:
+
+```text
+REPORTING INTEGRITY TEST
+
+CSM Client Permissions        PASS
+BH Client Permissions         PASS
+Restricted Client Leakage     PASS
+Reporting Hours               PASS
+Metric Aggregation            PASS
+Department Aggregation        PASS
+Date Filtering                PASS
+Control Center API            PASS
+Data View API                 PASS
+Reports API                   PASS
+
+Expected Alpha Hours: 60
+Actual Alpha Hours:   60
+
+Expected Beta Hours:  20
+Actual Beta Hours:    20
+
+Restricted Records Returned: 0
+
+OVERALL: PASS
+```
+
+If any number differs, the test must fail rather than simply issue a warning.
+
+---
+
+# 17. Add Diagnostic Output on Failure
+
+The main concern is that reporting errors will otherwise be very difficult to identify.
+
+When a test fails, return enough information to identify where the discrepancy originated.
+
+Example:
+
+```text
+FAILED: Alpha Reporting Hours
+
+Underlying records:     60
+Department aggregation: 60
+Reporting API:           50
+Control Center UI:       50
+
+Missing Department:
+SEO
+
+Expected SEO Hours: 20
+Returned SEO Hours: 10
+```
+
+This is much more useful than:
+
+```text
+Expected 60, received 50
+```
+
+Where possible, identify:
+
+* Client
+* User
+* Role
+* Department
+* Metric
+* Date range
+* Expected value
+* Actual value
+* Source records
+* API endpoint
+* Filter applied
+
+---
+
+# 18. Do Not Change Existing Roles Unnecessarily
+
+This change specifically concerns:
+
+* CSM
+* BH
+
+Do not alter Admin, Director, Manager or other role behaviour unless required to keep the permission architecture consistent.
+
+Run regression tests on those roles to ensure their existing Control Center and reporting behaviour has not changed unexpectedly.
+
+---
+
+# 19. Acceptance Criteria
+
+Do not consider this complete simply because the UI works.
+
+The implementation is complete only when all of the following are true:
+
+* [ ] CSM Control Center shows Client instead of Department
+* [ ] BH Control Center shows Client instead of Department
+* [ ] CSMs only see permitted clients
+* [ ] BHs only see permitted clients according to hierarchy rules
+* [ ] Permitted clients show metrics across all relevant departments
+* [ ] Data View uses the same client permission rules
+* [ ] Reports use the same client permission rules
+* [ ] Backend enforces the restrictions independently of the frontend
+* [ ] Reporting Hours reconcile with underlying dummy records
+* [ ] Headline metrics reconcile with department totals
+* [ ] Control Center, Data View and Reports return consistent values
+* [ ] "All Clients" only aggregates authorised clients
+* [ ] Restricted-client API requests are rejected
+* [ ] Date filtering is accurate
+* [ ] Exports respect the same permission scope
+* [ ] Existing non-CSM/BH roles still work correctly
+* [ ] Automated dummy-data tests exist
+* [ ] Reporting integrity test can be rerun at any time
+* [ ] Test failures provide diagnostic information
+* [ ] All automated tests pass
+
+**Most importantly: do not validate this change using visual inspection alone. Build deterministic backend dummy data with known totals and prove mathematically through automated tests that the reporting numbers and reporting hours are correct for each role/client combination.**
