@@ -12,6 +12,7 @@ import { getUserLeaveStatus, getUserLeaveData, getUserLeaveAndHolidayData, check
 import LeaveConflictModal from './LeaveConflictModal';
 import TeamsChatModal from './TeamsChatModal';
 import { getDirectReports, TEAM_ADMIN_ROLES } from './shared/reportingTree';
+import { getOwnerScope } from './shared/clientScope';
 
 const DEFAULT_STANDARD_TRACK = ['Director', 'Snr Manager', 'Manager', 'Asst Manager', 'Snr Executive', 'Executive', 'Employee', 'Intern'];
 const CS_REPORT_ROLES = new Set(['CSM', 'Project Manager', 'PM/CSM']);
@@ -1330,23 +1331,19 @@ const TeamView = ({
   const isOwnerScoped = isBH || currentUser?.role === 'CSM';
   const ownerScope = useMemo(() => {
     if (!isOwnerScoped) return null;
-    const isActiveUser = (u) => !u.archived && u.active !== false;
-    const directs = getDirectReports(currentUser.id, users).filter(isActiveUser);
-    const directIdSet = new Set(directs.map(d => String(d.id)));
-    const ownedBy = (uid) => (clients || []).filter(c => (c.ownerIds || []).map(String).includes(String(uid)));
-    const relevant = new Map();
-    ownedBy(currentUser.id).forEach(c => relevant.set(String(c.id), c));
-    directs.forEach(r => ownedBy(r.id).forEach(c => relevant.set(String(c.id), c)));
-    const clientIds = new Set(relevant.keys());
-    const clientNames = new Set([...relevant.values()].map(c => c.name));
+    // Single source of truth for BH/CSM permitted clients — shared with
+    // Metrics and Reports (see shared/clientScope.js).
+    const scope = getOwnerScope(currentUser, users, clients);
+    if (!scope) return null;
+    const { clientIds, clientNames, directIdSet } = scope;
     const teamMembers = users.filter(u =>
-      isActiveUser(u) &&
+      !u.archived && u.active !== false &&
       String(u.id) !== String(currentUser.id) &&
       !directIdSet.has(String(u.id)) &&
       (u.assignedProjects || []).some(p => clientNames.has(p))
     );
     return { clientIds, teamMembers, directIdSet };
-  }, [isOwnerScoped, currentUser?.id, users, clients]);
+  }, [isOwnerScoped, currentUser, users, clients]);
 
   // Read-only, client-scoped view of clientLogs for BH/CSM aggregations.
   // NEVER pass this to setClientLogs — the diff writer treats missing client

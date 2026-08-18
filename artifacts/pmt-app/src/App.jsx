@@ -1038,8 +1038,8 @@ const App = () => {
   const [userManagementAccessRoles, setUserManagementAccessRoles] = useState(['Super Admin', 'Director']);
   const [employeeViewAccessRoles, setEmployeeViewAccessRoles] = useState(['Super Admin', 'Director']);
   const [teamViewAccessRoles, setTeamViewAccessRoles] = useState(['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Asst Manager', 'Project Manager', 'CSM']);
-  const [metricsAccessRoles, setMetricsAccessRoles] = useState(['Super Admin', 'Director']);
-  const [reportsAccessRoles, setReportsAccessRoles] = useState(['Super Admin', 'Director']);
+  const [metricsAccessRoles, setMetricsAccessRoles] = useState(['Super Admin', 'Director', 'Business Head', 'CSM']);
+  const [reportsAccessRoles, setReportsAccessRoles] = useState(['Super Admin', 'Director', 'Business Head', 'CSM']);
   const [metricsAllDataRoles, setMetricsAllDataRoles] = useState(['Super Admin', 'Director']);
   const [reportsAllDataRoles, setReportsAllDataRoles] = useState(['Super Admin', 'Director']);
   const [clientLogs, setClientLogs] = useState({});
@@ -1263,8 +1263,8 @@ const App = () => {
       syncRef('userManagementAccessRoles', (val) => setUserManagementAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
       syncRef('employeeViewAccessRoles', (val) => setEmployeeViewAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
       syncRef('teamViewAccessRoles', (val) => setTeamViewAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Asst Manager', 'Project Manager', 'CSM'])),
-      syncRef('metricsAccessRoles', (val) => setMetricsAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
-      syncRef('reportsAccessRoles', (val) => setReportsAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
+      syncRef('metricsAccessRoles', (val) => setMetricsAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director', 'Business Head', 'CSM'])),
+      syncRef('reportsAccessRoles', (val) => setReportsAccessRoles(Array.isArray(val) ? val : ['Super Admin', 'Director', 'Business Head', 'CSM'])),
       syncRef('metricsAllDataRoles', (val) => setMetricsAllDataRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
       syncRef('reportsAllDataRoles', (val) => setReportsAllDataRoles(Array.isArray(val) ? val : ['Super Admin', 'Director'])),
       syncRef('feedbackItems', (val) => setFeedbackItems(val && typeof val === 'object' ? (Array.isArray(val) ? val : Object.values(val)) : [])),

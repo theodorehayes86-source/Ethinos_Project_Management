@@ -1,15 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { Download, X } from 'lucide-react';
-
-const parseTaskDateToISO = (raw) => {
-  if (!raw || typeof raw !== 'string') return null;
-  const clean = raw.trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) return clean;
-  const ordinal = clean.replace(/(\d+)(st|nd|rd|th)/, '$1');
-  const d = new Date(ordinal);
-  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
-  return null;
-};
+import { getOwnerScope, scopeClientLogs } from './shared/clientScope';
+import {
+  filterLogsByDepartments,
+  buildReportRows,
+  buildClientSummary,
+  buildEmployeeSummary,
+} from './shared/reportingAggregation';
 
 const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = null, departments = [], canSeeAllData = false }) => {
   const [activeView, setActiveView] = useState('client');
@@ -17,6 +14,7 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
   const [deptPickerOpen, setDeptPickerOpen] = useState(false);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [selectedClientId, setSelectedClientId] = useState(''); // '' = all permitted clients (owner-scoped roles only)
 
   const toggleDept = (dept) => {
     setSelectedDepts(prev => prev.includes(dept) ? prev.filter(d => d !== dept) : [...prev, dept]);
@@ -24,24 +22,28 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
 
   const effectiveAllData = canSeeAllData || currentUser?.department === 'All';
 
+  // BH/CSM: client-scoped across ALL departments (Aug 2026 policy). Null for other roles.
+  const ownerScope = useMemo(() => getOwnerScope(currentUser, users, clients), [currentUser, users, clients]);
+  const permittedClients = useMemo(
+    () => (ownerScope ? [...ownerScope.clients].sort((a, b) => (a.name || '').localeCompare(b.name || '')) : []),
+    [ownerScope]
+  );
+
   const filteredClientLogs = useMemo(() => {
-    if (effectiveAllData) {
-      if (selectedDepts.length === 0) return clientLogs;
-      return Object.fromEntries(
-        Object.entries(clientLogs).map(([clientId, logs]) => [
-          clientId,
-          (logs || []).filter(t => !Array.isArray(t.departments) || t.departments.length === 0 || t.departments.some(d => selectedDepts.includes(d)))
-        ])
-      );
+    if (ownerScope) {
+      // Scope the DATA to permitted clients before any aggregation. A selected
+      // client is only honored if it is inside the permitted set.
+      const ids = selectedClientId && ownerScope.clientIds.has(String(selectedClientId))
+        ? new Set([String(selectedClientId)])
+        : ownerScope.clientIds;
+      return scopeClientLogs(clientLogs, ids);
     }
-    const userDept = currentUser?.department;
-    return Object.fromEntries(
-      Object.entries(clientLogs).map(([clientId, logs]) => [
-        clientId,
-        (logs || []).filter(t => !Array.isArray(t.departments) || t.departments.length === 0 || t.departments.includes(userDept))
-      ])
-    );
-  }, [clientLogs, currentUser, effectiveAllData, selectedDepts]);
+    return filterLogsByDepartments(clientLogs, {
+      effectiveAllData,
+      selectedDepts,
+      userDept: currentUser?.department,
+    });
+  }, [clientLogs, currentUser, ownerScope, selectedClientId, effectiveAllData, selectedDepts]);
 
   const usersById = useMemo(() => {
     const map = new Map();
@@ -55,194 +57,15 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
     return map;
   }, [clients]);
 
-  const parseTimeTakenToHours = (timeTaken) => {
-    if (!timeTaken || typeof timeTaken !== 'string') return 0;
-    const parts = timeTaken.split(':').map((part) => Number(part));
-    if (parts.length !== 3 || parts.some((part) => Number.isNaN(part))) return 0;
-    const [hours, minutes, seconds] = parts;
-    return hours + (minutes / 60) + (seconds / 3600);
-  };
+  const allRows = useMemo(
+    () => buildReportRows({ clientLogs: filteredClientLogs, clientsById, usersById, dateFrom, dateTo }),
+    [filteredClientLogs, clientsById, usersById, dateFrom, dateTo]
+  );
 
-  const allRows = useMemo(() => {
-    const rows = [];
+  const clientSummary = useMemo(() => buildClientSummary(allRows), [allRows]);
 
-    Object.entries(filteredClientLogs || {}).forEach(([clientId, logs]) => {
-      const clientRecord = clientsById.get(String(clientId));
-      const entityName = clientRecord?.entityName || '-';
-      const clientName = clientRecord?.name || 'Unknown Client';
+  const employeeSummary = useMemo(() => buildEmployeeSummary(allRows), [allRows]);
 
-      Object.values(logs || {}).forEach((log) => {
-        const isoDate = parseTaskDateToISO(log?.date);
-        if (dateFrom && isoDate && isoDate < dateFrom) return;
-        if (dateTo && isoDate && isoDate > dateTo) return;
-
-        const elapsedMs = Number(log?.elapsedMs || 0);
-        const fromMsHours = elapsedMs > 0 ? elapsedMs / 3600000 : 0;
-        const fromTimeTakenHours = parseTimeTakenToHours(log?.timeTaken);
-        const hoursSpent = fromMsHours > 0 ? fromMsHours : fromTimeTakenHours;
-
-        const assigneeId = log?.assigneeId != null ? String(log.assigneeId) : '';
-        const assigneeFromMap = assigneeId ? usersById.get(assigneeId) : null;
-        const employeeName = assigneeFromMap?.name || log?.assigneeName || log?.creatorName || 'Unassigned';
-
-        const estimatedMs = Number(log?.estimatedMs || 0);
-        const estimatedHours = estimatedMs > 0 ? estimatedMs / 3600000 : 0;
-
-        rows.push({
-          clientId,
-          entityName,
-          clientName,
-          employeeName,
-          category: log?.category || 'Uncategorized',
-          taskDescription: log?.comment || '',
-          taskName: log?.name || '',
-          status: log?.status || '',
-          date: log?.date || '',
-          hoursSpent: Number(hoursSpent.toFixed(2)),
-          billable: log?.billable !== false,
-          estimatedHours: Number(estimatedHours.toFixed(2)),
-          hasEstimate: estimatedMs > 0,
-        });
-      });
-    });
-
-    return rows;
-  }, [filteredClientLogs, clientsById, usersById, dateFrom, dateTo]);
-
-  const clientSummary = useMemo(() => {
-    const summaryMap = new Map();
-
-    allRows.forEach((row) => {
-      const groupKey = `${row.entityName}::${row.clientName}`;
-      if (!summaryMap.has(groupKey)) {
-        summaryMap.set(groupKey, {
-          entityName: row.entityName,
-          clientName: row.clientName,
-          totalHours: 0,
-          totalEstimatedHours: 0,
-          estimatedActualHours: 0,
-          estimatedTaskCount: 0,
-          taskCount: 0,
-          billableHours: 0,
-          billableCount: 0,
-          nonBillableHours: 0,
-          nonBillableCount: 0,
-          categories: new Map()
-        });
-      }
-
-      const current = summaryMap.get(groupKey);
-      current.totalHours += row.hoursSpent;
-      current.taskCount += 1;
-      if (row.billable) {
-        current.billableHours += row.hoursSpent;
-        current.billableCount += 1;
-      } else {
-        current.nonBillableHours += row.hoursSpent;
-        current.nonBillableCount += 1;
-      }
-      if (row.hasEstimate) {
-        current.totalEstimatedHours += row.estimatedHours;
-        current.estimatedActualHours += row.hoursSpent;
-        current.estimatedTaskCount += 1;
-      }
-      current.categories.set(row.category, (current.categories.get(row.category) || 0) + row.hoursSpent);
-    });
-
-    return Array.from(summaryMap.values()).map((item) => {
-      const avgHours = item.taskCount ? item.totalHours / item.taskCount : 0;
-      const categoriesArr = Array.from(item.categories.entries())
-        .sort((a, b) => b[1] - a[1])
-        .map(([name, hours]) => ({ name, hours: Number(hours.toFixed(2)) }));
-      const variance = item.estimatedTaskCount > 0 ? item.estimatedActualHours - item.totalEstimatedHours : null;
-
-      return {
-        entityName: item.entityName,
-        clientName: item.clientName,
-        avgHours: Number(avgHours.toFixed(2)),
-        totalHours: Number(item.totalHours.toFixed(2)),
-        totalEstimatedHours: item.estimatedTaskCount > 0 ? Number(item.totalEstimatedHours.toFixed(2)) : null,
-        variance: variance !== null ? Number(variance.toFixed(2)) : null,
-        taskCount: item.taskCount,
-        billableHours: Number(item.billableHours.toFixed(2)),
-        billableCount: item.billableCount,
-        nonBillableHours: Number(item.nonBillableHours.toFixed(2)),
-        nonBillableCount: item.nonBillableCount,
-        categories: categoriesArr
-      };
-    }).sort((a, b) => b.totalHours - a.totalHours);
-  }, [allRows]);
-
-  const employeeSummary = useMemo(() => {
-    const summaryMap = new Map();
-
-    allRows.forEach((row) => {
-      if (!summaryMap.has(row.employeeName)) {
-        summaryMap.set(row.employeeName, {
-          employeeName: row.employeeName,
-          totalHours: 0,
-          totalEstimatedHours: 0,
-          estimatedActualHours: 0,
-          estimatedTaskCount: 0,
-          taskCount: 0,
-          billableHours: 0,
-          billableCount: 0,
-          nonBillableHours: 0,
-          nonBillableCount: 0,
-          clients: new Map(),
-          categories: new Map()
-        });
-      }
-
-      const current = summaryMap.get(row.employeeName);
-      current.totalHours += row.hoursSpent;
-      current.taskCount += 1;
-      if (row.billable) {
-        current.billableHours += row.hoursSpent;
-        current.billableCount += 1;
-      } else {
-        current.nonBillableHours += row.hoursSpent;
-        current.nonBillableCount += 1;
-      }
-      if (row.hasEstimate) {
-        current.totalEstimatedHours += row.estimatedHours;
-        current.estimatedActualHours += row.hoursSpent;
-        current.estimatedTaskCount += 1;
-      }
-      const clientLabel = row.entityName && row.entityName !== '-' ? `${row.entityName} - ${row.clientName}` : row.clientName;
-      current.clients.set(clientLabel, (current.clients.get(clientLabel) || 0) + row.hoursSpent);
-      current.categories.set(row.category, (current.categories.get(row.category) || 0) + row.hoursSpent);
-    });
-
-    return Array.from(summaryMap.values()).map((item) => {
-      const avgHours = item.taskCount ? item.totalHours / item.taskCount : 0;
-      const clientBreakdown = Array.from(item.clients.entries())
-        .sort((a, b) => b[1] - a[1])
-        .map(([name, hours]) => ({ name, hours: Number(hours.toFixed(2)) }));
-
-      const taskBreakdown = Array.from(item.categories.entries())
-        .sort((a, b) => b[1] - a[1])
-        .map(([name, hours]) => ({ name, hours: Number(hours.toFixed(2)) }));
-
-      const variance = item.estimatedTaskCount > 0 ? item.estimatedActualHours - item.totalEstimatedHours : null;
-
-      return {
-        employeeName: item.employeeName,
-        avgHours: Number(avgHours.toFixed(2)),
-        totalHours: Number(item.totalHours.toFixed(2)),
-        totalEstimatedHours: item.estimatedTaskCount > 0 ? Number(item.totalEstimatedHours.toFixed(2)) : null,
-        variance: variance !== null ? Number(variance.toFixed(2)) : null,
-        taskCount: item.taskCount,
-        billableHours: Number(item.billableHours.toFixed(2)),
-        billableCount: item.billableCount,
-        nonBillableHours: Number(item.nonBillableHours.toFixed(2)),
-        nonBillableCount: item.nonBillableCount,
-        clientsWorked: item.clients.size,
-        clientBreakdown,
-        taskBreakdown
-      };
-    }).sort((a, b) => b.totalHours - a.totalHours);
-  }, [allRows]);
 
   const combinedSummary = useMemo(() => {
     return allRows
@@ -383,7 +206,20 @@ const ReportsView = ({ users = [], clients = [], clientLogs = {}, currentUser = 
             </button>
           )}
 
-          {effectiveAllData && departments.length > 0 && (
+          {ownerScope && (
+            <select
+              value={selectedClientId}
+              onChange={(e) => setSelectedClientId(e.target.value)}
+              className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold text-slate-700 outline-none min-w-[180px]"
+              style={{ backgroundColor: '#ffffff', color: '#000000' }}
+            >
+              <option value="" style={{ backgroundColor: '#ffffff', color: '#000000' }}>All My Clients</option>
+              {permittedClients.map(c => (
+                <option key={c.id} value={c.id} style={{ backgroundColor: '#ffffff', color: '#000000' }}>{c.name}</option>
+              ))}
+            </select>
+          )}
+          {!ownerScope && effectiveAllData && departments.length > 0 && (
             <div className="relative">
               <button
                 type="button"

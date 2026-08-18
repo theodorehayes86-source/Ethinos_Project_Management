@@ -9,6 +9,7 @@
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "test:reporting-integrity": "vitest run src/__tests__/reportingIntegrity.test.js",
     "test:watch": "vitest"
   },
   "devDependencies": {

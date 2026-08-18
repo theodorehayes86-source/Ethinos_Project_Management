@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Clock3, Users, Briefcase, Star, ThumbsUp, ThumbsDown } from 'lucide-react';
 import {
-  parse,
   parseISO,
   isValid,
   startOfDay,
@@ -9,25 +8,16 @@ import {
   startOfMonth,
   endOfMonth,
   subDays,
-  subMonths,
-  eachDayOfInterval,
-  format
+  subMonths
 } from 'date-fns';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-
-const formatDuration = (seconds = 0) => {
-  const hrs = String(Math.floor(seconds / 3600)).padStart(2, '0');
-  const mins = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
-  const secs = String(seconds % 60).padStart(2, '0');
-  return `${hrs}:${mins}:${secs}`;
-};
-
-const parseTimeTaken = (timeTaken = '') => {
-  if (!timeTaken || typeof timeTaken !== 'string') return 0;
-  const parts = timeTaken.split(':').map(Number);
-  if (parts.length !== 3 || parts.some(Number.isNaN)) return 0;
-  return (parts[0] * 3600) + (parts[1] * 60) + parts[2];
-};
+import { getOwnerScope, scopeClientLogs } from './shared/clientScope';
+import {
+  formatDuration,
+  filterLogsByDepartments,
+  makeIsWithinRange,
+  computeMetrics,
+} from './shared/reportingAggregation';
 
 const rangeLabels = {
   last7: 'Last 7 Days',
@@ -51,6 +41,7 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUse
   const [qcCategoryFilter, setQcCategoryFilter] = useState('');
   const [selectedDepts, setSelectedDepts] = useState([]);
   const [deptPickerOpen, setDeptPickerOpen] = useState(false);
+  const [selectedClientId, setSelectedClientId] = useState(''); // '' = all permitted clients (owner-scoped roles only)
 
   const toggleDept = (dept) => {
     setSelectedDepts(prev => prev.includes(dept) ? prev.filter(d => d !== dept) : [...prev, dept]);
@@ -58,27 +49,28 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUse
 
   const effectiveAllData = canSeeAllData || currentUser?.department === 'All';
 
+  // BH/CSM: client-scoped across ALL departments (Aug 2026 policy). Null for other roles.
+  const ownerScope = useMemo(() => getOwnerScope(currentUser, users, clients), [currentUser, users, clients]);
+  const permittedClients = useMemo(
+    () => (ownerScope ? [...ownerScope.clients].sort((a, b) => (a.name || '').localeCompare(b.name || '')) : []),
+    [ownerScope]
+  );
+
   const effectiveLogs = useMemo(() => {
-    if (effectiveAllData) {
-      if (selectedDepts.length === 0) return clientLogs;
-      return Object.fromEntries(
-        Object.entries(clientLogs).map(([clientId, logs]) => [
-          clientId,
-          (logs || []).filter(log => {
-            if (!Array.isArray(log.departments) || log.departments.length === 0) return true;
-            return log.departments.some(d => selectedDepts.includes(d));
-          })
-        ])
-      );
+    if (ownerScope) {
+      // Scope the DATA to permitted clients before any aggregation. A selected
+      // client is only honored if it is inside the permitted set.
+      const ids = selectedClientId && ownerScope.clientIds.has(String(selectedClientId))
+        ? new Set([String(selectedClientId)])
+        : ownerScope.clientIds;
+      return scopeClientLogs(clientLogs, ids);
     }
-    const userDept = currentUser?.department;
-    return Object.fromEntries(
-      Object.entries(clientLogs).map(([clientId, logs]) => [
-        clientId,
-        (logs || []).filter(log => !Array.isArray(log.departments) || log.departments.length === 0 || log.departments.includes(userDept))
-      ])
-    );
-  }, [clientLogs, effectiveAllData, selectedDepts, currentUser]);
+    return filterLogsByDepartments(clientLogs, {
+      effectiveAllData,
+      selectedDepts,
+      userDept: currentUser?.department,
+    });
+  }, [clientLogs, ownerScope, selectedClientId, effectiveAllData, selectedDepts, currentUser]);
 
   const { rangeStart, rangeEnd } = useMemo(() => {
     const now = new Date();
@@ -100,144 +92,13 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUse
     return { rangeStart: null, rangeEnd: null };
   }, [rangePreset, customRange]);
 
-  const isWithinRange = (logDate) => {
-    const parsedDate = parse(logDate || '', 'do MMM yyyy', new Date());
-    if (!isValid(parsedDate)) return false;
-    const normalizedDate = startOfDay(parsedDate);
-    if (!rangeStart || !rangeEnd) return false;
-    if (normalizedDate < rangeStart) return false;
-    if (normalizedDate > startOfDay(rangeEnd)) return false;
-    return true;
-  };
+  const isWithinRange = makeIsWithinRange(rangeStart, rangeEnd);
 
-  const metrics = useMemo(() => {
-    const clientNameById = Object.fromEntries(clients.map(client => [client.id, client.name]));
-    const userMap = new Map();
-    const projectMap = new Map();
-    const categoryMap = new Map();
-    const categoryTaskCountMap = new Map();
+  const metrics = useMemo(
+    () => computeMetrics({ clientLogs: effectiveLogs, clients, users, rangeStart, rangeEnd }),
+    [users, clients, effectiveLogs, rangeStart, rangeEnd]
+  );
 
-    const filteredLogs = [];
-
-    Object.entries(effectiveLogs || {}).forEach(([clientId, logs]) => {
-      const projectName = clientNameById[clientId] || 'Unknown Project';
-
-      Object.values(logs || {}).forEach(log => {
-        if (!isWithinRange(log.date)) return;
-        const durationInSeconds = Math.floor((log.elapsedMs || 0) / 1000) || parseTimeTaken(log.timeTaken);
-        if (!durationInSeconds) return;
-
-        const parsedDate = parse(log.date || '', 'do MMM yyyy', new Date());
-        if (!isValid(parsedDate)) return;
-
-        const userId = log.creatorId || null;
-        const userName = log.creatorName || users.find(user => user.id === userId)?.name || 'Unassigned';
-        const userRole = log.creatorRole || users.find(user => user.id === userId)?.role || 'Unknown';
-
-        filteredLogs.push({
-          date: startOfDay(parsedDate),
-          projectName,
-          categoryName: log.category || 'General',
-          durationInSeconds,
-          userId,
-          userName,
-          userRole
-        });
-      });
-    });
-
-    filteredLogs.forEach(log => {
-      const { projectName, categoryName, durationInSeconds, userId, userName, userRole } = log;
-
-      projectMap.set(projectName, (projectMap.get(projectName) || 0) + durationInSeconds);
-      categoryMap.set(categoryName, (categoryMap.get(categoryName) || 0) + durationInSeconds);
-      categoryTaskCountMap.set(categoryName, (categoryTaskCountMap.get(categoryName) || 0) + 1);
-
-      const key = userId || `${userName}-${userRole}`;
-
-      if (!userMap.has(key)) {
-        userMap.set(key, {
-          id: key,
-          name: userName,
-          role: userRole,
-          totalSeconds: 0,
-          taskCount: 0,
-          projects: {}
-        });
-      }
-
-      const current = userMap.get(key);
-      current.totalSeconds += durationInSeconds;
-      current.taskCount += 1;
-      current.projects[projectName] = (current.projects[projectName] || 0) + durationInSeconds;
-    });
-
-    const rows = Array.from(userMap.values())
-      .sort((left, right) => right.totalSeconds - left.totalSeconds)
-      .map(row => ({
-        ...row,
-        projectSummary: Object.entries(row.projects)
-          .sort((left, right) => right[1] - left[1])
-          .map(([project, seconds]) => `${project} (${formatDuration(seconds)})`)
-          .join(', ')
-      }));
-
-    const projectRows = Array.from(projectMap.entries())
-      .map(([name, seconds]) => ({ name, seconds }))
-      .sort((left, right) => right.seconds - left.seconds);
-
-    const categoryRows = Array.from(categoryMap.entries())
-      .map(([name, seconds]) => ({
-        name,
-        seconds,
-        taskCount: categoryTaskCountMap.get(name) || 0,
-        avgSeconds: categoryTaskCountMap.get(name) ? Math.round(seconds / categoryTaskCountMap.get(name)) : 0,
-      }))
-      .sort((left, right) => right.seconds - left.seconds);
-
-    const totalSeconds = rows.reduce((total, row) => total + row.totalSeconds, 0);
-    const totalTasks = rows.reduce((total, row) => total + row.taskCount, 0);
-    const avgTaskSeconds = totalTasks > 0 ? Math.round(totalSeconds / totalTasks) : 0;
-    const totalUsers = rows.length;
-    const avgUserSeconds = totalUsers > 0 ? Math.round(totalSeconds / totalUsers) : 0;
-
-    const dailyMap = new Map();
-    filteredLogs.forEach(log => {
-      const dateKey = format(log.date, 'yyyy-MM-dd');
-      if (!dailyMap.has(dateKey)) {
-        dailyMap.set(dateKey, { totalSeconds: 0, taskCount: 0, users: new Set() });
-      }
-      const item = dailyMap.get(dateKey);
-      item.totalSeconds += log.durationInSeconds;
-      item.taskCount += 1;
-      item.users.add(log.userId || `${log.userName}-${log.userRole}`);
-    });
-
-    let trendData = [];
-    if (rangeStart && rangeEnd && rangeStart <= rangeEnd) {
-      trendData = eachDayOfInterval({ start: rangeStart, end: startOfDay(rangeEnd) }).map(day => {
-        const dateKey = format(day, 'yyyy-MM-dd');
-        const daily = dailyMap.get(dateKey);
-        const userCount = daily?.users.size || 0;
-        const avgSeconds = userCount > 0 ? Math.floor(daily.totalSeconds / userCount) : 0;
-        return {
-          date: format(day, 'dd MMM'),
-          avgSeconds
-        };
-      });
-    }
-
-    return {
-      rows,
-      projectRows,
-      categoryRows,
-      totalSeconds,
-      totalTasks,
-      avgTaskSeconds,
-      avgUserSeconds,
-      trendData
-    };
-  }, [users, clients, effectiveLogs, rangeStart, rangeEnd]);
 
   const qcMetrics = useMemo(() => {
     const clientNameById = Object.fromEntries(clients.map(c => [c.id, c.name]));
@@ -367,7 +228,20 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUse
         </div>
 
         <div className="flex flex-wrap gap-2 items-center">
-          {effectiveAllData && departments.length > 0 && (
+          {ownerScope && (
+            <select
+              value={selectedClientId}
+              onChange={(e) => setSelectedClientId(e.target.value)}
+              className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold text-slate-700 outline-none min-w-[180px]"
+              style={{ backgroundColor: '#ffffff', color: '#000000' }}
+            >
+              <option value="" style={{ backgroundColor: '#ffffff', color: '#000000' }}>All My Clients</option>
+              {permittedClients.map(c => (
+                <option key={c.id} value={c.id} style={{ backgroundColor: '#ffffff', color: '#000000' }}>{c.name}</option>
+              ))}
+            </select>
+          )}
+          {!ownerScope && effectiveAllData && departments.length > 0 && (
             <div className="relative">
               <button
                 type="button"
@@ -574,7 +448,7 @@ const UserMetricsView = ({ users = [], clients = [], clientLogs = {}, currentUse
               style={{ backgroundColor: '#ffffff', color: '#000000' }}
             >
               <option value="">All Clients</option>
-              {clients.map(c => (
+              {(ownerScope ? permittedClients : clients).map(c => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
