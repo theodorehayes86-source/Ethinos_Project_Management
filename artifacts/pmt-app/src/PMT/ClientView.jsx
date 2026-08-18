@@ -17,6 +17,7 @@ import DueDateInput from './DueDateInput';
 import LeaveConflictModal from './LeaveConflictModal';
 import { checkLeaveConflict, toDateKey } from '../utils/leaveConflict';
 import CsvImportModal from './CsvImportModal';
+import { templateAppliesToClient } from './shared/checklistApplicability';
 
 const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Business Head'];
 
@@ -1033,6 +1034,7 @@ const ClientView = ({
     const template = checklistTemplates.find(t => t.id === clSelectedTemplateId);
     if (!template) { setClError('Template not found.'); return; }
     if (!template.questions || template.questions.length === 0) { setClError('This template has no questions.'); return; }
+    if (!templateAppliesToClient(template, selectedClient?.id)) { setClSelectedTemplateId(''); setClError('This template is not applicable to this client. Please pick another template.'); return; }
 
     const clientId = selectedClient?.id;
     const clientName = selectedClient?.name || '';
@@ -4138,7 +4140,7 @@ const ClientView = ({
                   className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
                 >
                   <option value="">— Select template —</option>
-                  {checklistTemplates.map(tpl => (
+                  {checklistTemplates.filter(tpl => templateAppliesToClient(tpl, selectedClient?.id)).map(tpl => (
                     <option key={tpl.id} value={tpl.id}>{tpl.name} ({tpl.departmentId || tpl.cadence})</option>
                   ))}
                 </select>

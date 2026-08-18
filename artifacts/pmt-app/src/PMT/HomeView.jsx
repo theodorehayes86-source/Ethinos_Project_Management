@@ -16,6 +16,7 @@ import { ReminderPills } from './ReminderPills';
 import DueDateInput from './DueDateInput';
 import LeaveConflictModal from './LeaveConflictModal';
 import { checkLeaveConflict, toDateKey, getUserLeaveAndHolidayData, isFullDayLeaveOrHoliday, getUserLeaveStatus } from '../utils/leaveConflict';
+import { templateAppliesToClient } from './shared/checklistApplicability';
 
 const managementRoles = ['Super Admin', 'Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
 
@@ -427,6 +428,7 @@ const HomeView = ({
     const template = checklistTemplates.find(t => t.id === clSelectedTemplateId);
     if (!template) { setClError('Template not found.'); return; }
     if (!template.questions || template.questions.length === 0) { setClError('This template has no questions. Add questions to the template before assigning it.'); return; }
+    if (!templateAppliesToClient(template, clSelectedClientId)) { setClSelectedTemplateId(''); setClError('This template is not applicable to the selected client. Please pick another template.'); return; }
 
     const clientOpt = allClientOptions.find(c => c.id === clSelectedClientId);
     const formattedDate = format(clSelectedDate, 'do MMM yyyy');
@@ -3016,7 +3018,7 @@ const HomeView = ({
                   className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
                 >
                   <option value="">— Select template —</option>
-                  {checklistTemplates.map(tpl => (
+                  {checklistTemplates.filter(tpl => templateAppliesToClient(tpl, clSelectedClientId)).map(tpl => (
                     <option key={tpl.id} value={tpl.id}>{tpl.name} ({tpl.departmentId || tpl.cadence})</option>
                   ))}
                 </select>
@@ -3042,7 +3044,16 @@ const HomeView = ({
                 <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Client <span className="text-red-500">*</span></label>
                 <select
                   value={clSelectedClientId}
-                  onChange={e => { setClSelectedClientId(e.target.value); if (clError) setClError(''); }}
+                  onChange={e => {
+                    const newId = e.target.value;
+                    setClSelectedClientId(newId);
+                    // Clear the template if it isn't applicable to the new client
+                    if (clSelectedTemplateId) {
+                      const tpl = checklistTemplates.find(t => t.id === clSelectedTemplateId);
+                      if (tpl && !templateAppliesToClient(tpl, newId)) setClSelectedTemplateId('');
+                    }
+                    if (clError) setClError('');
+                  }}
                   className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
                 >
                   <option value="">— Select client —</option>

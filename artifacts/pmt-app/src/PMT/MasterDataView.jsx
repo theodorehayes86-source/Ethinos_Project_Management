@@ -6,6 +6,7 @@ import CsvImportModal from './CsvImportModal';
 import { sendNotification } from '../utils/notify';
 import { auth, db } from '../firebase.js';
 import { ref, update } from 'firebase/database';
+import { APPLICABILITY_OPTIONS, applicabilityLabel } from './shared/checklistApplicability';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -230,6 +231,7 @@ const MasterDataView = ({
   const [clName, setClName] = useState('');
   const [clDept, setClDept] = useState('');
   const [clCadence, setClCadence] = useState('Daily');
+  const [clApplicability, setClApplicability] = useState('any_client');
   const [clQuestions, setClQuestions] = useState([emptyQuestion()]);
   const [clFormError, setClFormError] = useState('');
   const [clSearch, setClSearch] = useState('');
@@ -239,6 +241,7 @@ const MasterDataView = ({
     setClName('');
     setClDept(departments[0] || '');
     setClCadence('Daily');
+    setClApplicability('any_client');
     setClQuestions([{ ...emptyQuestion(), order: 0 }]);
     setClFormError('');
     setClShowForm(true);
@@ -249,6 +252,7 @@ const MasterDataView = ({
     setClName(tpl.name || '');
     setClDept(tpl.departmentId || '');
     setClCadence(tpl.cadence || 'Daily');
+    setClApplicability(tpl.applicability || ''); // '' = All (incl. legacy templates)
     const qs = Array.isArray(tpl.questions) && tpl.questions.length > 0
       ? tpl.questions.map(q => ({ ...q }))
       : [emptyQuestion()];
@@ -263,6 +267,7 @@ const MasterDataView = ({
     setClName('');
     setClDept('');
     setClCadence('Daily');
+    setClApplicability('any_client');
     setClQuestions([emptyQuestion()]);
     setClFormError('');
   };
@@ -275,10 +280,17 @@ const MasterDataView = ({
     if (filledQuestions.length === 0) { setClFormError('Add at least one question.'); return; }
     const finalQuestions = filledQuestions.map((q, i) => ({ id: q.id, text: q.text.trim(), requiresInput: !!q.requiresInput, inputLabel: q.requiresInput ? (q.inputLabel || '').trim() : '', order: i }));
     if (clEditingId) {
-      const updated = checklistTemplates.map(t => t.id === clEditingId ? { ...t, name: trimmedName, departmentId: clDept, cadence: clCadence, questions: finalQuestions } : t);
+      const updated = checklistTemplates.map(t => {
+        if (t.id !== clEditingId) return t;
+        const next = { ...t, name: trimmedName, departmentId: clDept, cadence: clCadence, questions: finalQuestions };
+        if (clApplicability) next.applicability = clApplicability;
+        else delete next.applicability; // 'All' — usable everywhere
+        return next;
+      });
       if (setChecklistTemplates) setChecklistTemplates(updated);
     } else {
       const newTpl = { id: `cl-${Date.now()}`, name: trimmedName, departmentId: clDept, cadence: clCadence, questions: finalQuestions, createdAt: Date.now() };
+      if (clApplicability) newTpl.applicability = clApplicability;
       if (setChecklistTemplates) setChecklistTemplates([...checklistTemplates, newTpl]);
     }
     closeClForm();
@@ -2379,7 +2391,7 @@ const MasterDataView = ({
                 <button onClick={closeClForm} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all"><X size={14}/></button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                 <div className="sm:col-span-1">
                   <label className="text-[11px] font-semibold text-slate-600 block mb-1">Template Name</label>
                   <input
@@ -2414,6 +2426,16 @@ const MasterDataView = ({
                       </button>
                     ))}
                   </div>
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 block mb-1">Applicable To</label>
+                  <select
+                    value={clApplicability}
+                    onChange={e => setClApplicability(e.target.value)}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs bg-white outline-none focus:ring-2 ring-blue-500/20"
+                  >
+                    {APPLICABILITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
                 </div>
               </div>
 
@@ -2521,6 +2543,7 @@ const MasterDataView = ({
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="text-sm font-bold text-slate-800 truncate">{tpl.name}</p>
                             <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${cadenceBadgeColor(tpl.cadence)}`}>{tpl.cadence}</span>
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 bg-indigo-50 text-indigo-600 border border-indigo-100">{applicabilityLabel(tpl.applicability)}</span>
                           </div>
                           <p className="text-[11px] text-slate-500 mt-0.5">{tpl.departmentId}</p>
                         </div>
