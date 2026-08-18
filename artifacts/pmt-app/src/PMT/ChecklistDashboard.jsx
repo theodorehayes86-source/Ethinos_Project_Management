@@ -459,7 +459,7 @@ const ChecklistDashboard = ({
     <div className="space-y-5">
 
       {/* ── Filters ── */}
-      <div className="bg-white/70 backdrop-blur-sm rounded-2xl border border-white/80 shadow-sm p-4 flex flex-wrap gap-3 items-end">
+      <div className="relative z-40 bg-white/70 backdrop-blur-sm rounded-2xl border border-white/80 shadow-sm p-4 flex flex-wrap gap-3 items-end">
 
         {/* Quick range buttons */}
         <div className="flex flex-col gap-1">
@@ -501,7 +501,7 @@ const ChecklistDashboard = ({
             <ChevronDown size={12} className="text-slate-400 flex-shrink-0" />
           </button>
           {clientPickerOpen && (
-            <div className="absolute top-full left-0 mt-1 z-30 bg-white border border-slate-200 rounded-xl shadow-lg w-56 max-h-56 overflow-y-auto">
+            <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-slate-200 rounded-xl shadow-lg w-56 max-h-56 overflow-y-auto">
               <div className="p-2 border-b border-slate-100">
                 <input autoFocus value={clientSearch} onChange={e => setClientSearch(e.target.value)}
                   placeholder="Search clients…"
