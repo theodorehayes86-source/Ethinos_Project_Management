@@ -235,6 +235,14 @@ const MasterDataView = ({
   const [clQuestions, setClQuestions] = useState([emptyQuestion()]);
   const [clFormError, setClFormError] = useState('');
   const [clSearch, setClSearch] = useState('');
+  const clFormRef = React.useRef(null);
+
+  // Scroll to the editor panel when it opens, so the click visibly "does something"
+  useEffect(() => {
+    if (clShowForm && clFormRef.current) {
+      clFormRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [clShowForm, clEditingId]);
 
   const openNewClForm = () => {
     setClEditingId(null);
@@ -2385,7 +2393,7 @@ const MasterDataView = ({
 
           {/* Editor panel */}
           {clShowForm && (
-            <div className="bg-white border border-blue-200 rounded-xl p-5 shadow-sm space-y-4">
+            <div ref={clFormRef} className="scroll-mt-4 bg-white border border-blue-200 rounded-xl p-5 shadow-sm space-y-4">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm font-bold text-slate-800">{clEditingId ? 'Edit Checklist Template' : 'New Checklist Template'}</p>
                 <button onClick={closeClForm} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all"><X size={14}/></button>
