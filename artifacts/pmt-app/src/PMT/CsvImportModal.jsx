@@ -64,10 +64,10 @@ const MODE_CONFIG = {
   combined: {
     title: 'Import Clients + Users',
     subtitle: 'Create clients and assign existing users by email. User emails are pipe-separated (|).',
-    templateContent: 'entityName,clientName,userEmails\nAcme Holdings,Acme Digital,jane@ethinos.com|john@ethinos.com\nBeta Corp,Beta Growth,sarah@ethinos.com',
+    templateContent: 'entityName,clientName,userEmails,ownerEmails\nAcme Holdings,Acme Digital,jane@ethinos.com|john@ethinos.com,bh@ethinos.com|csm@ethinos.com\nBeta Corp,Beta Growth,sarah@ethinos.com,bh@ethinos.com',
     templateName: 'clients-and-users-template.csv',
-    columns: ['entityName', 'clientName', 'userEmails'],
-    columnLabels: { entityName: 'Entity Name', clientName: 'Client Name', userEmails: 'User Emails (pipe-sep)' },
+    columns: ['entityName', 'clientName', 'userEmails', 'ownerEmails'],
+    columnLabels: { entityName: 'Entity Name', clientName: 'Client Name', userEmails: 'User Emails (pipe-sep)', ownerEmails: 'Owner Emails — BH/CSM (pipe-sep)' },
   },
 };
 

@@ -1370,13 +1370,30 @@ const MasterDataView = ({
 
   const handleCsvImportCombined = async (rows) => {
     const newClients = [];
+    let updatedClients = [...(clients || [])];
+    let existingClientChanged = false;
     let updatedUsers = [...(users || [])];
     for (const row of rows) {
       const clientName = row.clientName.trim();
       const entityName = row.entityName.trim();
-      const existing = (clients || []).find(c => c.name.toLowerCase() === clientName.toLowerCase());
+      // Resolve owner emails (BH/CSM) to user ids
+      const ownerEmails = (row.ownerEmails || '').split('|').map(e => e.trim().toLowerCase()).filter(Boolean);
+      const ownerIds = ownerEmails
+        .map(email => (users || []).find(u => (u.email || '').toLowerCase() === email))
+        .filter(Boolean)
+        .map(u => String(u.id));
+      const existing = updatedClients.find(c => c.name.toLowerCase() === clientName.toLowerCase());
       if (!existing) {
-        newClients.push({ id: `client-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name: clientName, entityName });
+        const newClient = { id: `client-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name: clientName, entityName };
+        if (ownerIds.length > 0) newClient.ownerIds = ownerIds;
+        newClients.push(newClient);
+      } else if (ownerIds.length > 0) {
+        // Merge owners into the existing client without dropping current ones
+        const merged = Array.from(new Set([...(existing.ownerIds || []).map(String), ...ownerIds]));
+        if (merged.length !== (existing.ownerIds || []).length) {
+          updatedClients = updatedClients.map(c => c.id === existing.id ? { ...c, ownerIds: merged } : c);
+          existingClientChanged = true;
+        }
       }
       const emailsToAssign = (row.userEmails || '').split('|').map(e => e.trim().toLowerCase()).filter(Boolean);
       updatedUsers = updatedUsers.map(u => {
@@ -1388,7 +1405,7 @@ const MasterDataView = ({
         return u;
       });
     }
-    if (newClients.length > 0 && setClients) setClients([...(clients || []), ...newClients]);
+    if (setClients && (newClients.length > 0 || existingClientChanged)) setClients([...updatedClients, ...newClients]);
     if (setUsers) setUsers(updatedUsers);
     return rows.map(row => ({ label: row.clientName.trim(), success: true }));
   };
