@@ -29,3 +29,9 @@ id = "PMOoZktXG71LfvtilNgeb"
 uri = "file://teams-app/EthinosFlowPro-TEST.zip"
 type = "unspecified"
 title = "Ethinos Flow Pro — TEST package (Replit dev)"
+
+[[outputs]]
+id = "3bKgZeBZZ9xU4em52Sn8l"
+uri = "file://.local/outputs/Flow-Pro-User-Permissions.pptx"
+type = "slides"
+title = "Flow Pro User Permissions.pptx"

@@ -798,7 +798,9 @@ const ClientView = ({
   };
 
   const getTaskCounts = (clientId) => {
-    const logs = (clientLogs[clientId] || []).filter(t => isTaskVisible(t, currentUser) && !t.archived);
+    // Checklist child tasks (taskGroupId) are counted via their groups, not
+    // as ordinary tasks.
+    const logs = (clientLogs[clientId] || []).filter(t => !t.taskGroupId && isTaskVisible(t, currentUser) && !t.archived);
     const twoDaysAgo = subDays(new Date(), 2);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -1313,6 +1315,9 @@ const ClientView = ({
     const stats = getTaskCounts(selectedClient.id);
     const isSuperAdmin = currentUser?.role === 'Super Admin';
     const visibleTaskLogs = (clientLogs[selectedClient.id] || []).filter(log => {
+      // Checklist child tasks are represented by their group card, never as
+      // ordinary task rows or counts.
+      if (log.taskGroupId) return false;
       if (selectedClient.isEthinos) {
         if (!isSuperAdmin && String(log.assigneeId) !== String(currentUser?.id)) return false;
         // Super Admin Ethinos filters
@@ -1373,7 +1378,9 @@ const ClientView = ({
         ? allClientGroups.filter(g => { if (!g.date) return false; try { const d = parse(g.date, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0); return d.getTime() === clToday.getTime(); } catch { return false; } })
         : taskStatusFilter === 'cl-All'
           ? allClientGroups
-          : [];
+          : taskStatusFilter === 'All' && !showArchived
+            ? allClientGroups
+            : [];
     const selectedClientRecord = clients.find(client => client.id === selectedClient.id) || selectedClient;
     const dailyReportUrl = selectedClientRecord?.dailyReportUrl || '';
     const customReports = selectedClientRecord?.customReports || [];
@@ -1613,8 +1620,9 @@ const ClientView = ({
           })}
         </div>
 
-        {/* Checklist Groups — shown only when a checklist-only filter is active */}
-        {taskStatusFilter.startsWith('cl-') && (
+        {/* Checklist Groups — shown in checklist-only mode, and in the default
+            All view whenever this client has checklist groups */}
+        {(taskStatusFilter.startsWith('cl-') || (taskStatusFilter === 'All' && !showArchived && displayedChecklistGroups.length > 0)) && (
           <div ref={checklistGroupsRef} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
               <span className="text-sm font-semibold text-slate-700">Checklist Groups</span>

@@ -4,6 +4,12 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid
 } from 'recharts';
 import { getUserLeaveAndHolidayData, isFullDayLeaveOrHoliday } from '../utils/leaveConflict';
+import { getSubtreeIds } from './shared/reportingTree';
+
+// Synthetic "Personal" client — personal checklists live under this id in
+// clientLogs / taskGroups and should surface in the dashboard too.
+const PERSONAL_CLIENT_ID = '__personal__';
+const PERSONAL_CLIENT = { id: PERSONAL_CLIENT_ID, name: 'Personal' };
 
 // ─── Date Helpers ─────────────────────────────────────────────────────────────
 
@@ -146,11 +152,20 @@ const ChecklistDashboard = ({
   const today = todayYMD();
   const isGlobal = GLOBAL_ROLES.includes(currentUser?.role);
 
-  // The set of clients this user can see — global roles see all, others see assigned
+  // The set of clients this user can see — global roles see all, others see assigned.
+  // The synthetic Personal client is always in scope so personal checklists
+  // appear in the dashboard (row-level assignee scoping happens below).
   const scopedClients = useMemo(() => {
-    if (isGlobal || accessibleClients === null) return clients;
-    return accessibleClients;
+    const base = (isGlobal || accessibleClients === null) ? clients : accessibleClients;
+    return [...base, PERSONAL_CLIENT];
   }, [isGlobal, clients, accessibleClients]);
+
+  // For non-global viewers, personal checklists are only visible when assigned
+  // to themselves or someone in their reporting subtree. Global roles see all.
+  const personalAssigneeScope = useMemo(() => {
+    if (isGlobal || !currentUser?.id) return null; // null = unrestricted
+    return getSubtreeIds(currentUser.id, users);
+  }, [isGlobal, currentUser, users]);
 
   const scopedClientIds = useMemo(() => new Set(scopedClients.map(c => String(c.id))), [scopedClients]);
 
@@ -225,6 +240,10 @@ const ChecklistDashboard = ({
       if (group.archived) return false;
       // Only include groups that belong to accessible clients
       if (!scopedClientIds.has(String(group.clientId))) return false;
+      // Personal checklists: non-global viewers only see their own subtree
+      if (String(group.clientId) === PERSONAL_CLIENT_ID
+        && personalAssigneeScope
+        && !personalAssigneeScope.has(String(group.assigneeId))) return false;
       // Only include groups that have at least one child task in the date window
       // (this is the primary date filter — based on task-level dates)
       if (!tasksByGroupId[group.id]) return false;
@@ -240,10 +259,12 @@ const ChecklistDashboard = ({
       // Template filter
       if (templateFilter !== 'All' && group.templateId !== templateFilter) return false;
 
-      // Department filter (via template's departmentId)
+      // Department filter — template's departmentId, falling back to the
+      // assignee's department (so personal checklists break down by department)
       if (departmentFilter !== 'All') {
         const tplDeptId = tpl?.departmentId || '';
-        if (tplDeptId !== departmentFilter) return false;
+        const assigneeDept = users.find(u => String(u.id) === String(group.assigneeId))?.department || '';
+        if (tplDeptId !== departmentFilter && assigneeDept !== departmentFilter) return false;
       }
 
       // Assignee filter
@@ -254,7 +275,7 @@ const ChecklistDashboard = ({
 
       return true;
     });
-  }, [taskGroups, scopedClientIds, tasksByGroupId, selectedClientIds, cadenceFilter, templateFilter, departmentFilter, assigneeFilter, checklistTemplates, users]);
+  }, [taskGroups, scopedClientIds, personalAssigneeScope, tasksByGroupId, selectedClientIds, cadenceFilter, templateFilter, departmentFilter, assigneeFilter, checklistTemplates, users]);
 
   // Step 3: enrich groups with computed stats
   const enrichedGroups = useMemo(() => {
@@ -297,6 +318,7 @@ const ChecklistDashboard = ({
         _clientName: client?.name || group.clientName || group.clientId,
         _templateName: tpl?.name || group.templateName || '—',
         _assigneeName: assigneeName,
+        _department: tpl?.departmentId || assigneeUser?.department || '—',
       };
     });
   }, [filteredGroups, tasksByGroupId, checklistTemplates, scopedClients, users, today, leaveDataByUser]);
@@ -336,6 +358,11 @@ const ChecklistDashboard = ({
       const weYMD = toYMD(end);
       const weekGroups = taskGroups.filter(g => {
         if (g.templateId !== trendGroup.templateId || g.clientId !== trendGroup.clientId || g.archived) return false;
+        // Same visibility rules as the main table: personal checklists are
+        // limited to the viewer's reporting subtree for non-global roles.
+        if (String(g.clientId) === PERSONAL_CLIENT_ID
+          && personalAssigneeScope
+          && !personalAssigneeScope.has(String(g.assigneeId))) return false;
         const gd = toYMD(parseTaskDate(g.date));
         return gd && gd >= wsYMD && gd <= weYMD;
       });
@@ -357,11 +384,17 @@ const ChecklistDashboard = ({
     return checklistTemplates.filter(t => seen.has(t.id));
   }, [taskGroups, scopedClientIds, checklistTemplates]);
 
-  // Departments from used templates
+  // Departments from used templates, plus assignee departments of personal
+  // checklists (their templates often carry no department)
   const usedDepartments = useMemo(() => {
     const deptIds = new Set(usedTemplates.map(t => t.departmentId).filter(Boolean));
-    return departments.filter(d => deptIds.has(d) || deptIds.has(d));
-  }, [usedTemplates, departments]);
+    taskGroups.forEach(g => {
+      if (g.archived || String(g.clientId) !== PERSONAL_CLIENT_ID) return;
+      const dept = users.find(u => String(u.id) === String(g.assigneeId))?.department;
+      if (dept) deptIds.add(dept);
+    });
+    return departments.filter(d => deptIds.has(d));
+  }, [usedTemplates, departments, taskGroups, users]);
 
   const filteredClientOptions = useMemo(() => {
     return scopedClients.filter(c =>
@@ -381,7 +414,7 @@ const ChecklistDashboard = ({
   const downloadCSV = () => {
     const qFilter = csvQuestionFilter.trim().toLowerCase();
     const rows = [];
-    rows.push(['Client', 'Assignee', 'Template', 'Date', 'Cadence', 'Status', 'Q#', 'Question', 'Type', 'Answer', 'Notes']);
+    rows.push(['Client', 'Assignee', 'Template', 'Department', 'Date', 'Cadence', 'Status', 'Q#', 'Question', 'Type', 'Answer', 'Notes']);
     [...enrichedGroups]
       .sort((a, b) => (a._templateName || '').localeCompare(b._templateName || '') || (a._clientName || '').localeCompare(b._clientName || ''))
       .forEach(group => {
@@ -399,6 +432,7 @@ const ChecklistDashboard = ({
             escape(group._clientName),
             escape(group._assigneeName),
             escape(group._templateName),
+            escape(group._department === '—' ? '' : group._department),
             escape(group.date || ''),
             escape(group._cadence),
             escape(group._effectiveStatus),
@@ -613,6 +647,7 @@ const ChecklistDashboard = ({
                   <th className="text-left px-4 py-2.5 font-bold text-slate-500 uppercase tracking-widest text-[10px]">Client</th>
                   <th className="text-left px-4 py-2.5 font-bold text-slate-500 uppercase tracking-widest text-[10px]">Assignee</th>
                   <th className="text-left px-4 py-2.5 font-bold text-slate-500 uppercase tracking-widest text-[10px]">Template</th>
+                  <th className="text-left px-4 py-2.5 font-bold text-slate-500 uppercase tracking-widest text-[10px]">Department</th>
                   <th className="text-left px-4 py-2.5 font-bold text-slate-500 uppercase tracking-widest text-[10px]">Date</th>
                   <th className="text-left px-4 py-2.5 font-bold text-slate-500 uppercase tracking-widest text-[10px]">Cadence</th>
                   <th className="text-left px-4 py-2.5 font-bold text-slate-500 uppercase tracking-widest text-[10px]">Status</th>
@@ -627,6 +662,7 @@ const ChecklistDashboard = ({
                     <td className="px-4 py-3 font-semibold text-slate-800">{group._clientName}</td>
                     <td className="px-4 py-3 text-slate-600">{group._assigneeName}</td>
                     <td className="px-4 py-3 text-slate-600">{group._templateName}</td>
+                    <td className="px-4 py-3 text-slate-500">{group._department}</td>
                     <td className="px-4 py-3 text-slate-500">{group.date || '—'}</td>
                     <td className="px-4 py-3"><CadencePill cadence={group._cadence} /></td>
                     <td className="px-4 py-3"><StatusPill status={group._effectiveStatus} /></td>
