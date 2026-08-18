@@ -3605,6 +3605,7 @@ const MasterDataView = ({
                   <tr className="bg-slate-100 text-xs font-semibold text-slate-600">
                     <th className="px-3 py-2 text-left">Entity</th>
                     <th className="px-3 py-2 text-left">Client Name</th>
+                    <th className="px-3 py-2 text-left">Owners</th>
                     <th className="px-3 py-2 text-left">Leadership</th>
                     <th className="px-3 py-2 text-left">Team</th>
                     <th className="px-3 py-2 text-right">Action</th>
@@ -3617,6 +3618,22 @@ const MasterDataView = ({
                       <tr key={c.id} className="hover:bg-slate-50 transition-all">
                         <td className="px-3 py-2 text-xs text-slate-500">{c.entityName || '—'}</td>
                         <td className="px-3 py-2 text-sm font-semibold text-slate-800">{c.name}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex flex-wrap gap-1">
+                            {(() => {
+                              const owners = (c.ownerIds || [])
+                                .map(id => users.find(u => String(u.id) === String(id)))
+                                .filter(Boolean);
+                              return owners.length === 0
+                                ? <span className="text-xs text-slate-400 italic">None</span>
+                                : owners.map(u => (
+                                    <span key={u.id} className="inline-flex items-center gap-1 text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full">
+                                      <Star size={8} className="text-amber-500"/>{u.name}
+                                    </span>
+                                  ));
+                            })()}
+                          </div>
+                        </td>
                         <td className="px-3 py-2">
                           <div className="flex flex-wrap gap-1">
                             {staff.admins.length === 0
