@@ -33,14 +33,14 @@ const REPEAT_OPTIONS = ['Daily', 'Weekly', 'Monthly', 'Once'];
 
 const emptyTask = () => ({ name: '', comment: '', category: '', repeatFrequency: 'Monthly', steps: [] });
 
-const OffDeptAllToggle = ({ value, onChange, locked }) => {
+const OffDeptAllToggle = ({ value, onChange, locked, midLabel = 'Dept' }) => {
   const opts = ['off', 'dept', 'all'];
   const styles = {
     off:  { active: 'bg-slate-700 text-white', inactive: 'bg-white text-slate-400 hover:bg-slate-50' },
     dept: { active: 'bg-amber-500 text-white', inactive: 'bg-white text-slate-400 hover:bg-slate-50' },
     all:  { active: 'bg-blue-600 text-white',  inactive: 'bg-white text-slate-400 hover:bg-slate-50' },
   };
-  const labels = { off: 'Off', dept: 'Dept', all: 'All' };
+  const labels = { off: 'Off', dept: midLabel, all: 'All' };
   return (
     <div className={`inline-flex rounded-full border border-slate-200 text-[10px] font-semibold overflow-hidden ${locked ? 'opacity-60 pointer-events-none' : ''}`}>
       {opts.map(opt => (
@@ -2175,7 +2175,7 @@ const MasterDataView = ({
 
           <div className="mt-4 pt-4 border-t border-slate-200 space-y-3">
             <p className="text-sm font-semibold text-slate-700">Data Access — Metrics &amp; Reports</p>
-            <p className="text-xs text-slate-500"><strong>Off</strong> = no access &nbsp;·&nbsp; <strong>Dept</strong> = own department only &nbsp;·&nbsp; <strong>All</strong> = all departments</p>
+            <p className="text-xs text-slate-500"><strong>Off</strong> = no access &nbsp;·&nbsp; <strong>Dept</strong> = own department only &nbsp;·&nbsp; <strong>Client</strong> = own clients only (CSM / Business Head) &nbsp;·&nbsp; <strong>All</strong> = everything</p>
             <div className="overflow-x-auto border border-slate-200 rounded-lg">
               <table className="w-full border-collapse text-xs">
                 <thead>
@@ -2190,6 +2190,9 @@ const MasterDataView = ({
                     const isSuperAdmin = role === 'Super Admin';
                     const mState = isSuperAdmin ? 'all' : !metricsAccessRoles.includes(role) ? 'off' : metricsAllDataRoles.includes(role) ? 'all' : 'dept';
                     const rState = isSuperAdmin ? 'all' : !reportsAccessRoles.includes(role) ? 'off' : reportsAllDataRoles.includes(role) ? 'all' : 'dept';
+                    // CSM/Business Head are client-scoped (owned clients), not department-scoped —
+                    // the middle state means "own clients only" for them.
+                    const midLabel = (role === 'CSM' || role === 'Business Head') ? 'Client' : 'Dept';
                     return (
                       <tr key={role} className={isSuperAdmin ? 'bg-blue-50' : 'hover:bg-slate-50'}>
                         <td className="px-3 py-2 font-medium text-slate-700 sticky left-0 bg-inherit z-10 flex items-center gap-1.5">
@@ -2197,10 +2200,10 @@ const MasterDataView = ({
                           {role}
                         </td>
                         <td className="px-3 py-2 text-center">
-                          <OffDeptAllToggle value={mState} locked={isSuperAdmin} onChange={s => applyViewState(role, 'metrics', s)} />
+                          <OffDeptAllToggle value={mState} locked={isSuperAdmin} midLabel={midLabel} onChange={s => applyViewState(role, 'metrics', s)} />
                         </td>
                         <td className="px-3 py-2 text-center">
-                          <OffDeptAllToggle value={rState} locked={isSuperAdmin} onChange={s => applyViewState(role, 'reports', s)} />
+                          <OffDeptAllToggle value={rState} locked={isSuperAdmin} midLabel={midLabel} onChange={s => applyViewState(role, 'reports', s)} />
                         </td>
                       </tr>
                     );
