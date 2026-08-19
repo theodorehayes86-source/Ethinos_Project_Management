@@ -479,7 +479,7 @@ const MasterDataView = ({
       if (data.apiKeyConfigured) setKekaApiKeyPlaceholder('••••••••••••••••');
       if (data.clientIdConfigured) setKekaClientIdPlaceholder('••••••••••••••••');
       if (data.clientSecretConfigured) setKekaClientSecretPlaceholder('••••••••••••••••');
-      if (data.credentialsReady) setKekaCredentialsReady(true);
+      setKekaCredentialsReady(data.credentialsReady === true);
       if (data.lastSync) setKekaSyncResult(data.lastSync);
       if (data.lastAttendanceSync) setLastAttendanceSync(data.lastAttendanceSync);
       setKekaSettingsKnown(true);
@@ -492,7 +492,7 @@ const MasterDataView = ({
       setKekaLoaded(true);
       setTimeout(() => {
         kekaAuthFetch('/keka/settings').then((data) => {
-          if (data.credentialsReady) setKekaCredentialsReady(true);
+          setKekaCredentialsReady(data.credentialsReady === true);
           if (data.lastAttendanceSync) setLastAttendanceSync(data.lastAttendanceSync);
           setKekaSettingsKnown(true);
         }).catch(() => { /* still unreachable — leave buttons enabled */ });

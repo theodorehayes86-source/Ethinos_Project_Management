@@ -2,6 +2,11 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import admin from "firebase-admin";
 import { readFirebasePath } from "../lib/firebase-admin";
 import { syncAttendanceToday } from "../lib/keka-client";
+import { withJobLock } from "../lib/job-lock";
+import {
+  ATTENDANCE_LOCK_NAME,
+  ATTENDANCE_LOCK_TTL_MS,
+} from "../lib/attendance-scheduler";
 import { logger } from "../lib/logger";
 import { toZonedTime } from "date-fns-tz";
 import { format } from "date-fns";
@@ -110,7 +115,26 @@ router.post(
           ?.scheduleTimezone ?? "Asia/Kolkata";
       const today = format(toZonedTime(new Date(), tz), "yyyy-MM-dd");
 
-      const result = await syncAttendanceToday(tz, today);
+      // Coordinate with the scheduler via the same distributed lock so a
+      // manual click can never run concurrently with a scheduled sync (or
+      // another admin's click on a different instance).
+      let result: Awaited<ReturnType<typeof syncAttendanceToday>> | null = null;
+      const ran = await withJobLock(
+        ATTENDANCE_LOCK_NAME,
+        ATTENDANCE_LOCK_TTL_MS,
+        async () => {
+          result = await syncAttendanceToday(tz, today);
+        }
+      );
+      if (!ran || !result) {
+        // Don't burn the admin's 5-minute cooldown on a skipped run.
+        lastCallByAdmin.delete(adminKey);
+        res.status(409).json({
+          error:
+            "An attendance sync is already running — it should finish within a minute. Please try again shortly.",
+        });
+        return;
+      }
       res.json(result);
     } catch (err) {
       logger.error({ err }, "[AdminAttendance] Manual sync failed");

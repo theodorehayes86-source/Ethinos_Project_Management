@@ -8,7 +8,11 @@ import { logger } from "./logger";
 import { withJobLock, clearExpiredLock } from "./job-lock";
 
 // Lock TTL slightly shorter than the shortest interval (10 min).
-const ATTENDANCE_LOCK_TTL_MS = 8 * 60 * 1000;
+export const ATTENDANCE_LOCK_TTL_MS = 8 * 60 * 1000;
+/** Shared distributed lock name — used by the scheduler, startup catch-up,
+ *  AND the manual /admin/attendance/sync-now route so no two attendance syncs
+ *  can ever run concurrently across instances. */
+export const ATTENDANCE_LOCK_NAME = "attendance-10min-v2";
 
 // Alert thresholds / cooldowns
 const ALERT_FAILURE_THRESHOLD = 3;       // ~30 min of consecutive failures
@@ -397,7 +401,7 @@ export async function startAttendanceScheduler(): Promise<void> {
   // missing KEKA_API_KEY) would win the lock race and silently skip, starving
   // every properly configured instance. Using a fresh lock name makes locks
   // held by old builds irrelevant.
-  await clearExpiredLock("attendance-10min-v2");
+  await clearExpiredLock(ATTENDANCE_LOCK_NAME);
 
   // Runs every 10 minutes; the handler decides whether to proceed based on
   // the active window (10-min during 09:30–11:30 and 17:00–20:00, 30-min
@@ -421,7 +425,7 @@ export async function startAttendanceScheduler(): Promise<void> {
       // tick fires a few seconds later.
       const gate = await evaluateTickGate();
       if (!gate.run) return;
-      await withJobLock("attendance-10min-v2", ATTENDANCE_LOCK_TTL_MS, () =>
+      await withJobLock(ATTENDANCE_LOCK_NAME, ATTENDANCE_LOCK_TTL_MS, () =>
         runAttendanceSync(gate)
       );
     } catch (err) {
@@ -454,7 +458,7 @@ export async function startAttendanceScheduler(): Promise<void> {
       const gate = await evaluateTickGate();
       if (!gate.run) return;
       logger.info({ reason: gate.reason }, "[Attendance] Startup catch-up sync");
-      await withJobLock("attendance-10min-v2", ATTENDANCE_LOCK_TTL_MS, () =>
+      await withJobLock(ATTENDANCE_LOCK_NAME, ATTENDANCE_LOCK_TTL_MS, () =>
         runAttendanceSync(gate)
       );
     } catch (err) {
