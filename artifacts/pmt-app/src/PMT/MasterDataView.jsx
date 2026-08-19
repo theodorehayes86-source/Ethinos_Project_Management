@@ -456,6 +456,11 @@ const MasterDataView = ({
   const [digestRunningFor, setDigestRunningFor] = useState(null);
   const [digestRunResult, setDigestRunResult] = useState(null); // null | { sent, skipped, errors, target }
   const [kekaLoaded, setKekaLoaded] = useState(false);
+  // true once /keka/settings has been READ successfully. If the API was
+  // unreachable we don't know the credential state — in that case the sync
+  // buttons must stay enabled and let the server be the authority, instead of
+  // being permanently greyed out.
+  const [kekaSettingsKnown, setKekaSettingsKnown] = useState(false);
 
   // ── Archive tab ──
   const [archiveDateFrom, setArchiveDateFrom] = useState('');
@@ -465,8 +470,8 @@ const MasterDataView = ({
   const [archiveCollapsed, setArchiveCollapsed] = useState({ tasks: false, approvals: false, feedback: false });
   const toggleArchiveSection = (key) => setArchiveCollapsed(prev => ({ ...prev, [key]: !prev[key] }));
 
-  const loadKekaSettings = useCallback(async () => {
-    if (kekaLoaded) return;
+  const loadKekaSettings = useCallback(async (force = false) => {
+    if (kekaLoaded && !force) return;
     try {
       const data = await kekaAuthFetch('/keka/settings');
       setKekaBaseUrl(data.baseUrl || '');
@@ -477,8 +482,22 @@ const MasterDataView = ({
       if (data.credentialsReady) setKekaCredentialsReady(true);
       if (data.lastSync) setKekaSyncResult(data.lastSync);
       if (data.lastAttendanceSync) setLastAttendanceSync(data.lastAttendanceSync);
-    } catch { /* silent — API not reachable in dev */ }
-    setKekaLoaded(true);
+      setKekaSettingsKnown(true);
+      setKekaLoaded(true);
+    } catch {
+      // API unreachable (e.g. cold start / transient outage). We do NOT mark the
+      // settings as known — sync buttons stay enabled and the server remains the
+      // authority. Retry once shortly after so the status self-heals.
+      setKekaSettingsKnown(false);
+      setKekaLoaded(true);
+      setTimeout(() => {
+        kekaAuthFetch('/keka/settings').then((data) => {
+          if (data.credentialsReady) setKekaCredentialsReady(true);
+          if (data.lastAttendanceSync) setLastAttendanceSync(data.lastAttendanceSync);
+          setKekaSettingsKnown(true);
+        }).catch(() => { /* still unreachable — leave buttons enabled */ });
+      }, 8000);
+    }
   }, [kekaLoaded]);
 
   useEffect(() => {
@@ -4450,9 +4469,9 @@ const MasterDataView = ({
               <button
                 type="button"
                 onClick={triggerAttendanceSync}
-                disabled={attendanceSyncing || !kekaCredentialsReady}
+                disabled={attendanceSyncing || (kekaSettingsKnown && !kekaCredentialsReady)}
                 className="flex-shrink-0 px-4 py-2 rounded-lg text-xs font-semibold bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-2"
-                title={!kekaCredentialsReady ? 'Save credentials first' : 'Sync today\'s attendance from Keka now'}
+                title={(kekaSettingsKnown && !kekaCredentialsReady) ? 'Save credentials first' : 'Sync today\'s attendance from Keka now'}
               >
                 <RefreshCw size={12} className={attendanceSyncing ? 'animate-spin' : ''} />
                 {attendanceSyncing ? 'Syncing…' : 'Sync Attendance Now'}

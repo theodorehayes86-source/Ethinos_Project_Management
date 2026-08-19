@@ -8,7 +8,10 @@ id = "artifacts/mockup-sandbox"
 
 [deployment]
 router = "application"
-deploymentTarget = "autoscale"
+# "vm" (Reserved VM) keeps the api-server always-on so its in-process cron
+# schedulers (Keka attendance sync, reminders, digests) run reliably. Autoscale
+# only runs while HTTP traffic arrives, which silently paused the schedulers.
+deploymentTarget = "vm"
 
 [deployment.postBuild]
 args = ["pnpm", "store", "prune"]

@@ -153,7 +153,89 @@ function isInFastWindow(hour: number, minute: number): boolean {
   return false;
 }
 
-export async function runAttendanceSync(): Promise<void> {
+/** lastAttendanceSync older than this (during operating hours) triggers a
+ *  catch-up run even off the :00/:30 rate gate. Self-heals gaps caused by the
+ *  process being asleep/down (e.g. an autoscale deployment with no traffic). */
+const STALE_SYNC_MS = 45 * 60 * 1000;
+
+interface TickGate {
+  run: boolean;
+  tz: string;
+  hour: number;
+  minute: number;
+  reason: string;
+}
+
+/**
+ * Decides whether a tick should sync — evaluated BEFORE acquiring the job
+ * lock, so a tick that would be gated out never takes the lock away from
+ * another instance.
+ *
+ * Runs when: inside 06:00–22:00 AND (fast window, or :00/:30, or the last
+ * successful sync is stale/from a previous day — the catch-up override).
+ */
+export async function evaluateTickGate(): Promise<TickGate> {
+  let tz = "Asia/Kolkata";
+  let hour = 0;
+  let minute = 0;
+
+  try {
+    const schedRaw = await readFirebasePath<{ scheduleTimezone?: string }>(
+      "settings/notifications/reminders-schedule"
+    );
+    tz = schedRaw?.scheduleTimezone || "Asia/Kolkata";
+  } catch (err) {
+    // Config read failed — proceed without the window gate so we never silently
+    // skip a sync due to a transient Firebase connectivity hiccup.
+    logger.warn({ err }, "[Attendance] Could not read timezone config — proceeding without window gate");
+    return { run: true, tz, hour, minute, reason: "config-read-failed" };
+  }
+
+  const nowInTz = toZonedTime(new Date(), tz);
+  hour = nowInTz.getHours();
+  minute = nowInTz.getMinutes();
+
+  // Outer gate: 06:00–22:00 local time.
+  // Extended from 21:00 to 22:00 so the 21:30 rate-gate slot can capture
+  // employees who clock out after 21:00 (root cause #5 fix).
+  if (hour < 6 || hour >= 22) {
+    return { run: false, tz, hour, minute, reason: "outside-06-22" };
+  }
+  // Rate gate: inside fast windows run every tick (10 min);
+  // outside fast windows only run on :00 and :30 (30 min).
+  // The 21:30 mark naturally provides the single end-of-day pass.
+  if (isInFastWindow(hour, minute) || minute === 0 || minute === 30) {
+    return { run: true, tz, hour, minute, reason: "scheduled" };
+  }
+
+  // Catch-up override: if the last sync is from a previous day or older than
+  // STALE_SYNC_MS, run NOW instead of waiting for the next :00/:30 slot.
+  try {
+    const today = format(nowInTz, "yyyy-MM-dd");
+    const lastSync = await readFirebasePath<{ date?: string; syncedAt?: string }>(
+      "settings/integrations/keka/lastAttendanceSync"
+    );
+    const syncedAtMs = lastSync?.syncedAt ? Date.parse(lastSync.syncedAt) : NaN;
+    const stale =
+      !lastSync?.date ||
+      lastSync.date < today ||
+      !Number.isFinite(syncedAtMs) ||
+      Date.now() - syncedAtMs > STALE_SYNC_MS;
+    if (stale) {
+      logger.info(
+        { lastSyncDate: lastSync?.date, syncedAt: lastSync?.syncedAt },
+        "[Attendance] Last sync is stale — catch-up run outside the :00/:30 slot"
+      );
+      return { run: true, tz, hour, minute, reason: "stale-catch-up" };
+    }
+  } catch {
+    /* staleness check is best-effort — fall through to the normal skip */
+  }
+
+  return { run: false, tz, hour, minute, reason: "rate-gated" };
+}
+
+export async function runAttendanceSync(gate?: TickGate): Promise<void> {
   // Skip silently if Keka is not configured.
   const creds = await getKekaCredentials();
   if (!creds) {
@@ -162,45 +244,11 @@ export async function runAttendanceSync(): Promise<void> {
   }
 
   // ── Window / rate gate ──────────────────────────────────────────────────────
-  // Try to read timezone config and decide whether this tick should run.
-  // If the config read fails we proceed without the gate (better to sync than skip).
-  let tz = "Asia/Kolkata";
-  let hour = 0;
-  let minute = 0;
-  let shouldSkip = false;
-
-  try {
-    const schedRaw = await readFirebasePath<{ scheduleTimezone?: string }>(
-      "settings/notifications/reminders-schedule"
-    );
-    tz = schedRaw?.scheduleTimezone || "Asia/Kolkata";
-    const nowInTz = toZonedTime(new Date(), tz);
-    hour = nowInTz.getHours();
-    minute = nowInTz.getMinutes();
-
-    // Outer gate: 06:00–22:00 local time.
-    // Extended from 21:00 to 22:00 so the 21:30 rate-gate slot can capture
-    // employees who clock out after 21:00 (root cause #5 fix).
-    if (hour < 6 || hour >= 22) {
-      logger.debug({ hour, tz }, "[Attendance] Outside 06:00–22:00 — skipping");
-      shouldSkip = true;
-    } else if (!isInFastWindow(hour, minute) && minute !== 0 && minute !== 30) {
-      // Rate gate: inside fast windows run every tick (10 min);
-      // outside fast windows only run on :00 and :30 (30 min).
-      // The 21:30 mark naturally provides the single end-of-day pass.
-      logger.debug(
-        { hour, minute },
-        "[Attendance] Outside fast window and not on :00/:30 — skipping tick"
-      );
-      shouldSkip = true;
-    }
-  } catch (err) {
-    // Config read failed — proceed without the window gate so we never silently
-    // skip a sync due to a transient Firebase connectivity hiccup.
-    logger.warn({ err }, "[Attendance] Could not read timezone config — proceeding without window gate");
-  }
-
-  if (shouldSkip) return;
+  // Callers normally pass the pre-lock gate result; when invoked directly
+  // (tests, manual paths) evaluate it here.
+  const g = gate ?? (await evaluateTickGate());
+  if (!g.run) return;
+  const { tz, hour, minute } = g;
 
   // ── Compute today's date in the configured timezone ─────────────────────────
   // Fixes root cause #3: UTC server clock would produce the wrong calendar date
@@ -368,8 +416,13 @@ export async function startAttendanceScheduler(): Promise<void> {
         );
         return;
       }
+      // Window/rate gate BEFORE the lock: a tick that would be gated out must
+      // never acquire the lock, or it steals the slot from an instance whose
+      // tick fires a few seconds later.
+      const gate = await evaluateTickGate();
+      if (!gate.run) return;
       await withJobLock("attendance-10min-v2", ATTENDANCE_LOCK_TTL_MS, () =>
-        runAttendanceSync()
+        runAttendanceSync(gate)
       );
     } catch (err) {
       logger.error({ err }, "[Attendance] Unhandled scheduler error");
@@ -388,4 +441,24 @@ export async function startAttendanceScheduler(): Promise<void> {
     "[Attendance] Scheduler started — 10-min sync during 09:30–11:30 & 17:00–20:00; " +
     "30-min otherwise (06:00–22:00); end-of-day pass at 21:30; hourly admin health alert"
   );
+
+  // ── Startup catch-up ────────────────────────────────────────────────────────
+  // If this process just woke up (deploy restart, autoscale cold start) and the
+  // last sync is stale, sync immediately instead of waiting up to 30 minutes
+  // for the next cron slot. The stale-catch-up branch of evaluateTickGate
+  // handles the decision; the job lock prevents duplicate work across instances.
+  setTimeout(async () => {
+    try {
+      const creds = await getKekaCredentials();
+      if (!creds || !readKekaClientId() || !readKekaClientSecret()) return;
+      const gate = await evaluateTickGate();
+      if (!gate.run) return;
+      logger.info({ reason: gate.reason }, "[Attendance] Startup catch-up sync");
+      await withJobLock("attendance-10min-v2", ATTENDANCE_LOCK_TTL_MS, () =>
+        runAttendanceSync(gate)
+      );
+    } catch (err) {
+      logger.error({ err }, "[Attendance] Startup catch-up failed");
+    }
+  }, 15_000);
 }
