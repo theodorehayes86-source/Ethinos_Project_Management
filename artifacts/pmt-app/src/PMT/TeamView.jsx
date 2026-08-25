@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Users, ChevronRight, ChevronLeft, Plus, X, Search, Star, ArrowUp, ArrowDown, Filter, CalendarClock, CalendarCheck2, CalendarX2, AlertTriangle, BarChart2, ClipboardCheck, Clock, Link2, Link2Off, MessageSquare, CheckCircle, LayoutTemplate } from 'lucide-react';
+import { Users, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Plus, X, Search, Star, ArrowUp, ArrowDown, Filter, CalendarClock, CalendarCheck2, CalendarX2, AlertTriangle, BarChart2, ClipboardCheck, Clock, Link2, Link2Off, MessageSquare, CheckCircle, LayoutTemplate } from 'lucide-react';
 import { format, isBefore, isAfter, startOfWeek, endOfWeek, startOfMonth, endOfMonth, parse, addDays, differenceInCalendarDays } from 'date-fns';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
@@ -1294,6 +1294,9 @@ const TeamView = ({
   const [deptFilter, setDeptFilter] = useState('all');
   const [regionFilter, setRegionFilter] = useState('all');
   const [attendanceFilter, setAttendanceFilter] = useState('all');
+  const [atRiskExpanded, setAtRiskExpanded] = useState(true);
+  const [atRiskClientFilter, setAtRiskClientFilter] = useState('all');
+  const [atRiskMemberFilter, setAtRiskMemberFilter] = useState('all');
   const [leaveStatuses, setLeaveStatuses] = useState({});
   const [leaveLoaded, setLeaveLoaded] = useState(false);
   const [upcomingHolidays, setUpcomingHolidays] = useState(new Set());
@@ -1595,9 +1598,31 @@ const TeamView = ({
         if (a.isOverdue && !b.isOverdue) return -1;
         if (!a.isOverdue && b.isOverdue) return 1;
         return b.daysOverdue - a.daysOverdue;
-      })
-      .slice(0, 30);
+      });
   }, [visibleTasks]);
+
+  const atRiskClientOptions = useMemo(() => {
+    const byId = new Map();
+    atRiskTasks.forEach(t => byId.set(String(t.cid), t.cName || String(t.cid)));
+    return [...byId.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [atRiskTasks]);
+
+  const atRiskMemberOptions = useMemo(() => {
+    const byId = new Map();
+    atRiskTasks.forEach(t => {
+      if (t.assigneeId) byId.set(String(t.assigneeId), t.assigneeName || 'Unnamed employee');
+    });
+    return [...byId.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [atRiskTasks]);
+
+  const filteredAtRiskTasks = useMemo(() => atRiskTasks
+    .filter(t => atRiskClientFilter === 'all' || String(t.cid) === atRiskClientFilter)
+    .filter(t => atRiskMemberFilter === 'all' || String(t.assigneeId) === atRiskMemberFilter)
+    .slice(0, 30), [atRiskTasks, atRiskClientFilter, atRiskMemberFilter]);
 
   const workloadData = useMemo(() => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -1899,10 +1924,42 @@ const TeamView = ({
               {/* At-Risk Tasks */}
               {atRiskTasks.length > 0 && (
                 <div ref={overviewAtRiskRef} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAtRiskExpanded(v => !v)}
+                    className={`w-full px-4 py-2.5 flex items-center gap-2 text-left hover:bg-slate-50 transition-colors ${atRiskExpanded ? 'border-b border-slate-100' : ''}`}
+                    aria-expanded={atRiskExpanded}
+                  >
                     <AlertTriangle size={13} className="text-red-400" />
                     <h4 className="text-xs font-bold text-slate-700 flex-1">At-Risk Tasks</h4>
                     <span className="text-[10px] font-bold text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">{atRiskTasks.length}</span>
+                    {atRiskExpanded ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
+                  </button>
+                  {atRiskExpanded && (
+                  <>
+                  <div className="px-4 py-2 border-b border-slate-100 bg-slate-50/60 flex flex-wrap items-center gap-2">
+                    <Filter size={12} className="text-slate-400" />
+                    <select
+                      value={atRiskClientFilter}
+                      onChange={e => setAtRiskClientFilter(e.target.value)}
+                      className="text-[10px] border border-slate-200 rounded-md px-2 py-1 bg-white text-slate-600 outline-none max-w-[180px]"
+                      aria-label="Filter at-risk tasks by client"
+                    >
+                      <option value="all">All clients</option>
+                      {atRiskClientOptions.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}
+                    </select>
+                    <select
+                      value={atRiskMemberFilter}
+                      onChange={e => setAtRiskMemberFilter(e.target.value)}
+                      className="text-[10px] border border-slate-200 rounded-md px-2 py-1 bg-white text-slate-600 outline-none max-w-[180px]"
+                      aria-label="Filter at-risk tasks by employee"
+                    >
+                      <option value="all">All team members</option>
+                      {atRiskMemberOptions.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}
+                    </select>
+                    <span className="ml-auto text-[10px] font-semibold text-slate-400">
+                      {filteredAtRiskTasks.length} shown
+                    </span>
                   </div>
                   <div className="overflow-x-auto">
                   <table className="w-full min-w-[540px] text-[11px]">
@@ -1917,7 +1974,7 @@ const TeamView = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                      {atRiskTasks.map((t, idx) => {
+                      {filteredAtRiskTasks.map((t, idx) => {
                         const clientObj = clientById[String(t.cid)] || { id: t.cid, name: t.cName };
                         return (
                           <tr key={`ar-${t.cid}-${t.id}-${idx}`} onClick={() => onOpenClient(clientObj)} className="hover:bg-slate-50 cursor-pointer transition-colors">
@@ -1930,9 +1987,18 @@ const TeamView = ({
                           </tr>
                         );
                       })}
+                      {filteredAtRiskTasks.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-6 text-center text-xs text-slate-400">
+                            No at-risk tasks match these filters.
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                   </div>
+                  </>
+                  )}
                 </div>
               )}
 
