@@ -10,6 +10,9 @@ import { getSubtreeIds } from './shared/reportingTree';
 // clientLogs / taskGroups and should surface in the dashboard too.
 const PERSONAL_CLIENT_ID = '__personal__';
 const PERSONAL_CLIENT = { id: PERSONAL_CLIENT_ID, name: 'Personal' };
+const ETHINOS_CLIENT_ID = '__ethinos__';
+const ETHINOS_CLIENT = { id: ETHINOS_CLIENT_ID, name: 'Ethinos Internal' };
+const USER_SCOPED_CLIENT_IDS = new Set([PERSONAL_CLIENT_ID, ETHINOS_CLIENT_ID]);
 
 // ─── Date Helpers ─────────────────────────────────────────────────────────────
 
@@ -153,16 +156,21 @@ const ChecklistDashboard = ({
   const isGlobal = GLOBAL_ROLES.includes(currentUser?.role);
 
   // The set of clients this user can see — global roles see all, others see assigned.
-  // The synthetic Personal client is always in scope so personal checklists
-  // appear in the dashboard (row-level assignee scoping happens below).
+  // Synthetic Personal and Ethinos Internal clients are always in scope so
+  // their checklists appear in the dashboard (row-level assignee scoping
+  // happens below).
   const scopedClients = useMemo(() => {
     const base = (isGlobal || accessibleClients === null) ? clients : accessibleClients;
-    return [...base, PERSONAL_CLIENT];
+    const byId = new Map(base.map(client => [String(client.id), client]));
+    byId.set(PERSONAL_CLIENT_ID, PERSONAL_CLIENT);
+    byId.set(ETHINOS_CLIENT_ID, ETHINOS_CLIENT);
+    return [...byId.values()];
   }, [isGlobal, clients, accessibleClients]);
 
-  // For non-global viewers, personal checklists are only visible when assigned
-  // to themselves or someone in their reporting subtree. Global roles see all.
-  const personalAssigneeScope = useMemo(() => {
+  // For non-global viewers, Personal and Ethinos Internal checklists are only
+  // visible when assigned to themselves or someone in their reporting subtree.
+  // Global roles see all.
+  const syntheticAssigneeScope = useMemo(() => {
     if (isGlobal || !currentUser?.id) return null; // null = unrestricted
     return getSubtreeIds(currentUser.id, users);
   }, [isGlobal, currentUser, users]);
@@ -240,10 +248,10 @@ const ChecklistDashboard = ({
       if (group.archived) return false;
       // Only include groups that belong to accessible clients
       if (!scopedClientIds.has(String(group.clientId))) return false;
-      // Personal checklists: non-global viewers only see their own subtree
-      if (String(group.clientId) === PERSONAL_CLIENT_ID
-        && personalAssigneeScope
-        && !personalAssigneeScope.has(String(group.assigneeId))) return false;
+      // User-scoped synthetic checklists: non-global viewers only see their subtree.
+      if (USER_SCOPED_CLIENT_IDS.has(String(group.clientId))
+        && syntheticAssigneeScope
+        && !syntheticAssigneeScope.has(String(group.assigneeId))) return false;
       // Only include groups that have at least one child task in the date window
       // (this is the primary date filter — based on task-level dates)
       if (!tasksByGroupId[group.id]) return false;
@@ -275,7 +283,7 @@ const ChecklistDashboard = ({
 
       return true;
     });
-  }, [taskGroups, scopedClientIds, personalAssigneeScope, tasksByGroupId, selectedClientIds, cadenceFilter, templateFilter, departmentFilter, assigneeFilter, checklistTemplates, users]);
+  }, [taskGroups, scopedClientIds, syntheticAssigneeScope, tasksByGroupId, selectedClientIds, cadenceFilter, templateFilter, departmentFilter, assigneeFilter, checklistTemplates, users]);
 
   // Step 3: enrich groups with computed stats
   const enrichedGroups = useMemo(() => {
@@ -358,11 +366,11 @@ const ChecklistDashboard = ({
       const weYMD = toYMD(end);
       const weekGroups = taskGroups.filter(g => {
         if (g.templateId !== trendGroup.templateId || g.clientId !== trendGroup.clientId || g.archived) return false;
-        // Same visibility rules as the main table: personal checklists are
-        // limited to the viewer's reporting subtree for non-global roles.
-        if (String(g.clientId) === PERSONAL_CLIENT_ID
-          && personalAssigneeScope
-          && !personalAssigneeScope.has(String(g.assigneeId))) return false;
+        // Same visibility rules as the main table: synthetic user-scoped
+        // checklists are limited to the reporting subtree for non-global roles.
+        if (USER_SCOPED_CLIENT_IDS.has(String(g.clientId))
+          && syntheticAssigneeScope
+          && !syntheticAssigneeScope.has(String(g.assigneeId))) return false;
         const gd = toYMD(parseTaskDate(g.date));
         return gd && gd >= wsYMD && gd <= weYMD;
       });
@@ -376,7 +384,7 @@ const ChecklistDashboard = ({
       });
       return { week: weekLabel(start), score: answered > 0 ? Math.round((yes / answered) * 100) : null };
     });
-  }, [trendGroup, taskGroups, clientLogs]);
+  }, [trendGroup, taskGroups, clientLogs, syntheticAssigneeScope]);
 
   // Templates that appear in accessible task groups
   const usedTemplates = useMemo(() => {
@@ -384,12 +392,12 @@ const ChecklistDashboard = ({
     return checklistTemplates.filter(t => seen.has(t.id));
   }, [taskGroups, scopedClientIds, checklistTemplates]);
 
-  // Departments from used templates, plus assignee departments of personal
-  // checklists (their templates often carry no department)
+  // Departments from used templates, plus assignee departments of synthetic
+  // user-scoped checklists (their templates often carry no department).
   const usedDepartments = useMemo(() => {
     const deptIds = new Set(usedTemplates.map(t => t.departmentId).filter(Boolean));
     taskGroups.forEach(g => {
-      if (g.archived || String(g.clientId) !== PERSONAL_CLIENT_ID) return;
+      if (g.archived || !USER_SCOPED_CLIENT_IDS.has(String(g.clientId))) return;
       const dept = users.find(u => String(u.id) === String(g.assigneeId))?.department;
       if (dept) deptIds.add(dept);
     });
