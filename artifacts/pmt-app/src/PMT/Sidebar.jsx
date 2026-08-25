@@ -100,12 +100,19 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
       </button>
       {/* XP Logo Section */}
       <div className={`flex-shrink-0 ${isMinimized ? 'p-4 flex justify-center' : 'p-7 flex justify-start pl-7'}`}>
-        <div
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('home');
+            if (setSelectedClient) setSelectedClient(null);
+          }}
+          aria-label="Go to home"
+          title="Home"
           className={`${
             isMinimized
               ? 'w-12 h-12 rounded-2xl'
               : 'w-40 h-10 rounded-xl'
-          } border border-white/80 bg-white/75 backdrop-blur-sm flex items-center justify-center font-black text-slate-900 tracking-tighter shadow-sm overflow-hidden`}
+          } border border-white/80 bg-white/75 backdrop-blur-sm flex items-center justify-center font-black text-slate-900 tracking-tighter shadow-sm overflow-hidden cursor-pointer hover:bg-white hover:border-indigo-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 transition-all`}
         >
           {!logoError ? (
             <img
@@ -117,7 +124,7 @@ const Sidebar = ({ activeTab, setActiveTab, setSelectedClient, isMinimized, setI
           ) : (
             <span className={`${isMinimized ? 'text-base' : 'text-sm'}`}>{isMinimized ? 'E' : 'Ethinos'}</span>
           )}
-        </div>
+        </button>
       </div>
 
       {/* Navigation Items */}
