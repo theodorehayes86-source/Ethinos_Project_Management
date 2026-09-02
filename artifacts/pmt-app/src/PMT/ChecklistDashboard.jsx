@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { X, ChevronDown, Check, AlertTriangle, Clock, BarChart2, TrendingUp, Download } from 'lucide-react';
+import { X, ChevronDown, Check, AlertTriangle, Clock, BarChart2, TrendingUp, Download, Archive } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid
 } from 'recharts';
@@ -145,6 +145,7 @@ const GLOBAL_ROLES = ['Super Admin', 'Director'];
 const ChecklistDashboard = ({
   clientLogs = {},
   taskGroups = [],
+  setTaskGroups = () => {},
   clients = [],
   accessibleClients = null,
   checklistTemplates = [],
@@ -417,6 +418,16 @@ const ChecklistDashboard = ({
   }, [enrichedGroups]);
 
   const hasActiveFilters = selectedClientIds.length > 0 || cadenceFilter !== 'All' || templateFilter !== 'All' || departmentFilter !== 'All' || assigneeFilter !== 'All';
+
+  const archiveCompletedChecklist = (group) => {
+    if (group._effectiveStatus !== 'done') return;
+    if (!window.confirm(`Archive the completed checklist for ${group._clientName}?`)) return;
+    setTaskGroups(taskGroups.map(item =>
+      item.id === group.id ? { ...item, archived: true } : item
+    ));
+    if (detailGroup?.id === group.id) setDetailGroup(null);
+    if (trendGroup?.id === group.id) setTrendGroup(null);
+  };
 
   // ── CSV download ─────────────────────────────────────────────────────────
   const downloadCSV = () => {
@@ -697,6 +708,14 @@ const ChecklistDashboard = ({
                           title="View historical trend"
                           className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200 transition-all"
                         ><TrendingUp size={11} /></button>
+                        {group._effectiveStatus === 'done' && (
+                          <button
+                            onClick={() => archiveCompletedChecklist(group)}
+                            title="Archive completed checklist"
+                            aria-label={`Archive completed checklist for ${group._clientName}`}
+                            className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-100 transition-all"
+                          ><Archive size={11} /></button>
+                        )}
                       </div>
                     </td>
                   </tr>

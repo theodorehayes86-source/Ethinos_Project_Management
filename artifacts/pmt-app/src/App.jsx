@@ -2265,6 +2265,7 @@ const App = () => {
             <ChecklistDashboard
               clientLogs={clientLogs}
               taskGroups={taskGroups}
+               setTaskGroups={persistTaskGroups}
               clients={clients}
               accessibleClients={accessibleClients}
               checklistTemplates={checklistTemplates}
