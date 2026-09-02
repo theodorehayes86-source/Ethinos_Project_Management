@@ -246,7 +246,10 @@ const ChecklistDashboard = ({
   // Step 2: join taskGroups with their child tasks, apply remaining filters
   const filteredGroups = useMemo(() => {
     return taskGroups.filter(group => {
-      if (group.archived) return false;
+      // Archiving from Personal/Client task lists removes the checklist from
+      // the work queue but retains it in this reporting view. Archiving from
+      // this dashboard hides it here as well.
+      if (group.archived && !group.archivedFromTaskList) return false;
       // Only include groups that belong to accessible clients
       if (!scopedClientIds.has(String(group.clientId))) return false;
       // User-scoped synthetic checklists: non-global viewers only see their subtree.
@@ -366,7 +369,11 @@ const ChecklistDashboard = ({
       const wsYMD = toYMD(start);
       const weYMD = toYMD(end);
       const weekGroups = taskGroups.filter(g => {
-        if (g.templateId !== trendGroup.templateId || g.clientId !== trendGroup.clientId || g.archived) return false;
+        if (
+          g.templateId !== trendGroup.templateId
+          || g.clientId !== trendGroup.clientId
+          || (g.archived && !g.archivedFromTaskList)
+        ) return false;
         // Same visibility rules as the main table: synthetic user-scoped
         // checklists are limited to the reporting subtree for non-global roles.
         if (USER_SCOPED_CLIENT_IDS.has(String(g.clientId))
@@ -389,7 +396,9 @@ const ChecklistDashboard = ({
 
   // Templates that appear in accessible task groups
   const usedTemplates = useMemo(() => {
-    const seen = new Set(taskGroups.filter(g => !g.archived && scopedClientIds.has(String(g.clientId))).map(g => g.templateId));
+    const seen = new Set(taskGroups
+      .filter(g => (!g.archived || g.archivedFromTaskList) && scopedClientIds.has(String(g.clientId)))
+      .map(g => g.templateId));
     return checklistTemplates.filter(t => seen.has(t.id));
   }, [taskGroups, scopedClientIds, checklistTemplates]);
 
@@ -398,7 +407,7 @@ const ChecklistDashboard = ({
   const usedDepartments = useMemo(() => {
     const deptIds = new Set(usedTemplates.map(t => t.departmentId).filter(Boolean));
     taskGroups.forEach(g => {
-      if (g.archived || !USER_SCOPED_CLIENT_IDS.has(String(g.clientId))) return;
+      if ((g.archived && !g.archivedFromTaskList) || !USER_SCOPED_CLIENT_IDS.has(String(g.clientId))) return;
       const dept = users.find(u => String(u.id) === String(g.assigneeId))?.department;
       if (dept) deptIds.add(dept);
     });
@@ -423,7 +432,9 @@ const ChecklistDashboard = ({
     if (group._effectiveStatus !== 'done') return;
     if (!window.confirm(`Archive the completed checklist for ${group._clientName}?`)) return;
     setTaskGroups(taskGroups.map(item =>
-      item.id === group.id ? { ...item, archived: true } : item
+      item.id === group.id
+        ? { ...item, archived: true, archivedFromTaskList: false }
+        : item
     ));
     if (detailGroup?.id === group.id) setDetailGroup(null);
     if (trendGroup?.id === group.id) setTrendGroup(null);
@@ -684,7 +695,16 @@ const ChecklistDashboard = ({
                     <td className="px-4 py-3 text-slate-500">{group._department}</td>
                     <td className="px-4 py-3 text-slate-500">{group.date || '—'}</td>
                     <td className="px-4 py-3"><CadencePill cadence={group._cadence} /></td>
-                    <td className="px-4 py-3"><StatusPill status={group._effectiveStatus} /></td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap items-center gap-1">
+                        <StatusPill status={group._effectiveStatus} />
+                        {group.archivedFromTaskList && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">
+                            <Archive size={9} /> Archived from tasks
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-3">
                       {group._yesPercent !== null ? (
                         <span className={`font-bold ${group._yesPercent >= 80 ? 'text-emerald-600' : group._yesPercent >= 60 ? 'text-amber-600' : 'text-red-600'}`}>

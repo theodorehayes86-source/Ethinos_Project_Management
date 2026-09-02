@@ -131,6 +131,17 @@ const ClientView = ({
     setTaskGroups(taskGroups.map(g => g.id === updatedGroup.id ? updatedGroup : g));
   };
 
+  const handleArchiveChecklistFromTaskList = (group) => {
+    if (group.status !== 'done') return;
+    if (!window.confirm(`Archive "${group.title || group.name || 'this checklist'}" from the task list? It will remain available in the Checklist tab.`)) return;
+    setTaskGroups(taskGroups.map(g =>
+      g.id === group.id
+        ? { ...g, archived: true, archivedFromTaskList: true }
+        : g
+    ));
+    if (detailGroup?.id === group.id) setDetailGroup(null);
+  };
+
   const handleDeleteGroup = (group) => {
     setTaskGroups(taskGroups.filter(g => g.id !== group.id));
     const cid = group.clientId;
@@ -1373,15 +1384,21 @@ const ClientView = ({
       return log.status === taskStatusFilter;
     });
     const clToday = new Date(); clToday.setHours(0, 0, 0, 0);
-    const allClientGroups = (taskGroups || []).filter(g => g.clientId === selectedClient.id && g.status !== 'done');
+    const allClientGroups = (taskGroups || []).filter(g =>
+      g.clientId === selectedClient.id && !g.archived
+    );
+    const openClientGroups = allClientGroups.filter(g => g.status !== 'done');
+    const completedClientGroups = allClientGroups.filter(g => g.status === 'done');
     const displayedChecklistGroups = taskStatusFilter === 'cl-Overdue'
-      ? allClientGroups.filter(g => { if (!g.date) return false; try { const d = parse(g.date, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0); return d < clToday; } catch { return false; } })
+      ? openClientGroups.filter(g => { if (!g.date) return false; try { const d = parse(g.date, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0); return d < clToday; } catch { return false; } })
       : taskStatusFilter === 'cl-Today'
-        ? allClientGroups.filter(g => { if (!g.date) return false; try { const d = parse(g.date, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0); return d.getTime() === clToday.getTime(); } catch { return false; } })
+        ? openClientGroups.filter(g => { if (!g.date) return false; try { const d = parse(g.date, 'do MMM yyyy', new Date()); d.setHours(0,0,0,0); return d.getTime() === clToday.getTime(); } catch { return false; } })
         : taskStatusFilter === 'cl-All'
-          ? allClientGroups
+          ? openClientGroups
+          : taskStatusFilter === 'Done'
+            ? completedClientGroups
           : taskStatusFilter === 'All' && !showArchived
-            ? allClientGroups
+            ? openClientGroups
             : [];
     const selectedClientRecord = clients.find(client => client.id === selectedClient.id) || selectedClient;
     const dailyReportUrl = selectedClientRecord?.dailyReportUrl || '';
@@ -1624,7 +1641,10 @@ const ClientView = ({
 
         {/* Checklist Groups — shown in checklist-only mode, and in the default
             All view whenever this client has checklist groups */}
-        {(taskStatusFilter.startsWith('cl-') || (taskStatusFilter === 'All' && !showArchived && displayedChecklistGroups.length > 0)) && (
+        {(taskStatusFilter.startsWith('cl-')
+          || ((taskStatusFilter === 'All' || taskStatusFilter === 'Done')
+            && !showArchived
+            && displayedChecklistGroups.length > 0)) && (
           <div ref={checklistGroupsRef} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
               <span className="text-sm font-semibold text-slate-700">Checklist Groups</span>
@@ -1643,10 +1663,17 @@ const ClientView = ({
                   ).length;
                   const total = clItems.length;
                   return (
-                    <button
+                    <div
                       key={group.id}
-                      type="button"
                       onClick={() => setDetailGroup(group)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setDetailGroup(group);
+                        }
+                      }}
                       className="w-full px-4 py-3 flex items-center gap-4 text-left hover:bg-slate-50 transition-colors cursor-pointer"
                     >
                       <div className="flex-1 min-w-0">
@@ -1656,7 +1683,21 @@ const ClientView = ({
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${group.status === 'done' ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
                         {group.status || 'Pending'}
                       </span>
-                    </button>
+                      {group.status === 'done' && (
+                        <button
+                          type="button"
+                          onClick={e => {
+                            e.stopPropagation();
+                            handleArchiveChecklistFromTaskList(group);
+                          }}
+                          title="Archive from task list"
+                          aria-label={`Archive ${group.title || group.name || 'completed checklist'} from task list`}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors flex-shrink-0"
+                        >
+                          <Archive size={13} />
+                        </button>
+                      )}
+                    </div>
                   );
                 })}
               </div>

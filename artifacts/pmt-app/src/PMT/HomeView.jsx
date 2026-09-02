@@ -531,6 +531,17 @@ const HomeView = ({
     setTaskGroups(taskGroups.map(g => g.id === updatedGroup.id ? updatedGroup : g));
   };
 
+  const handleArchiveChecklistFromTaskList = (group) => {
+    if (group.status !== 'done') return;
+    if (!window.confirm(`Archive "${group.name || 'this checklist'}" from your task list? It will remain available in the Checklist tab.`)) return;
+    setTaskGroups(taskGroups.map(g =>
+      g.id === group.id
+        ? { ...g, archived: true, archivedFromTaskList: true }
+        : g
+    ));
+    if (detailGroup?.id === group.id) setDetailGroup(null);
+  };
+
   const handleDeleteGroup = (group) => {
     setTaskGroups(taskGroups.filter(g => g.id !== group.id));
     const cid = group.clientId;
@@ -1754,6 +1765,20 @@ const HomeView = ({
                                 </div>
                               )}
                             </div>
+                            {isDone && (
+                              <button
+                                type="button"
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  handleArchiveChecklistFromTaskList(group);
+                                }}
+                                title="Archive from task list"
+                                aria-label={`Archive ${group.name || 'completed checklist'} from task list`}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors flex-shrink-0"
+                              >
+                                <Archive size={13} />
+                              </button>
+                            )}
                             <ChevronRight size={14} className="text-slate-400 flex-shrink-0" />
                           </div>
                         </div>
