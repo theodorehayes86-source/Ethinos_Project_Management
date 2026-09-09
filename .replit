@@ -100,3 +100,4 @@ timeoutMs = 20000
 [userenv.development]
 
 [userenv.production]
+CORS_ORIGINS = "https://project.ethinos.com,https://asset-manager-theodorehayes.replit.app"
