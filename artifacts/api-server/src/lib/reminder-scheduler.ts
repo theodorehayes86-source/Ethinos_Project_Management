@@ -23,6 +23,7 @@ interface TaskLog {
   qcAssigneeEmail?: string | null;
   qcEnabled?: boolean;
   reminderOffsets?: string[];
+  reminderTime?: string | null;
   archived?: boolean;
   lastOverdueNotifiedAt?: string | null;
   lastDueSoonNotifiedAt?: string | null;
@@ -52,6 +53,19 @@ function makeSentKey(offset: string, reminderDate: Date): string {
   const safe = offset.replace("+", "plus").replace("-", "minus");
   const dateStr = reminderDate.toISOString().slice(0, 10);
   return `${safe}_${dateStr}`;
+}
+
+export function isTaskReminderTimeDue(
+  reminderTime: string | null | undefined,
+  currentHour: number,
+  currentMinute: number,
+  defaultHour: number,
+): boolean {
+  const timeMatch = reminderTime?.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+  const reminderMinutes = timeMatch
+    ? Number(timeMatch[1]) * 60 + Number(timeMatch[2])
+    : defaultHour * 60;
+  return currentHour * 60 + currentMinute >= reminderMinutes;
 }
 
 function buildReminderEmailHtml(
@@ -120,7 +134,11 @@ interface PendingReminderEmail {
   qcSubject?: string;
 }
 
-export async function runReminderCheck(): Promise<void> {
+export async function runReminderCheck(
+  now: Date = new Date(),
+  timezone = "Europe/London",
+  defaultHour = 7,
+): Promise<void> {
   logger.info("[Reminders] Running scheduled reminder check");
 
   try {
@@ -147,8 +165,9 @@ export async function runReminderCheck(): Promise<void> {
     const sentReminders: Record<string, Record<string, string>> =
       sentRemindersRaw || {};
 
-    const today = startOfDay(new Date());
-    const todayStr = today.toISOString().slice(0, 10);
+    const nowInTimezone = toZonedTime(now, timezone);
+    const today = startOfDay(nowInTimezone);
+    const todayStr = format(today, "yyyy-MM-dd");
     let emailsSkipped = 0;
 
     const emailConfigured = isEmailConfigured();
@@ -179,9 +198,16 @@ export async function runReminderCheck(): Promise<void> {
           if (isNaN(offsetNum)) continue;
 
           const reminderDate = startOfDay(addDays(dueDate, offsetNum));
-          const reminderDateStr = reminderDate.toISOString().slice(0, 10);
+          const reminderDateStr = format(reminderDate, "yyyy-MM-dd");
 
           if (reminderDateStr !== todayStr) continue;
+
+          if (!isTaskReminderTimeDue(
+            task.reminderTime,
+            nowInTimezone.getHours(),
+            nowInTimezone.getMinutes(),
+            defaultHour,
+          )) continue;
 
           const sentKey = makeSentKey(offset, reminderDate);
           if (taskSentMap[sentKey]) {
@@ -495,8 +521,8 @@ export async function runOverdueDueSoonCheck(): Promise<void> {
 }
 
 /**
- * Read the configured timezone + hour from Firebase, then run both checks
- * only if the current local time matches. Called every hour by the cron.
+ * Check per-task reminders every minute. The global hour remains the fallback
+ * for older tasks without reminderTime and still controls overdue/due-soon mail.
  */
 async function runScheduledChecks(): Promise<void> {
   try {
@@ -511,45 +537,48 @@ async function runScheduledChecks(): Promise<void> {
 
     const nowInTz = toZonedTime(new Date(), tz);
     const currentHour = nowInTz.getHours();
+    const currentMinute = nowInTz.getMinutes();
 
-    if (currentHour !== targetHour) {
-      logger.debug(
-        { currentHour, targetHour, tz },
-        "[Reminders] Hourly tick — not the configured send hour, skipping"
+    await runReminderCheck(new Date(), tz, targetHour);
+
+    if (currentHour === targetHour && currentMinute === 0) {
+      logger.info(
+        { targetHour, tz },
+        "[Reminders] Tick matches global send time — running overdue/due-soon checks"
       );
-      return;
+      await runOverdueDueSoonCheck();
     }
-
-    logger.info(
-      { targetHour, tz },
-      "[Reminders] Hourly tick matches configured send time — running checks"
-    );
-
-    await runReminderCheck();
-    await runOverdueDueSoonCheck();
   } catch (err) {
     logger.error({ err }, "[Reminders] Error reading schedule config");
   }
 }
 
-const REMINDER_LOCK_TTL_MS = 54 * 60 * 1000;
+const REMINDER_LOCK_TTL_MS = 50 * 1000;
 const REMINDER_STARTUP_LOCK_TTL_MS = 5 * 60 * 1000;
 
 export function startReminderScheduler(): void {
-  cron.schedule("0 * * * *", () => {
-    withJobLock("reminders-hourly", REMINDER_LOCK_TTL_MS, () => runScheduledChecks()).catch((err) =>
+  cron.schedule("* * * * *", () => {
+    withJobLock("reminders-minute", REMINDER_LOCK_TTL_MS, () => runScheduledChecks()).catch((err) =>
       logger.error({ err }, "[Reminders] Unhandled scheduler error")
     );
   });
 
   withJobLock("reminders-startup", REMINDER_STARTUP_LOCK_TTL_MS, async () => {
-    await runReminderCheck();
+    const schedRaw = await readFirebasePath<{
+      scheduleTimezone?: string;
+      scheduleHour?: number;
+    }>("settings/notifications/reminders-schedule");
+    await runReminderCheck(
+      new Date(),
+      schedRaw?.scheduleTimezone || "Europe/London",
+      typeof schedRaw?.scheduleHour === "number" ? schedRaw.scheduleHour : 7,
+    );
     await runOverdueDueSoonCheck();
   }).catch((err) =>
     logger.error({ err }, "[Reminders] Error on startup check")
   );
 
   logger.info(
-    "[Reminders] Scheduler started — checks every hour (timezone & hour read from Firebase settings)"
+    "[Reminders] Scheduler started — checks task reminder times every minute"
   );
 }

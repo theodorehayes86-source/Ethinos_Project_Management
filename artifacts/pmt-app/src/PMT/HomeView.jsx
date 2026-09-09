@@ -161,6 +161,7 @@ const HomeView = ({
   const [estimatedHrs, setEstimatedHrs] = useState('');
   const [estimatedMins, setEstimatedMins] = useState('');
   const [taskReminders, setTaskReminders] = useState([]);
+  const [taskReminderTime, setTaskReminderTime] = useState('09:00');
   const [showArchived, setShowArchived] = useState(false);
   const [detailTask, setDetailTask] = useState(null);
   const [leaveConflict, setLeaveConflict] = useState(null);
@@ -393,6 +394,7 @@ const HomeView = ({
     setEstimatedHrs('');
     setEstimatedMins('');
     setTaskReminders([]);
+    setTaskReminderTime('09:00');
     setLeaveConflict(null);
     setLeaveModalOpen(false);
     acknowledgedLeaveRef.current = null;
@@ -679,6 +681,7 @@ const HomeView = ({
       billable: effectiveBillable,
       estimatedMs: homeEstimatedMs,
       reminderOffsets: taskReminders.length > 0 ? taskReminders : null,
+      reminderTime: taskReminders.length > 0 ? taskReminderTime : null,
       ...(newRepeatGroupId ? { repeatGroupId: newRepeatGroupId } : {}),
     };
     const dueDateOffsetDays = taskDueDate && selectedDate
@@ -2417,7 +2420,12 @@ const HomeView = ({
                           <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">
                             Reminders <span className="normal-case font-normal text-slate-400">— "after" go to QC too</span>
                           </p>
-                          <ReminderPills selected={taskReminders} onChange={setTaskReminders} />
+                          <ReminderPills
+                            selected={taskReminders}
+                            onChange={setTaskReminders}
+                            time={taskReminderTime}
+                            onTimeChange={setTaskReminderTime}
+                          />
                         </div>
                       )}
                     </div>

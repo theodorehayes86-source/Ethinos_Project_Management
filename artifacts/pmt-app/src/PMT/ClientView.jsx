@@ -400,6 +400,7 @@ const ClientView = ({
   const [newTaskBillable, setNewTaskBillable] = useState(true);
   // Reminder offsets for new task
   const [newTaskReminders, setNewTaskReminders] = useState([]);
+  const [newTaskReminderTime, setNewTaskReminderTime] = useState('09:00');
   // Repeat end date for new task
   const [newTaskRepeatEnd, setNewTaskRepeatEnd] = useState(null);
   // Weekly day picker (0=Mon … 4=Fri)
@@ -918,6 +919,7 @@ const ClientView = ({
       billable: newTaskBillable,
       estimatedMs: newEstimatedMs,
       reminderOffsets: newTaskReminders.length > 0 ? newTaskReminders : null,
+      reminderTime: newTaskReminders.length > 0 ? newTaskReminderTime : null,
       ...(newLogRepeatGroupId ? { repeatGroupId: newLogRepeatGroupId } : {}),
     };
 
@@ -1002,6 +1004,7 @@ const ClientView = ({
     setNewTaskDepartments(currentUser?.department ? [currentUser.department] : []);
     setNewTaskBillable(true);
     setNewTaskReminders([]);
+    setNewTaskReminderTime('09:00');
     setNewTaskEstimatedHrs('');
     setNewTaskEstimatedMins('');
     acknowledgedLeaveRef.current = null;
@@ -1492,7 +1495,7 @@ const ClientView = ({
                       setNewTaskRepeatDays([0, 1, 2, 3, 4]); setNewTaskRepeatMonthlyWeek(1); setNewTaskRepeatMonthlyDay(0);
                       setTaskDueDate(null); setQcEnabled(true); setQcAssigneeId(''); setQcAssigneeName('');
                       setNewTaskDepartments(currentUser?.department ? [currentUser.department] : []);
-                      setNewTaskBillable(true); setNewTaskReminders([]); acknowledgedLeaveRef.current = null;
+                      setNewTaskBillable(true); setNewTaskReminders([]); setNewTaskReminderTime('09:00'); acknowledgedLeaveRef.current = null;
                       setLeaveConflict(null); setLeaveModalOpen(false); setShowTaskForm(true);
                       setShowClientAddMenu(false);
                     }}
@@ -2701,7 +2704,12 @@ const ClientView = ({
                             <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">
                               Reminders <span className="normal-case font-normal text-slate-400">— "after" go to QC too</span>
                             </p>
-                            <ReminderPills selected={newTaskReminders} onChange={setNewTaskReminders} />
+                            <ReminderPills
+                              selected={newTaskReminders}
+                              onChange={setNewTaskReminders}
+                              time={newTaskReminderTime}
+                              onTimeChange={setNewTaskReminderTime}
+                            />
                           </div>
                         )}
                       </div>

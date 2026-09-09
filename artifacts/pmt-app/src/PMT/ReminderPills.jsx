@@ -11,31 +11,44 @@ export const REMINDER_OPTIONS = [
   { value: '+3', label: '3 days after', overdue: true },
 ];
 
-export function ReminderPills({ selected, onChange }) {
+export function ReminderPills({ selected, onChange, time = '09:00', onTimeChange }) {
   const toggle = (val) => {
     onChange(selected.includes(val) ? selected.filter(v => v !== val) : [...selected, val]);
   };
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {REMINDER_OPTIONS.map(opt => {
-        const active = selected.includes(opt.value);
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => toggle(opt.value)}
-            className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all ${
-              active
-                ? opt.overdue
-                  ? 'bg-red-100 border-red-400 text-red-700'
-                  : 'bg-blue-100 border-blue-400 text-blue-700'
-                : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
-            }`}
-          >
-            {opt.label}
-          </button>
-        );
-      })}
+    <div className="space-y-2.5">
+      <div className="flex flex-wrap gap-1.5">
+        {REMINDER_OPTIONS.map(opt => {
+          const active = selected.includes(opt.value);
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => toggle(opt.value)}
+              className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all ${
+                active
+                  ? opt.overdue
+                    ? 'bg-red-100 border-red-400 text-red-700'
+                    : 'bg-blue-100 border-blue-400 text-blue-700'
+                  : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+              }`}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+      {onTimeChange && (
+        <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+          Reminder time
+          <input
+            type="time"
+            value={time}
+            onChange={event => onTimeChange(event.target.value)}
+            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/10"
+          />
+        </label>
+      )}
     </div>
   );
 }
