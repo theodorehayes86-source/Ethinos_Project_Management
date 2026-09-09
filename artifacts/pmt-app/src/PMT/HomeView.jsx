@@ -981,6 +981,8 @@ const HomeView = ({
       category: task.category || '',
       dueDate: hvTryParse(task.dueDate) || null,
       status: task.status || 'Pending',
+      reminderOffsets: task.reminderOffsets || [],
+      reminderTime: task.reminderTime || '09:00',
     });
     setEditDraftClientId(task.cid || null);
     setEditDraftCategoryQuery(task.category || '');
@@ -1003,6 +1005,8 @@ const HomeView = ({
       name: editDraft.name.trim(),
       comment: editDraft.comment.trim(),
       category: editDraft.category,
+      reminderOffsets: editDraft.reminderOffsets?.length > 0 ? editDraft.reminderOffsets : null,
+      reminderTime: editDraft.reminderOffsets?.length > 0 ? editDraft.reminderTime || '09:00' : null,
     };
     const updatedTask = {
       ...editingTask,
@@ -2868,11 +2872,24 @@ const HomeView = ({
                   minDate={hvTryParse(editingTask.date) || new Date()}
                 />
                 {editDraft.dueDate && (
-                  <button type="button" onClick={() => setEditDraft(d => ({ ...d, dueDate: null }))} className="text-xs font-semibold text-red-500 hover:text-red-700">
+                  <button type="button" onClick={() => setEditDraft(d => ({ ...d, dueDate: null, reminderOffsets: [] }))} className="text-xs font-semibold text-red-500 hover:text-red-700">
                     Clear due date
                   </button>
                 )}
               </div>
+              {editDraft.dueDate && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Email Reminders
+                  </label>
+                  <ReminderPills
+                    selected={editDraft.reminderOffsets || []}
+                    onChange={offsets => setEditDraft(d => ({ ...d, reminderOffsets: offsets }))}
+                    time={editDraft.reminderTime || '09:00'}
+                    onTimeChange={reminderTime => setEditDraft(d => ({ ...d, reminderTime }))}
+                  />
+                </div>
+              )}
               {/* Status */}
               <div className="space-y-1">
                 <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</label>

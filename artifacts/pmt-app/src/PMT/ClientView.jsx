@@ -564,6 +564,7 @@ const ClientView = ({
       estimatedHrs: estMs > 0 ? String(estHrs) : '',
       estimatedMins: estMs > 0 ? String(estMins) : '',
       reminderOffsets: log.reminderOffsets || [],
+      reminderTime: log.reminderTime || '09:00',
     });
     setEditDraftCategoryQuery(log.category || '');
     setEditDraftAssigneeQuery(log.assigneeName || '');
@@ -601,6 +602,7 @@ const ClientView = ({
       qcAssigneeId: editDraft.qcEnabled && editDraft.qcAssigneeId ? editDraft.qcAssigneeId : null,
       qcAssigneeName: editDraft.qcEnabled && editDraft.qcAssigneeName ? editDraft.qcAssigneeName : null,
       reminderOffsets: editDraft.reminderOffsets?.length > 0 ? editDraft.reminderOffsets : null,
+      reminderTime: editDraft.reminderOffsets?.length > 0 ? editDraft.reminderTime || '09:00' : null,
     });
 
     const oldCid = selectedClient.id;
@@ -3035,6 +3037,8 @@ const ClientView = ({
                           <ReminderPills
                             selected={editDraft.reminderOffsets || []}
                             onChange={offsets => setEditDraft(d => ({ ...d, reminderOffsets: offsets }))}
+                            time={editDraft.reminderTime || '09:00'}
+                            onTimeChange={reminderTime => setEditDraft(d => ({ ...d, reminderTime }))}
                           />
                         </div>
                       )}

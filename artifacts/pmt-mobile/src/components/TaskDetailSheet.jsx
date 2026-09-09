@@ -9,6 +9,16 @@ const parseMentions = (text, userList = []) =>
   userList.filter(u => u.name && text.includes(`@${u.name}`));
 
 const STATUS_OPTIONS = ['Pending', 'WIP', 'Done'];
+const REMINDER_OPTIONS = [
+  { value: '-7', label: '7d before' },
+  { value: '-3', label: '3d before' },
+  { value: '-2', label: '2d before' },
+  { value: '-1', label: '1d before' },
+  { value: '0', label: 'On day' },
+  { value: '+1', label: '1d after', overdue: true },
+  { value: '+2', label: '2d after', overdue: true },
+  { value: '+3', label: '3d after', overdue: true },
+];
 const STATUS_COLORS = {
   Pending: 'bg-amber-100 text-amber-700',
   WIP: 'bg-blue-100 text-blue-700',
@@ -39,6 +49,9 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
   const [messages, setMessages] = useState(() => Array.isArray(task.messages) ? task.messages : []);
   const [newMessage, setNewMessage] = useState('');
   const [saving, setSaving] = useState(false);
+  const [reminderOffsets, setReminderOffsets] = useState(() => task.reminderOffsets || []);
+  const [reminderTime, setReminderTime] = useState(() => task.reminderTime || '09:00');
+  const [remindersSaved, setRemindersSaved] = useState(false);
   const [activeSection, setActiveSection] = useState('details');
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -118,6 +131,15 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
         });
       }
     }
+  };
+
+  const handleSaveReminders = async () => {
+    await persistUpdate({
+      reminderOffsets: reminderOffsets.length > 0 ? reminderOffsets : null,
+      reminderTime: reminderOffsets.length > 0 ? reminderTime : null,
+    });
+    setRemindersSaved(true);
+    window.setTimeout(() => setRemindersSaved(false), 1800);
   };
 
   const handleToggleStep = async (stepId) => {
@@ -334,6 +356,57 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
                         {s}
                       </button>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {task.dueDate && canChangeStatus && (
+                <div>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Email Reminders</p>
+                  <p className="text-[11px] text-slate-400 mb-2">Choose when reminders are sent relative to the due date.</p>
+                  <div className="flex flex-wrap gap-2">
+                    {REMINDER_OPTIONS.map(option => {
+                      const active = reminderOffsets.includes(option.value);
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => setReminderOffsets(current =>
+                            current.includes(option.value)
+                              ? current.filter(value => value !== option.value)
+                              : [...current, option.value]
+                          )}
+                          className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${
+                            active
+                              ? option.overdue
+                                ? 'bg-red-100 border-red-400 text-red-700'
+                                : 'bg-indigo-100 border-indigo-400 text-indigo-700'
+                              : 'bg-white border-slate-200 text-slate-500'
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    <label className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                      Time
+                      <input
+                        type="time"
+                        value={reminderTime}
+                        onChange={event => setReminderTime(event.target.value)}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:border-indigo-400"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleSaveReminders}
+                      disabled={saving}
+                      className="min-h-[40px] rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
+                    >
+                      {remindersSaved ? 'Saved' : 'Save reminders'}
+                    </button>
                   </div>
                 </div>
               )}
