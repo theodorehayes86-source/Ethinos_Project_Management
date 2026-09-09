@@ -7,6 +7,7 @@ import { toZonedTime } from "date-fns-tz";
 import { readFirebasePath, writeFirebasePath } from "./firebase-admin";
 import { sendEmail, isEmailConfigured } from "./microsoft-graph";
 import { logger } from "./logger";
+import { APP_LOGO_URL } from "./app-url";
 import { checkLeaveConflict } from "./keka-scheduler";
 import { withJobLock } from "./job-lock";
 import { mapLimit, getEmailConcurrency } from "./async-utils";
@@ -109,7 +110,7 @@ function buildWeeklyDigestHtml(data: {
           <span style="display:inline-block;background:#fde8e8;border:2px solid #f9a8a8;color:#b91c1c;font-size:15px;font-weight:700;padding:8px 22px;border-radius:6px;">${userName}</span>
         </td>
         <td style="padding:22px 24px 16px;text-align:right;vertical-align:middle;">
-          <img src="https://pmt.ethinos.com/ethinos-logo.png" alt="ethinos" width="110" style="display:inline-block;height:auto;border:0;" />
+          <img src="${APP_LOGO_URL}" alt="ethinos" width="110" style="display:inline-block;height:auto;border:0;" />
         </td>
       </tr>
     </table>

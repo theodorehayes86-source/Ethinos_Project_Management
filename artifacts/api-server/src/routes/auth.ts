@@ -3,6 +3,7 @@ import type admin from "firebase-admin";
 import { getAdminAuth, getAdminDatabase } from "../lib/firebase-admin";
 import { sendEmail, isEmailConfigured } from "../lib/microsoft-graph";
 import { logger } from "../lib/logger";
+import { APP_BASE_URL, MOBILE_APP_URL, replaceLegacyAppHost } from "../lib/app-url";
 
 const router: IRouter = Router();
 
@@ -88,7 +89,7 @@ const DEFAULT_DOWNLOADS: DownloadLinks = {
   widgetVersion: "1.0.22",
   winUrl: "https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/latest",
   macUrl: "https://github.com/theodorehayes86-source/Ethinos_Project_Management/releases/latest",
-  mobileUrl: "https://pmt.ethinos.com/pmt-mobile/",
+  mobileUrl: MOBILE_APP_URL,
 };
 
 async function getDownloadLinks(db: admin.database.Database): Promise<DownloadLinks> {
@@ -96,7 +97,14 @@ async function getDownloadLinks(db: admin.database.Database): Promise<DownloadLi
     const snap = await db.ref("config/downloads").once("value");
     if (snap.exists()) {
       const val = snap.val() as Partial<DownloadLinks>;
-      return { ...DEFAULT_DOWNLOADS, ...val };
+      const links = { ...DEFAULT_DOWNLOADS, ...val };
+      return {
+        ...links,
+        mobileUrl: replaceLegacyAppHost(links.mobileUrl).replace(
+          `${APP_BASE_URL}/pmt-mobile/`,
+          MOBILE_APP_URL,
+        ),
+      };
     }
     await db.ref("config/downloads").set(DEFAULT_DOWNLOADS);
   } catch (err) {
@@ -175,7 +183,7 @@ function buildWelcomeEmail(d: {
       ${downloadSection}
 
       <div style="margin-top:28px;padding-top:20px;border-top:1px solid #f1f5f9;">
-        <a href="https://pmt.ethinos.com" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">Open PMT Web App</a>
+        <a href="${APP_BASE_URL}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">Open PMT Web App</a>
       </div>
     </div>
     <div style="background:#f8fafc;padding:16px 32px;border-top:1px solid #e2e8f0;text-align:center;">

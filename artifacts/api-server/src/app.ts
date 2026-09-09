@@ -37,7 +37,7 @@ const isDev = process.env.NODE_ENV !== "production";
 if (allowedOrigins.length === 0 && !isDev) {
   logger.warn(
     "CORS_ORIGINS is not set — all origins will be blocked in production. " +
-    "Set it to a comma-separated list of allowed origins (e.g. https://pmt.ethinos.com)."
+    "Set it to a comma-separated list of allowed origins (e.g. https://project.ethinos.com)."
   );
 }
 

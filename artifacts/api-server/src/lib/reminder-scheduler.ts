@@ -4,6 +4,7 @@ import { toZonedTime } from "date-fns-tz";
 import { readFirebasePath, writeFirebasePath } from "./firebase-admin";
 import { sendEmail, isEmailConfigured } from "./microsoft-graph";
 import { logger } from "./logger";
+import { APP_BASE_URL } from "./app-url";
 import { isDateLeaveOrHoliday } from "./keka-scheduler";
 import { withJobLock } from "./job-lock";
 import { mapLimit, getEmailConcurrency } from "./async-utils";
@@ -284,7 +285,7 @@ function buildOverdueHtml(task: TaskLog): string {
         <tr><td style="padding:8px 0;font-size:13px;color:#94a3b8;border-bottom:1px solid #f1f5f9;">Due date</td><td style="padding:8px 0;font-size:13px;color:#dc2626;font-weight:600;border-bottom:1px solid #f1f5f9;">${task.dueDate || "—"}</td></tr>
         <tr><td style="padding:8px 0;font-size:13px;color:#94a3b8;">Status</td><td style="padding:8px 0;font-size:13px;color:#1e293b;font-weight:600;">${task.status || "Pending"}</td></tr>
       </table>
-      <a href="https://pmt.ethinos.com" style="display:inline-block;background:#d97706;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View Task</a>
+      <a href="${APP_BASE_URL}" style="display:inline-block;background:#d97706;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View Task</a>
     </div>
     <div style="background:#f8fafc;padding:16px 32px;border-top:1px solid #e2e8f0;text-align:center;">
       <p style="margin:0;font-size:12px;color:#94a3b8;">Ethinos PMT &middot; Automated Notification</p>
@@ -313,7 +314,7 @@ function buildDueSoonHtml(task: TaskLog): string {
         <tr><td style="padding:8px 0;font-size:13px;color:#94a3b8;border-bottom:1px solid #f1f5f9;">Due date</td><td style="padding:8px 0;font-size:13px;color:#d97706;font-weight:600;border-bottom:1px solid #f1f5f9;">${task.dueDate || "—"}</td></tr>
         <tr><td style="padding:8px 0;font-size:13px;color:#94a3b8;">Status</td><td style="padding:8px 0;font-size:13px;color:#1e293b;font-weight:600;">${task.status || "Pending"}</td></tr>
       </table>
-      <a href="https://pmt.ethinos.com" style="display:inline-block;background:#d97706;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View Task</a>
+      <a href="${APP_BASE_URL}" style="display:inline-block;background:#d97706;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View Task</a>
     </div>
     <div style="background:#f8fafc;padding:16px 32px;border-top:1px solid #e2e8f0;text-align:center;">
       <p style="margin:0;font-size:12px;color:#94a3b8;">Ethinos PMT &middot; Automated Notification</p>

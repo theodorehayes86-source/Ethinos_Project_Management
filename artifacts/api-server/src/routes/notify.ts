@@ -13,6 +13,7 @@ import {
 import { readFirebasePath } from "../lib/firebase-admin";
 import { logger } from "../lib/logger";
 import { runWeeklyDigest } from "../lib/weekly-digest-scheduler";
+import { APP_BASE_URL } from "../lib/app-url";
 
 const router = Router();
 
@@ -215,7 +216,7 @@ function buildTaskAssignedHtml(d: {
     ${desc}
     ${stepsHtml}
     <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">${tableBody}</table>
-    <a href="https://pmt.ethinos.com" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View in PMT</a>
+    <a href="${APP_BASE_URL}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View in PMT</a>
   `;
   return brandedWrapper("#2563eb", "New Task Assignment", d.taskName, body);
 }
@@ -233,7 +234,7 @@ function buildApprovalRequiredHtml(d: {
   const body = `
     <p style="margin:0 0 16px;font-size:14px;color:#475569;"><strong>${d.requesterName}</strong> has requested to be assigned to the following task. Please review and approve or decline in the PMT.</p>
     <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">${tableBody}</table>
-    <a href="https://pmt.ethinos.com" style="display:inline-block;background:#7c3aed;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">Review in PMT</a>
+    <a href="${APP_BASE_URL}" style="display:inline-block;background:#7c3aed;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">Review in PMT</a>
   `;
   return brandedWrapper("#7c3aed", "Assignment Request", `${d.requesterName} → "${d.taskName}"`, body);
 }
@@ -258,7 +259,7 @@ function buildFeedbackResponseHtml(d: {
       <p style="margin:0;font-size:12px;color:#3b82f6;text-transform:uppercase;letter-spacing:0.05em;font-weight:700;margin-bottom:6px;">Response</p>
       <p style="margin:0;font-size:14px;color:#1e293b;line-height:1.6;">${d.replyText}</p>
     </div>
-    <a href="https://pmt.ethinos.com" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View in PMT</a>
+    <a href="${APP_BASE_URL}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View in PMT</a>
   `;
   return brandedWrapper("#2563eb", "Feedback Response", "Your feedback has a new response", body);
 }
@@ -276,7 +277,7 @@ function buildClientAddedHtml(d: {
     <p style="margin:0 0 16px;font-size:14px;color:#475569;">Hi${d.recipientName ? ` ${d.recipientName}` : ""},</p>
     <p style="margin:0 0 20px;font-size:14px;color:#475569;">Your request to join <strong>${d.clientName}</strong> has been approved. You now have access to this client's tasks in the Ethinos PMT.</p>
     <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">${tableBody}</table>
-    <a href="https://pmt.ethinos.com" style="display:inline-block;background:#059669;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">Open PMT</a>
+    <a href="${APP_BASE_URL}" style="display:inline-block;background:#059669;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">Open PMT</a>
   `;
   return brandedWrapper("#059669", "Client Access Granted", `You've been added to "${d.clientName}"`, body);
 }
@@ -296,7 +297,7 @@ function buildAssignmentAcceptedHtml(d: {
     <p style="margin:0 0 16px;font-size:14px;color:#475569;">Hi${d.recipientName ? ` ${d.recipientName}` : ""},</p>
     <p style="margin:0 0 20px;font-size:14px;color:#475569;">Your request to be assigned to the following task has been approved. Please log in to get started.</p>
     <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">${tableBody}</table>
-    <a href="https://pmt.ethinos.com" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View Task</a>
+    <a href="${APP_BASE_URL}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View Task</a>
   `;
   return brandedWrapper("#2563eb", "Assignment Approved", `You've been assigned to "${d.taskName}"`, body);
 }
@@ -321,7 +322,7 @@ function buildMentionHtml(d: {
       <p style="margin:0;font-size:14px;color:#1e293b;line-height:1.6;">${d.messageText}</p>
     </div>
     <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">${tableBody}</table>
-    <a href="https://pmt.ethinos.com" style="display:inline-block;background:#7c3aed;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View Task</a>
+    <a href="${APP_BASE_URL}" style="display:inline-block;background:#7c3aed;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View Task</a>
   `;
   return brandedWrapper("#7c3aed", "You were mentioned", `${d.mentionerName || "Someone"} mentioned you`, body);
 }
@@ -341,7 +342,7 @@ function buildQcSubmittedHtml(d: {
     <p style="margin:0 0 16px;font-size:14px;color:#475569;">Hi${d.reviewerName ? ` ${d.reviewerName}` : ""},</p>
     <p style="margin:0 0 20px;font-size:14px;color:#475569;"><strong>${d.submitterName || "A team member"}</strong> has submitted the following task for your QC review. Please log in to approve or return it.</p>
     <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">${tableBody}</table>
-    <a href="https://pmt.ethinos.com" style="display:inline-block;background:#4f46e5;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">Review in PMT</a>
+    <a href="${APP_BASE_URL}" style="display:inline-block;background:#4f46e5;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">Review in PMT</a>
   `;
   return brandedWrapper("#4f46e5", "QC Review Requested", `"${d.taskName}" needs your review`, body);
 }
@@ -366,7 +367,7 @@ function buildQcReturnedHtml(d: {
       <p style="margin:0;font-size:14px;color:#1e293b;line-height:1.6;">${d.feedbackText}</p>
     </div>
     <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">${tableBody}</table>
-    <a href="https://pmt.ethinos.com" style="display:inline-block;background:#dc2626;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View Task</a>
+    <a href="${APP_BASE_URL}" style="display:inline-block;background:#dc2626;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View Task</a>
   `;
   return brandedWrapper("#dc2626", "QC Returned", `"${d.taskName}" needs revision`, body);
 }
@@ -389,7 +390,7 @@ function buildQcApprovedHtml(d: {
     <p style="margin:0 0 16px;font-size:14px;color:#475569;">Hi${d.assigneeName ? ` ${d.assigneeName}` : ""},</p>
     <p style="margin:0 0 20px;font-size:14px;color:#475569;">Great work! <strong>${d.reviewerName || "Your reviewer"}</strong> has approved the quality check for your task.</p>
     <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">${tableBody}</table>
-    <a href="https://pmt.ethinos.com" style="display:inline-block;background:#059669;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View in PMT</a>
+    <a href="${APP_BASE_URL}" style="display:inline-block;background:#059669;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View in PMT</a>
   `;
   return brandedWrapper("#059669", "QC Approved", `"${d.taskName}" passed quality check`, body);
 }
@@ -410,7 +411,7 @@ function buildTaskOverdueHtml(d: {
     <p style="margin:0 0 16px;font-size:14px;color:#475569;">Hi${d.assigneeName ? ` ${d.assigneeName}` : ""},</p>
     <p style="margin:0 0 20px;font-size:14px;color:#475569;">The following task is <strong>overdue</strong>. Please log in to the PMT to update its status or reach out to your manager if you need assistance.</p>
     <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">${tableBody}</table>
-    <a href="https://pmt.ethinos.com" style="display:inline-block;background:#d97706;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View Task</a>
+    <a href="${APP_BASE_URL}" style="display:inline-block;background:#d97706;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View Task</a>
   `;
   return brandedWrapper("#d97706", "Overdue Task", `"${d.taskName}" is overdue`, body);
 }
@@ -431,7 +432,7 @@ function buildTaskDueSoonHtml(d: {
     <p style="margin:0 0 16px;font-size:14px;color:#475569;">Hi${d.assigneeName ? ` ${d.assigneeName}` : ""},</p>
     <p style="margin:0 0 20px;font-size:14px;color:#475569;">This is a reminder that the following task is <strong>due in 2 days</strong>. Please ensure it's on track.</p>
     <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">${tableBody}</table>
-    <a href="https://pmt.ethinos.com" style="display:inline-block;background:#d97706;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View Task</a>
+    <a href="${APP_BASE_URL}" style="display:inline-block;background:#d97706;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View Task</a>
   `;
   return brandedWrapper("#d97706", "Task Due Soon", `"${d.taskName}" is due in 2 days`, body);
 }
@@ -454,7 +455,7 @@ function buildTaskStatusChangedHtml(d: {
     <p style="margin:0 0 16px;font-size:14px;color:#475569;">Hi${d.assigneeName ? ` ${d.assigneeName}` : ""},</p>
     <p style="margin:0 0 20px;font-size:14px;color:#475569;">The status of your task has been updated to <strong style="color:${statusColor};">${d.newStatus}</strong> by <strong>${d.changerName || "a team member"}</strong>.</p>
     <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">${tableBody}</table>
-    <a href="https://pmt.ethinos.com" style="display:inline-block;background:#475569;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View Task</a>
+    <a href="${APP_BASE_URL}" style="display:inline-block;background:#475569;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">View Task</a>
   `;
   return brandedWrapper("#475569", "Task Status Updated", `"${d.taskName}" → ${d.newStatus}`, body);
 }
