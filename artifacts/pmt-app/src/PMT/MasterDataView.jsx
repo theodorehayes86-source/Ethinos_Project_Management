@@ -4347,9 +4347,9 @@ const MasterDataView = ({
               <button
                 type="button"
                 onClick={testKekaConnection}
-                disabled={kekaTesting || !kekaCredentialsReady}
+                disabled={kekaTesting || (kekaSettingsKnown && !kekaCredentialsReady)}
                 className="px-4 py-2 rounded-lg text-xs font-semibold bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-2"
-                title={!kekaCredentialsReady ? 'Save credentials first' : 'Test the Keka API connection'}
+                title={(kekaSettingsKnown && !kekaCredentialsReady) ? 'Save credentials first' : 'Test the Keka API connection'}
               >
                 <RefreshCw size={12} className={kekaTesting ? 'animate-spin' : ''} />
                 {kekaTesting ? 'Testing…' : 'Test Connection'}
@@ -4357,9 +4357,9 @@ const MasterDataView = ({
               <button
                 type="button"
                 onClick={triggerKekaSync}
-                disabled={kekaSyncing || !kekaCredentialsReady}
+                disabled={kekaSyncing || (kekaSettingsKnown && !kekaCredentialsReady)}
                 className="px-4 py-2 rounded-lg text-xs font-semibold bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-2"
-                title={!kekaCredentialsReady ? 'Save credentials first' : 'Run a full leave + holiday sync now'}
+                title={(kekaSettingsKnown && !kekaCredentialsReady) ? 'Save credentials first' : 'Run a full leave + holiday sync now'}
               >
                 <RefreshCw size={12} className={kekaSyncing ? 'animate-spin' : ''} />
                 {kekaSyncing ? 'Syncing…' : 'Sync Now'}
