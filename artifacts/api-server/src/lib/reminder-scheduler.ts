@@ -24,6 +24,7 @@ interface TaskLog {
   qcEnabled?: boolean;
   reminderOffsets?: string[];
   reminderTime?: string | null;
+  reminderTimezone?: string | null;
   archived?: boolean;
   lastOverdueNotifiedAt?: string | null;
   lastDueSoonNotifiedAt?: string | null;
@@ -66,6 +67,15 @@ export function isTaskReminderTimeDue(
     ? Number(timeMatch[1]) * 60 + Number(timeMatch[2])
     : defaultHour * 60;
   return currentHour * 60 + currentMinute >= reminderMinutes;
+}
+
+export function getTaskReminderClock(
+  now: Date,
+  reminderTimezone: string | null | undefined,
+  fallbackTimezone: string,
+): Date {
+  const zoned = toZonedTime(now, reminderTimezone || fallbackTimezone);
+  return isValid(zoned) ? zoned : toZonedTime(now, fallbackTimezone);
 }
 
 function buildReminderEmailHtml(
@@ -189,6 +199,8 @@ export async function runReminderCheck(
 
         const dueDate = parseDueDate(task.dueDate);
         if (!dueDate) continue;
+        const taskNow = getTaskReminderClock(now, task.reminderTimezone, timezone);
+        const taskTodayStr = format(taskNow, "yyyy-MM-dd");
 
         const taskId = String(task.id);
         const taskSentMap = sentReminders[taskId] || {};
@@ -200,12 +212,12 @@ export async function runReminderCheck(
           const reminderDate = startOfDay(addDays(dueDate, offsetNum));
           const reminderDateStr = format(reminderDate, "yyyy-MM-dd");
 
-          if (reminderDateStr !== todayStr) continue;
+          if (reminderDateStr !== taskTodayStr) continue;
 
           if (!isTaskReminderTimeDue(
             task.reminderTime,
-            nowInTimezone.getHours(),
-            nowInTimezone.getMinutes(),
+            taskNow.getHours(),
+            taskNow.getMinutes(),
             defaultHour,
           )) continue;
 

@@ -401,6 +401,7 @@ const ClientView = ({
   // Reminder offsets for new task
   const [newTaskReminders, setNewTaskReminders] = useState([]);
   const [newTaskReminderTime, setNewTaskReminderTime] = useState('09:00');
+  const [newTaskReminderTimezone, setNewTaskReminderTimezone] = useState('Asia/Kolkata');
   // Repeat end date for new task
   const [newTaskRepeatEnd, setNewTaskRepeatEnd] = useState(null);
   // Weekly day picker (0=Mon … 4=Fri)
@@ -565,6 +566,7 @@ const ClientView = ({
       estimatedMins: estMs > 0 ? String(estMins) : '',
       reminderOffsets: log.reminderOffsets || [],
       reminderTime: log.reminderTime || '09:00',
+      reminderTimezone: log.reminderTimezone || 'Asia/Kolkata',
     });
     setEditDraftCategoryQuery(log.category || '');
     setEditDraftAssigneeQuery(log.assigneeName || '');
@@ -603,6 +605,7 @@ const ClientView = ({
       qcAssigneeName: editDraft.qcEnabled && editDraft.qcAssigneeName ? editDraft.qcAssigneeName : null,
       reminderOffsets: editDraft.reminderOffsets?.length > 0 ? editDraft.reminderOffsets : null,
       reminderTime: editDraft.reminderOffsets?.length > 0 ? editDraft.reminderTime || '09:00' : null,
+      reminderTimezone: editDraft.reminderOffsets?.length > 0 ? editDraft.reminderTimezone || 'Asia/Kolkata' : null,
     });
 
     const oldCid = selectedClient.id;
@@ -922,6 +925,7 @@ const ClientView = ({
       estimatedMs: newEstimatedMs,
       reminderOffsets: newTaskReminders.length > 0 ? newTaskReminders : null,
       reminderTime: newTaskReminders.length > 0 ? newTaskReminderTime : null,
+      reminderTimezone: newTaskReminders.length > 0 ? newTaskReminderTimezone : null,
       ...(newLogRepeatGroupId ? { repeatGroupId: newLogRepeatGroupId } : {}),
     };
 
@@ -1007,6 +1011,7 @@ const ClientView = ({
     setNewTaskBillable(true);
     setNewTaskReminders([]);
     setNewTaskReminderTime('09:00');
+    setNewTaskReminderTimezone('Asia/Kolkata');
     setNewTaskEstimatedHrs('');
     setNewTaskEstimatedMins('');
     acknowledgedLeaveRef.current = null;
@@ -1497,7 +1502,7 @@ const ClientView = ({
                       setNewTaskRepeatDays([0, 1, 2, 3, 4]); setNewTaskRepeatMonthlyWeek(1); setNewTaskRepeatMonthlyDay(0);
                       setTaskDueDate(null); setQcEnabled(true); setQcAssigneeId(''); setQcAssigneeName('');
                       setNewTaskDepartments(currentUser?.department ? [currentUser.department] : []);
-                      setNewTaskBillable(true); setNewTaskReminders([]); setNewTaskReminderTime('09:00'); acknowledgedLeaveRef.current = null;
+                      setNewTaskBillable(true); setNewTaskReminders([]); setNewTaskReminderTime('09:00'); setNewTaskReminderTimezone('Asia/Kolkata'); acknowledgedLeaveRef.current = null;
                       setLeaveConflict(null); setLeaveModalOpen(false); setShowTaskForm(true);
                       setShowClientAddMenu(false);
                     }}
@@ -2711,6 +2716,8 @@ const ClientView = ({
                               onChange={setNewTaskReminders}
                               time={newTaskReminderTime}
                               onTimeChange={setNewTaskReminderTime}
+                              timezone={newTaskReminderTimezone}
+                              onTimezoneChange={setNewTaskReminderTimezone}
                             />
                           </div>
                         )}
@@ -3039,6 +3046,8 @@ const ClientView = ({
                             onChange={offsets => setEditDraft(d => ({ ...d, reminderOffsets: offsets }))}
                             time={editDraft.reminderTime || '09:00'}
                             onTimeChange={reminderTime => setEditDraft(d => ({ ...d, reminderTime }))}
+                            timezone={editDraft.reminderTimezone || 'Asia/Kolkata'}
+                            onTimezoneChange={reminderTimezone => setEditDraft(d => ({ ...d, reminderTimezone }))}
                           />
                         </div>
                       )}

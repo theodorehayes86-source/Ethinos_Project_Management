@@ -19,6 +19,19 @@ const REMINDER_OPTIONS = [
   { value: '+2', label: '2d after', overdue: true },
   { value: '+3', label: '3d after', overdue: true },
 ];
+const REMINDER_TIMEZONES = [
+  ['Asia/Kolkata', 'IST — India'],
+  ['Europe/London', 'GMT/BST — London'],
+  ['America/New_York', 'ET — New York'],
+  ['America/Chicago', 'CT — Chicago'],
+  ['America/Denver', 'MT — Denver'],
+  ['America/Los_Angeles', 'PT — Los Angeles'],
+  ['Europe/Berlin', 'CET/CEST — Berlin'],
+  ['Asia/Dubai', 'GST — Dubai'],
+  ['Asia/Singapore', 'SGT — Singapore'],
+  ['Asia/Tokyo', 'JST — Tokyo'],
+  ['Australia/Sydney', 'AET — Sydney'],
+];
 const STATUS_COLORS = {
   Pending: 'bg-amber-100 text-amber-700',
   WIP: 'bg-blue-100 text-blue-700',
@@ -51,6 +64,7 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
   const [saving, setSaving] = useState(false);
   const [reminderOffsets, setReminderOffsets] = useState(() => task.reminderOffsets || []);
   const [reminderTime, setReminderTime] = useState(() => task.reminderTime || '09:00');
+  const [reminderTimezone, setReminderTimezone] = useState(() => task.reminderTimezone || 'Asia/Kolkata');
   const [remindersSaved, setRemindersSaved] = useState(false);
   const [activeSection, setActiveSection] = useState('details');
   const messagesEndRef = useRef(null);
@@ -137,6 +151,7 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
     await persistUpdate({
       reminderOffsets: reminderOffsets.length > 0 ? reminderOffsets : null,
       reminderTime: reminderOffsets.length > 0 ? reminderTime : null,
+      reminderTimezone: reminderOffsets.length > 0 ? reminderTimezone : null,
     });
     setRemindersSaved(true);
     window.setTimeout(() => setRemindersSaved(false), 1800);
@@ -389,9 +404,9 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
                       );
                     })}
                   </div>
-                  <div className="mt-3 flex items-center justify-between gap-3">
-                    <label className="flex items-center gap-2 text-xs font-bold text-slate-600">
-                      Time
+                  <div className="mt-3 grid grid-cols-[auto,1fr] items-end gap-3">
+                    <label className="space-y-1 text-xs font-bold text-slate-600">
+                      <span className="block">Time</span>
                       <input
                         type="time"
                         value={reminderTime}
@@ -399,6 +414,18 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
                         className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:border-indigo-400"
                       />
                     </label>
+                    <label className="min-w-0 space-y-1 text-xs font-bold text-slate-600">
+                      <span className="block">Timezone</span>
+                      <select
+                        value={reminderTimezone}
+                        onChange={event => setReminderTimezone(event.target.value)}
+                        className="w-full rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-400"
+                      >
+                        {REMINDER_TIMEZONES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                      </select>
+                    </label>
+                  </div>
+                  <div className="mt-3 flex justify-end">
                     <button
                       type="button"
                       onClick={handleSaveReminders}

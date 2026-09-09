@@ -11,7 +11,28 @@ export const REMINDER_OPTIONS = [
   { value: '+3', label: '3 days after', overdue: true },
 ];
 
-export function ReminderPills({ selected, onChange, time = '09:00', onTimeChange }) {
+export const REMINDER_TIMEZONES = [
+  { value: 'Asia/Kolkata', label: 'IST — India' },
+  { value: 'Europe/London', label: 'GMT/BST — London' },
+  { value: 'America/New_York', label: 'ET — New York' },
+  { value: 'America/Chicago', label: 'CT — Chicago' },
+  { value: 'America/Denver', label: 'MT — Denver' },
+  { value: 'America/Los_Angeles', label: 'PT — Los Angeles' },
+  { value: 'Europe/Berlin', label: 'CET/CEST — Berlin' },
+  { value: 'Asia/Dubai', label: 'GST — Dubai' },
+  { value: 'Asia/Singapore', label: 'SGT — Singapore' },
+  { value: 'Asia/Tokyo', label: 'JST — Tokyo' },
+  { value: 'Australia/Sydney', label: 'AET — Sydney' },
+];
+
+export function ReminderPills({
+  selected,
+  onChange,
+  time = '09:00',
+  onTimeChange,
+  timezone = 'Asia/Kolkata',
+  onTimezoneChange,
+}) {
   const toggle = (val) => {
     onChange(selected.includes(val) ? selected.filter(v => v !== val) : [...selected, val]);
   };
@@ -39,15 +60,31 @@ export function ReminderPills({ selected, onChange, time = '09:00', onTimeChange
         })}
       </div>
       {onTimeChange && (
-        <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-          Reminder time
-          <input
-            type="time"
-            value={time}
-            onChange={event => onTimeChange(event.target.value)}
-            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/10"
-          />
-        </label>
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="space-y-1 text-xs font-semibold text-slate-600">
+            <span className="block">Reminder time</span>
+            <input
+              type="time"
+              value={time}
+              onChange={event => onTimeChange(event.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/10"
+            />
+          </label>
+          {onTimezoneChange && (
+            <label className="min-w-[190px] flex-1 space-y-1 text-xs font-semibold text-slate-600">
+              <span className="block">Timezone</span>
+              <select
+                value={timezone}
+                onChange={event => onTimezoneChange(event.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/10"
+              >
+                {REMINDER_TIMEZONES.map(option => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
       )}
     </div>
   );

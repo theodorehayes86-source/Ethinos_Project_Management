@@ -15,6 +15,19 @@ const DEFAULT_CATEGORIES = [
 ];
 
 const FREQ_OPTIONS = ['Once','Daily','Weekly','Monthly'];
+const REMINDER_TIMEZONES = [
+  ['Asia/Kolkata', 'IST — India'],
+  ['Europe/London', 'GMT/BST — London'],
+  ['America/New_York', 'ET — New York'],
+  ['America/Chicago', 'CT — Chicago'],
+  ['America/Denver', 'MT — Denver'],
+  ['America/Los_Angeles', 'PT — Los Angeles'],
+  ['Europe/Berlin', 'CET/CEST — Berlin'],
+  ['Asia/Dubai', 'GST — Dubai'],
+  ['Asia/Singapore', 'SGT — Singapore'],
+  ['Asia/Tokyo', 'JST — Tokyo'],
+  ['Australia/Sydney', 'AET — Sydney'],
+];
 
 // WEEKDAY_SHORT, WEEKDAY_FULL, WEEK_ORDINALS, getNthWeekday, applyWeekendRule,
 // generateRecurringDates all imported from ../utils/recurrence.js above.
@@ -213,6 +226,7 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
   const [relDays, setRelDays] = useState(1);
   const [reminderOffsets, setReminderOffsets] = useState([]);
   const [reminderTime, setReminderTime] = useState('09:00');
+  const [reminderTimezone, setReminderTimezone] = useState('Asia/Kolkata');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [leaveConflict, setLeaveConflict] = useState(null);
@@ -288,6 +302,7 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
         steps: steps.length > 0 ? steps : [],
         reminderOffsets: reminderOffsets.length > 0 ? reminderOffsets : null,
         reminderTime: reminderOffsets.length > 0 ? reminderTime : null,
+        reminderTimezone: reminderOffsets.length > 0 ? reminderTimezone : null,
       };
       if (frequency !== 'Once' && repeatEnd && dueDate) {
         const startDate = parseLocalDate(dueDate);   // safe local parse — no UTC shift
@@ -721,15 +736,27 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
                         );
                       })}
                     </div>
-                    <label className="mt-3 flex items-center gap-3 text-xs font-bold text-slate-600">
-                      Reminder time
-                      <input
-                        type="time"
-                        value={reminderTime}
-                        onChange={event => setReminderTime(event.target.value)}
-                        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10"
-                      />
-                    </label>
+                    <div className="mt-3 grid grid-cols-[auto,1fr] items-end gap-3">
+                      <label className="space-y-1 text-xs font-bold text-slate-600">
+                        <span className="block">Time</span>
+                        <input
+                          type="time"
+                          value={reminderTime}
+                          onChange={event => setReminderTime(event.target.value)}
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10"
+                        />
+                      </label>
+                      <label className="min-w-0 space-y-1 text-xs font-bold text-slate-600">
+                        <span className="block">Timezone</span>
+                        <select
+                          value={reminderTimezone}
+                          onChange={event => setReminderTimezone(event.target.value)}
+                          className="w-full rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-400"
+                        >
+                          {REMINDER_TIMEZONES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                        </select>
+                      </label>
+                    </div>
                   </div>
                 )}
               </div>
@@ -755,7 +782,7 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
                     ? `Monthly (${WEEK_ORDINALS[repeatMonthlyWeek - 1]} ${WEEKDAY_FULL[repeatMonthlyDay]})`
                     : frequency },
                 frequency !== 'Once' && repeatEnd && { label: 'Repeat Until', value: formatDate(repeatEnd) },
-                reminderOffsets.length > 0 && { label: 'Reminders', value: `${reminderOffsets.join(', ')} days vs due date at ${reminderTime}` },
+                reminderOffsets.length > 0 && { label: 'Reminders', value: `${reminderOffsets.join(', ')} days vs due date at ${reminderTime} (${REMINDER_TIMEZONES.find(([value]) => value === reminderTimezone)?.[1] || reminderTimezone})` },
                 steps.length > 0 && { label: 'Checklist', value: `${steps.length} item${steps.length !== 1 ? 's' : ''}` },
               ].filter(Boolean).map(({ label, value }) => (
                 <div key={label} className="flex gap-3 py-3 border-b border-slate-100 last:border-0">

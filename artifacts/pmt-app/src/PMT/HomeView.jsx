@@ -162,6 +162,7 @@ const HomeView = ({
   const [estimatedMins, setEstimatedMins] = useState('');
   const [taskReminders, setTaskReminders] = useState([]);
   const [taskReminderTime, setTaskReminderTime] = useState('09:00');
+  const [taskReminderTimezone, setTaskReminderTimezone] = useState('Asia/Kolkata');
   const [showArchived, setShowArchived] = useState(false);
   const [detailTask, setDetailTask] = useState(null);
   const [leaveConflict, setLeaveConflict] = useState(null);
@@ -395,6 +396,7 @@ const HomeView = ({
     setEstimatedMins('');
     setTaskReminders([]);
     setTaskReminderTime('09:00');
+    setTaskReminderTimezone('Asia/Kolkata');
     setLeaveConflict(null);
     setLeaveModalOpen(false);
     acknowledgedLeaveRef.current = null;
@@ -682,6 +684,7 @@ const HomeView = ({
       estimatedMs: homeEstimatedMs,
       reminderOffsets: taskReminders.length > 0 ? taskReminders : null,
       reminderTime: taskReminders.length > 0 ? taskReminderTime : null,
+      reminderTimezone: taskReminders.length > 0 ? taskReminderTimezone : null,
       ...(newRepeatGroupId ? { repeatGroupId: newRepeatGroupId } : {}),
     };
     const dueDateOffsetDays = taskDueDate && selectedDate
@@ -983,6 +986,7 @@ const HomeView = ({
       status: task.status || 'Pending',
       reminderOffsets: task.reminderOffsets || [],
       reminderTime: task.reminderTime || '09:00',
+      reminderTimezone: task.reminderTimezone || 'Asia/Kolkata',
     });
     setEditDraftClientId(task.cid || null);
     setEditDraftCategoryQuery(task.category || '');
@@ -1007,6 +1011,7 @@ const HomeView = ({
       category: editDraft.category,
       reminderOffsets: editDraft.reminderOffsets?.length > 0 ? editDraft.reminderOffsets : null,
       reminderTime: editDraft.reminderOffsets?.length > 0 ? editDraft.reminderTime || '09:00' : null,
+      reminderTimezone: editDraft.reminderOffsets?.length > 0 ? editDraft.reminderTimezone || 'Asia/Kolkata' : null,
     };
     const updatedTask = {
       ...editingTask,
@@ -2429,6 +2434,8 @@ const HomeView = ({
                             onChange={setTaskReminders}
                             time={taskReminderTime}
                             onTimeChange={setTaskReminderTime}
+                            timezone={taskReminderTimezone}
+                            onTimezoneChange={setTaskReminderTimezone}
                           />
                         </div>
                       )}
@@ -2887,6 +2894,8 @@ const HomeView = ({
                     onChange={offsets => setEditDraft(d => ({ ...d, reminderOffsets: offsets }))}
                     time={editDraft.reminderTime || '09:00'}
                     onTimeChange={reminderTime => setEditDraft(d => ({ ...d, reminderTime }))}
+                    timezone={editDraft.reminderTimezone || 'Asia/Kolkata'}
+                    onTimezoneChange={reminderTimezone => setEditDraft(d => ({ ...d, reminderTimezone }))}
                   />
                 </div>
               )}
