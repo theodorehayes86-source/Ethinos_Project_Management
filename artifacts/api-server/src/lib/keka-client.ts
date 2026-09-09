@@ -185,6 +185,12 @@ export interface KekaSyncResult {
   usersUnmatched: number;
   /** PMT users whose email was not found in Keka's employee list */
   unmatchedPmtUsers?: Array<{ id: string; name?: string; email?: string }>;
+  /** PMT users confirmed in Keka by email or stored employee ID */
+  matchedPmtUsers?: Array<{ id: string; name?: string; email?: string }>;
+  /** Individual leave-day records written during this sync */
+  leaveDetails?: Array<LeaveRecord & { name?: string; email?: string; date: string }>;
+  /** Holiday records written during this sync */
+  holidayDetails?: HolidayRecord[];
   /** PMT users matched in Keka by email but with no leave requests in the current calendar year */
   noLeavePmtUsers?: Array<{ id: string; name?: string; email?: string }>;
   error?: string;
@@ -618,7 +624,10 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
   let usersMatched = 0;
   const unmatchedKekaIds = new Set<string>();
   let unmatchedPmtUsers: Array<{ id: string; name?: string; email?: string }> = [];
+  let matchedPmtUsers: Array<{ id: string; name?: string; email?: string }> = [];
   let noLeavePmtUsers: Array<{ id: string; name?: string; email?: string }> = [];
+  const leaveDetails: Array<LeaveRecord & { name?: string; email?: string; date: string }> = [];
+  const holidayDetails: HolidayRecord[] = [];
   // Tracks PMT user IDs that are confirmed in Keka (email match or stored kekaEmployeeId)
   const kekaMatchedPmtIds = new Set<string>();
   // Tracks PMT user IDs with at least one leave record in the current calendar year
@@ -764,6 +773,7 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
       const dates = expandLeaveDates(startDate, endDate);
 
       for (const dateKey of dates) {
+        const matchedUser = pmtUsers.find(u => String(u.id ?? "") === pmtUserId);
         const record: LeaveRecord = {
           leaveId: leave.id,
           userId: pmtUserId,
@@ -774,6 +784,12 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
           status: leave.status === 1 ? "approved" : "pending",
         };
         await writeFirebasePath(`leaveData/${pmtUserId}/${dateKey}`, record);
+        leaveDetails.push({
+          ...record,
+          name: matchedUser?.name,
+          email: matchedUser?.email,
+          date: dateKey,
+        });
         leaveRecordsWritten++;
       }
     }
@@ -795,6 +811,12 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
     .filter(u => {
       const uid = String(u.id ?? "");
       return uid && uid !== "undefined" && kekaMatchedPmtIds.has(uid) && !usersWithLeaveThisYear.has(uid);
+    })
+    .map(u => ({ id: String(u.id), name: u.name, email: u.email }));
+  matchedPmtUsers = pmtUsers
+    .filter(u => {
+      const uid = String(u.id ?? "");
+      return uid && uid !== "undefined" && kekaMatchedPmtIds.has(uid);
     })
     .map(u => ({ id: String(u.id), name: u.name, email: u.email }));
   logger.info({ count: noLeavePmtUsers.length }, "[Keka] Matched PMT users with no leave this year");
@@ -831,6 +853,7 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
         if (holidayRegion !== "All") {
           await writeFirebasePath(`publicHolidays/All/${dateKey}`, record);
         }
+        holidayDetails.push(record);
         holidayRecordsWritten++;
       }
     }
@@ -845,6 +868,9 @@ export async function syncKekaData(): Promise<KekaSyncResult> {
     usersMatched,
     usersUnmatched: unmatchedKekaIds.size,
     unmatchedPmtUsers,
+    matchedPmtUsers,
+    leaveDetails,
+    holidayDetails,
     noLeavePmtUsers,
     syncedAt,
   };

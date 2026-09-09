@@ -367,6 +367,8 @@ const MasterDataView = ({
   const [kekaSaveMsg, setKekaSaveMsg] = useState(null);
   const [kekaSyncing, setKekaSyncing] = useState(false);
   const [kekaSyncResult, setKekaSyncResult] = useState(null);
+  const [kekaResultFilter, setKekaResultFilter] = useState('leaves');
+  const [kekaResultListOpen, setKekaResultListOpen] = useState(false);
   const [kekaTesting, setKekaTesting] = useState(false);
   const [kekaTestResult, setKekaTestResult] = useState(null);
   const [attendanceSyncing, setAttendanceSyncing] = useState(false);
@@ -554,6 +556,8 @@ const MasterDataView = ({
   const triggerKekaSync = async () => {
     setKekaSyncing(true);
     setKekaSyncResult(null);
+    setKekaResultFilter('leaves');
+    setKekaResultListOpen(false);
     try {
       const data = await kekaAuthFetch('/keka/sync', { method: 'POST' });
       setKekaSyncResult(data);
@@ -4388,67 +4392,78 @@ const MasterDataView = ({
                 <>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {[
-                      { label: 'Leave Records', value: kekaSyncResult.leaveRecordsWritten ?? 0 },
-                      { label: 'Holidays', value: kekaSyncResult.holidayRecordsWritten ?? 0 },
-                      { label: 'Users Matched', value: kekaSyncResult.usersMatched ?? 0 },
-                      { label: 'Keka Unmatched', value: kekaSyncResult.usersUnmatched ?? 0 },
-                    ].map(({ label, value }) => (
-                      <div key={label} className="bg-white rounded-xl p-3 border border-emerald-200 text-center">
+                      { key: 'leaves', label: 'Leave Records', value: kekaSyncResult.leaveRecordsWritten ?? 0 },
+                      { key: 'holidays', label: 'Holidays', value: kekaSyncResult.holidayRecordsWritten ?? 0 },
+                      { key: 'matched', label: 'Users Matched', value: kekaSyncResult.matchedPmtUsers?.length ?? kekaSyncResult.usersMatched ?? 0 },
+                      { key: 'unmatched', label: 'Keka Unmatched', value: kekaSyncResult.unmatchedPmtUsers?.length ?? kekaSyncResult.usersUnmatched ?? 0 },
+                    ].map(({ key, label, value }) => (
+                      <button
+                        type="button"
+                        key={key}
+                        onClick={() => {
+                          setKekaResultFilter(key);
+                          setKekaResultListOpen(true);
+                        }}
+                        aria-pressed={kekaResultFilter === key}
+                        className={`rounded-xl p-3 border text-center transition-all hover:-translate-y-0.5 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 ${
+                          kekaResultFilter === key
+                            ? 'bg-emerald-100 border-emerald-400 ring-1 ring-emerald-300'
+                            : 'bg-white border-emerald-200 hover:border-emerald-400'
+                        }`}
+                      >
                         <div className="text-xl font-black text-slate-800">{value}</div>
                         <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mt-0.5">{label}</div>
-                      </div>
+                      </button>
                     ))}
                   </div>
-                  {(kekaSyncResult.unmatchedPmtUsers?.length > 0) && (
-                    <div className="mt-4 border border-amber-200 rounded-xl bg-amber-50 overflow-hidden">
-                      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-amber-200 bg-amber-100/60">
-                        <AlertTriangle size={13} className="text-amber-600 flex-shrink-0"/>
-                        <span className="text-xs font-bold text-amber-800">
-                          {kekaSyncResult.unmatchedPmtUsers.length} PMT user{kekaSyncResult.unmatchedPmtUsers.length !== 1 ? 's' : ''} not found in Keka
-                        </span>
-                        <span className="text-[10px] text-amber-600 ml-auto">Check their email matches Keka.</span>
-                      </div>
-                      <div className="divide-y divide-amber-100">
-                        {kekaSyncResult.unmatchedPmtUsers.map(u => (
-                          <div key={u.id} className="px-4 py-2 flex items-center gap-3">
-                            <div className="w-6 h-6 rounded-full bg-amber-200 flex items-center justify-center text-amber-700 font-bold text-[10px] flex-shrink-0">
-                              {(u.name || '?')[0].toUpperCase()}
+                  <div className="mt-4 border border-emerald-200 rounded-xl bg-white overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setKekaResultListOpen(open => !open)}
+                      aria-expanded={kekaResultListOpen}
+                      className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-emerald-50 transition-colors"
+                    >
+                      <span className="text-xs font-bold text-slate-700">Sync details</span>
+                      <span className="text-[10px] font-semibold text-emerald-700 capitalize">{kekaResultFilter}</span>
+                      {kekaResultListOpen
+                        ? <ChevronUp size={14} className="ml-auto text-slate-500" />
+                        : <ChevronDown size={14} className="ml-auto text-slate-500" />}
+                    </button>
+                    {kekaResultListOpen && (() => {
+                      const rows = kekaResultFilter === 'leaves'
+                        ? (kekaSyncResult.leaveDetails || [])
+                        : kekaResultFilter === 'holidays'
+                          ? (kekaSyncResult.holidayDetails || [])
+                          : kekaResultFilter === 'matched'
+                            ? (kekaSyncResult.matchedPmtUsers || [])
+                            : (kekaSyncResult.unmatchedPmtUsers || []);
+                      return (
+                        <div className="border-t border-emerald-100 max-h-80 overflow-y-auto divide-y divide-slate-100">
+                          {rows.length === 0 ? (
+                            <p className="px-4 py-6 text-center text-xs text-slate-500">No records in this category.</p>
+                          ) : rows.map((row, index) => (
+                            <div key={`${row.id || row.leaveId || row.holidayId || 'row'}-${row.date || index}`} className="px-4 py-2.5 flex items-center gap-3">
+                              <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold text-[10px] flex-shrink-0">
+                                {(row.name || row.leaveType || '?')[0].toUpperCase()}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-semibold text-slate-800 truncate">{row.name || row.leaveType || 'Holiday'}</p>
+                                <p className="text-[10px] text-slate-500 truncate">
+                                  {row.email || (row.date && row.leaveType ? `${row.date} · ${row.leaveType}` : row.date) || '(no email)'}
+                                </p>
+                              </div>
+                              {kekaResultFilter === 'unmatched' && (
+                                <span className="flex-shrink-0 text-[10px] font-semibold text-amber-700 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full">No Keka match</span>
+                              )}
+                              {kekaResultFilter === 'leaves' && (
+                                <span className="flex-shrink-0 text-[10px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full capitalize">{row.status}</span>
+                              )}
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-semibold text-slate-800 truncate">{u.name || '(no name)'}</p>
-                              <p className="text-[10px] text-slate-500 truncate">{u.email || '(no email)'}</p>
-                            </div>
-                            <span className="flex-shrink-0 text-[10px] font-semibold text-amber-700 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full">No Keka match</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {(kekaSyncResult.noLeavePmtUsers?.length > 0) && (
-                    <div className="mt-3 border border-slate-200 rounded-xl bg-slate-50 overflow-hidden">
-                      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-200 bg-slate-100/60">
-                        <CalendarOff size={13} className="text-slate-500 flex-shrink-0"/>
-                        <span className="text-xs font-bold text-slate-700">
-                          {kekaSyncResult.noLeavePmtUsers.length} matched user{kekaSyncResult.noLeavePmtUsers.length !== 1 ? 's' : ''} with no leave requests in {new Date().getFullYear()}
-                        </span>
-                        <span className="text-[10px] text-slate-500 ml-auto">Matched in Keka, no leave data to sync.</span>
-                      </div>
-                      <div className="divide-y divide-slate-100">
-                        {kekaSyncResult.noLeavePmtUsers.map(u => (
-                          <div key={u.id} className="px-4 py-2 flex items-center gap-3">
-                            <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-bold text-[10px] flex-shrink-0">
-                              {(u.name || '?')[0].toUpperCase()}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-semibold text-slate-800 truncate">{u.name || '(no name)'}</p>
-                              <p className="text-[10px] text-slate-500 truncate">{u.email || '(no email)'}</p>
-                            </div>
-                            <span className="flex-shrink-0 text-[10px] font-semibold text-slate-600 bg-slate-100 border border-slate-300 px-2 py-0.5 rounded-full inline-flex items-center gap-1"><CalendarOff size={9}/> No leaves</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </div>
                 </>
               ) : (
                 <p className="text-xs text-red-700">{kekaSyncResult.error || 'Unknown error'}</p>
