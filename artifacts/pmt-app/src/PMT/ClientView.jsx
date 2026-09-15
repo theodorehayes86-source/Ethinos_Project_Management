@@ -4525,15 +4525,16 @@ const ClientView = ({
       .map(c => c.id)
   );
 
-  // "Available" for non-Super-Admin: only clients where the user's department
-  // is already represented (at least one assigned user shares their department).
-  const departmentLinkedClientNames = isSuperAdmin
+  // "Available" for non-Super-Admin: clients represented by the user's
+  // department. CSMs can request to join any client.
+  const departmentClientNames = isSuperAdmin
     ? null
     : new Set(
         (users || [])
-          .filter(u => u.department === currentUser?.department && String(u.id) !== String(currentUser?.id))
+          .filter(u => u.department === currentUser?.department && u.active !== false)
           .flatMap(u => u.assignedProjects || [])
       );
+  const canRequestAnyClient = currentUser?.role === 'CSM';
 
   const searchLower = clientSearch.toLowerCase();
 
@@ -4550,10 +4551,9 @@ const ClientView = ({
     if (explicitlyAssignedIds.has(c.id)) return false;
     if (pendingClientIds.has(c.id)) return false;
     if (!c.name.toLowerCase().includes(searchLower)) return false;
-    // Super Admins see all non-assigned clients as Available
-    if (isSuperAdmin) return true;
-    // Other users only see Available clients where their department is represented
-    return departmentLinkedClientNames?.has(c.name) ?? false;
+    // Super Admins and CSMs see all non-assigned clients as Available.
+    if (isSuperAdmin || canRequestAnyClient) return true;
+    return departmentClientNames?.has(c.name) ?? false;
   });
   const filteredClients = clientViewFilter === 'mine' ? myClients : clientViewFilter === 'pending' ? pendingClients : availableClients;
 
