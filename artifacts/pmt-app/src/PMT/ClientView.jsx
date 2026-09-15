@@ -20,6 +20,7 @@ import CsvImportModal from './CsvImportModal';
 import { templateAppliesToClient } from './shared/checklistApplicability';
 
 const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Business Head'];
+const CLIENT_OWNER_ROLES = ['Business Head', 'CSM'];
 
 const ROLE_RANK = {
   'Super Admin':    100,
@@ -4511,12 +4512,16 @@ const ClientView = ({
   // --- GRID VIEW ---
   const isSuperAdmin = currentUser?.role === 'Super Admin';
 
-  // "My Clients" — always driven by explicit assignment on the user record,
-  // even for Super Admins (accessibleClients for SA = all clients for task access,
-  // but the card list should only show where they're explicitly added).
+  // "My Clients" includes explicit project assignments and, for BH/CSM users,
+  // clients where they are listed as an owner. Ownership is a valid access path
+  // throughout the app and must not require a separate team/leadership link.
   const explicitlyAssignedIds = new Set(
     clients
-      .filter(c => currentUser?.assignedProjects?.includes(c.name))
+      .filter(c =>
+        currentUser?.assignedProjects?.includes(c.name) ||
+        (CLIENT_OWNER_ROLES.includes(currentUser?.role) &&
+          (c.ownerIds || []).map(String).includes(String(currentUser?.id)))
+      )
       .map(c => c.id)
   );
 
