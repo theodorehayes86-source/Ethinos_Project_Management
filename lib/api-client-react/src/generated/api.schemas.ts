@@ -5,6 +5,83 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export interface PortalTaskInput {
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  title: string;
+  /** @maxLength 5000 */
+  description: string;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  dueDate?: string;
+}
+
+export interface PortalInvitationInput {
+  /** @maxLength 254 */
+  email: string;
+  /**
+   * @minItems 1
+   * @maxItems 100
+   */
+  clientIds: string[];
+}
+
+export interface PortalMembershipInput {
+  /** @maxItems 100 */
+  clientIds: string[];
+  disabled: boolean;
+}
+
+export interface PortalClient {
+  id: string;
+  name: string;
+}
+
+export interface PortalTask {
+  id: string;
+  title: string;
+  description: string;
+  status: string;
+  dueDate: string;
+}
+
+export interface PortalUser {
+  uid: string;
+  email: string;
+  disabled: boolean;
+  clientIds: string[];
+}
+
 export interface HealthStatus {
   status: string;
 }
+
+export type GetClientPortalMe200 = {
+  clients: PortalClient[];
+};
+
+export type ListClientPortalTasks200 = {
+  tasks: PortalTask[];
+};
+
+export type CreateClientPortalTask201 = {
+  task: PortalTask;
+};
+
+export type ListClientPortalUsers200 = {
+  users: PortalUser[];
+};
+
+export type InviteClientPortalUser201 = {
+  user: PortalUser;
+  invitationSent: boolean;
+};
+
+export type UpdateClientPortalUser200 = {
+  user: PortalUser;
+};
+
+export type ResendClientPortalInvitation200 = {
+  invitationSent: boolean;
+};

@@ -5,24 +5,594 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
+  MutationFunction,
   QueryFunction,
   QueryKey,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { HealthStatus } from "./api.schemas";
+import type {
+  CreateClientPortalTask201,
+  GetClientPortalMe200,
+  HealthStatus,
+  InviteClientPortalUser201,
+  ListClientPortalTasks200,
+  ListClientPortalUsers200,
+  PortalInvitationInput,
+  PortalMembershipInput,
+  PortalTaskInput,
+  ResendClientPortalInvitation200,
+  UpdateClientPortalUser200,
+} from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
-import type { ErrorType } from "../custom-fetch";
+import type { ErrorType, BodyType } from "../custom-fetch";
 
 type AwaitedInput<T> = PromiseLike<T> | T;
 
 type Awaited<O> = O extends AwaitedInput<infer T> ? T : never;
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
+export const getGetClientPortalMeUrl = () => {
+  return `/api/client-portal/me`;
+};
+
+export const getClientPortalMe = async (
+  options?: RequestInit,
+): Promise<GetClientPortalMe200> => {
+  return customFetch<GetClientPortalMe200>(getGetClientPortalMeUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetClientPortalMeQueryKey = () => {
+  return [`/api/client-portal/me`] as const;
+};
+
+export const getGetClientPortalMeQueryOptions = <
+  TData = Awaited<ReturnType<typeof getClientPortalMe>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getClientPortalMe>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetClientPortalMeQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getClientPortalMe>>
+  > = ({ signal }) => getClientPortalMe({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getClientPortalMe>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetClientPortalMeQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getClientPortalMe>>
+>;
+export type GetClientPortalMeQueryError = ErrorType<unknown>;
+
+export function useGetClientPortalMe<
+  TData = Awaited<ReturnType<typeof getClientPortalMe>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getClientPortalMe>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetClientPortalMeQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getListClientPortalTasksUrl = (clientId: string) => {
+  return `/api/client-portal/clients/${clientId}/tasks`;
+};
+
+export const listClientPortalTasks = async (
+  clientId: string,
+  options?: RequestInit,
+): Promise<ListClientPortalTasks200> => {
+  return customFetch<ListClientPortalTasks200>(
+    getListClientPortalTasksUrl(clientId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListClientPortalTasksQueryKey = (clientId: string) => {
+  return [`/api/client-portal/clients/${clientId}/tasks`] as const;
+};
+
+export const getListClientPortalTasksQueryOptions = <
+  TData = Awaited<ReturnType<typeof listClientPortalTasks>>,
+  TError = ErrorType<unknown>,
+>(
+  clientId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listClientPortalTasks>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListClientPortalTasksQueryKey(clientId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listClientPortalTasks>>
+  > = ({ signal }) =>
+    listClientPortalTasks(clientId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listClientPortalTasks>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListClientPortalTasksQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listClientPortalTasks>>
+>;
+export type ListClientPortalTasksQueryError = ErrorType<unknown>;
+
+export function useListClientPortalTasks<
+  TData = Awaited<ReturnType<typeof listClientPortalTasks>>,
+  TError = ErrorType<unknown>,
+>(
+  clientId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listClientPortalTasks>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListClientPortalTasksQueryOptions(clientId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateClientPortalTaskUrl = (clientId: string) => {
+  return `/api/client-portal/clients/${clientId}/tasks`;
+};
+
+export const createClientPortalTask = async (
+  clientId: string,
+  portalTaskInput: PortalTaskInput,
+  options?: RequestInit,
+): Promise<CreateClientPortalTask201> => {
+  return customFetch<CreateClientPortalTask201>(
+    getCreateClientPortalTaskUrl(clientId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(portalTaskInput),
+    },
+  );
+};
+
+export const getCreateClientPortalTaskMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createClientPortalTask>>,
+    TError,
+    { clientId: string; data: BodyType<PortalTaskInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createClientPortalTask>>,
+  TError,
+  { clientId: string; data: BodyType<PortalTaskInput> },
+  TContext
+> => {
+  const mutationKey = ["createClientPortalTask"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createClientPortalTask>>,
+    { clientId: string; data: BodyType<PortalTaskInput> }
+  > = (props) => {
+    const { clientId, data } = props ?? {};
+
+    return createClientPortalTask(clientId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateClientPortalTaskMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createClientPortalTask>>
+>;
+export type CreateClientPortalTaskMutationBody = BodyType<PortalTaskInput>;
+export type CreateClientPortalTaskMutationError = ErrorType<unknown>;
+
+export const useCreateClientPortalTask = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createClientPortalTask>>,
+    TError,
+    { clientId: string; data: BodyType<PortalTaskInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createClientPortalTask>>,
+  TError,
+  { clientId: string; data: BodyType<PortalTaskInput> },
+  TContext
+> => {
+  return useMutation(getCreateClientPortalTaskMutationOptions(options));
+};
+
+export const getListClientPortalUsersUrl = () => {
+  return `/api/client-portal/admin/users`;
+};
+
+export const listClientPortalUsers = async (
+  options?: RequestInit,
+): Promise<ListClientPortalUsers200> => {
+  return customFetch<ListClientPortalUsers200>(getListClientPortalUsersUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListClientPortalUsersQueryKey = () => {
+  return [`/api/client-portal/admin/users`] as const;
+};
+
+export const getListClientPortalUsersQueryOptions = <
+  TData = Awaited<ReturnType<typeof listClientPortalUsers>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listClientPortalUsers>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListClientPortalUsersQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listClientPortalUsers>>
+  > = ({ signal }) => listClientPortalUsers({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listClientPortalUsers>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListClientPortalUsersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listClientPortalUsers>>
+>;
+export type ListClientPortalUsersQueryError = ErrorType<unknown>;
+
+export function useListClientPortalUsers<
+  TData = Awaited<ReturnType<typeof listClientPortalUsers>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listClientPortalUsers>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListClientPortalUsersQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getInviteClientPortalUserUrl = () => {
+  return `/api/client-portal/admin/users`;
+};
+
+export const inviteClientPortalUser = async (
+  portalInvitationInput: PortalInvitationInput,
+  options?: RequestInit,
+): Promise<InviteClientPortalUser201> => {
+  return customFetch<InviteClientPortalUser201>(
+    getInviteClientPortalUserUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(portalInvitationInput),
+    },
+  );
+};
+
+export const getInviteClientPortalUserMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof inviteClientPortalUser>>,
+    TError,
+    { data: BodyType<PortalInvitationInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof inviteClientPortalUser>>,
+  TError,
+  { data: BodyType<PortalInvitationInput> },
+  TContext
+> => {
+  const mutationKey = ["inviteClientPortalUser"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof inviteClientPortalUser>>,
+    { data: BodyType<PortalInvitationInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return inviteClientPortalUser(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type InviteClientPortalUserMutationResult = NonNullable<
+  Awaited<ReturnType<typeof inviteClientPortalUser>>
+>;
+export type InviteClientPortalUserMutationBody =
+  BodyType<PortalInvitationInput>;
+export type InviteClientPortalUserMutationError = ErrorType<unknown>;
+
+export const useInviteClientPortalUser = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof inviteClientPortalUser>>,
+    TError,
+    { data: BodyType<PortalInvitationInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof inviteClientPortalUser>>,
+  TError,
+  { data: BodyType<PortalInvitationInput> },
+  TContext
+> => {
+  return useMutation(getInviteClientPortalUserMutationOptions(options));
+};
+
+export const getUpdateClientPortalUserUrl = (uid: string) => {
+  return `/api/client-portal/admin/users/${uid}`;
+};
+
+export const updateClientPortalUser = async (
+  uid: string,
+  portalMembershipInput: PortalMembershipInput,
+  options?: RequestInit,
+): Promise<UpdateClientPortalUser200> => {
+  return customFetch<UpdateClientPortalUser200>(
+    getUpdateClientPortalUserUrl(uid),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(portalMembershipInput),
+    },
+  );
+};
+
+export const getUpdateClientPortalUserMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateClientPortalUser>>,
+    TError,
+    { uid: string; data: BodyType<PortalMembershipInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateClientPortalUser>>,
+  TError,
+  { uid: string; data: BodyType<PortalMembershipInput> },
+  TContext
+> => {
+  const mutationKey = ["updateClientPortalUser"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateClientPortalUser>>,
+    { uid: string; data: BodyType<PortalMembershipInput> }
+  > = (props) => {
+    const { uid, data } = props ?? {};
+
+    return updateClientPortalUser(uid, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateClientPortalUserMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateClientPortalUser>>
+>;
+export type UpdateClientPortalUserMutationBody =
+  BodyType<PortalMembershipInput>;
+export type UpdateClientPortalUserMutationError = ErrorType<unknown>;
+
+export const useUpdateClientPortalUser = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateClientPortalUser>>,
+    TError,
+    { uid: string; data: BodyType<PortalMembershipInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateClientPortalUser>>,
+  TError,
+  { uid: string; data: BodyType<PortalMembershipInput> },
+  TContext
+> => {
+  return useMutation(getUpdateClientPortalUserMutationOptions(options));
+};
+
+export const getResendClientPortalInvitationUrl = (uid: string) => {
+  return `/api/client-portal/admin/users/${uid}/invite`;
+};
+
+export const resendClientPortalInvitation = async (
+  uid: string,
+  options?: RequestInit,
+): Promise<ResendClientPortalInvitation200> => {
+  return customFetch<ResendClientPortalInvitation200>(
+    getResendClientPortalInvitationUrl(uid),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getResendClientPortalInvitationMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resendClientPortalInvitation>>,
+    TError,
+    { uid: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof resendClientPortalInvitation>>,
+  TError,
+  { uid: string },
+  TContext
+> => {
+  const mutationKey = ["resendClientPortalInvitation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof resendClientPortalInvitation>>,
+    { uid: string }
+  > = (props) => {
+    const { uid } = props ?? {};
+
+    return resendClientPortalInvitation(uid, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ResendClientPortalInvitationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof resendClientPortalInvitation>>
+>;
+
+export type ResendClientPortalInvitationMutationError = ErrorType<unknown>;
+
+export const useResendClientPortalInvitation = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resendClientPortalInvitation>>,
+    TError,
+    { uid: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof resendClientPortalInvitation>>,
+  TError,
+  { uid: string },
+  TContext
+> => {
+  return useMutation(getResendClientPortalInvitationMutationOptions(options));
+};
 
 /**
  * Returns server health status

@@ -456,6 +456,12 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
               {task.name && task.comment && (
                 <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{task.comment}</p>
               )}
+              {(task.visibility === 'client' || task.creatorRole === 'Client') && (
+                <div data-testid="panel-client-brief" className="mt-2 rounded-lg border border-indigo-100 bg-indigo-50/60 px-3 py-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-500">{task.creatorRole === 'Client' ? 'Client request' : 'Shared with client'}{!task.assigneeId ? ' · Unassigned' : ''}</p>
+                  <p className="text-xs text-slate-700 mt-0.5 whitespace-pre-wrap break-words">{task.clientDescription || 'No client description'}</p>
+                </div>
+              )}
               <div className="flex items-center gap-2 mt-2 flex-wrap">
                 {canEdit ? (
                   <select

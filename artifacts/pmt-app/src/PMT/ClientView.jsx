@@ -18,6 +18,8 @@ import LeaveConflictModal from './LeaveConflictModal';
 import { checkLeaveConflict, toDateKey } from '../utils/leaveConflict';
 import CsvImportModal from './CsvImportModal';
 import { templateAppliesToClient } from './shared/checklistApplicability';
+import SharingFields from '../lib/clientPortal/SharingFields.jsx';
+import { sharingFields, isNewlyShared, sharingConfirmMessage, isRealClientId, normalizeVisibility, clientPreviewTasks } from '../lib/clientPortal/core.js';
 
 const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Business Head'];
 const CLIENT_OWNER_ROLES = ['Business Head', 'CSM'];
@@ -227,6 +229,8 @@ const ClientView = ({
       qcFeedback: null,
       qcReviewedAt: null,
       taskGroupId: undefined,
+      visibility: 'internal',
+      clientDescription: null,
       creatorId: currentUser?.id || null,
       creatorName: currentUser?.name || 'Unassigned',
       creatorRole: currentUser?.role || 'Employee',
@@ -257,6 +261,9 @@ const ClientView = ({
       category: category || '',
       repeatFrequency: 'Once',
       repeatEnd: null,
+      // Created from a checklist item: deliberately internal-only.
+      visibility: 'internal',
+      clientDescription: null,
       dueDate: dueDate ? format(parse(dueDate, 'yyyy-MM-dd', new Date()), 'do MMM yyyy') : null,
       timerState: 'idle',
       timerStartedAt: null,
@@ -283,6 +290,9 @@ const ClientView = ({
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [taskDueDate, setTaskDueDate] = useState(null);
   const [newTaskComment, setNewTaskComment] = useState("");
+  const [newTaskVisibility, setNewTaskVisibility] = useState('internal');
+  const [newTaskClientDescription, setNewTaskClientDescription] = useState('');
+  const [detailViewMode, setDetailViewMode] = useState('internal'); // internal | client preview
   const [editingId, setEditingId] = useState(null);
   const [editField, setEditField] = useState(""); 
   const [tempValue, setTempValue] = useState("");
@@ -328,7 +338,7 @@ const ClientView = ({
   // Task detail panel state
   const [detailTask, setDetailTask] = useState(null);
 
-  useEffect(() => { setSelectedTaskIds(new Set()); }, [selectedClient?.id]);
+  useEffect(() => { setSelectedTaskIds(new Set()); setDetailViewMode('internal'); }, [selectedClient?.id]);
 
   // Auto-clean orphaned task groups whose client's logs have loaded but contain no tasks for that group
   useEffect(() => {
@@ -568,6 +578,8 @@ const ClientView = ({
       reminderOffsets: log.reminderOffsets || [],
       reminderTime: log.reminderTime || '09:00',
       reminderTimezone: log.reminderTimezone || 'Asia/Kolkata',
+      visibility: normalizeVisibility(log.visibility),
+      clientDescription: log.clientDescription || '',
     });
     setEditDraftCategoryQuery(log.category || '');
     setEditDraftAssigneeQuery(log.assigneeName || '');
@@ -579,8 +591,10 @@ const ClientView = ({
 
   const handleSaveEditTask = () => {
     if (!editDraft) return;
-    if (!editDraft.name.trim() || !editDraft.comment.trim() || !editDraft.category || !editDraft.assigneeId) {
-      setEditDraftError('Task name, description, category and assignee are all required.');
+    // Client-created requests arrive with a blank internal comment; their brief lives in clientDescription.
+    const hasDescription = editDraft.comment.trim() || (editDraft.visibility === 'client' && (editDraft.clientDescription || '').trim());
+    if (!editDraft.name.trim() || !hasDescription || !editDraft.category || !editDraft.assigneeId) {
+      setEditDraftError('Task name, description (internal or client), category and assignee are all required.');
       return;
     }
     const assignee = (users || []).find(u => String(u.id) === String(editDraft.assigneeId));
@@ -589,6 +603,15 @@ const ClientView = ({
     const editEstimatedMs = (editEstHrs * 60 + editEstMins) > 0 ? (editEstHrs * 3600000 + editEstMins * 60000) : null;
 
     const updateAll = editScope === 'all' && editingTask.repeatGroupId;
+    const targetCidForSharing = editDraftClientId || selectedClient.id;
+    const sharing = isRealClientId(targetCidForSharing)
+      ? sharingFields(editDraft.visibility, editDraft.clientDescription)
+      : sharingFields('internal');
+    if (isNewlyShared(editingTask, sharing.visibility)) {
+      const msg = sharingConfirmMessage(editingTask, { name: editDraft.name.trim(), status: editDraft.status, dueDate: editDraft.dueDate ? format(editDraft.dueDate, 'do MMM yyyy') : null, clientDescription: sharing.clientDescription })
+        + (updateAll ? '\n\nThis applies to every occurrence in the series.' : '');
+      if (!window.confirm(msg)) return;
+    }
 
     // Shared fields applied to all occurrences; assignee names fall back to
     // each log's existing value if the user lookup fails (e.g. deleted user)
@@ -607,6 +630,7 @@ const ClientView = ({
       reminderOffsets: editDraft.reminderOffsets?.length > 0 ? editDraft.reminderOffsets : null,
       reminderTime: editDraft.reminderOffsets?.length > 0 ? editDraft.reminderTime || '09:00' : null,
       reminderTimezone: editDraft.reminderOffsets?.length > 0 ? editDraft.reminderTimezone || 'Asia/Kolkata' : null,
+      ...sharing,
     });
 
     const oldCid = selectedClient.id;
@@ -927,6 +951,7 @@ const ClientView = ({
       reminderOffsets: newTaskReminders.length > 0 ? newTaskReminders : null,
       reminderTime: newTaskReminders.length > 0 ? newTaskReminderTime : null,
       reminderTimezone: newTaskReminders.length > 0 ? newTaskReminderTimezone : null,
+      ...(isRealClientId(selectedClient?.id) ? sharingFields(newTaskVisibility, newTaskClientDescription) : sharingFields('internal')),
       ...(newLogRepeatGroupId ? { repeatGroupId: newLogRepeatGroupId } : {}),
     };
 
@@ -992,6 +1017,8 @@ const ClientView = ({
 
     setNewTaskName("");
     setNewTaskComment("");
+    setNewTaskVisibility('internal');
+    setNewTaskClientDescription('');
     setNewTaskCategory("");
     setTaskCategoryQuery("");
     setShowCategoryMenu(false);
@@ -1227,6 +1254,8 @@ const ClientView = ({
         qcAssigneeId: hasQc ? qcAssignee.id : null,
         qcAssigneeName: hasQc ? qcAssignee.name : null,
         billable: true,
+        visibility: 'internal',
+        clientDescription: null,
       };
 
       // Generate all occurrences if repeating with an end date
@@ -1423,6 +1452,46 @@ const ClientView = ({
     const filteredAssignees = assignableUsers.filter(user =>
       `${user.name} ${user.email || ''}`.toLowerCase().includes(assigneeQuery.toLowerCase())
     );
+    if (detailViewMode === 'client' && isRealClientId(selectedClient.id)) {
+      const previewTasks = clientPreviewTasks(clientLogs[selectedClient.id] || []);
+      return (
+        <div className="min-h-full p-4 font-sans animate-in fade-in duration-500 text-left space-y-3">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-3">
+              <button onClick={() => setSelectedClient(null)} className="p-2 bg-white hover:bg-slate-50 rounded-xl transition-all border border-slate-100 shadow-sm">
+                <ChevronLeft size={18} className="text-slate-600"/>
+              </button>
+              <h2 className="text-xl font-bold text-slate-900 tracking-tight">{selectedClient.name}</h2>
+              <div className="flex gap-0.5 p-0.5 bg-white border border-slate-200 rounded-lg ml-1">
+                {[['internal', 'Internal'], ['client', 'Client preview']].map(([id, label]) => (
+                  <button key={id} data-testid={`button-view-mode-${id}`} onClick={() => setDetailViewMode(id)}
+                    className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all ${detailViewMode === id ? (id === 'client' ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-white') : 'text-slate-500 hover:bg-slate-50'}`}>{label}</button>
+                ))}
+              </div>
+            </div>
+            <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 border border-indigo-100 px-3 py-2 rounded-lg flex items-center gap-1.5"><Eye size={13}/> Read-only: exactly what the client sees</span>
+          </div>
+          <div className="bg-white border border-slate-100 rounded-xl shadow-sm overflow-hidden" data-testid="panel-client-preview">
+            <div className="grid grid-cols-[2fr_1fr_1fr_3fr] gap-4 px-5 py-3 bg-slate-50 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+              <span>Task</span><span>Due date</span><span>Status</span><span>Client description</span>
+            </div>
+            {previewTasks.length === 0 ? (
+              <div className="p-10 text-center">
+                <p className="text-sm font-bold text-slate-800">No tasks shared with this client</p>
+                <p className="text-xs text-slate-500 mt-1">Set a task's visibility to Client from its edit form to share it.</p>
+              </div>
+            ) : previewTasks.map(t => (
+              <div key={t.id} className="grid grid-cols-[2fr_1fr_1fr_3fr] gap-4 px-5 py-3.5 border-b border-slate-100 last:border-0">
+                <p className="text-sm font-semibold text-slate-900 break-words">{t.title}</p>
+                <p className="text-xs text-slate-600">{t.dueDate || <span className="text-slate-300">No due date</span>}</p>
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full border border-slate-200 bg-slate-50 text-slate-700 w-fit h-fit">{t.status}</span>
+                <p className="text-xs text-slate-500 whitespace-pre-wrap break-words">{t.description || <span className="text-slate-300">No client description</span>}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="min-h-full p-4 font-sans animate-in fade-in duration-500 text-left space-y-3">
         {/* Header Row */}
@@ -1432,6 +1501,14 @@ const ClientView = ({
               <ChevronLeft size={18} className="text-slate-600"/>
             </button>
             <h2 className="text-xl font-bold text-slate-900 tracking-tight">{selectedClient.name}</h2>
+            {isRealClientId(selectedClient.id) && (
+              <div className="flex gap-0.5 p-0.5 bg-white border border-slate-200 rounded-lg ml-1" role="tablist">
+                {[['internal', 'Internal'], ['client', 'Client preview']].map(([id, label]) => (
+                  <button key={id} data-testid={`button-view-mode-${id}`} onClick={() => setDetailViewMode(id)}
+                    className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all ${detailViewMode === id ? (id === 'client' ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-white') : 'text-slate-500 hover:bg-slate-50'}`}>{label}</button>
+                ))}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -2005,6 +2082,7 @@ const ClientView = ({
                       {/* Task name */}
                       <td className="px-1.5 py-2">
                         <p className="text-xs font-semibold text-slate-800 leading-4 break-words line-clamp-2">{log.name || '—'}</p>
+                        {log.visibility === 'client' && <span data-testid={`badge-client-shared-${log.id}`} className="inline-flex items-center gap-1 mt-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 border border-indigo-100"><Eye size={8}/> Client</span>}
                         {Array.isArray(log.departments) && log.departments.length > 0 && (
                           <div className="flex flex-wrap gap-0.5 mt-0.5">
                             {log.departments.map(dept => (
@@ -2051,7 +2129,7 @@ const ClientView = ({
 
                       {/* Description */}
                       <td className="px-2 py-2">
-                        <p className="text-xs text-slate-600 leading-4 break-words line-clamp-2">{log.comment}</p>
+                        <p className="text-xs text-slate-600 leading-4 break-words line-clamp-2">{log.comment || (log.clientDescription ? <span className="text-indigo-600"><span className="font-bold">Client brief:</span> {log.clientDescription}</span> : null)}</p>
                         {log.qcEnabled && log.qcAssigneeName && (
                           <p className="text-[10px] text-indigo-500 font-medium mt-0.5">QC: {log.qcAssigneeName}</p>
                         )}
@@ -2835,6 +2913,15 @@ const ClientView = ({
                         }}
                       />
                     </div>
+                    <SharingFields
+                      testIdPrefix="new-task"
+                      visibility={newTaskVisibility}
+                      clientDescription={newTaskClientDescription}
+                      onVisibilityChange={setNewTaskVisibility}
+                      onClientDescriptionChange={setNewTaskClientDescription}
+                      disabled={!isRealClientId(selectedClient?.id)}
+                      disabledReason="Personal and internal workspaces cannot be shared"
+                    />
                     {/* Billable Toggle */}
                     <div className="flex items-center justify-between border border-slate-200 rounded-xl px-4 py-3 bg-slate-50/60">
                       <div>
@@ -3145,6 +3232,15 @@ const ClientView = ({
                           onChange={e => { setEditDraft(d => ({ ...d, comment: e.target.value })); setEditDraftError(''); }}
                         />
                       </div>
+                      <SharingFields
+                        testIdPrefix="edit-task"
+                        visibility={editDraft.visibility}
+                        clientDescription={editDraft.clientDescription}
+                        onVisibilityChange={v => setEditDraft(d => ({ ...d, visibility: v }))}
+                        onClientDescriptionChange={v => setEditDraft(d => ({ ...d, clientDescription: v }))}
+                        disabled={!isRealClientId(editDraftClientId || selectedClient.id)}
+                        disabledReason="Personal and internal workspaces cannot be shared"
+                      />
                       {/* Move to another client — only when no time has been logged */}
                       {!editingTask.elapsedMs && (() => {
                         const allClientOptions = [
@@ -4448,6 +4544,8 @@ const ClientView = ({
                 date: format(new Date(), 'do MMM yyyy'),
                 dueDate: parsedDueDate,
                 comment: (row.description || '').trim(),
+                visibility: 'internal',
+                clientDescription: null,
                 result: '',
                 status: taskStatus,
                 creatorId: currentUser?.id || null,

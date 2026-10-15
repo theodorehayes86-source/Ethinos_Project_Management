@@ -6,4 +6,17 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./createClientPortalTask201";
+export * from "./getClientPortalMe200";
 export * from "./healthStatus";
+export * from "./inviteClientPortalUser201";
+export * from "./listClientPortalTasks200";
+export * from "./listClientPortalUsers200";
+export * from "./portalClient";
+export * from "./portalInvitationInput";
+export * from "./portalMembershipInput";
+export * from "./portalTask";
+export * from "./portalTaskInput";
+export * from "./portalUser";
+export * from "./resendClientPortalInvitation200";
+export * from "./updateClientPortalUser200";

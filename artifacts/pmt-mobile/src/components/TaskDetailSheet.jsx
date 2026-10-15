@@ -1,9 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { X, Star, CheckCircle, XCircle, Clock, Tag, Calendar, Loader2, Send, MessageCircle, ListChecks, Check, AlertTriangle, CornerUpLeft, Pencil, Trash2, Smile, Archive, RotateCcw } from 'lucide-react';
-import { updateTaskInFirebase } from '../hooks/useFirebaseData.js';
+import { updateTaskInFirebase, getSubtreeIds } from '../hooks/useFirebaseData.js';
 import { isTaskOverdue } from '../utils/taskUtils.js';
 import { sendNotification } from '../utils/notify.js';
 import { formatRepeatLabel, formatWeekendRuleLabel } from '../utils/repeatLabel.js';
+import SharingFields from '../lib/clientPortal/SharingFields.jsx';
+import { sharingFields, isNewlyShared, sharingConfirmMessage, isRealClientId, normalizeVisibility } from '../lib/clientPortal/core.js';
 
 const parseMentions = (text, userList = []) =>
   userList.filter(u => u.name && text.includes(`@${u.name}`));
@@ -81,6 +83,36 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
   const [mentionStartIndex, setMentionStartIndex] = useState(null);
 
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
+  const [savedVisibility, setSavedVisibility] = useState(() => normalizeVisibility(task.visibility));
+  const [visibility, setVisibility] = useState(() => normalizeVisibility(task.visibility));
+  const [clientDescription, setClientDescription] = useState(() => task.clientDescription || '');
+  const [sharingSaved, setSharingSaved] = useState(false);
+  const [savedClientDescription, setSavedClientDescription] = useState(() => task.clientDescription || null);
+  // Sharing may be changed by the task creator, global roles, or a manager
+  // whose reporting subtree contains the assignee (mirrors desktop edit perms).
+  const canEditSharing = (() => {
+    if (readOnly || !currentUser || !isRealClientId(task._clientId)) return false;
+    if (task.creatorId != null && String(task.creatorId) === String(currentUser.id)) return true;
+    if (['Super Admin', 'Director'].includes(currentUser.role)) return true;
+    if (!isManager) return false;
+    const client = clients.find(c => String(c.id) === String(task._clientId));
+    if (['CSM', 'Business Head'].includes(currentUser.role) &&
+      (client?.ownerIds || []).map(String).includes(String(currentUser.id))) return true;
+    return getSubtreeIds(currentUser.id, users || []).has(String(task.assigneeId));
+  })();
+  const sharingDirty = visibility !== savedVisibility || (visibility === 'client' && (clientDescription.trim() || null) !== savedClientDescription);
+
+  const handleSaveSharing = async () => {
+    const fields = sharingFields(visibility, clientDescription);
+    if (isNewlyShared({ visibility: savedVisibility }, fields.visibility)) {
+      if (!window.confirm(sharingConfirmMessage(task, { status, clientDescription: fields.clientDescription }))) return;
+    }
+    await persistUpdate(fields);
+    setSavedClientDescription(fields.clientDescription);
+    setSavedVisibility(fields.visibility);
+    setSharingSaved(true);
+    window.setTimeout(() => setSharingSaved(false), 1800);
+  };
   const [archiving, setArchiving] = useState(false);
 
   const canEdit = !readOnly && currentUser && String(task.assigneeId) === String(currentUser.id);
@@ -337,6 +369,13 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
                 )}
               </div>
 
+              {(task.visibility === 'client' || task.creatorRole === 'Client') && (
+                <div data-testid="panel-client-brief" className="rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-500">{task.creatorRole === 'Client' ? 'Client request' : 'Shared with client'}{!task.assigneeId ? ' · Unassigned' : ''}</p>
+                  <p className="text-xs text-slate-700 mt-0.5 whitespace-pre-wrap break-words">{task.clientDescription || 'No client description'}</p>
+                </div>
+              )}
+
               {task.comment && task.name && (
                 <p className="text-sm text-slate-600 leading-relaxed">{task.comment}</p>
               )}
@@ -433,6 +472,30 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
                       className="min-h-[40px] rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
                     >
                       {remindersSaved ? 'Saved' : 'Save reminders'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {canEditSharing && (
+                <div className="space-y-2">
+                  <SharingFields
+                    compact
+                    testIdPrefix="mobile-edit-task"
+                    visibility={visibility}
+                    clientDescription={clientDescription}
+                    onVisibilityChange={setVisibility}
+                    onClientDescriptionChange={setClientDescription}
+                  />
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      data-testid="button-save-sharing"
+                      onClick={handleSaveSharing}
+                      disabled={saving || !sharingDirty}
+                      className="min-h-[40px] rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
+                    >
+                      {sharingSaved ? 'Saved' : 'Save visibility'}
                     </button>
                   </div>
                 </div>

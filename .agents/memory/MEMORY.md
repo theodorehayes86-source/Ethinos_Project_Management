@@ -4,3 +4,4 @@
 - [Job-lock starvation](job-lock-starvation.md) — check credentials BEFORE acquiring scheduler locks; a stale prod instance without secrets can starve dev via shared Firebase locks
 - [Autoscale kills in-process cron](autoscale-cron-schedulers.md) — prod must stay a Reserved VM or schedulers pause with traffic; stale-catch-up + shared lock now self-heal gaps
 - [Custom-domain Keka runtime](custom-domain-keka-runtime.md) — project.ethinos.com uses a separate Apache host; its Keka credentials must be configured independently
+- [External client scope](client-portal-boundaries.md) — clients see assigned workspaces and shared tasks only; ordinary task creation, no checklist/template or staff access.

@@ -1,7 +1,2 @@
-import { createRoot } from 'react-dom/client';
-import './index.css';
-import App from './App.jsx';
-
-createRoot(document.getElementById('root')).render(
-  <App />,
-);
+// index.html's production entry must use the same pre-listener identity gate.
+import './main.tsx';

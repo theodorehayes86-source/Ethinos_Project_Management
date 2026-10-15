@@ -7,10 +7,14 @@ import kekaRouter from "./keka";
 import teamsAuthRouter from "./teams-auth";
 import teamsChatRouter from "./teams-chat";
 import adminAttendanceRouter from "./admin-attendance";
+import clientPortalRouter from "./client-portal";
+import { staffApiBoundary } from "../lib/staff-api-boundary";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use("/client-portal", clientPortalRouter);
+router.use(staffApiBoundary);
 router.use("/export", exportRouter);
 router.use("/auth", authRouter);
 router.use(notifyRouter);

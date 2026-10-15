@@ -7,6 +7,127 @@
  */
 import * as zod from "zod";
 
+export const GetClientPortalMeResponse = zod.object({
+  clients: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+    }),
+  ),
+});
+
+export const listClientPortalTasksPathClientIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]+$",
+);
+
+export const ListClientPortalTasksParams = zod.object({
+  clientId: zod.coerce.string().regex(listClientPortalTasksPathClientIdRegExp),
+});
+
+export const ListClientPortalTasksResponse = zod.object({
+  tasks: zod.array(
+    zod.object({
+      id: zod.string(),
+      title: zod.string(),
+      description: zod.string(),
+      status: zod.string(),
+      dueDate: zod.string(),
+    }),
+  ),
+});
+
+export const createClientPortalTaskPathClientIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]+$",
+);
+
+export const CreateClientPortalTaskParams = zod.object({
+  clientId: zod.coerce.string().regex(createClientPortalTaskPathClientIdRegExp),
+});
+
+export const createClientPortalTaskBodyTitleMax = 200;
+
+export const createClientPortalTaskBodyDescriptionMax = 5000;
+
+export const createClientPortalTaskBodyDueDateRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+
+export const CreateClientPortalTaskBody = zod.object({
+  title: zod.string().min(1).max(createClientPortalTaskBodyTitleMax),
+  description: zod.string().max(createClientPortalTaskBodyDescriptionMax),
+  dueDate: zod
+    .string()
+    .regex(createClientPortalTaskBodyDueDateRegExp)
+    .optional(),
+});
+
+export const ListClientPortalUsersResponse = zod.object({
+  users: zod.array(
+    zod.object({
+      uid: zod.string(),
+      email: zod.string(),
+      disabled: zod.boolean(),
+      clientIds: zod.array(zod.string()),
+    }),
+  ),
+});
+
+export const inviteClientPortalUserBodyEmailMax = 254;
+
+export const inviteClientPortalUserBodyClientIdsItemRegExp = new RegExp(
+  "^[A-Za-z0-9_-]+$",
+);
+export const inviteClientPortalUserBodyClientIdsMax = 100;
+
+export const InviteClientPortalUserBody = zod.object({
+  email: zod.string().email().max(inviteClientPortalUserBodyEmailMax),
+  clientIds: zod
+    .array(zod.string().regex(inviteClientPortalUserBodyClientIdsItemRegExp))
+    .min(1)
+    .max(inviteClientPortalUserBodyClientIdsMax),
+});
+
+export const updateClientPortalUserPathUidRegExp = new RegExp(
+  "^[A-Za-z0-9_-]+$",
+);
+
+export const UpdateClientPortalUserParams = zod.object({
+  uid: zod.coerce.string().regex(updateClientPortalUserPathUidRegExp),
+});
+
+export const updateClientPortalUserBodyClientIdsItemRegExp = new RegExp(
+  "^[A-Za-z0-9_-]+$",
+);
+export const updateClientPortalUserBodyClientIdsMax = 100;
+
+export const UpdateClientPortalUserBody = zod.object({
+  clientIds: zod
+    .array(zod.string().regex(updateClientPortalUserBodyClientIdsItemRegExp))
+    .max(updateClientPortalUserBodyClientIdsMax),
+  disabled: zod.boolean(),
+});
+
+export const UpdateClientPortalUserResponse = zod.object({
+  user: zod.object({
+    uid: zod.string(),
+    email: zod.string(),
+    disabled: zod.boolean(),
+    clientIds: zod.array(zod.string()),
+  }),
+});
+
+export const resendClientPortalInvitationPathUidRegExp = new RegExp(
+  "^[A-Za-z0-9_-]+$",
+);
+
+export const ResendClientPortalInvitationParams = zod.object({
+  uid: zod.coerce.string().regex(resendClientPortalInvitationPathUidRegExp),
+});
+
+export const ResendClientPortalInvitationResponse = zod.object({
+  invitationSent: zod.boolean(),
+});
+
 /**
  * Returns server health status
  * @summary Health check

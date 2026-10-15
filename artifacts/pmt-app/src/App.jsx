@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ref, onValue, set, update, get, push, remove } from 'firebase/database';
 import { signInWithEmailAndPassword, signInWithCustomToken, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, updateProfile, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
 import { db, auth } from './firebase.js';
+import { isClientAccount, canManageClientPortal } from './lib/clientPortal/core.js';
 import { tasksWithKeys, collectionValues } from './lib/firebaseCollections.js';
 import { computeClientLogsDiff, sanitizeForFirebase as sanitizeForFirebaseUtil } from './lib/persistClientLogsDiff.js';
 // MSAL import removed — we use a direct PKCE+postMessage popup flow instead.
@@ -1076,7 +1077,11 @@ const App = () => {
 
   // --- FIREBASE AUTH LISTENER ---
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, (rawUser) => {
+      // Client-portal (non-ethinos) accounts are never treated as staff: every
+      // staff subscription keys off firebaseUser, so none start for them, even
+      // on in-place user transitions before PortalGate swaps to the portal.
+      const user = isClientAccount(rawUser) ? null : rawUser;
       setFirebaseUser(user);
       setAuthLoading(false);
       if (!user) {
@@ -1632,7 +1637,7 @@ const App = () => {
   const isTestMode = !!testModeUserId;
   const canSeeAllMetricsData = metricsAllDataRoles.includes(currentUser?.role);
   const canSeeAllReportsData = reportsAllDataRoles.includes(currentUser?.role);
-  const canSeeControlCenter = currentUser?.role === 'Super Admin' || Object.values(controlCenterTabAccess).some(roles => (roles || []).includes(currentUser?.role));
+  const canSeeControlCenter = canManageClientPortal(currentUser?.role) || Object.values(controlCenterTabAccess).some(roles => (roles || []).includes(currentUser?.role));
   const canCreateChecklists = (controlCenterTabAccess.checklistTemplates || []).includes(currentUser?.role);
   const canSeeUserManagement = userManagementAccessRoles.includes(currentUser?.role);
   const canSeeEmployeeView = employeeViewAccessRoles.includes(currentUser?.role);

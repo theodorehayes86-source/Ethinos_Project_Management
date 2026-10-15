@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, signInWithCustomToken, signOut } from 'firebase/auth';
 import { auth } from './firebase.js';
+import { isClientAccount } from './lib/clientPortal/core.js';
 import LoginView from './components/LoginView.jsx';
 import EmployeeView from './components/EmployeeView.jsx';
 import ManagerDashboard from './components/ManagerDashboard.jsx';
@@ -15,7 +16,8 @@ import {
   getSubtreeIds,
 } from './hooks/useFirebaseData.js';
 import ChecklistDashboardScreen from './components/ChecklistDashboardScreen.jsx';
-import { Bell, LogOut, Loader2, Maximize2, Minimize2 } from 'lucide-react';
+import ClientPreviewSheet from './components/ClientPreviewSheet.jsx';
+import { Bell, LogOut, Loader2, Maximize2, Minimize2, Building2 } from 'lucide-react';
 
 const MANAGEMENT_ROLES = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
 // Aug 2026 policy: Business Heads are client-specific — they see their owned
@@ -107,6 +109,7 @@ function MainApp() {
   const [currentUser, setCurrentUser] = useState(null);
   const [userLoading, setUserLoading] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showClients, setShowClients] = useState(false);
 
   useEffect(() => {
     const onFsChange = () => {
@@ -134,7 +137,9 @@ function MainApp() {
   const { taskGroups, checklistTemplates, checklistAccess } = useChecklistDashboardData(!authLoading && !!firebaseUser);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => {
+    const unsub = onAuthStateChanged(auth, (rawUser) => {
+      // Client-portal accounts never activate staff data hooks (see PortalGate).
+      const user = isClientAccount(rawUser) ? null : rawUser;
       setFirebaseUser(user);
       setAuthLoading(false);
       if (!user) setCurrentUser(null);
@@ -222,6 +227,20 @@ function MainApp() {
     }
     return allClients.filter(c => allowedClientIds.has(String(c.id)));
   }, [currentUser, users, clientLogs, allClients]);
+
+  // Mobile client surface: same authorisation as the checklist dashboard.
+  // Global roles and client owners see all tasks of a client; other managers
+  // only tasks assigned within their reporting subtree.
+  const canSeeClientTask = useMemo(() => {
+    if (!currentUser) return () => false;
+    if (GLOBAL_ROLES.includes(currentUser.role)) return () => true;
+    const subtree = getSubtreeIds(currentUser.id, users);
+    const isOwnerRole = CLIENT_OWNER_ROLES.includes(currentUser.role);
+    return (task, client) => {
+      if (isOwnerRole && (client?.ownerIds || []).map(String).includes(String(currentUser.id))) return true;
+      return subtree.has(String(task.assigneeId));
+    };
+  }, [currentUser, users]);
 
   const myTasks = useMyTasks(currentUser, clientLogs, allClients);
   const pendingApprovals = usePendingApprovals(currentUser, clientLogs, allClients);
@@ -376,6 +395,16 @@ function MainApp() {
           >
             {isFullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
           </button>
+          {isManager && (
+            <button
+              data-testid="button-open-clients"
+              onClick={() => setShowClients(true)}
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 hover:bg-slate-50 transition-colors"
+              title="Clients"
+            >
+              <Building2 size={18} />
+            </button>
+          )}
           <button
             onClick={handleOpenNotifications}
             className="relative w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 hover:bg-slate-50 transition-colors"
@@ -436,6 +465,18 @@ function MainApp() {
         approvalCount={pendingApprovals.length}
         hasChecklistAccess={hasChecklistAccess}
       />
+
+      {showClients && isManager && (
+        <ClientPreviewSheet
+          clients={checklistAccessibleClients}
+          clientLogs={clientLogs}
+          currentUser={currentUser}
+          users={users}
+          isManager={isManager}
+          canSeeTask={canSeeClientTask}
+          onClose={() => setShowClients(false)}
+        />
+      )}
 
       {showNotifications && (
         <NotificationsPanel

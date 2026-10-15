@@ -4,6 +4,8 @@ import { createTaskInFirebase, getSubtreeIds } from '../hooks/useFirebaseData.js
 import { sendNotification } from '../utils/notify.js';
 import { checkLeaveConflict } from '../utils/taskUtils.js';
 import LeaveConflictModal from './LeaveConflictModal.jsx';
+import SharingFields from '../lib/clientPortal/SharingFields.jsx';
+import { sharingFields, isRealClientId } from '../lib/clientPortal/core.js';
 import { generateRecurringDates, formatOrdinal, parseLocalDate, WEEKDAY_SHORT, WEEKDAY_FULL, WEEK_ORDINALS } from '../utils/recurrence.js';
 
 const PINNED_CLIENT_NAMES = ['Personal', 'Ethinos Internal'];
@@ -209,6 +211,8 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
   const [client, setClient] = useState(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [visibility, setVisibility] = useState('internal');
+  const [clientDescription, setClientDescription] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [category, setCategory] = useState('');
   const [frequency, setFrequency] = useState('Once');
@@ -290,6 +294,9 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
         name: name.trim(),
         comment: description.trim(),
         assigneeId: assignee.id,
+        creatorId: currentUser?.id ?? null,
+        creatorName: currentUser?.name || null,
+        creatorRole: currentUser?.role || null,
         dueDate: formatDate(dueDate),
         category,
         repeatFrequency: frequency,
@@ -303,6 +310,8 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
         reminderOffsets: reminderOffsets.length > 0 ? reminderOffsets : null,
         reminderTime: reminderOffsets.length > 0 ? reminderTime : null,
         reminderTimezone: reminderOffsets.length > 0 ? reminderTimezone : null,
+        // Deliberately selected sharing state; propagated to every recurring occurrence.
+        ...(isRealClientId(client?.id) && !client?.synthetic ? sharingFields(visibility, clientDescription) : sharingFields('internal')),
       };
       if (frequency !== 'Once' && repeatEnd && dueDate) {
         const startDate = parseLocalDate(dueDate);   // safe local parse — no UTC shift
@@ -436,6 +445,16 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
                   className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-slate-50 resize-none"
                 />
               </div>
+              <SharingFields
+                compact
+                testIdPrefix="mobile-new-task"
+                visibility={visibility}
+                clientDescription={clientDescription}
+                onVisibilityChange={setVisibility}
+                onClientDescriptionChange={setClientDescription}
+                disabled={!isRealClientId(client?.id) || !!client?.synthetic}
+                disabledReason="Personal and internal workspaces cannot be shared"
+              />
               <div>
                 <p className="text-sm font-bold text-slate-700 mb-2">Checklist <span className="text-slate-400 font-normal">(optional)</span></p>
                 {steps.length > 0 && (
@@ -772,6 +791,7 @@ export default function AddTaskSheet({ currentUser, users, clients, clientLogs, 
                 { label: 'Client',      value: client?.name },
                 { label: 'Task',        value: name },
                 { label: 'Description', value: description || '—' },
+                { label: 'Visibility',  value: isRealClientId(client?.id) && !client?.synthetic && visibility === 'client' ? `Client — "${clientDescription.trim() || 'no client description'}"` : 'Internal' },
                 { label: 'Due date',    value: dueDate ? formatDate(dueDate) : '—' },
                 { label: 'Category',    value: category },
                 { label: 'Repeat', value: frequency === 'Weekly' && repeatDays.length > 0

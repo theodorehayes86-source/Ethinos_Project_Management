@@ -1,4 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import SharingFields from '../lib/clientPortal/SharingFields.jsx';
+import { sharingFields, isRealClientId } from '../lib/clientPortal/core.js';
 import { Users, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Plus, X, Search, Star, ArrowUp, ArrowDown, Filter, CalendarClock, CalendarCheck2, CalendarX2, AlertTriangle, BarChart2, ClipboardCheck, Clock, Link2, Link2Off, MessageSquare, CheckCircle, LayoutTemplate } from 'lucide-react';
 import { format, isBefore, isAfter, startOfWeek, endOfWeek, startOfMonth, endOfMonth, parse, addDays, differenceInCalendarDays } from 'date-fns';
 import DatePicker from "react-datepicker";
@@ -93,6 +95,8 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
   const [selectedClientId, setSelectedClientId] = useState('');
   const [taskName, setTaskName] = useState('');
   const [taskComment, setTaskComment] = useState('');
+  const [taskVisibility, setTaskVisibility] = useState('internal');
+  const [taskClientDescription, setTaskClientDescription] = useState('');
   const [taskCategory, setTaskCategory] = useState('');
   const [taskDate] = useState(new Date());
   const [taskDueDate, setTaskDueDate] = useState(null);
@@ -146,6 +150,8 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
         await persistTaskCreate('__ethinos__', {
           name: taskItem.name || taskItem.comment,
           comment: taskItem.comment || '',
+          visibility: 'internal',
+          clientDescription: null,
           date: today,
           dueDate: null,
           status: 'Pending',
@@ -234,6 +240,7 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
       departments: prefilledAssignee?.department ? [prefilledAssignee.department] : null,
       billable: selectedClientId === '__ethinos__' ? false : taskBillable,
       estimatedMs,
+      ...(isRealClientId(selectedClientId) ? sharingFields(taskVisibility, taskClientDescription) : sharingFields('internal')),
     };
     setSubmitting(true);
     setError('');
@@ -543,6 +550,7 @@ const AddTaskModal = ({ prefilledAssignee, clients, syntheticClients, taskCatego
             </div>
           )}
           <div><label className="text-xs font-semibold text-slate-600 mb-1 block">Description *</label><textarea value={taskComment} onChange={e => setTaskComment(e.target.value)} rows={3} placeholder="Describe the task…" className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 ring-blue-500/20 resize-none"/></div>
+          <SharingFields compact testIdPrefix="team-new-task" visibility={taskVisibility} clientDescription={taskClientDescription} onVisibilityChange={setTaskVisibility} onClientDescriptionChange={setTaskClientDescription} disabled={!isRealClientId(selectedClientId)} disabledReason="Pick a real client to share this task"/>
           <div>
             <label className="text-xs font-semibold text-slate-600 mb-1 block">Due Date</label>
             <DueDateInput

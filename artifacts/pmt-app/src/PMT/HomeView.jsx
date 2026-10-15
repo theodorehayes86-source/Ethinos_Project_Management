@@ -17,6 +17,8 @@ import DueDateInput from './DueDateInput';
 import LeaveConflictModal from './LeaveConflictModal';
 import { checkLeaveConflict, toDateKey, getUserLeaveAndHolidayData, isFullDayLeaveOrHoliday, getUserLeaveStatus } from '../utils/leaveConflict';
 import { templateAppliesToClient } from './shared/checklistApplicability';
+import SharingFields from '../lib/clientPortal/SharingFields.jsx';
+import { sharingFields, isNewlyShared, sharingConfirmMessage, isRealClientId, normalizeVisibility } from '../lib/clientPortal/core.js';
 
 const managementRoles = ['Super Admin', 'Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
 
@@ -133,6 +135,8 @@ const HomeView = ({
   const [taskRepeatWeekendRule, setTaskRepeatWeekendRule] = useState('none');
   const [taskName, setTaskName] = useState('');
   const [taskComment, setTaskComment] = useState('');
+  const [taskVisibility, setTaskVisibility] = useState('internal');
+  const [taskClientDescription, setTaskClientDescription] = useState('');
   const [taskDueDate, setTaskDueDate] = useState(null);
   const [assigneeId, setAssigneeId] = useState('');
   const [assigneeName, setAssigneeName] = useState('');
@@ -315,6 +319,8 @@ const HomeView = ({
         checked: false,
       })),
       billable: false,
+      visibility: 'internal',
+      clientDescription: null,
       departments: currentUser?.department ? [currentUser.department] : [],
       timerState: 'idle',
       timerStartedAt: null,
@@ -373,6 +379,8 @@ const HomeView = ({
     setTaskRepeatWeekendRule('none');
     setTaskName('');
     setTaskComment('');
+    setTaskVisibility('internal');
+    setTaskClientDescription('');
     setTaskDueDate(null);
     if (!isManagement) {
       setAssigneeId(currentUser?.id || '');
@@ -570,6 +578,9 @@ const HomeView = ({
       category: category || '',
       repeatFrequency: 'Once',
       repeatEnd: null,
+      // Created from a checklist item: deliberately internal-only.
+      visibility: 'internal',
+      clientDescription: null,
       dueDate: dueDate || null,
       timerState: 'idle',
       timerStartedAt: null,
@@ -685,6 +696,7 @@ const HomeView = ({
       reminderOffsets: taskReminders.length > 0 ? taskReminders : null,
       reminderTime: taskReminders.length > 0 ? taskReminderTime : null,
       reminderTimezone: taskReminders.length > 0 ? taskReminderTimezone : null,
+      ...(isRealClientId(selectedClientId) ? sharingFields(taskVisibility, taskClientDescription) : sharingFields('internal')),
       ...(newRepeatGroupId ? { repeatGroupId: newRepeatGroupId } : {}),
     };
     const dueDateOffsetDays = taskDueDate && selectedDate
@@ -987,6 +999,8 @@ const HomeView = ({
       reminderOffsets: task.reminderOffsets || [],
       reminderTime: task.reminderTime || '09:00',
       reminderTimezone: task.reminderTimezone || 'Asia/Kolkata',
+      visibility: normalizeVisibility(task.visibility),
+      clientDescription: task.clientDescription || '',
     });
     setEditDraftClientId(task.cid || null);
     setEditDraftCategoryQuery(task.category || '');
@@ -997,15 +1011,25 @@ const HomeView = ({
 
   const handleSaveEditTask = () => {
     if (!editDraft || !editingTask) return;
-    if (!editDraft.name.trim() || !editDraft.comment.trim() || !editDraft.category) {
-      setEditDraftError('Task name, description and category are all required.');
+    const hasDescription = editDraft.comment.trim() || (editDraft.visibility === 'client' && (editDraft.clientDescription || '').trim());
+    if (!editDraft.name.trim() || !hasDescription || !editDraft.category) {
+      setEditDraftError('Task name, description (internal or client) and category are all required.');
       return;
     }
     const oldCid = editingTask.cid;
     const newCid = editDraftClientId || oldCid;
     if (!oldCid) return;
     const updateAll = editScope === 'all' && editingTask.repeatGroupId;
+    const sharing = isRealClientId(newCid)
+      ? sharingFields(editDraft.visibility, editDraft.clientDescription)
+      : sharingFields('internal');
+    if (isNewlyShared(editingTask, sharing.visibility)) {
+      const msg = sharingConfirmMessage(editingTask, { name: editDraft.name.trim(), status: editDraft.status, dueDate: editDraft.dueDate ? format(editDraft.dueDate, 'do MMM yyyy') : null, clientDescription: sharing.clientDescription })
+        + (updateAll ? '\n\nThis applies to every occurrence in the series.' : '');
+      if (!window.confirm(msg)) return;
+    }
     const sharedFields = {
+      ...sharing,
       name: editDraft.name.trim(),
       comment: editDraft.comment.trim(),
       category: editDraft.category,
@@ -2532,6 +2556,15 @@ const HomeView = ({
                       className="w-full h-32 p-4 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 outline-none focus:ring-2 ring-blue-500/20 resize-none bg-slate-100"
                     />
                   </div>
+                  <SharingFields
+                    testIdPrefix="home-new-task"
+                    visibility={taskVisibility}
+                    clientDescription={taskClientDescription}
+                    onVisibilityChange={setTaskVisibility}
+                    onClientDescriptionChange={setTaskClientDescription}
+                    disabled={!isRealClientId(selectedClientId)}
+                    disabledReason="Pick a real client to share this task"
+                  />
 
                   {/* Billable Toggle */}
                   <div className={`flex items-center justify-between border rounded-xl px-4 py-3 ${selectedClientId === '__ethinos__' ? 'border-slate-100 bg-slate-50/40 opacity-70' : 'border-slate-200 bg-slate-50/60'}`}>
@@ -2843,6 +2876,16 @@ const HomeView = ({
                   placeholder="Description"
                 />
               </div>
+              <SharingFields
+                compact
+                testIdPrefix="home-edit-task"
+                visibility={editDraft.visibility}
+                clientDescription={editDraft.clientDescription}
+                onVisibilityChange={v => setEditDraft(d => ({ ...d, visibility: v }))}
+                onClientDescriptionChange={v => setEditDraft(d => ({ ...d, clientDescription: v }))}
+                disabled={!isRealClientId(editDraftClientId || editingTask?.cid)}
+                disabledReason="Personal and internal workspaces cannot be shared"
+              />
               {/* Category */}
               <div className="space-y-1 relative">
                 <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Category</label>

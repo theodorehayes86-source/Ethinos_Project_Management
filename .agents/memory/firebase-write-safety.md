@@ -31,3 +31,13 @@ Tasks are keyed in Firebase by their push key. `TasksContext.tsx` uses `Object.e
 
 ### syncRef null handling (web app)
 `syncRef(path, setter, emptyVal)` now always calls `setter` — including when the Firebase node is null. Pass the appropriate `emptyVal` (e.g. `{}` for clientLogs, `[]` for arrays) so deleted nodes clear local state immediately rather than leaving stale values.
+
+### Empty arrays disappear in RTDB
+Treat an absent collection child as an empty collection when it is a valid state.
+Do not rely on an empty array surviving a database round trip.
+
+**Why:** Clearing every client assignment removes the array child in RTDB. Strict
+response validation without normalization can then break the whole admin list.
+
+**How to apply:** Normalize reads before validating response schemas, and make test
+fixtures omit emptied children rather than always retaining JavaScript empty arrays.
