@@ -45,6 +45,14 @@ The account team must be able to read and respond to this shared activity.
 messages, notes, links and checklist steps; sharing a parent must never expose those
 internal records automatically. Client subtasks are not staff checklist/template access.
 
+Client changes to shared tasks should email the task's assigned users with the update.
+
+**Why:** The user requested assigned-user email notifications for client task updates.
+
+**How to apply:** Cover client status changes and shared messages, notes, links and
+subtask changes. Do not notify for staff activity, unchanged values or duplicate retries;
+never substitute unrelated recipients when a task is unassigned.
+
 “Share with client” must be available in the blue selected-task toolbar in the
 Clients view, not only inside task details or editing.
 

@@ -125,7 +125,7 @@ export async function sendEmail(params: {
     throw new Error(`Failed to send email via Microsoft Graph: ${response.status}${params.sensitive ? "" : ` ${text}`}`);
   }
 
-  logger.info({ to: params.to, subject: params.subject }, "Email sent via Microsoft Graph");
+  logger.info(params.sensitive ? {} : { to: params.to, subject: params.subject }, "Email sent via Microsoft Graph");
 }
 
 export function isEmailConfigured(): boolean {

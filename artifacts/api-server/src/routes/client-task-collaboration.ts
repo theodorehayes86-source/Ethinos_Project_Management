@@ -1,6 +1,6 @@
 import { Router, type Request } from "express";
 import type { DecodedIdToken } from "firebase-admin/auth";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   CreateClientTaskCollaborationEntryBody, CreateClientTaskCollaborationSubtaskBody,
   GetClientTaskCollaborationResponse, UpdateClientTaskCollaborationSubtaskBody,
@@ -9,6 +9,7 @@ import {
 import { getAdminAuth, getAdminDatabase } from "../lib/firebase-admin";
 import { isStaffEmail, membershipAllows, normalizeMembership, projectClientTask, safeKey } from "../lib/client-portal";
 import { ids, permissions, values, type RecordData } from "../lib/creative-studio";
+import { sendClientTaskUpdateEmail, type ClientTaskUpdateEvent } from "../lib/client-task-update-email";
 
 const router = Router({ mergeParams: true });
 const db = () => getAdminDatabase();
@@ -21,6 +22,8 @@ class CollaborationError extends Error {
 }
 function fail(status: number, message: string): never { throw new CollaborationError(status, message); }
 const root = (req: Request) => `clientTaskCollaboration/${req.params.clientId}/${req.params.taskId}`;
+const notify = (req: Request, event: ClientTaskUpdateEvent) =>
+  sendClientTaskUpdateEmail(String(req.params.clientId), String(req.params.taskId), event);
 
 /** Re-read authoritative accounts, project access and the actual stable parent key.
  * Never use a body-supplied actor, a task's mutable id, or internal task messages. */
@@ -40,12 +43,14 @@ async function scope(req: Request) {
   const client = values(await read("clients")).find(c => c.id === clientId && !c.deleted && !c.archived);
   if (!client) fail(403, "Client access is not available.");
   let authorName = "Client";
+  let external = true;
   if (!isStaffEmail(identity.email) || membershipRaw != null) {
     if (isStaffEmail(identity.email) || !membershipAllows(normalizeMembership(membershipRaw), identity.email!, clientId)) {
       fail(403, "Verified active assigned client access is required.");
     }
     authorName = authUser.displayName || "Client";
   } else {
+    external = false;
     const staff = values(await read("users")).find(u =>
       String(u.email).toLowerCase() === identity.email!.toLowerCase() &&
       u.disabled !== true && u.active !== false && !u.archived);
@@ -61,7 +66,7 @@ async function scope(req: Request) {
   authorName = authorName.trim().slice(0, 100) || "Client";
   const parent = await read(`clientLogs/${clientId}/${taskId}`);
   if (!parent || !projectClientTask(taskId, parent, clientId)) fail(404, "Shared task not found.");
-  return { uid: identity.uid, authorName };
+  return { uid: identity.uid, authorName, external };
 }
 
 function entryProjection(id: string, value: RecordData) {
@@ -117,7 +122,15 @@ async function append(req: Request, kind: "entries" | "subtasks", requestId: str
   if (!result.committed) fail(409, conflict ? "This requestId was already used for different content."
     : full ? "This task has reached its collaboration limit." : "Collaboration changed. Try again.");
   await scope(req);
-  return { id, record: result.snapshot.val()[kind][id] as RecordData };
+  const saved = result.snapshot.val()[kind][id] as RecordData;
+  if (liveActor.external) {
+    const base = { id: `${kind}_${id}`, actorUid: saved.authorUid, at: saved.createdAt };
+    const event: ClientTaskUpdateEvent = kind === "subtasks"
+      ? { ...base, kind: "subtask-added", title: saved.title }
+      : { ...base, kind: saved.type, text: saved.text, url: saved.url ?? null };
+    await notify(req, event);
+  }
+  return { id, record: saved };
 }
 
 router.get("/", async (req, res) => {
@@ -165,13 +178,23 @@ router.patch("/subtasks/:subtaskId", async (req, res) => {
   ref.on("value", retainValue, () => {});
   try {
     await ref.once("value");
-    await scope(req);
+    const liveActor = await scope(req);
+    let changed = false;
     const result = await ref.transaction(current => {
+      changed = false;
       if (!current || typeof current !== "object") return;
-      return { ...current, completed: parsed.data!.completed };
+      if (current.completed === parsed.data!.completed) return current;
+      changed = true;
+      const event: ClientTaskUpdateEvent = { id: randomUUID(), actorUid: liveActor.uid, at: Date.now(),
+        kind: parsed.data!.completed ? "subtask-completed" : "subtask-reopened", title: current.title };
+      return { ...current, completed: parsed.data!.completed,
+        ...(liveActor.external ? { clientUpdateEvent: event } : {}) };
     }, undefined, false);
     if (!result.committed) fail(404, "Shared subtask not found.");
     await scope(req);
+    if (changed && liveActor.external) {
+      await notify(req, result.snapshot.val().clientUpdateEvent);
+    }
     res.json(UpdateClientTaskCollaborationSubtaskResponse.parse({
       subtask: subtaskProjection(String(req.params.subtaskId), result.snapshot.val()),
     }));

@@ -16,6 +16,10 @@
       ".read": false,
       ".write": false
     },
+    "clientTaskUpdateEmailDeliveries": {
+      ".read": false,
+      ".write": false
+    },
 
     "clientPortalUsers": {
       ".read": false,

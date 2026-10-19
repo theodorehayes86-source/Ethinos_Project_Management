@@ -10,12 +10,13 @@ import {
   DeleteClientPortalUserResponse,
 } from "@workspace/api-zod";
 import { getAdminAuth, getAdminDatabase } from "../lib/firebase-admin";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { acceptInvitation, assertClientIdentity, inspectInvitation, InvitationError, issueInvitation, revokeInvitation } from "../lib/client-invitations";
 import { logger } from "../lib/logger";
 import { clientDirectory, clientTaskStatusEditReason, isStaffEmail, membershipAllows, normalizeDueDate, normalizeMembership, projectClientTask, safeKey, type PortalMembership } from "../lib/client-portal";
 import { deleteClientAccount } from "../lib/client-account-deletion";
 import clientTaskCollaborationRouter from "./client-task-collaboration";
+import { sendClientTaskUpdateEmail, type ClientTaskUpdateEvent } from "../lib/client-task-update-email";
 
 const router: IRouter = Router();
 type PortalRequest = Request & { portalIdentity: DecodedIdToken };
@@ -164,29 +165,37 @@ router.patch("/clients/:clientId/tasks/:taskId", async (req, res): Promise<void>
   if (!await validClients([clientId])) { res.status(403).json({ error: "Client access is not available." }); return; }
   // Use the stable storage key, never a task's mutable id or an entire client collection.
   const ref = database().ref(`clientLogs/${clientId}/${taskId}`);
-  // Prime Firebase's local transaction cache; an uncached existing task can
-  // otherwise appear as null in the first callback. Never write this read back.
-  await ref.once("value");
-  // Recheck membership immediately before the write, not just at request entry.
-  if (!await getMembership(req, res, clientId)) return;
-  const status = { Pending: "Pending", "In Progress": "WIP", Completed: "Done" }[body.data.status];
-  let blockedReason = "";
-  const result = await ref.transaction(current => {
-    // Firebase may retry this callback with concurrent staff edits. Always recheck
-    // visibility and lifecycle on that current value and preserve every other field.
-    blockedReason = "";
-    if (!current || typeof current !== "object" ||
-        (current.clientId != null && current.clientId !== clientId) || !projectClientTask(taskId, current)) return;
-    blockedReason = clientTaskStatusEditReason(current);
-    if (blockedReason) return;
-    return { ...current, status, updatedAt: Date.now() };
-  }, undefined, false);
-  if (!result.committed) {
-    res.status(blockedReason ? 409 : 404).json({ error: blockedReason || "Shared task not found." }); return;
+  const retainValue = () => {};
+  ref.on("value", retainValue, () => {});
+  try {
+    // Retain the value cache through the transaction, not just a once() read.
+    await ref.once("value");
+    if (!await getMembership(req, res, clientId)) return;
+    const status = { Pending: "Pending", "In Progress": "WIP", Completed: "Done" }[body.data.status];
+    let blockedReason = "";
+    let changed = false;
+    const result = await ref.transaction(current => {
+      blockedReason = ""; changed = false;
+      if (!current || typeof current !== "object" ||
+          (current.clientId != null && current.clientId !== clientId) || !projectClientTask(taskId, current)) return;
+      blockedReason = clientTaskStatusEditReason(current);
+      if (blockedReason) return;
+      if (current.status === status) return current;
+      changed = true;
+      const event: ClientTaskUpdateEvent = { id: randomUUID(), actorUid: identity(req).uid,
+        at: Date.now(), kind: "status", before: String(current.status ?? "Pending"), after: status };
+      return { ...current, status, updatedAt: event.at, clientUpdateEvent: event };
+    }, undefined, false);
+    if (!result.committed) {
+      res.status(blockedReason ? 409 : 404).json({ error: blockedReason || "Shared task not found." }); return;
+    }
+    if (!await getMembership(req, res, clientId)) return;
+    const saved = result.snapshot.val();
+    if (changed) await sendClientTaskUpdateEmail(clientId, taskId, saved.clientUpdateEvent);
+    res.json(UpdateClientPortalTaskResponse.parse({ task: projectClientTask(taskId, saved) }));
+  } finally {
+    ref.off("value", retainValue);
   }
-  // A revoked client must not receive task data if access changed during the write.
-  if (!await getMembership(req, res, clientId)) return;
-  res.json(UpdateClientPortalTaskResponse.parse({ task: projectClientTask(taskId, result.snapshot.val()) }));
 });
 
 router.get("/admin/users", async (_req, res): Promise<void> => {

@@ -23,6 +23,8 @@ const state = vi.hoisted(() => ({
 vi.mock("../lib/firebase-admin", () => {
   const ref = (path: string, valueFilter?: string): any => ({
     key: path.split("/").at(-1),
+    on: (_event: string, listener: () => void) => { listener(); },
+    off: () => {},
     once: async () => {
       state.reads.push(path);
       if (path === "clientPortalInvitationHashes") {
@@ -242,7 +244,11 @@ describe("client task category and atomic status updates (mocked Firebase only)"
       state.data[path] = original;
       const res = await patchTask({ status: input });
       expect(res.status).toBe(200);
-      expect(state.data[path]).toEqual({ ...original, status: stored, updatedAt: expect.any(Number) });
+      expect(state.data[path]).toEqual(input === "Pending" ? original : {
+        ...original, status: stored, updatedAt: expect.any(Number),
+        clientUpdateEvent: { id: expect.any(String), actorUid: client.uid, at: expect.any(Number),
+          kind: "status", before: "Pending", after: stored },
+      });
       expect(res.body.task).toMatchObject({ id: "shared", status: stored, category: "Design", statusEditable: true });
       expect(JSON.stringify(res.body)).not.toMatch(/SECRET|PRIVATE|internalCustomField|elapsedMs|completedAt|completionDate/);
       expect(state.transaction).toHaveBeenCalledExactlyOnceWith(path);

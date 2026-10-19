@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
   reads: [] as string[], writes: [] as string[],
   verify: vi.fn(), authUser: vi.fn(), mail: vi.fn(),
   beforeTransaction: vi.fn(), retry: vi.fn(),
+  beforeUpdate: vi.fn(), log: vi.fn(), configured: true,
   coldPaths: new Set<string>(),
   retained: new Map<string, Set<() => void>>(),
   firstNulls: [] as string[],
@@ -33,6 +34,11 @@ vi.mock("../lib/firebase-admin", () => {
     off: (_event: string, listener: () => void) => {
       state.retained.get(path)?.delete(listener);
     },
+    update: async (value: Record<string, any>) => {
+      await state.beforeUpdate(path, value);
+      state.writes.push(path);
+      saveAt(path, { ...valueAt(path), ...value });
+    },
     once: async () => {
       state.reads.push(path);
       const value = structuredClone(valueAt(path));
@@ -47,9 +53,12 @@ vi.mock("../lib/firebase-admin", () => {
         // returning a proposed create retries against the actual server value.
         if (first === undefined) return { committed: false, snapshot: { val: () => valueAt(path) } };
       }
+      const version = JSON.stringify(valueAt(path));
       let value = fn(structuredClone(valueAt(path)));
       // A Firebase retry discards the first callback result and supplies live data.
-      if (await state.retry(path)) value = fn(structuredClone(valueAt(path)));
+      if (await state.retry(path) || JSON.stringify(valueAt(path)) !== version) {
+        value = fn(structuredClone(valueAt(path)));
+      }
       if (value === undefined) return { committed: false, snapshot: { val: () => valueAt(path) } };
       state.writes.push(path);
       saveAt(path, value);
@@ -60,10 +69,11 @@ vi.mock("../lib/firebase-admin", () => {
     verifyIdToken: state.verify, getUser: state.authUser,
   }) };
 });
-vi.mock("../lib/microsoft-graph", () => ({ sendEmail: state.mail, isEmailConfigured: () => true }));
-vi.mock("../lib/logger", () => ({ logger: { warn: vi.fn(), error: vi.fn() } }));
+vi.mock("../lib/microsoft-graph", () => ({ sendEmail: state.mail, isEmailConfigured: () => state.configured }));
+vi.mock("../lib/logger", () => ({ logger: { warn: state.log, error: state.log } }));
 import portalRouter from "../routes/client-portal";
 import { getAdminDatabase } from "../lib/firebase-admin";
+import { sendClientTaskUpdateEmail, type ClientTaskUpdateEvent } from "../lib/client-task-update-email";
 
 const app = express();
 app.use(express.json());
@@ -87,6 +97,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.beforeTransaction.mockReset();
   state.retry.mockReset();
+  state.beforeUpdate.mockReset();
+  state.mail.mockReset().mockResolvedValue(undefined);
+  state.configured = true;
   state.data = {
     clients: { alpha: { id: "alpha", name: "Alpha", ownerIds: ["owner"] }, beta: { id: "beta", name: "Beta" } },
     clientPortalUsers: { "client-a": { email: client.email, disabled: false, clientIds: ["alpha"] } },
@@ -263,12 +276,251 @@ describe("shared-task collaboration privacy and scope", () => {
     const config = JSON.parse(readFileSync(new URL("../../../../firebase.json", import.meta.url), "utf8"));
     expect(config.database.rules).toBe("database.rules.json");
     expect(rules.clientTaskCollaboration).toEqual({ ".read": false, ".write": false });
+    expect(rules.clientTaskUpdateEmailDeliveries).toEqual({ ".read": false, ".write": false });
     // RTDB child denies cannot override an ancestor grant. This subtree is a
     // direct root child, and neither root grants nor root wildcards allow it.
     expect(rules[".read"]).toBe(false);
     expect(rules[".write"]).toBe(false);
     expect(Object.keys(rules).filter(key => key.startsWith("$"))).toEqual([]);
   });
+});
+
+describe("client task update email (mocked Microsoft Graph only)", () => {
+  const event: ClientTaskUpdateEvent = { id: "test-event", actorUid: client.uid, at: 1700000000000,
+    kind: "message", text: "Client feedback", url: null };
+  const notify = (value = event) => sendClientTaskUpdateEmail("alpha", "stable-key", value);
+  const ledgerRoot = "clientTaskUpdateEmailDeliveries/alpha/stable-key";
+  const deliveries = () => Object.values(valueAt(ledgerRoot) ?? {}).flatMap(value =>
+    Object.values(value as Record<string, any>)) as Record<string, any>[];
+  const statusPatch = (status: string) => request(app).patch(base.replace("/collaboration", ""))
+    .set("Authorization", "Bearer test").send({ status });
+  beforeEach(() => {
+    Object.assign(valueAt(parent), { assigneeId: "staff-id", status: "Pending", updatedAt: 123 });
+    state.data.users.staffKey.email = "ASSIGNED@ethinos.com";
+  });
+  it.each(["message", "note", "link"])("emails the assigned staff about a client %s with escaped details", async type => {
+    valueAt(parent).name = '<Task & "title">';
+    state.data.clients.alpha.name = '<Client & "name">';
+    state.authUser.mockResolvedValue({ email: client.email, emailVerified: true, displayName: '<Client "actor">' });
+    const result = await post("entries", { ...message(), type, text: '<script>alert("x")</script> & details',
+      ...(type === "link" ? { url: 'https://example.test/path?x=1&y=%22' } : {}) });
+    expect(result.status).toBe(201);
+    expect(state.mail).toHaveBeenCalledTimes(1);
+    const mail = state.mail.mock.calls[0][0];
+    expect(mail.to).toBe("assigned@ethinos.com");
+    expect(mail.sensitive).toBe(true);
+    expect(mail.bodyHtml).toContain("&lt;Task &amp; &quot;title&quot;&gt;");
+    expect(mail.bodyHtml).toContain("&lt;Client &amp; &quot;name&quot;&gt;");
+    expect(mail.bodyHtml).toContain("&lt;Client &quot;actor&quot;&gt;");
+    expect(mail.bodyHtml).toContain('&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; details');
+    expect(mail.bodyHtml).not.toContain("<script>");
+    expect(mail.bodyHtml).toContain(`New client ${type}`);
+    expect(mail.bodyHtml).toContain("Time:");
+    expect(mail.bodyHtml).not.toMatch(/INTERNAL|authorUid|Open task|project.ethinos.com/);
+    if (type === "link") expect(mail.bodyHtml).toContain('href="https://example.test/path?x=1&amp;y=%22"');
+    else expect(mail.bodyHtml).not.toContain("href=");
+    expect(deliveries().map(d => d.state)).toEqual(["sent"]);
+  });
+  it("emails status before/after only on actual client changes and preserves task fields/no-op updatedAt", async () => {
+    const original = structuredClone(valueAt(parent));
+    state.coldPaths.add(parent);
+    expect((await statusPatch("Pending")).status).toBe(200);
+    expect(valueAt(parent)).toEqual(original);
+    expect(state.mail).not.toHaveBeenCalled();
+    expect((await statusPatch("In Progress")).status).toBe(200);
+    const changed = structuredClone(valueAt(parent));
+    expect(changed).toMatchObject({ ...original, status: "WIP", updatedAt: expect.any(Number),
+      clientUpdateEvent: { kind: "status", before: "Pending", after: "WIP", actorUid: client.uid } });
+    expect(state.mail.mock.calls[0][0].bodyHtml).toContain("Status changed from Pending to In Progress");
+    expect((await statusPatch("In Progress")).status).toBe(200);
+    expect(valueAt(parent)).toEqual(changed);
+    expect(state.mail).toHaveBeenCalledTimes(1);
+    expect(state.firstNulls).not.toContain(parent);
+    expect(state.retained.get(parent)?.size).toBe(0);
+    expect((await statusPatch("Completed")).status).toBe(200);
+    expect(state.mail.mock.calls[1][0].bodyHtml).toContain("In Progress to Completed");
+    expect((await statusPatch("Pending")).status).toBe(200);
+    expect((await statusPatch("In Progress")).status).toBe(200);
+    expect(state.mail).toHaveBeenCalledTimes(4);
+    expect(Object.keys(valueAt(ledgerRoot))).toHaveLength(4);
+  });
+  it("sends only the committed status event after a Firebase transaction retry", async () => {
+    state.retry.mockImplementationOnce((path: string) => {
+      expect(path).toBe(parent);
+      saveAt(parent, { ...valueAt(parent), status: "WIP", concurrentStaffField: "retained" });
+      return true;
+    });
+    expect((await statusPatch("Completed")).status).toBe(200);
+    expect(state.mail).toHaveBeenCalledTimes(1);
+    expect(state.mail.mock.calls[0][0].bodyHtml).toContain("In Progress to Completed");
+    expect(valueAt(parent)).toMatchObject({ status: "Done", concurrentStaffField: "retained" });
+    expect(Object.keys(valueAt(ledgerRoot))).toEqual([valueAt(parent).clientUpdateEvent.id]);
+  });
+  it("does not email a discarded status proposal if a concurrent writer already set the requested status", async () => {
+    state.retry.mockImplementationOnce(() => {
+      saveAt(parent, { ...valueAt(parent), status: "WIP", updatedAt: 456 });
+      return true;
+    });
+    expect((await statusPatch("In Progress")).status).toBe(200);
+    expect(state.mail).not.toHaveBeenCalled();
+    expect(valueAt(parent).updatedAt).toBe(456);
+  });
+  it("emails only once for concurrent requests for the same status transition", async () => {
+    const results = await Promise.all([statusPatch("In Progress"), statusPatch("In Progress")]);
+    expect(results.map(result => result.status)).toEqual([200, 200]);
+    expect(state.mail).toHaveBeenCalledTimes(1);
+    expect(Object.keys(valueAt(ledgerRoot))).toEqual([valueAt(parent).clientUpdateEvent.id]);
+  });
+  it("emails subtask add/complete/reopen cycles without emailing retries or unchanged completion", async () => {
+    const title = '<Review & "design">';
+    const created = await post("subtasks", subtask(uuid, title));
+    const id = created.body.subtask.id;
+    expect(state.mail.mock.calls[0][0].bodyHtml).toContain("Subtask added");
+    expect(state.mail.mock.calls[0][0].bodyHtml).toContain("&lt;Review &amp; &quot;design&quot;&gt;");
+    await post("subtasks", subtask(uuid, title));
+    await patch(id, { completed: false });
+    expect(state.mail).toHaveBeenCalledTimes(1);
+    await patch(id, { completed: true });
+    const completed = structuredClone(valueAt(`${storage}/subtasks/${id}`));
+    expect(state.mail.mock.calls[1][0].bodyHtml).toContain("Subtask completed");
+    await patch(id, { completed: true });
+    expect(valueAt(`${storage}/subtasks/${id}`)).toEqual(completed);
+    expect(state.mail).toHaveBeenCalledTimes(2);
+    await patch(id, { completed: false });
+    expect(state.mail.mock.calls[2][0].bodyHtml).toContain("Subtask reopened");
+    await patch(id, { completed: true });
+    expect(state.mail).toHaveBeenCalledTimes(4);
+    expect(Object.keys(valueAt(ledgerRoot))).toHaveLength(4);
+    await post("subtasks", subtask(uuid, title));
+    expect(state.mail).toHaveBeenCalledTimes(4);
+  });
+  it("never emails on staff collaboration writes, including subtask completion", async () => {
+    const child = (await post("subtasks", subtask())).body.subtask;
+    state.mail.mockClear();
+    state.identity = { ...staff };
+    await post("entries", message(uuid2));
+    await post("subtasks", subtask(uuid2));
+    await patch(child.id, { completed: true });
+    expect(state.mail).not.toHaveBeenCalled();
+  });
+  it("emails only once for concurrent requests for the same subtask completion transition", async () => {
+    const child = (await post("subtasks", subtask())).body.subtask;
+    const results = await Promise.all([patch(child.id, { completed: true }), patch(child.id, { completed: true })]);
+    expect(results.map(result => result.status)).toEqual([200, 200]);
+    expect(state.mail).toHaveBeenCalledTimes(2); // one add, one completion
+    expect(Object.keys(valueAt(ledgerRoot))).toHaveLength(2);
+  });
+  it("deduplicates concurrent create retries and direct helper replays per event/recipient", async () => {
+    const results = await Promise.all([post("entries", message()), post("entries", message())]);
+    expect(results.map(r => r.status)).toEqual([201, 201]);
+    expect(state.mail).toHaveBeenCalledTimes(1);
+    await post("entries", message());
+    expect(state.mail).toHaveBeenCalledTimes(1);
+    await Promise.all([notify(), notify(), notify()]);
+    expect(state.mail).toHaveBeenCalledTimes(2);
+    expect(deliveries().map(d => d.state)).toEqual(["sent", "sent"]);
+  });
+  it("deduplicates recipients case-insensitively and ignores task assigneeEmail", async () => {
+    state.data.users.duplicate = { ...state.data.users.staffKey, email: "assigned@ETHINOS.com" };
+    valueAt(parent).assigneeEmail = "invented@ethinos.com";
+    await notify();
+    expect(state.mail).toHaveBeenCalledTimes(1);
+    expect(state.mail.mock.calls[0][0].to).toBe("assigned@ethinos.com");
+  });
+  it.each(["unassigned", "missing-user", "disabled", "inactive", "archived", "external", "client-role", "client-uid",
+    "client-email", "invalid-email", "email-injection", "leading-dot", "trailing-dot", "long-local-part", "unsupported-array", "unsupported-multi"])(
+    "skips unsafe recipient %s with no fallback", async mode => {
+      const task = valueAt(parent), user = state.data.users.staffKey;
+      task.assigneeEmail = "fallback@ethinos.com";
+      if (mode === "unassigned") task.assigneeId = null;
+      if (mode === "missing-user") task.assigneeId = "missing";
+      if (mode === "disabled") user.disabled = true;
+      if (mode === "inactive") user.active = false;
+      if (mode === "archived") user.archived = true;
+      if (mode === "external") user.email = "other@example.test";
+      if (mode === "client-role") user.role = "Client";
+      if (mode === "client-uid") user.uid = client.uid;
+      if (mode === "client-email") state.data.clientPortalUsers.other = { email: user.email, disabled: false, clientIds: ["alpha"] };
+      if (mode === "invalid-email") user.email = "invalid email@ethinos.com";
+      if (mode === "email-injection") user.email = "good@ethinos.com\nBcc:other@ethinos.com";
+      if (mode === "leading-dot") user.email = ".invalid@ethinos.com";
+      if (mode === "trailing-dot") user.email = "invalid.@ethinos.com";
+      if (mode === "long-local-part") user.email = `${"a".repeat(65)}@ethinos.com`;
+      if (mode === "unsupported-array") task.assigneeId = ["staff-id"];
+      if (mode === "unsupported-multi") { task.assigneeId = null; task.assigneeIds = ["staff-id"]; }
+      await notify();
+      expect(state.mail).not.toHaveBeenCalled();
+      expect(valueAt(ledgerRoot)).toBeNull();
+    },
+  );
+  it.each(["hidden", "archived", "foreign", "archived-client", "revoked-member", "disabled-actor", "unverified-actor", "staff-actor"])(
+    "skips a no-longer-authorized event: %s", async mode => {
+      if (mode === "hidden") valueAt(parent).visibility = "internal";
+      if (mode === "archived") valueAt(parent).archived = true;
+      if (mode === "foreign") valueAt(parent).clientId = "beta";
+      if (mode === "archived-client") state.data.clients.alpha.archived = true;
+      if (mode === "revoked-member") state.data.clientPortalUsers[client.uid].disabled = true;
+      if (mode === "disabled-actor") state.authUser.mockResolvedValue({ email: client.email, emailVerified: true, disabled: true });
+      if (mode === "unverified-actor") state.authUser.mockResolvedValue({ email: client.email, emailVerified: false });
+      if (mode === "staff-actor") state.identity = { ...staff };
+      await notify();
+      expect(state.mail).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["hidden", "revoked", "reassigned"])("rechecks %s after its delivery claim and before sending", async mode => {
+    state.beforeTransaction.mockImplementation(async (path: string) => {
+      if (!path.startsWith(ledgerRoot)) return;
+      if (mode === "hidden") valueAt(parent).visibility = "internal";
+      if (mode === "revoked") state.data.clientPortalUsers[client.uid].disabled = true;
+      if (mode === "reassigned") valueAt(parent).assigneeId = "different-staff";
+    });
+    await notify();
+    expect(state.mail).not.toHaveBeenCalled();
+    expect(deliveries().map(d => d.state)).toEqual(["skipped"]);
+  });
+  it("persists ambiguous transport failures, never resends, and does not fail a saved mutation or log sensitive data", async () => {
+    state.mail.mockRejectedValue(new Error("SECRET_BODY assigned@ethinos.com bearer SECRET_TOKEN"));
+    const res = await post("entries", message());
+    expect(res.status).toBe(201);
+    expect(valueAt(`${storage}/entries/${res.body.entry.id}`).text).toBe("Client feedback");
+    expect(deliveries().map(d => d.state)).toEqual(["unknown"]);
+    expect((await post("entries", message())).status).toBe(201);
+    expect(state.mail).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(state.log.mock.calls)).not.toMatch(/SECRET|ethinos.com|Client feedback/);
+  });
+  it("does not send without configured transport and does not automatically retry skipped delivery", async () => {
+    state.configured = false;
+    await notify();
+    expect(deliveries().map(d => d.state)).toEqual(["skipped"]);
+    state.configured = true;
+    await notify();
+    expect(state.mail).not.toHaveBeenCalled();
+  });
+  it("isolates ledger failures from committed status changes and does not attempt unclaimed email", async () => {
+    state.beforeTransaction.mockImplementation(async (path: string) => {
+      if (path.startsWith(ledgerRoot)) throw new Error("Database offline");
+    });
+    expect((await statusPatch("In Progress")).status).toBe(200);
+    expect(valueAt(parent).status).toBe("WIP");
+    expect(state.mail).not.toHaveBeenCalled();
+    expect(state.log).toHaveBeenCalled();
+  });
+  it("leaves a durable sending claim if post-send ledger writes fail and blocks replay", async () => {
+    state.beforeUpdate.mockRejectedValue(new Error("Ledger offline"));
+    await notify();
+    expect(state.mail).toHaveBeenCalledTimes(1);
+    expect(deliveries().map(d => d.state)).toEqual(["sending"]);
+    await notify();
+    expect(state.mail).toHaveBeenCalledTimes(1);
+    state.beforeUpdate.mockReset();
+  });
+  it.each(["javascript:alert(1)", "data:text/html,x", 'https://user:password@example.test', 'https://example.test/" onmouseover="x'])(
+    "does not render an unsafe link attribute %s even for a malformed saved event", async url => {
+      await notify({ ...event, kind: "link", url });
+      expect(state.mail).toHaveBeenCalledTimes(1);
+      expect(state.mail.mock.calls[0][0].bodyHtml).not.toContain("href=");
+    },
+  );
 });
 
 describe("collaboration validation, idempotency and concurrency", () => {
