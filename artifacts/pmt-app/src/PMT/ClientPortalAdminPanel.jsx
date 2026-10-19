@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Plus, Mail, RefreshCw, Search, Check, X, Loader2, ShieldCheck, ShieldOff, Pencil, Ban } from 'lucide-react';
+import { Plus, Mail, RefreshCw, Search, Check, X, Loader2, ShieldCheck, ShieldOff, Pencil, Ban, Trash2 } from 'lucide-react';
 import { auth } from '../firebase.js';
 import { createPortalApi, isRealClientId, isStaffEmail, inviteStatus } from '../lib/clientPortal/core.js';
 
@@ -63,7 +63,7 @@ export default function ClientPortalAdminPanel({ clients = [] }) {
   const run = async (key, fn, okMsg) => {
     setBusy(key); setError(''); setNotice('');
     try { const r = await fn(); if (okMsg) setNotice(typeof okMsg === 'function' ? okMsg(r) : okMsg); await load(); return r; }
-    catch (e) { setError(e.message); return null; }
+    catch (e) { await load(); setError(e.message); return null; }
     finally { setBusy(''); }
   };
 
@@ -76,6 +76,12 @@ export default function ClientPortalAdminPanel({ clients = [] }) {
     if (ids.length === 0) { setError('Select at least one client.'); return; }
     const r = await run('create', () => api.adminCreateUser(email, ids), (res) => res?.invitationSent ? `Invitation link sent to ${email}.` : `${email} added. The invitation email was not sent; use Resend invite.`);
     if (r) { setNewEmail(''); setNewClientIds([]); }
+  };
+
+  const deleteUser = async (user) => {
+    if (!window.confirm(`Permanently delete ${user.email}?\n\nThis deletes their login account, removes access to every assigned client and Creative Studio, and invalidates all invitations. This cannot be undone.\n\nClient companies, tasks and creative work will not be deleted.`)) return;
+    const result = await run(`del-${user.uid}`, () => api.adminDeleteUser(user.uid), `${user.email} and their portal access have been permanently deleted.`);
+    if (result?.deleted && editing?.uid === user.uid) setEditing(null);
   };
 
   return (
@@ -158,6 +164,12 @@ export default function ClientPortalAdminPanel({ clients = [] }) {
                   if (!u.disabled && !window.confirm(`Disable portal access for ${u.email}? They will lose access immediately.`)) return;
                   run(`dis-${u.uid}`, () => api.adminUpdateUser(u.uid, { clientIds: (u.clientIds || []).map(String), disabled: !u.disabled }), u.disabled ? 'Access enabled.' : 'Access disabled.');
                 }} className={`p-1.5 rounded-lg hover:bg-slate-100 disabled:opacity-40 ${u.disabled ? 'text-emerald-600' : 'text-red-500'}`}>{u.disabled ? <ShieldCheck size={13} /> : <ShieldOff size={13} />}</button>
+                <button title={`Permanently delete ${u.email}`} data-testid={`button-portal-user-delete-${u.uid}`}
+                  disabled={!!busy} onClick={() => deleteUser(u)}
+                  className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-40">
+                  {busy === `del-${u.uid}` ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                  Delete permanently
+                </button>
               </div>
             </div>
           );

@@ -15,20 +15,31 @@ const state = vi.hoisted(() => ({
   createUser: vi.fn(),
   authUser: vi.fn(),
   updateUser: vi.fn(),
+  deleteUser: vi.fn(),
+  transaction: vi.fn(),
+  set: vi.fn(),
 }));
 
 vi.mock("../lib/firebase-admin", () => {
-  const ref = (path: string): any => ({
+  const ref = (path: string, valueFilter?: string): any => ({
     key: path.split("/").at(-1),
     once: async () => {
       state.reads.push(path);
+      if (path === "clientPortalInvitationHashes") {
+        const hashes = Object.fromEntries(Object.entries(state.data)
+          .filter(([key, value]) => key.startsWith(`${path}/`) && (valueFilter === undefined || value === valueFilter))
+          .map(([key, value]) => [key.slice(path.length + 1), value]));
+        return { val: () => hashes, exists: () => Object.keys(hashes).length > 0 };
+      }
       return { val: () => state.data[path] ?? null, exists: () => state.data[path] != null };
     },
     orderByChild: () => ({ equalTo: () => ref(path) }),
+    orderByValue: () => ({ equalTo: (value: string) => ref(path, value) }),
     push: () => ref(`${path}/new-task`),
     update: async (value: any) => { state.writes.push(path); state.data[path] = { ...state.data[path], ...value }; },
-    set: async (value: any) => { state.data[path] = value; },
+    set: async (value: any) => { await state.set(path); state.data[path] = value; },
     transaction: async (fn: (current: any) => any) => {
+      await state.transaction(path);
       const value = fn(state.data[path] ?? null);
       if (value === undefined) return { committed: false };
       state.data[path] = value; return { committed: true };
@@ -40,6 +51,7 @@ vi.mock("../lib/firebase-admin", () => {
       verifyIdToken: state.verify, getUserByEmail: state.getUser, createUser: state.createUser,
       revokeRefreshTokens: state.revoke,
       getUser: state.authUser, updateUser: state.updateUser,
+      deleteUser: state.deleteUser,
     }),
   };
 });
@@ -88,6 +100,9 @@ beforeEach(() => {
     uid, email: state.data[`clientPortalUsers/${uid}`]?.email ?? "new@example.test", disabled: false,
   }));
   state.updateUser.mockResolvedValue({});
+  state.deleteUser.mockResolvedValue(undefined);
+  state.transaction.mockReset();
+  state.set.mockReset();
   state.createUser.mockResolvedValue({ uid: "new-client", email: "new@example.test", disabled: false });
 });
 
@@ -260,6 +275,211 @@ describe("admin invitations and access lifecycle", () => {
     state.data["clientPortalUsers/client-a"].disabled = true;
     expect((await post("/admin/users/client-a/invite", {})).status).toBe(404);
     expect(state.mail).not.toHaveBeenCalled();
+  });
+});
+
+describe("permanent client login deletion (mocked Firebase only)", () => {
+  const remove = (uid = "client-a") => request(app).delete(`${api}/admin/users/${uid}`).set("Authorization", "Bearer test");
+  const patch = () => request(app).patch(`${api}/admin/users/client-a`).set("Authorization", "Bearer test")
+    .send({ clientIds: ["alpha"], disabled: false });
+  const admin = () => state.verify.mockResolvedValue({ uid: "admin", email: "admin@ethinos.com" });
+  const missingAuth = () => state.authUser.mockRejectedValue({ code: "auth/user-not-found" });
+  beforeEach(admin);
+
+  it("requires authentication and rejects clients and non-admin staff", async () => {
+    expect((await request(app).delete(`${api}/admin/users/client-a`)).status).toBe(401);
+    state.verify.mockResolvedValue(client);
+    expect((await remove()).status).toBe(403);
+    state.verify.mockResolvedValue({ uid: "staff", email: "staff@ethinos.com" });
+    state.data.users[0].role = "Employee";
+    expect((await remove()).status).toBe(403);
+    expect(state.deleteUser).not.toHaveBeenCalled();
+    expect(state.data["clientPortalUsers/client-a"].disabled).toBe(false);
+  });
+
+  it.each(["bad.uid", "bad%2Fuid", "x".repeat(129)])("rejects invalid UID %s", async uid => {
+    expect((await remove(uid)).status).toBe(400);
+    expect(state.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it.each(["domain", "membership-domain", "role", "claims", "directory-email", "directory-key", "directory-uid", "directory-id"])(
+    "protects staff identity via %s", async collision => {
+      if (collision === "domain") state.authUser.mockResolvedValue({ uid: client.uid, email: "staff@ethinos.com" });
+      if (collision === "membership-domain") state.data["clientPortalUsers/client-a"].email = "staff@ethinos.com";
+      if (collision === "role") state.data["userRoles/client-a"] = "Employee";
+      if (collision === "claims") state.authUser.mockResolvedValue({ uid: client.uid, email: client.email, customClaims: { admin: true } });
+      if (collision === "directory-email") state.data.users.push({ email: client.email });
+      if (collision === "directory-key") state.data.users = { ...state.data.users, "client-a": { email: "different@example.test" } };
+      if (collision === "directory-uid") state.data.users.push({ uid: client.uid });
+      if (collision === "directory-id") state.data.users.push({ id: client.uid });
+      expect((await remove()).status).toBe(403);
+      expect(state.deleteUser).not.toHaveBeenCalled();
+      expect(state.data["clientPortalUsers/client-a"].disabled).toBe(false);
+    },
+  );
+
+  it("will not delete an unmanaged Auth identity", async () => {
+    delete state.data["clientPortalUsers/client-a"];
+    expect((await remove()).status).toBe(404);
+    expect(state.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it("permanently removes login/membership/all UID hashes, preserves all client work and blocks old sessions", async () => {
+    state.data["clientPortalInvitationHashes/old"] = client.uid;
+    state.data["clientPortalInvitationHashes/latest"] = client.uid;
+    state.data["clientPortalInvitationHashes/other"] = "other-client";
+    state.data["creativeStudio"] = { assets: { a: { creatorId: client.uid } }, history: ["retained"] };
+    const companies = structuredClone(state.data.clients), tasks = structuredClone(state.data["clientLogs/alpha"]);
+    const studio = structuredClone(state.data.creativeStudio);
+    state.deleteUser.mockImplementationOnce(async () => {
+      expect(state.data["clientPortalUsers/client-a"]).toMatchObject({ disabled: true, deletionInProgress: true });
+      expect(membershipAllows(normalizeMembership(state.data["clientPortalUsers/client-a"]), client.email)).toBe(false);
+    });
+    expect((await remove()).body).toEqual({ deleted: true });
+    expect(state.deleteUser).toHaveBeenCalledExactlyOnceWith(client.uid);
+    expect(state.data["clientPortalUsers/client-a"]).toBeNull();
+    expect(state.data["clientPortalInvitationHashes/old"]).toBeNull();
+    expect(state.data["clientPortalInvitationHashes/latest"]).toBeNull();
+    expect(state.data["clientPortalInvitationHashes/other"]).toBe("other-client");
+    expect(state.data.clients).toEqual(companies);
+    expect(state.data["clientLogs/alpha"]).toEqual(tasks);
+    expect(state.data.creativeStudio).toEqual(studio);
+    state.verify.mockResolvedValue(client); // Even a cached/otherwise valid old ID token has no access.
+    expect((await get("/me")).status).toBe(403);
+    expect((await get("/clients/alpha/tasks")).status).toBe(403);
+    expect((await post("/clients/alpha/tasks", { title: "Blocked", description: "" })).status).toBe(403);
+  });
+
+  it("keeps a visible blocked record on Auth failure, prevents PATCH/resend/reinvite and allows deletion retry", async () => {
+    state.deleteUser.mockRejectedValueOnce(new Error("Auth offline"));
+    const failed = await remove();
+    expect(failed.status).toBe(503);
+    expect(failed.body.error).toMatch(/deletion failed.*retry/i);
+    expect(failed.body.deleted).toBeUndefined();
+    state.data.clientPortalUsers = { "client-a": state.data["clientPortalUsers/client-a"] };
+    expect((await get("/admin/users")).body.users[0]).toMatchObject({ uid: client.uid, email: client.email, disabled: true });
+    expect((await patch()).status).toBe(409);
+    expect((await post("/admin/users/client-a/invite", {})).status).toBe(404);
+    state.getUser.mockResolvedValue({ uid: client.uid, email: client.email });
+    expect((await post("/admin/users", { email: client.email, clientIds: ["alpha"] })).status).toBe(409);
+    expect((await remove()).body).toEqual({ deleted: true });
+    expect(state.data["clientPortalUsers/client-a"]).toBeNull();
+  });
+
+  it("allows cleanup when Auth is already missing and idempotent repeated deletion", async () => {
+    missingAuth();
+    state.deleteUser.mockRejectedValue({ code: "auth/user-not-found" });
+    state.data["clientPortalInvitationHashes/stale"] = client.uid;
+    expect((await remove()).body).toEqual({ deleted: true });
+    expect((await remove()).body).toEqual({ deleted: true });
+    expect(state.data["clientPortalUsers/client-a"]).toBeNull();
+    expect(state.data["clientPortalInvitationHashes/stale"]).toBeNull();
+  });
+
+  it.each(["hash", "membership"])("retains the blocked record and retries %s cleanup failures", async phase => {
+    state.data["clientPortalInvitationHashes/stale"] = client.uid;
+    let memberTransactions = 0;
+    state.transaction.mockImplementation(async (path: string) => {
+      if ((phase === "hash" && path === "clientPortalInvitationHashes/stale") ||
+          (phase === "membership" && path === "clientPortalUsers/client-a" && ++memberTransactions === 2))
+        throw new Error("Database offline");
+    });
+    const failed = await remove();
+    expect(failed.status).toBe(503);
+    expect(failed.body.error).toMatch(/cleanup failed/i);
+    expect(state.data["clientPortalUsers/client-a"]).toMatchObject({ deletionInProgress: true, disabled: true });
+    expect((await patch()).status).toBe(409);
+    state.transaction.mockReset();
+    missingAuth();
+    state.deleteUser.mockRejectedValue({ code: "auth/user-not-found" });
+    expect((await remove()).body).toEqual({ deleted: true });
+    expect(state.data["clientPortalUsers/client-a"]).toBeNull();
+    expect(state.data["clientPortalInvitationHashes/stale"]).toBeNull();
+  });
+
+  it("permits a fresh invitation/account for the same email after successful deletion", async () => {
+    expect((await remove()).status).toBe(200);
+    state.getUser.mockRejectedValue({ code: "auth/user-not-found" });
+    state.createUser.mockResolvedValue({ uid: "fresh-client", email: client.email, disabled: false });
+    state.authUser.mockResolvedValue({ uid: "fresh-client", email: client.email, disabled: false });
+    const invited = await post("/admin/users", { email: client.email, clientIds: ["alpha"] });
+    expect(invited.status).toBe(201);
+    expect(invited.body.invitationSent).toBe(true);
+    expect(state.data["clientPortalUsers/fresh-client"]).toMatchObject({ email: client.email, onboardingRequired: true });
+    expect(state.data["clientPortalUsers/client-a"]).toBeNull();
+  });
+
+  it("invalidates pending tokens before deleting Auth, including when Auth deletion fails", async () => {
+    await post("/admin/users/client-a/invite", {});
+    const token = state.mail.mock.calls.at(-1)![0].bodyHtml.match(/#invite=([A-Za-z0-9_-]{43})/)![1];
+    state.deleteUser.mockRejectedValueOnce(new Error("Auth offline"));
+    expect((await remove()).status).toBe(503);
+    expect(state.data["clientPortalUsers/client-a"].invitation).toMatchObject({ status: "revoked" });
+    for (const action of ["inspect", "accept"])
+      expect((await request(app).post(`${api}/invitations/${action}`).send({ token })).status).toBe(400);
+    expect(state.updateUser).not.toHaveBeenCalled();
+    expect((await remove()).status).toBe(200);
+  });
+
+  it("revokes processing acceptance so an in-flight Auth update cannot restore membership", async () => {
+    state.getUser.mockRejectedValue({ code: "auth/user-not-found" });
+    await post("/admin/users", { email: "new@example.test", clientIds: ["alpha"] });
+    const token = state.mail.mock.calls.at(-1)![0].bodyHtml.match(/#invite=([A-Za-z0-9_-]{43})/)![1];
+    let release!: () => void, started!: () => void;
+    const updating = new Promise<void>(resolve => { started = resolve; });
+    state.updateUser.mockImplementationOnce(() => { started(); return new Promise<void>(resolve => { release = resolve; }); });
+    const accepting = request(app).post(`${api}/invitations/accept`).send({ token, password: "secure-long-password" }).then(r => r);
+    await updating;
+    state.deleteUser.mockImplementationOnce(async () => {
+      expect(state.data["clientPortalUsers/new-client"].invitation).toMatchObject({ status: "revoked", claim: null });
+    });
+    expect((await remove("new-client")).status).toBe(200);
+    release();
+    expect((await accepting).status).toBe(400);
+    expect(state.data["clientPortalUsers/new-client"]).toBeNull();
+  });
+
+  it("blocks a resend which read membership before deletion started", async () => {
+    let started!: () => void, release!: () => void;
+    const checked = new Promise<void>(resolve => { started = resolve; });
+    state.authUser.mockImplementationOnce(async () => {
+      started();
+      await new Promise<void>(resolve => { release = resolve; });
+      return { uid: client.uid, email: client.email, disabled: false };
+    });
+    const resending = post("/admin/users/client-a/invite", {}).then(r => r);
+    await checked;
+    expect((await remove()).status).toBe(200);
+    release();
+    expect((await resending).status).toBe(503);
+    expect(state.mail).not.toHaveBeenCalled();
+    expect(state.data["clientPortalUsers/client-a"]).toBeNull();
+  });
+
+  it("cleans a late invitation hash write racing deletion without delivering the token", async () => {
+    let started!: () => void, release!: () => void;
+    const writingHash = new Promise<void>(resolve => { started = resolve; });
+    state.set.mockImplementationOnce(() => { started(); return new Promise<void>(resolve => { release = resolve; }); });
+    const resending = post("/admin/users/client-a/invite", {}).then(r => r);
+    await writingHash;
+    expect((await remove()).status).toBe(200);
+    release();
+    expect((await resending).status).toBe(503);
+    expect(state.mail).not.toHaveBeenCalled();
+    expect(Object.entries(state.data).filter(([key, value]) => key.startsWith("clientPortalInvitationHashes/") && value === client.uid)).toEqual([]);
+  });
+
+  it("blocks a PATCH which loaded the membership before deletion started", async () => {
+    let started!: () => void, release!: () => void;
+    const patchLoaded = new Promise<void>(resolve => { started = resolve; });
+    state.transaction.mockImplementationOnce(() => { started(); return new Promise<void>(resolve => { release = resolve; }); });
+    const changing = patch().then(r => r);
+    await patchLoaded;
+    state.deleteUser.mockRejectedValueOnce(new Error("Auth offline"));
+    expect((await remove()).status).toBe(503);
+    release();
+    expect((await changing).status).toBe(409);
+    expect(state.data["clientPortalUsers/client-a"]).toMatchObject({ deletionInProgress: true, disabled: true });
   });
 });
 

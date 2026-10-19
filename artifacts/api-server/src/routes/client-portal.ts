@@ -6,12 +6,14 @@ import {
   GetClientPortalMeResponse, ListClientPortalTasksResponse, ListClientPortalTasksParams,
   InviteClientPortalUserBody, ListClientPortalUsersResponse,
   UpdateClientPortalUserBody, UpdateClientPortalUserParams, UpdateClientPortalUserResponse,
+  DeleteClientPortalUserResponse,
 } from "@workspace/api-zod";
 import { getAdminAuth, getAdminDatabase } from "../lib/firebase-admin";
 import { createHash } from "node:crypto";
 import { acceptInvitation, assertClientIdentity, inspectInvitation, InvitationError, issueInvitation, revokeInvitation } from "../lib/client-invitations";
 import { logger } from "../lib/logger";
 import { clientDirectory, isStaffEmail, membershipAllows, normalizeDueDate, normalizeMembership, projectClientTask, safeKey, type PortalMembership } from "../lib/client-portal";
+import { deleteClientAccount } from "../lib/client-account-deletion";
 
 const router: IRouter = Router();
 type PortalRequest = Request & { portalIdentity: DecodedIdToken };
@@ -201,6 +203,10 @@ router.post("/admin/users", async (req, res): Promise<void> => {
   res.status(201).json({ ...UpdateClientPortalUserResponse.parse({ user: { uid: user.uid, ...membership } }), invitationSent });
 });
 
+router.delete("/admin/users/:uid", async (req, res): Promise<void> => {
+  res.json(DeleteClientPortalUserResponse.parse(await deleteClientAccount(req.params.uid)));
+});
+
 router.patch("/admin/users/:uid", async (req, res): Promise<void> => {
   const params = UpdateClientPortalUserParams.safeParse(req.params);
   const body = UpdateClientPortalUserBody.strict().safeParse(req.body);
@@ -213,7 +219,7 @@ router.patch("/admin/users/:uid", async (req, res): Promise<void> => {
   if (!await validClients(body.data.clientIds)) { res.status(400).json({ error: "Select existing clients only." }); return; }
   const membership = { email: existing.email, clientIds: [...new Set(body.data.clientIds)], disabled: body.data.disabled };
   // Membership removal is effective immediately, even if Firebase Auth revocation fails.
-  const changed = await membershipRef(uid).transaction(current => current ? { ...current, ...membership,
+  const changed = await membershipRef(uid).transaction(current => current && !current.deletionInProgress ? { ...current, ...membership,
     ...(membership.disabled && current.invitation && ["pending", "processing"].includes(current.invitation.status)
       ? { invitation: { ...current.invitation, status: "revoked", claim: null } } : {}) } : undefined);
   if (!changed.committed) { res.status(409).json({ error: "Membership changed. Try again." }); return; }

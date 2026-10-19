@@ -18,7 +18,7 @@ export function normalizeMembership(value: unknown): PortalMembership | null {
     ? invitation.status === "accepted" ? "accepted" : invitation.status === "revoked" ? "revoked"
       : Number(invitation.expiresAt) <= Date.now() ? "expired" : "pending"
     : record.onboardingRequired === true ? "revoked" : "accepted";
-  return { email: record.email, disabled: record.disabled !== false, clientIds: clientIds.filter(safeKey),
+  return { email: record.email, disabled: record.disabled !== false || record.deletionInProgress === true, clientIds: clientIds.filter(safeKey),
     onboardingRequired: record.onboardingRequired === true, invitationStatus,
     ...(invitation ? { invitationExpiresAt: Number(invitation.expiresAt) } : {}) };
 }

@@ -13,7 +13,7 @@ export class InvitationError extends Error {
 }
 const invalid = () => new InvitationError(400, "Invitation is unavailable, expired or already used. Request a new invitation.");
 const ref = (uid: string) => db().ref(`clientPortalUsers/${uid}`);
-const usable = (m: any, hash: string) => m && !m.disabled && !isStaffEmail(m.email) &&
+const usable = (m: any, hash: string) => m && !m.disabled && !m.deletionInProgress && !isStaffEmail(m.email) &&
   m.invitation?.tokenHash === hash && m.invitation.status === "pending" && m.invitation.expiresAt > Date.now();
 
 /** Covers both UID role records and staff-directory email collisions, including external staff. */
@@ -33,13 +33,13 @@ export async function assertClientIdentity(uid: string, email: string) {
 export async function issueInvitation(uid: string) {
   if (!isEmailConfigured()) throw new InvitationError(503, "Email delivery is not configured.");
   const before = await read(`clientPortalUsers/${uid}`);
-  if (!before || before.disabled) throw invalid();
+  if (!before || before.disabled || before.deletionInProgress) throw invalid();
   await assertClientIdentity(uid, before.email);
   const token = randomBytes(32).toString("base64url"), hash = invitationHash(token);
   const invitation = { tokenHash: hash, status: "pending", expiresAt: Date.now() + 7 * 86400000,
     requiresSignIn: before.invitationIdentityCreated !== true || before.invitation?.status === "accepted" };
   const result = await ref(uid).transaction(current => {
-    if (!current || current.disabled || current.email !== before.email || current.invitation?.status === "processing" ||
+    if (!current || current.disabled || current.deletionInProgress || current.email !== before.email || current.invitation?.status === "processing" ||
         current.invitation?.tokenHash !== before.invitation?.tokenHash ||
         current.invitation?.status !== before.invitation?.status ||
         current.invitation?.expiresAt !== before.invitation?.expiresAt) return;
@@ -50,9 +50,12 @@ export async function issueInvitation(uid: string) {
   try {
     // The index contains only a hash and UID. The raw token exists solely in this email.
     await db().ref(`clientPortalInvitationHashes/${hash}`).set(uid);
+    // Deletion may have revoked/removed membership while this index write was in flight.
+    if (!usable(await read(`clientPortalUsers/${uid}`), hash)) throw invalid();
     await sendEmail({ to: before.email, subject: "Your Flow Pro client access", sensitive: true,
       bodyHtml: `<p>You have been invited to your client workspace in Flow Pro.</p><p><a href="${APP_BASE_URL}/?client=1#invite=${token}">Accept your invitation</a></p><p>This link expires in 7 days and can only be used once.</p>` });
   } catch {
+    await db().ref(`clientPortalInvitationHashes/${hash}`).transaction(current => current === uid ? null : undefined);
     await ref(uid).transaction(current => current?.invitation?.tokenHash === hash && current.invitation.status === "pending"
       ? { ...current, invitation: { ...current.invitation, status: "revoked" } } : undefined);
     throw new InvitationError(503, "Invitation could not be delivered. Try again later.");
@@ -107,7 +110,7 @@ export async function acceptInvitation(body: { token: unknown; displayName?: unk
       ...(!existing ? { password: body.password as string, ...(body.displayName ? { displayName: (body.displayName as string).trim() } : {}) } : {}) });
     await assertClientIdentity(uid, membership.email);
     const accepted = await ref(uid).transaction(current =>
-      current && !current.disabled && current.email === membership.email && current.invitation?.tokenHash === hash &&
+      current && !current.disabled && !current.deletionInProgress && current.email === membership.email && current.invitation?.tokenHash === hash &&
       current.invitation.status === "processing" && current.invitation.claim === claim && current.invitation.expiresAt > Date.now()
         ? { ...current, onboardingRequired: false, invitationIdentityCreated: false, invitation: { ...current.invitation, status: "accepted", acceptedAt: Date.now(), claim: null } }
         : undefined);

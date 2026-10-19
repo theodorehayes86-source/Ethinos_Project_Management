@@ -14,6 +14,7 @@ export * from "./actOnCreativeStudioDeliverableBodyDecision";
 export * from "./actOnCreativeStudioDeliverableBodyPhase";
 export * from "./createClientPortalTask201";
 export * from "./createCreativeStudioDeliverableBody";
+export * from "./deleteClientPortalUser200";
 export * from "./getClientPortalMe200";
 export * from "./healthStatus";
 export * from "./inspectClientPortalInvitation200";

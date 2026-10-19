@@ -488,7 +488,32 @@ paths:
       - name: uid
         in: path
         required: true
-        schema: { type: string, pattern: "^[A-Za-z0-9_-]+$" }
+        schema: { type: string, pattern: "^[A-Za-z0-9_-]{1,128}$" }
+    delete:
+      operationId: deleteClientPortalUser
+      description: Administrator-only permanent deletion of a client login, membership and invitation lookups. Preserves client companies, tasks, assets and history. Failed deletion leaves access blocked for retry.
+      responses:
+        "200":
+          description: Client login and access permanently deleted (also returned for an already deleted account).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deleted]
+                properties:
+                  deleted: { type: boolean, enum: [true] }
+        "400":
+          description: Invalid UID.
+        "401":
+          description: Authentication required.
+        "403":
+          description: Administrator required or protected staff identity.
+        "404":
+          description: Existing identity is not a managed client account.
+        "409":
+          description: Membership changed; retry deletion.
+        "503":
+          description: Identity verification, Auth deletion or cleanup failed; retry deletion.
     patch:
       operationId: updateClientPortalUser
       requestBody:

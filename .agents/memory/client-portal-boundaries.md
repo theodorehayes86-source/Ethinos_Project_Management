@@ -26,3 +26,11 @@ view where it is enabled.
 **How to apply:** Keep client signup separate from staff registration, derive client
 membership from the invitation rather than user-selected roles or accounts, and
 condition Studio visibility on enablement for assigned accounts.
+
+Client Portal must offer permanent deletion of an email/login account and its access,
+separately from Disable.
+
+**Why:** The user explicitly rejected disablement as a substitute for permanent deletion.
+
+**How to apply:** Confirm the destructive action, remove the login identity and portal
+access/invitations, and retain client companies and work records.

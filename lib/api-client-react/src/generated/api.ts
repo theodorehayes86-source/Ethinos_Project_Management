@@ -22,6 +22,7 @@ import type {
   ActOnCreativeStudioDeliverableBody,
   CreateClientPortalTask201,
   CreateCreativeStudioDeliverableBody,
+  DeleteClientPortalUser200,
   GetClientPortalMe200,
   HealthStatus,
   InspectClientPortalInvitation200,
@@ -1990,6 +1991,90 @@ export const useInviteClientPortalUser = <
   TContext
 > => {
   return useMutation(getInviteClientPortalUserMutationOptions(options));
+};
+
+/**
+ * Administrator-only permanent deletion of a client login, membership and invitation lookups. Preserves client companies, tasks, assets and history. Failed deletion leaves access blocked for retry.
+ */
+export const getDeleteClientPortalUserUrl = (uid: string) => {
+  return `/api/client-portal/admin/users/${uid}`;
+};
+
+export const deleteClientPortalUser = async (
+  uid: string,
+  options?: RequestInit,
+): Promise<DeleteClientPortalUser200> => {
+  return customFetch<DeleteClientPortalUser200>(
+    getDeleteClientPortalUserUrl(uid),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getDeleteClientPortalUserMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteClientPortalUser>>,
+    TError,
+    { uid: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteClientPortalUser>>,
+  TError,
+  { uid: string },
+  TContext
+> => {
+  const mutationKey = ["deleteClientPortalUser"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteClientPortalUser>>,
+    { uid: string }
+  > = (props) => {
+    const { uid } = props ?? {};
+
+    return deleteClientPortalUser(uid, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteClientPortalUserMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteClientPortalUser>>
+>;
+
+export type DeleteClientPortalUserMutationError = ErrorType<void>;
+
+export const useDeleteClientPortalUser = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteClientPortalUser>>,
+    TError,
+    { uid: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteClientPortalUser>>,
+  TError,
+  { uid: string },
+  TContext
+> => {
+  return useMutation(getDeleteClientPortalUserMutationOptions(options));
 };
 
 export const getUpdateClientPortalUserUrl = (uid: string) => {

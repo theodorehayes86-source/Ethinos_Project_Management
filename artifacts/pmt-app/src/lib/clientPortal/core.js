@@ -161,6 +161,7 @@ export function createPortalApi({ base, getToken, fetchImpl }) {
     adminUpdateUser: (uid, patch) => call(`/client-portal/admin/users/${enc(uid)}`, { method: 'PATCH', body: patch }),
     adminInvite: (uid) => call(`/client-portal/admin/users/${enc(uid)}/invite`, { method: 'POST', body: {} }),
     adminRevokeInvite: (uid) => call(`/client-portal/admin/users/${enc(uid)}/invite/revoke`, { method: 'POST', body: {} }),
+    adminDeleteUser: (uid) => call(`/client-portal/admin/users/${enc(uid)}`, { method: 'DELETE' }),
   };
 }
 

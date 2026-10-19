@@ -19,7 +19,8 @@
     },
     "clientPortalInvitationHashes": {
       ".read": false,
-      ".write": false
+      ".write": false,
+      ".indexOn": ".value"
     },
 
     "schedulerLocks": {

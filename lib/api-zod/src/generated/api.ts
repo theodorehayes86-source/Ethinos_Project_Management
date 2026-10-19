@@ -1429,8 +1429,23 @@ export const InviteClientPortalUserBody = zod.object({
     .max(inviteClientPortalUserBodyClientIdsMax),
 });
 
+/**
+ * Administrator-only permanent deletion of a client login, membership and invitation lookups. Preserves client companies, tasks, assets and history. Failed deletion leaves access blocked for retry.
+ */
+export const deleteClientPortalUserPathUidRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{1,128}$",
+);
+
+export const DeleteClientPortalUserParams = zod.object({
+  uid: zod.coerce.string().regex(deleteClientPortalUserPathUidRegExp),
+});
+
+export const DeleteClientPortalUserResponse = zod.object({
+  deleted: zod.literal(true),
+});
+
 export const updateClientPortalUserPathUidRegExp = new RegExp(
-  "^[A-Za-z0-9_-]+$",
+  "^[A-Za-z0-9_-]{1,128}$",
 );
 
 export const UpdateClientPortalUserParams = zod.object({

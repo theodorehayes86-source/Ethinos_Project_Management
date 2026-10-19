@@ -541,6 +541,10 @@ export type InviteClientPortalUser201 = {
   invitationSent: boolean;
 };
 
+export type DeleteClientPortalUser200 = {
+  deleted: boolean;
+};
+
 export type UpdateClientPortalUser200 = {
   user: PortalUser;
 };
