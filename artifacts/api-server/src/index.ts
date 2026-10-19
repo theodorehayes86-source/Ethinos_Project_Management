@@ -7,6 +7,7 @@ import { startWeeklyDigestScheduler } from "./lib/weekly-digest-scheduler";
 import { startKekaScheduler } from "./lib/keka-scheduler";
 import { startAttendanceScheduler } from "./lib/attendance-scheduler";
 import { startChatSubscriptionRenewalScheduler } from "./lib/chat-subscription-scheduler";
+import { startStudioEmailScheduler } from "./lib/creative-studio-email";
 
 /**
  * Start all background schedulers. Each scheduler is wrapped individually so
@@ -14,6 +15,7 @@ import { startChatSubscriptionRenewalScheduler } from "./lib/chat-subscription-s
  */
 function startBackgroundSchedulers(): void {
   const schedulers: Array<{ name: string; start: () => void | Promise<void> }> = [
+    { name: "CreativeStudio", start: startStudioEmailScheduler },
     { name: "Repeat",                  start: startRepeatScheduler },
     { name: "Reminders",               start: startReminderScheduler },
     { name: "WeeklyDigest",            start: startWeeklyDigestScheduler },

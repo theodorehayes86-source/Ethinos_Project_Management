@@ -5,6 +5,193 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export interface StudioAutomation {
+  enabled: boolean;
+  /** @pattern ^([01][0-9]|2[0-3]):[0-5][0-9]$ */
+  sendTime: string;
+  timezone: string;
+  /**
+   * @minimum 1
+   * @maximum 30
+   */
+  cadenceDays: number;
+}
+
+export interface StudioConfig {
+  enabled: boolean;
+  ownerIds: string[];
+  editorIds: string[];
+  timezone: string;
+  automation: StudioAutomation;
+  readonly updatedAt?: number;
+  readonly updatedBy?: string;
+}
+
+export type StudioBootstrapConfigs = {
+  [key: string]: { [key: string]: unknown };
+};
+
+export type StudioBootstrapCapabilities = {
+  isClient: boolean;
+  canManageSettings: boolean;
+  canManageDefaults: boolean;
+  canEdit: boolean;
+  manageableClientIds: string[];
+  editableClientIds: string[];
+};
+
+export type StudioBootstrapOwnersItem = {
+  id: string;
+  name: string;
+  clientIds: string[];
+};
+
+export type StudioBootstrapStaffCandidatesItem = {
+  id: string;
+  name: string;
+  clientIds: string[];
+};
+
+export type StudioBootstrapApproversItem = {
+  uid: string;
+  name: string;
+  clientIds: string[];
+};
+
+export interface PortalClient {
+  id: string;
+  name: string;
+}
+
+export interface StudioBootstrap {
+  clients: PortalClient[];
+  configs: StudioBootstrapConfigs;
+  capabilities: StudioBootstrapCapabilities;
+  owners: StudioBootstrapOwnersItem[];
+  staffCandidates?: StudioBootstrapStaffCandidatesItem[];
+  approvers: StudioBootstrapApproversItem[];
+  defaults?: StudioAutomation | null;
+}
+
+export type StudioEditableType =
+  (typeof StudioEditableType)[keyof typeof StudioEditableType];
+
+export const StudioEditableType = {
+  Post: "Post",
+  Reel: "Reel",
+  Story: "Story",
+} as const;
+
+export type StudioEditablePlatformsItem =
+  (typeof StudioEditablePlatformsItem)[keyof typeof StudioEditablePlatformsItem];
+
+export const StudioEditablePlatformsItem = {
+  Instagram: "Instagram",
+  Facebook: "Facebook",
+  LinkedIn: "LinkedIn",
+  YouTube_Shorts: "YouTube Shorts",
+} as const;
+
+export interface StudioEditable {
+  /** @maxLength 240 */
+  title?: string;
+  type?: StudioEditableType;
+  ownerId?: string;
+  /** @maxLength 10000 */
+  brief?: string;
+  /** @maxLength 10000 */
+  caption?: string;
+  platforms?: StudioEditablePlatformsItem[];
+  /** @nullable */
+  productionDueDate?: string | null;
+  /** @nullable */
+  plannedAt?: string | null;
+  timezone?: string;
+}
+
+export type StudioAssetPhase =
+  (typeof StudioAssetPhase)[keyof typeof StudioAssetPhase];
+
+export const StudioAssetPhase = {
+  reference: "reference",
+  final: "final",
+} as const;
+
+export type StudioAssetKind =
+  (typeof StudioAssetKind)[keyof typeof StudioAssetKind];
+
+export const StudioAssetKind = {
+  thumbnail: "thumbnail",
+  main: "main",
+  video: "video",
+  copy: "copy",
+  file: "file",
+} as const;
+
+export type StudioAssetHistoryItem = { [key: string]: unknown };
+
+export interface StudioAsset {
+  id: string;
+  phase: StudioAssetPhase;
+  kind: StudioAssetKind;
+  label: string;
+  url: string;
+  revision: number;
+  updatedAt?: number;
+  updatedBy?: string;
+  history?: StudioAssetHistoryItem[];
+}
+
+export type StudioDeliverableStage =
+  (typeof StudioDeliverableStage)[keyof typeof StudioDeliverableStage];
+
+export const StudioDeliverableStage = {
+  internal_draft: "internal_draft",
+  awaiting_reference: "awaiting_reference",
+  reference_changes: "reference_changes",
+  in_production: "in_production",
+  awaiting_final: "awaiting_final",
+  final_changes: "final_changes",
+  final_approved: "final_approved",
+} as const;
+
+/**
+ * @nullable
+ */
+export type StudioDeliverableScheduled = {
+  at?: number;
+  actor?: string;
+  /** @nullable */
+  link?: string | null;
+} | null;
+
+export type StudioDeliverableApprovals = {
+  [key: string]: { [key: string]: unknown };
+};
+
+export type StudioDeliverable = StudioEditable & {
+  id: string;
+  clientId: string;
+  revision: number;
+  stage: StudioDeliverableStage;
+  shared: boolean;
+  archived: boolean;
+  /** @nullable */
+  scheduled: StudioDeliverableScheduled;
+  assets: StudioAsset[];
+  approvals: StudioDeliverableApprovals;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export interface StudioMessage {
+  id: string;
+  text: string;
+  author: string;
+  authorUid: string;
+  at: number;
+}
+
 export interface PortalTaskInput {
   /**
    * @minLength 1
@@ -33,11 +220,6 @@ export interface PortalMembershipInput {
   disabled: boolean;
 }
 
-export interface PortalClient {
-  id: string;
-  name: string;
-}
-
 export interface PortalTask {
   id: string;
   title: string;
@@ -56,6 +238,143 @@ export interface PortalUser {
 export interface HealthStatus {
   status: string;
 }
+
+export type StudioItemResponse = {
+  emailError?: string;
+  deliverable: StudioDeliverable;
+};
+
+export type PutCreativeStudioDefaults200 = {
+  defaults: StudioAutomation;
+};
+
+export type PutCreativeStudioConfig200 = {
+  config: StudioConfig;
+};
+
+export type ListCreativeStudioDeliverables200 = {
+  deliverables: StudioDeliverable[];
+};
+
+export type CreateCreativeStudioDeliverableBody = StudioEditable & {
+  [key: string]: unknown;
+} & Required<
+    Pick<
+      StudioEditable & { [key: string]: unknown },
+      "title" | "type" | "ownerId" | "brief"
+    >
+  >;
+
+export type UpdateCreativeStudioDeliverableBody = StudioEditable & {
+  /** @minimum 1 */
+  revision: number;
+};
+
+export type ActOnCreativeStudioDeliverableBodyAction =
+  (typeof ActOnCreativeStudioDeliverableBodyAction)[keyof typeof ActOnCreativeStudioDeliverableBodyAction];
+
+export const ActOnCreativeStudioDeliverableBodyAction = {
+  share: "share",
+  unshare: "unshare",
+  archive: "archive",
+  restore: "restore",
+  duplicate: "duplicate",
+  request_approval: "request_approval",
+  decide: "decide",
+  schedule: "schedule",
+  unschedule: "unschedule",
+  remind: "remind",
+} as const;
+
+export type ActOnCreativeStudioDeliverableBodyPhase =
+  (typeof ActOnCreativeStudioDeliverableBodyPhase)[keyof typeof ActOnCreativeStudioDeliverableBodyPhase];
+
+export const ActOnCreativeStudioDeliverableBodyPhase = {
+  reference: "reference",
+  final: "final",
+} as const;
+
+export type ActOnCreativeStudioDeliverableBodyDecision =
+  (typeof ActOnCreativeStudioDeliverableBodyDecision)[keyof typeof ActOnCreativeStudioDeliverableBodyDecision];
+
+export const ActOnCreativeStudioDeliverableBodyDecision = {
+  approved: "approved",
+  changes_requested: "changes_requested",
+} as const;
+
+export type ActOnCreativeStudioDeliverableBody = {
+  revision: number;
+  action: ActOnCreativeStudioDeliverableBodyAction;
+  phase?: ActOnCreativeStudioDeliverableBodyPhase;
+  approverUid?: string;
+  decision?: ActOnCreativeStudioDeliverableBodyDecision;
+  feedback?: string;
+  link?: string;
+};
+
+export type SaveCreativeStudioAssetBodyPhase =
+  (typeof SaveCreativeStudioAssetBodyPhase)[keyof typeof SaveCreativeStudioAssetBodyPhase];
+
+export const SaveCreativeStudioAssetBodyPhase = {
+  reference: "reference",
+  final: "final",
+} as const;
+
+export type SaveCreativeStudioAssetBodyKind =
+  (typeof SaveCreativeStudioAssetBodyKind)[keyof typeof SaveCreativeStudioAssetBodyKind];
+
+export const SaveCreativeStudioAssetBodyKind = {
+  thumbnail: "thumbnail",
+  main: "main",
+  video: "video",
+  copy: "copy",
+  file: "file",
+} as const;
+
+export type SaveCreativeStudioAssetBody = {
+  revision: number;
+  assetId?: string;
+  phase: SaveCreativeStudioAssetBodyPhase;
+  kind: SaveCreativeStudioAssetBodyKind;
+  label: string;
+  url: string;
+};
+
+export type ListCreativeStudioMessages200 = {
+  messages: StudioMessage[];
+};
+
+export type SendCreativeStudioMessageBody = {
+  idempotencyKey: string;
+  /** @maxLength 5000 */
+  text: string;
+};
+
+export type SendCreativeStudioMessage200 = {
+  message: StudioMessage;
+};
+
+export type ListCreativeStudioActivity200ActivityItem = {
+  [key: string]: unknown;
+};
+
+export type ListCreativeStudioActivity200 = {
+  activity: ListCreativeStudioActivity200ActivityItem[];
+};
+
+export type ListCreativeStudioDeliveries200DeliveriesItem = {
+  [key: string]: unknown;
+};
+
+export type ListCreativeStudioDeliveries200 = {
+  deliveries: ListCreativeStudioDeliveries200DeliveriesItem[];
+};
+
+export type PreviewCreativeStudioEmail200 = {
+  subject: string;
+  body: string;
+  deliveryEnabled: boolean;
+};
 
 export type GetClientPortalMe200 = {
   clients: PortalClient[];

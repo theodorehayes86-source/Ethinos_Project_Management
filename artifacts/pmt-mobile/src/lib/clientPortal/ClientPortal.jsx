@@ -9,6 +9,8 @@ import {
   ChevronLeft, Clock, Activity, CheckCircle, AlertTriangle, Calendar, Plus, X, LogOut,
   Loader2, Mail, RefreshCw, ShieldCheck, Building2, ArrowRight, Lock, Search,
 } from 'lucide-react';
+import PortalStudio from '../creativeStudio/PortalStudio.jsx';
+import { peekStudioLink } from '../creativeStudio/core.js';
 import { createPortalApi, isRevocationError, portalStats, filterPortalTasks } from './core.js';
 
 const POLL_MS = 30000;
@@ -363,6 +365,7 @@ export default function ClientPortal({ auth, user, apiBase, onExitToStaff }) {
   const [clients, setClients] = useState(null);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState(null);
+  const [section, setSection] = useState(() => (peekStudioLink() ? 'creative' : 'tasks'));
   const seqRef = useRef(0);
 
   const api = React.useMemo(() => createPortalApi({
@@ -428,7 +431,15 @@ export default function ClientPortal({ auth, user, apiBase, onExitToStaff }) {
         </div>
       </header>
       <main className="max-w-6xl mx-auto p-4">
-        {error ? (
+        <div className="flex gap-1 mb-4 p-1 rounded-full bg-white/70 border border-slate-100 w-fit" role="tablist" aria-label="Portal section">
+          {[['tasks', 'Tasks'], ['creative', 'Creative approvals']].map(([id, label]) => (
+            <button key={id} role="tab" aria-selected={section === id} data-testid={`tab-portal-${id}`} onClick={() => setSection(id)}
+              className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${section === id ? 'bg-[#1f2440] text-white' : 'text-slate-500'}`}>{label}</button>
+          ))}
+        </div>
+        {section === 'creative' ? (
+          <PortalStudio auth={auth} apiBase={apiBase} onRevoked={handleRevoked} />
+        ) : error ? (
           <div className="bg-white border border-slate-100 rounded-2xl p-8 text-center shadow-sm max-w-md mx-auto mt-10">
             <AlertTriangle size={28} className="text-amber-500 mx-auto mb-2" />
             <p data-testid="text-portal-me-error" className="text-sm font-bold text-slate-800">{error}</p>

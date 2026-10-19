@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "react-datepicker/dist/react-datepicker.css";
@@ -86,3 +87,12 @@
     -moz-osx-font-smoothing: grayscale;
   }
 }
+
+/* Creative Studio */
+.cs-display { font-family: 'Fraunces', Georgia, serif; font-weight: 500; letter-spacing: -0.01em; }
+.cs-root { font-feature-settings: "tnum" 0; }
+@keyframes cs-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes cs-fade { from { opacity: 0; } to { opacity: 1; } }
+.cs-rise { animation: cs-rise 320ms cubic-bezier(.2,.7,.2,1) both; }
+.cs-fade { animation: cs-fade 180ms ease-out both; }
+@media (prefers-reduced-motion: reduce) { .cs-rise, .cs-fade { animation: none; } }

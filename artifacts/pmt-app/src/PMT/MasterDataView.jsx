@@ -7,6 +7,7 @@ import { sendNotification } from '../utils/notify';
 import { auth, db } from '../firebase.js';
 import { ref, update } from 'firebase/database';
 import ClientPortalAdminPanel from './ClientPortalAdminPanel';
+import StudioControlPanel from '../lib/creativeStudio/StudioControlPanel.jsx';
 import { canManageClientPortal } from '../lib/clientPortal/core';
 import { APPLICABILITY_OPTIONS, applicabilityLabel } from './shared/checklistApplicability';
 
@@ -71,6 +72,7 @@ const CC_TABS = [
   { id: 'feedback', label: 'Feedback' },
   { id: 'archive', label: 'Archive' },
   { id: 'clientPortal', label: 'Client Portal' },
+  { id: 'creativeStudio', label: 'Creative Studio' },
 ];
 
 const DEFAULT_STANDARD_TRACK = ['Director', 'Snr Manager', 'Manager', 'Asst Manager', 'Snr Executive', 'Executive', 'Employee', 'Intern'];
@@ -123,6 +125,7 @@ const MasterDataView = ({
   setChecklistTemplates,
   checklistAccessRoles = [],
   setChecklistAccessRoles,
+  canManageStudio = false,
 }) => {
   const { toast } = useToast();
   const managementRoles = ['Super Admin', 'Director', 'Business Head', 'Snr Manager', 'Manager', 'Project Manager', 'CSM'];
@@ -137,6 +140,7 @@ const MasterDataView = ({
   const [activeTab, setActiveTab] = useState(() => {
     const accessible = CC_TABS.filter(tab => {
       if (tab.id === 'clientPortal') return canManageClientPortal(currentUser?.role);
+      if (tab.id === 'creativeStudio') return canManageStudio;
       if (tab.id === 'notifications') return currentUser?.role === 'Super Admin';
       if (tab.id === 'archive') return ['Super Admin', 'Director'].includes(currentUser?.role);
       if (tab.id === 'teams') return true; // all users can connect their Teams account
@@ -1622,6 +1626,7 @@ const MasterDataView = ({
       <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center gap-2 flex-wrap">
         {CC_TABS.filter(tab => {
           if (tab.id === 'clientPortal') return canManageClientPortal(currentUser?.role);
+          if (tab.id === 'creativeStudio') return canManageStudio;
           if (tab.id === 'notifications') return currentUser?.role === 'Super Admin';
           if (tab.id === 'archive') return ['Super Admin', 'Director'].includes(currentUser?.role);
           if (tab.id === 'teams') return true; // all users
@@ -1647,6 +1652,7 @@ const MasterDataView = ({
       </div>
 
       {activeTab === 'clientPortal' && canManageClientPortal(currentUser?.role) && <ClientPortalAdminPanel clients={clients} />}
+      {activeTab === 'creativeStudio' && canManageStudio && <StudioControlPanel auth={auth} apiBase={import.meta.env.VITE_API_BASE_URL || '/api'} users={users} clients={clients} />}
 
       {/* ─── USERS TAB ─── */}
       {activeTab === 'users' && (

@@ -7,6 +7,850 @@
  */
 import * as zod from "zod";
 
+export const getCreativeStudioBootstrapResponseDefaultsOneSendTimeRegExp =
+  new RegExp("^([01][0-9]|2[0-3]):[0-5][0-9]$");
+export const getCreativeStudioBootstrapResponseDefaultsOneCadenceDaysMax = 30;
+
+export const GetCreativeStudioBootstrapResponse = zod.object({
+  clients: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+    }),
+  ),
+  configs: zod.record(zod.string(), zod.record(zod.string(), zod.unknown())),
+  capabilities: zod.object({
+    isClient: zod.boolean(),
+    canManageSettings: zod.boolean(),
+    canManageDefaults: zod.boolean(),
+    canEdit: zod.boolean(),
+    manageableClientIds: zod.array(zod.string()),
+    editableClientIds: zod.array(zod.string()),
+  }),
+  owners: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+      clientIds: zod.array(zod.string()),
+    }),
+  ),
+  staffCandidates: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        name: zod.string(),
+        clientIds: zod.array(zod.string()),
+      }),
+    )
+    .optional(),
+  approvers: zod.array(
+    zod.object({
+      uid: zod.string(),
+      name: zod.string(),
+      clientIds: zod.array(zod.string()),
+    }),
+  ),
+  defaults: zod
+    .union([
+      zod.object({
+        enabled: zod.boolean(),
+        sendTime: zod
+          .string()
+          .regex(getCreativeStudioBootstrapResponseDefaultsOneSendTimeRegExp),
+        timezone: zod.string(),
+        cadenceDays: zod
+          .number()
+          .min(1)
+          .max(getCreativeStudioBootstrapResponseDefaultsOneCadenceDaysMax),
+      }),
+      zod.null(),
+    ])
+    .optional(),
+});
+
+export const putCreativeStudioDefaultsBodySendTimeRegExp = new RegExp(
+  "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+);
+export const putCreativeStudioDefaultsBodyCadenceDaysMax = 30;
+
+export const PutCreativeStudioDefaultsBody = zod.object({
+  enabled: zod.boolean(),
+  sendTime: zod.string().regex(putCreativeStudioDefaultsBodySendTimeRegExp),
+  timezone: zod.string(),
+  cadenceDays: zod
+    .number()
+    .min(1)
+    .max(putCreativeStudioDefaultsBodyCadenceDaysMax),
+});
+
+export const putCreativeStudioDefaultsResponseDefaultsSendTimeRegExp =
+  new RegExp("^([01][0-9]|2[0-3]):[0-5][0-9]$");
+export const putCreativeStudioDefaultsResponseDefaultsCadenceDaysMax = 30;
+
+export const PutCreativeStudioDefaultsResponse = zod.object({
+  defaults: zod.object({
+    enabled: zod.boolean(),
+    sendTime: zod
+      .string()
+      .regex(putCreativeStudioDefaultsResponseDefaultsSendTimeRegExp),
+    timezone: zod.string(),
+    cadenceDays: zod
+      .number()
+      .min(1)
+      .max(putCreativeStudioDefaultsResponseDefaultsCadenceDaysMax),
+  }),
+});
+
+export const putCreativeStudioConfigPathClientIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{1,128}$",
+);
+
+export const PutCreativeStudioConfigParams = zod.object({
+  clientId: zod.coerce
+    .string()
+    .regex(putCreativeStudioConfigPathClientIdRegExp),
+});
+
+export const putCreativeStudioConfigBodyAutomationSendTimeRegExp = new RegExp(
+  "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+);
+export const putCreativeStudioConfigBodyAutomationCadenceDaysMax = 30;
+
+export const PutCreativeStudioConfigBody = zod.object({
+  enabled: zod.boolean(),
+  ownerIds: zod.array(zod.string()),
+  editorIds: zod.array(zod.string()),
+  timezone: zod.string(),
+  automation: zod.object({
+    enabled: zod.boolean(),
+    sendTime: zod
+      .string()
+      .regex(putCreativeStudioConfigBodyAutomationSendTimeRegExp),
+    timezone: zod.string(),
+    cadenceDays: zod
+      .number()
+      .min(1)
+      .max(putCreativeStudioConfigBodyAutomationCadenceDaysMax),
+  }),
+});
+
+export const putCreativeStudioConfigResponseConfigAutomationSendTimeRegExp =
+  new RegExp("^([01][0-9]|2[0-3]):[0-5][0-9]$");
+export const putCreativeStudioConfigResponseConfigAutomationCadenceDaysMax = 30;
+
+export const PutCreativeStudioConfigResponse = zod.object({
+  config: zod.object({
+    enabled: zod.boolean(),
+    ownerIds: zod.array(zod.string()),
+    editorIds: zod.array(zod.string()),
+    timezone: zod.string(),
+    automation: zod.object({
+      enabled: zod.boolean(),
+      sendTime: zod
+        .string()
+        .regex(putCreativeStudioConfigResponseConfigAutomationSendTimeRegExp),
+      timezone: zod.string(),
+      cadenceDays: zod
+        .number()
+        .min(1)
+        .max(putCreativeStudioConfigResponseConfigAutomationCadenceDaysMax),
+    }),
+    updatedAt: zod.number().optional(),
+    updatedBy: zod.string().optional(),
+  }),
+});
+
+export const listCreativeStudioDeliverablesPathClientIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{1,128}$",
+);
+
+export const ListCreativeStudioDeliverablesParams = zod.object({
+  clientId: zod.coerce
+    .string()
+    .regex(listCreativeStudioDeliverablesPathClientIdRegExp),
+});
+
+export const listCreativeStudioDeliverablesResponseDeliverablesItemOneTitleMax = 240;
+
+export const listCreativeStudioDeliverablesResponseDeliverablesItemOneBriefMax = 10000;
+
+export const listCreativeStudioDeliverablesResponseDeliverablesItemOneCaptionMax = 10000;
+
+export const ListCreativeStudioDeliverablesResponse = zod.object({
+  deliverables: zod.array(
+    zod
+      .object({
+        title: zod
+          .string()
+          .max(
+            listCreativeStudioDeliverablesResponseDeliverablesItemOneTitleMax,
+          )
+          .optional(),
+        type: zod.enum(["Post", "Reel", "Story"]).optional(),
+        ownerId: zod.string().optional(),
+        brief: zod
+          .string()
+          .max(
+            listCreativeStudioDeliverablesResponseDeliverablesItemOneBriefMax,
+          )
+          .optional(),
+        caption: zod
+          .string()
+          .max(
+            listCreativeStudioDeliverablesResponseDeliverablesItemOneCaptionMax,
+          )
+          .optional(),
+        platforms: zod
+          .array(
+            zod.enum(["Instagram", "Facebook", "LinkedIn", "YouTube Shorts"]),
+          )
+          .optional(),
+        productionDueDate: zod.string().nullish(),
+        plannedAt: zod.string().nullish(),
+        timezone: zod.string().optional(),
+      })
+      .and(
+        zod.object({
+          id: zod.string(),
+          clientId: zod.string(),
+          revision: zod.number(),
+          stage: zod.enum([
+            "internal_draft",
+            "awaiting_reference",
+            "reference_changes",
+            "in_production",
+            "awaiting_final",
+            "final_changes",
+            "final_approved",
+          ]),
+          shared: zod.boolean(),
+          archived: zod.boolean(),
+          scheduled: zod
+            .object({
+              at: zod.number().optional(),
+              actor: zod.string().optional(),
+              link: zod.string().nullish(),
+            })
+            .nullable(),
+          assets: zod.array(
+            zod.object({
+              id: zod.string(),
+              phase: zod.enum(["reference", "final"]),
+              kind: zod.enum(["thumbnail", "main", "video", "copy", "file"]),
+              label: zod.string(),
+              url: zod.string(),
+              revision: zod.number(),
+              updatedAt: zod.number().optional(),
+              updatedBy: zod.string().optional(),
+              history: zod
+                .array(zod.record(zod.string(), zod.unknown()))
+                .optional(),
+            }),
+          ),
+          approvals: zod.record(
+            zod.string(),
+            zod.record(zod.string(), zod.unknown()),
+          ),
+          createdAt: zod.number(),
+          updatedAt: zod.number(),
+        }),
+      ),
+  ),
+});
+
+export const createCreativeStudioDeliverablePathClientIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{1,128}$",
+);
+
+export const CreateCreativeStudioDeliverableParams = zod.object({
+  clientId: zod.coerce
+    .string()
+    .regex(createCreativeStudioDeliverablePathClientIdRegExp),
+});
+
+export const createCreativeStudioDeliverableBodyOneTitleMax = 240;
+
+export const createCreativeStudioDeliverableBodyOneBriefMax = 10000;
+
+export const createCreativeStudioDeliverableBodyOneCaptionMax = 10000;
+
+export const CreateCreativeStudioDeliverableBody = zod
+  .object({
+    title: zod
+      .string()
+      .max(createCreativeStudioDeliverableBodyOneTitleMax)
+      .optional(),
+    type: zod.enum(["Post", "Reel", "Story"]).optional(),
+    ownerId: zod.string().optional(),
+    brief: zod
+      .string()
+      .max(createCreativeStudioDeliverableBodyOneBriefMax)
+      .optional(),
+    caption: zod
+      .string()
+      .max(createCreativeStudioDeliverableBodyOneCaptionMax)
+      .optional(),
+    platforms: zod
+      .array(zod.enum(["Instagram", "Facebook", "LinkedIn", "YouTube Shorts"]))
+      .optional(),
+    productionDueDate: zod.string().nullish(),
+    plannedAt: zod.string().nullish(),
+    timezone: zod.string().optional(),
+  })
+  .and(zod.object({}).passthrough());
+
+export const getCreativeStudioDeliverablePathClientIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{1,128}$",
+);
+export const getCreativeStudioDeliverablePathIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{1,128}$",
+);
+
+export const GetCreativeStudioDeliverableParams = zod.object({
+  clientId: zod.coerce
+    .string()
+    .regex(getCreativeStudioDeliverablePathClientIdRegExp),
+  id: zod.coerce.string().regex(getCreativeStudioDeliverablePathIdRegExp),
+});
+
+export const getCreativeStudioDeliverableResponseDeliverableOneTitleMax = 240;
+
+export const getCreativeStudioDeliverableResponseDeliverableOneBriefMax = 10000;
+
+export const getCreativeStudioDeliverableResponseDeliverableOneCaptionMax = 10000;
+
+export const GetCreativeStudioDeliverableResponse = zod.object({
+  emailError: zod.string().optional(),
+  deliverable: zod
+    .object({
+      title: zod
+        .string()
+        .max(getCreativeStudioDeliverableResponseDeliverableOneTitleMax)
+        .optional(),
+      type: zod.enum(["Post", "Reel", "Story"]).optional(),
+      ownerId: zod.string().optional(),
+      brief: zod
+        .string()
+        .max(getCreativeStudioDeliverableResponseDeliverableOneBriefMax)
+        .optional(),
+      caption: zod
+        .string()
+        .max(getCreativeStudioDeliverableResponseDeliverableOneCaptionMax)
+        .optional(),
+      platforms: zod
+        .array(
+          zod.enum(["Instagram", "Facebook", "LinkedIn", "YouTube Shorts"]),
+        )
+        .optional(),
+      productionDueDate: zod.string().nullish(),
+      plannedAt: zod.string().nullish(),
+      timezone: zod.string().optional(),
+    })
+    .and(
+      zod.object({
+        id: zod.string(),
+        clientId: zod.string(),
+        revision: zod.number(),
+        stage: zod.enum([
+          "internal_draft",
+          "awaiting_reference",
+          "reference_changes",
+          "in_production",
+          "awaiting_final",
+          "final_changes",
+          "final_approved",
+        ]),
+        shared: zod.boolean(),
+        archived: zod.boolean(),
+        scheduled: zod
+          .object({
+            at: zod.number().optional(),
+            actor: zod.string().optional(),
+            link: zod.string().nullish(),
+          })
+          .nullable(),
+        assets: zod.array(
+          zod.object({
+            id: zod.string(),
+            phase: zod.enum(["reference", "final"]),
+            kind: zod.enum(["thumbnail", "main", "video", "copy", "file"]),
+            label: zod.string(),
+            url: zod.string(),
+            revision: zod.number(),
+            updatedAt: zod.number().optional(),
+            updatedBy: zod.string().optional(),
+            history: zod
+              .array(zod.record(zod.string(), zod.unknown()))
+              .optional(),
+          }),
+        ),
+        approvals: zod.record(
+          zod.string(),
+          zod.record(zod.string(), zod.unknown()),
+        ),
+        createdAt: zod.number(),
+        updatedAt: zod.number(),
+      }),
+    ),
+});
+
+export const updateCreativeStudioDeliverablePathClientIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{1,128}$",
+);
+export const updateCreativeStudioDeliverablePathIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{1,128}$",
+);
+
+export const UpdateCreativeStudioDeliverableParams = zod.object({
+  clientId: zod.coerce
+    .string()
+    .regex(updateCreativeStudioDeliverablePathClientIdRegExp),
+  id: zod.coerce.string().regex(updateCreativeStudioDeliverablePathIdRegExp),
+});
+
+export const updateCreativeStudioDeliverableBodyOneTitleMax = 240;
+
+export const updateCreativeStudioDeliverableBodyOneBriefMax = 10000;
+
+export const updateCreativeStudioDeliverableBodyOneCaptionMax = 10000;
+
+export const UpdateCreativeStudioDeliverableBody = zod
+  .object({
+    title: zod
+      .string()
+      .max(updateCreativeStudioDeliverableBodyOneTitleMax)
+      .optional(),
+    type: zod.enum(["Post", "Reel", "Story"]).optional(),
+    ownerId: zod.string().optional(),
+    brief: zod
+      .string()
+      .max(updateCreativeStudioDeliverableBodyOneBriefMax)
+      .optional(),
+    caption: zod
+      .string()
+      .max(updateCreativeStudioDeliverableBodyOneCaptionMax)
+      .optional(),
+    platforms: zod
+      .array(zod.enum(["Instagram", "Facebook", "LinkedIn", "YouTube Shorts"]))
+      .optional(),
+    productionDueDate: zod.string().nullish(),
+    plannedAt: zod.string().nullish(),
+    timezone: zod.string().optional(),
+  })
+  .and(
+    zod.object({
+      revision: zod.number().min(1),
+    }),
+  );
+
+export const updateCreativeStudioDeliverableResponseDeliverableOneTitleMax = 240;
+
+export const updateCreativeStudioDeliverableResponseDeliverableOneBriefMax = 10000;
+
+export const updateCreativeStudioDeliverableResponseDeliverableOneCaptionMax = 10000;
+
+export const UpdateCreativeStudioDeliverableResponse = zod.object({
+  emailError: zod.string().optional(),
+  deliverable: zod
+    .object({
+      title: zod
+        .string()
+        .max(updateCreativeStudioDeliverableResponseDeliverableOneTitleMax)
+        .optional(),
+      type: zod.enum(["Post", "Reel", "Story"]).optional(),
+      ownerId: zod.string().optional(),
+      brief: zod
+        .string()
+        .max(updateCreativeStudioDeliverableResponseDeliverableOneBriefMax)
+        .optional(),
+      caption: zod
+        .string()
+        .max(updateCreativeStudioDeliverableResponseDeliverableOneCaptionMax)
+        .optional(),
+      platforms: zod
+        .array(
+          zod.enum(["Instagram", "Facebook", "LinkedIn", "YouTube Shorts"]),
+        )
+        .optional(),
+      productionDueDate: zod.string().nullish(),
+      plannedAt: zod.string().nullish(),
+      timezone: zod.string().optional(),
+    })
+    .and(
+      zod.object({
+        id: zod.string(),
+        clientId: zod.string(),
+        revision: zod.number(),
+        stage: zod.enum([
+          "internal_draft",
+          "awaiting_reference",
+          "reference_changes",
+          "in_production",
+          "awaiting_final",
+          "final_changes",
+          "final_approved",
+        ]),
+        shared: zod.boolean(),
+        archived: zod.boolean(),
+        scheduled: zod
+          .object({
+            at: zod.number().optional(),
+            actor: zod.string().optional(),
+            link: zod.string().nullish(),
+          })
+          .nullable(),
+        assets: zod.array(
+          zod.object({
+            id: zod.string(),
+            phase: zod.enum(["reference", "final"]),
+            kind: zod.enum(["thumbnail", "main", "video", "copy", "file"]),
+            label: zod.string(),
+            url: zod.string(),
+            revision: zod.number(),
+            updatedAt: zod.number().optional(),
+            updatedBy: zod.string().optional(),
+            history: zod
+              .array(zod.record(zod.string(), zod.unknown()))
+              .optional(),
+          }),
+        ),
+        approvals: zod.record(
+          zod.string(),
+          zod.record(zod.string(), zod.unknown()),
+        ),
+        createdAt: zod.number(),
+        updatedAt: zod.number(),
+      }),
+    ),
+});
+
+export const actOnCreativeStudioDeliverablePathClientIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{1,128}$",
+);
+export const actOnCreativeStudioDeliverablePathIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{1,128}$",
+);
+
+export const ActOnCreativeStudioDeliverableParams = zod.object({
+  clientId: zod.coerce
+    .string()
+    .regex(actOnCreativeStudioDeliverablePathClientIdRegExp),
+  id: zod.coerce.string().regex(actOnCreativeStudioDeliverablePathIdRegExp),
+});
+
+export const ActOnCreativeStudioDeliverableBody = zod.object({
+  revision: zod.number(),
+  action: zod.enum([
+    "share",
+    "unshare",
+    "archive",
+    "restore",
+    "duplicate",
+    "request_approval",
+    "decide",
+    "schedule",
+    "unschedule",
+    "remind",
+  ]),
+  phase: zod.enum(["reference", "final"]).optional(),
+  approverUid: zod.string().optional(),
+  decision: zod.enum(["approved", "changes_requested"]).optional(),
+  feedback: zod.string().optional(),
+  link: zod.string().optional(),
+});
+
+export const actOnCreativeStudioDeliverableResponseDeliverableOneTitleMax = 240;
+
+export const actOnCreativeStudioDeliverableResponseDeliverableOneBriefMax = 10000;
+
+export const actOnCreativeStudioDeliverableResponseDeliverableOneCaptionMax = 10000;
+
+export const ActOnCreativeStudioDeliverableResponse = zod.object({
+  emailError: zod.string().optional(),
+  deliverable: zod
+    .object({
+      title: zod
+        .string()
+        .max(actOnCreativeStudioDeliverableResponseDeliverableOneTitleMax)
+        .optional(),
+      type: zod.enum(["Post", "Reel", "Story"]).optional(),
+      ownerId: zod.string().optional(),
+      brief: zod
+        .string()
+        .max(actOnCreativeStudioDeliverableResponseDeliverableOneBriefMax)
+        .optional(),
+      caption: zod
+        .string()
+        .max(actOnCreativeStudioDeliverableResponseDeliverableOneCaptionMax)
+        .optional(),
+      platforms: zod
+        .array(
+          zod.enum(["Instagram", "Facebook", "LinkedIn", "YouTube Shorts"]),
+        )
+        .optional(),
+      productionDueDate: zod.string().nullish(),
+      plannedAt: zod.string().nullish(),
+      timezone: zod.string().optional(),
+    })
+    .and(
+      zod.object({
+        id: zod.string(),
+        clientId: zod.string(),
+        revision: zod.number(),
+        stage: zod.enum([
+          "internal_draft",
+          "awaiting_reference",
+          "reference_changes",
+          "in_production",
+          "awaiting_final",
+          "final_changes",
+          "final_approved",
+        ]),
+        shared: zod.boolean(),
+        archived: zod.boolean(),
+        scheduled: zod
+          .object({
+            at: zod.number().optional(),
+            actor: zod.string().optional(),
+            link: zod.string().nullish(),
+          })
+          .nullable(),
+        assets: zod.array(
+          zod.object({
+            id: zod.string(),
+            phase: zod.enum(["reference", "final"]),
+            kind: zod.enum(["thumbnail", "main", "video", "copy", "file"]),
+            label: zod.string(),
+            url: zod.string(),
+            revision: zod.number(),
+            updatedAt: zod.number().optional(),
+            updatedBy: zod.string().optional(),
+            history: zod
+              .array(zod.record(zod.string(), zod.unknown()))
+              .optional(),
+          }),
+        ),
+        approvals: zod.record(
+          zod.string(),
+          zod.record(zod.string(), zod.unknown()),
+        ),
+        createdAt: zod.number(),
+        updatedAt: zod.number(),
+      }),
+    ),
+});
+
+export const saveCreativeStudioAssetPathClientIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{1,128}$",
+);
+export const saveCreativeStudioAssetPathIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{1,128}$",
+);
+
+export const SaveCreativeStudioAssetParams = zod.object({
+  clientId: zod.coerce
+    .string()
+    .regex(saveCreativeStudioAssetPathClientIdRegExp),
+  id: zod.coerce.string().regex(saveCreativeStudioAssetPathIdRegExp),
+});
+
+export const SaveCreativeStudioAssetBody = zod.object({
+  revision: zod.number(),
+  assetId: zod.string().optional(),
+  phase: zod.enum(["reference", "final"]),
+  kind: zod.enum(["thumbnail", "main", "video", "copy", "file"]),
+  label: zod.string(),
+  url: zod.string(),
+});
+
+export const saveCreativeStudioAssetResponseDeliverableOneTitleMax = 240;
+
+export const saveCreativeStudioAssetResponseDeliverableOneBriefMax = 10000;
+
+export const saveCreativeStudioAssetResponseDeliverableOneCaptionMax = 10000;
+
+export const SaveCreativeStudioAssetResponse = zod.object({
+  emailError: zod.string().optional(),
+  deliverable: zod
+    .object({
+      title: zod
+        .string()
+        .max(saveCreativeStudioAssetResponseDeliverableOneTitleMax)
+        .optional(),
+      type: zod.enum(["Post", "Reel", "Story"]).optional(),
+      ownerId: zod.string().optional(),
+      brief: zod
+        .string()
+        .max(saveCreativeStudioAssetResponseDeliverableOneBriefMax)
+        .optional(),
+      caption: zod
+        .string()
+        .max(saveCreativeStudioAssetResponseDeliverableOneCaptionMax)
+        .optional(),
+      platforms: zod
+        .array(
+          zod.enum(["Instagram", "Facebook", "LinkedIn", "YouTube Shorts"]),
+        )
+        .optional(),
+      productionDueDate: zod.string().nullish(),
+      plannedAt: zod.string().nullish(),
+      timezone: zod.string().optional(),
+    })
+    .and(
+      zod.object({
+        id: zod.string(),
+        clientId: zod.string(),
+        revision: zod.number(),
+        stage: zod.enum([
+          "internal_draft",
+          "awaiting_reference",
+          "reference_changes",
+          "in_production",
+          "awaiting_final",
+          "final_changes",
+          "final_approved",
+        ]),
+        shared: zod.boolean(),
+        archived: zod.boolean(),
+        scheduled: zod
+          .object({
+            at: zod.number().optional(),
+            actor: zod.string().optional(),
+            link: zod.string().nullish(),
+          })
+          .nullable(),
+        assets: zod.array(
+          zod.object({
+            id: zod.string(),
+            phase: zod.enum(["reference", "final"]),
+            kind: zod.enum(["thumbnail", "main", "video", "copy", "file"]),
+            label: zod.string(),
+            url: zod.string(),
+            revision: zod.number(),
+            updatedAt: zod.number().optional(),
+            updatedBy: zod.string().optional(),
+            history: zod
+              .array(zod.record(zod.string(), zod.unknown()))
+              .optional(),
+          }),
+        ),
+        approvals: zod.record(
+          zod.string(),
+          zod.record(zod.string(), zod.unknown()),
+        ),
+        createdAt: zod.number(),
+        updatedAt: zod.number(),
+      }),
+    ),
+});
+
+export const listCreativeStudioMessagesPathClientIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{1,128}$",
+);
+export const listCreativeStudioMessagesPathIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{1,128}$",
+);
+
+export const ListCreativeStudioMessagesParams = zod.object({
+  clientId: zod.coerce
+    .string()
+    .regex(listCreativeStudioMessagesPathClientIdRegExp),
+  id: zod.coerce.string().regex(listCreativeStudioMessagesPathIdRegExp),
+  thread: zod.enum(["client", "internal"]),
+});
+
+export const ListCreativeStudioMessagesResponse = zod.object({
+  messages: zod.array(
+    zod.object({
+      id: zod.string(),
+      text: zod.string(),
+      author: zod.string(),
+      authorUid: zod.string(),
+      at: zod.number(),
+    }),
+  ),
+});
+
+export const sendCreativeStudioMessagePathClientIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{1,128}$",
+);
+export const sendCreativeStudioMessagePathIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{1,128}$",
+);
+
+export const SendCreativeStudioMessageParams = zod.object({
+  clientId: zod.coerce
+    .string()
+    .regex(sendCreativeStudioMessagePathClientIdRegExp),
+  id: zod.coerce.string().regex(sendCreativeStudioMessagePathIdRegExp),
+  thread: zod.enum(["client", "internal"]),
+});
+
+export const sendCreativeStudioMessageBodyTextMax = 5000;
+
+export const SendCreativeStudioMessageBody = zod.object({
+  idempotencyKey: zod.string(),
+  text: zod.string().max(sendCreativeStudioMessageBodyTextMax),
+});
+
+export const SendCreativeStudioMessageResponse = zod.object({
+  message: zod.object({
+    id: zod.string(),
+    text: zod.string(),
+    author: zod.string(),
+    authorUid: zod.string(),
+    at: zod.number(),
+  }),
+});
+
+export const listCreativeStudioActivityPathClientIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{1,128}$",
+);
+export const listCreativeStudioActivityPathIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{1,128}$",
+);
+
+export const ListCreativeStudioActivityParams = zod.object({
+  clientId: zod.coerce
+    .string()
+    .regex(listCreativeStudioActivityPathClientIdRegExp),
+  id: zod.coerce.string().regex(listCreativeStudioActivityPathIdRegExp),
+});
+
+export const ListCreativeStudioActivityResponse = zod.object({
+  activity: zod.array(zod.record(zod.string(), zod.unknown())),
+});
+
+export const listCreativeStudioDeliveriesPathClientIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{1,128}$",
+);
+
+export const ListCreativeStudioDeliveriesParams = zod.object({
+  clientId: zod.coerce
+    .string()
+    .regex(listCreativeStudioDeliveriesPathClientIdRegExp),
+});
+
+export const ListCreativeStudioDeliveriesResponse = zod.object({
+  deliveries: zod.array(zod.record(zod.string(), zod.unknown())),
+});
+
+export const previewCreativeStudioEmailPathClientIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{1,128}$",
+);
+
+export const PreviewCreativeStudioEmailParams = zod.object({
+  clientId: zod.coerce
+    .string()
+    .regex(previewCreativeStudioEmailPathClientIdRegExp),
+});
+
+export const PreviewCreativeStudioEmailResponse = zod.object({
+  subject: zod.string(),
+  body: zod.string(),
+  deliveryEnabled: zod.boolean(),
+});
+
 export const GetClientPortalMeResponse = zod.object({
   clients: zod.array(
     zod.object({

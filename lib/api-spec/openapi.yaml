@@ -13,6 +13,297 @@ tags:
   - name: health
     description: Health operations
 paths:
+  /creative-studio/bootstrap:
+    get:
+      operationId: getCreativeStudioBootstrap
+      responses:
+        "200":
+          description: Authorized Creative Studio capabilities and directory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioBootstrap"
+  /creative-studio/defaults:
+    put:
+      operationId: putCreativeStudioDefaults
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudioAutomation"
+      responses:
+        "200":
+          description: Administrator defaults saved
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [defaults]
+                properties:
+                  defaults:
+                    $ref: "#/components/schemas/StudioAutomation"
+  /creative-studio/clients/{clientId}/config:
+    parameters:
+      - $ref: "#/components/parameters/StudioClientId"
+    put:
+      operationId: putCreativeStudioConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudioConfig"
+      responses:
+        "200":
+          description: Scoped configuration saved
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [config]
+                properties:
+                  config:
+                    $ref: "#/components/schemas/StudioConfig"
+  /creative-studio/clients/{clientId}/deliverables:
+    parameters:
+      - $ref: "#/components/parameters/StudioClientId"
+    get:
+      operationId: listCreativeStudioDeliverables
+      responses:
+        "200":
+          description: Authorized deliverables; empty collections are arrays
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deliverables]
+                properties:
+                  deliverables:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/StudioDeliverable"
+    post:
+      operationId: createCreativeStudioDeliverable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/StudioEditable"
+                - type: object
+                  required: [title, type, ownerId, brief]
+      responses:
+        "201":
+          $ref: "#/components/responses/StudioItem"
+  /creative-studio/clients/{clientId}/deliverables/{id}:
+    parameters:
+      - $ref: "#/components/parameters/StudioClientId"
+      - $ref: "#/components/parameters/StudioItemId"
+    get:
+      operationId: getCreativeStudioDeliverable
+      responses:
+        "200":
+          $ref: "#/components/responses/StudioItem"
+    patch:
+      operationId: updateCreativeStudioDeliverable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/StudioEditable"
+                - type: object
+                  required: [revision]
+                  properties:
+                    revision:
+                      type: integer
+                      minimum: 1
+      responses:
+        "200":
+          $ref: "#/components/responses/StudioItem"
+  /creative-studio/clients/{clientId}/deliverables/{id}/actions:
+    parameters:
+      - $ref: "#/components/parameters/StudioClientId"
+      - $ref: "#/components/parameters/StudioItemId"
+    post:
+      operationId: actOnCreativeStudioDeliverable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [revision, action]
+              properties:
+                revision:
+                  type: integer
+                action:
+                  type: string
+                  enum: [share, unshare, archive, restore, duplicate, request_approval, decide, schedule, unschedule, remind]
+                phase:
+                  type: string
+                  enum: [reference, final]
+                approverUid:
+                  type: string
+                decision:
+                  type: string
+                  enum: [approved, changes_requested]
+                feedback:
+                  type: string
+                link:
+                  type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/StudioItem"
+        "201":
+          $ref: "#/components/responses/StudioItem"
+  /creative-studio/clients/{clientId}/deliverables/{id}/assets:
+    parameters:
+      - $ref: "#/components/parameters/StudioClientId"
+      - $ref: "#/components/parameters/StudioItemId"
+    post:
+      operationId: saveCreativeStudioAsset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [revision, phase, kind, label, url]
+              properties:
+                revision:
+                  type: integer
+                assetId:
+                  type: string
+                phase:
+                  type: string
+                  enum: [reference, final]
+                kind:
+                  type: string
+                  enum: [thumbnail, main, video, copy, file]
+                label:
+                  type: string
+                url:
+                  type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/StudioItem"
+  /creative-studio/clients/{clientId}/deliverables/{id}/messages/{thread}:
+    parameters:
+      - $ref: "#/components/parameters/StudioClientId"
+      - $ref: "#/components/parameters/StudioItemId"
+      - name: thread
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [client, internal]
+    get:
+      operationId: listCreativeStudioMessages
+      responses:
+        "200":
+          description: Independently authorized conversation
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [messages]
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/StudioMessage"
+    post:
+      operationId: sendCreativeStudioMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [idempotencyKey, text]
+              properties:
+                idempotencyKey:
+                  type: string
+                text:
+                  type: string
+                  maxLength: 5000
+      responses:
+        "200":
+          description: Message saved or matching retry returned
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message]
+                properties:
+                  message:
+                    $ref: "#/components/schemas/StudioMessage"
+  /creative-studio/clients/{clientId}/deliverables/{id}/activity:
+    parameters:
+      - $ref: "#/components/parameters/StudioClientId"
+      - $ref: "#/components/parameters/StudioItemId"
+    get:
+      operationId: listCreativeStudioActivity
+      responses:
+        "200":
+          description: Staff-only append-only history
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [activity]
+                properties:
+                  activity:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+  /creative-studio/clients/{clientId}/deliveries:
+    parameters:
+      - $ref: "#/components/parameters/StudioClientId"
+    get:
+      operationId: listCreativeStudioDeliveries
+      responses:
+        "200":
+          description: Scoped settings-manager delivery audit
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deliveries]
+                properties:
+                  deliveries:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+  /creative-studio/clients/{clientId}/preview:
+    parameters:
+      - $ref: "#/components/parameters/StudioClientId"
+    post:
+      operationId: previewCreativeStudioEmail
+      responses:
+        "200":
+          description: Non-delivering email preview
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [subject, body, deliveryEnabled]
+                properties:
+                  subject:
+                    type: string
+                  body:
+                    type: string
+                  deliveryEnabled:
+                    type: boolean
   /client-portal/me:
     get:
       operationId: getClientPortalMe
@@ -163,12 +454,269 @@ paths:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
 components:
+  parameters:
+    StudioClientId:
+      name: clientId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9_-]{1,128}$"
+    StudioItemId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9_-]{1,128}$"
+  responses:
+    StudioItem:
+      description: Current authorized deliverable; stale mutation revisions return 409
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [deliverable]
+            properties:
+              emailError:
+                type: string
+              deliverable:
+                $ref: "#/components/schemas/StudioDeliverable"
   securitySchemes:
     FirebaseBearer:
       type: http
       scheme: bearer
       bearerFormat: Firebase ID token
   schemas:
+    StudioAutomation:
+      type: object
+      additionalProperties: false
+      required: [enabled, sendTime, timezone, cadenceDays]
+      properties:
+        enabled:
+          type: boolean
+        sendTime:
+          type: string
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        timezone:
+          type: string
+        cadenceDays:
+          type: integer
+          minimum: 1
+          maximum: 30
+    StudioConfig:
+      type: object
+      required: [enabled, ownerIds, editorIds, timezone, automation]
+      properties:
+        enabled:
+          type: boolean
+        ownerIds:
+          type: array
+          items:
+            type: string
+        editorIds:
+          type: array
+          items:
+            type: string
+        timezone:
+          type: string
+        automation:
+          $ref: "#/components/schemas/StudioAutomation"
+        updatedAt:
+          type: number
+          readOnly: true
+        updatedBy:
+          type: string
+          readOnly: true
+    StudioBootstrap:
+      type: object
+      required: [clients, configs, capabilities, owners, approvers]
+      properties:
+        clients:
+          type: array
+          items:
+            $ref: "#/components/schemas/PortalClient"
+        configs:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties: true
+        capabilities:
+          type: object
+          required: [isClient, canManageSettings, canManageDefaults, canEdit, manageableClientIds, editableClientIds]
+          properties:
+            isClient:
+              type: boolean
+            canManageSettings:
+              type: boolean
+            canManageDefaults:
+              type: boolean
+            canEdit:
+              type: boolean
+            manageableClientIds:
+              type: array
+              items:
+                type: string
+            editableClientIds:
+              type: array
+              items:
+                type: string
+        owners:
+          type: array
+          items:
+            type: object
+            required: [id, name, clientIds]
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              clientIds:
+                type: array
+                items:
+                  type: string
+        staffCandidates:
+          type: array
+          items:
+            type: object
+            required: [id, name, clientIds]
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              clientIds:
+                type: array
+                items:
+                  type: string
+        approvers:
+          type: array
+          items:
+            type: object
+            required: [uid, name, clientIds]
+            properties:
+              uid:
+                type: string
+              name:
+                type: string
+              clientIds:
+                type: array
+                items:
+                  type: string
+        defaults:
+          anyOf:
+            - $ref: "#/components/schemas/StudioAutomation"
+            - type: "null"
+    StudioEditable:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 240
+        type:
+          type: string
+          enum: [Post, Reel, Story]
+        ownerId:
+          type: string
+        brief:
+          type: string
+          maxLength: 10000
+        caption:
+          type: string
+          maxLength: 10000
+        platforms:
+          type: array
+          items:
+            type: string
+            enum: [Instagram, Facebook, LinkedIn, YouTube Shorts]
+        productionDueDate:
+          type: [string, "null"]
+        plannedAt:
+          type: [string, "null"]
+        timezone:
+          type: string
+    StudioAsset:
+      type: object
+      required: [id, phase, kind, label, url, revision]
+      properties:
+        id:
+          type: string
+        phase:
+          type: string
+          enum: [reference, final]
+        kind:
+          type: string
+          enum: [thumbnail, main, video, copy, file]
+        label:
+          type: string
+        url:
+          type: string
+        revision:
+          type: integer
+        updatedAt:
+          type: number
+        updatedBy:
+          type: string
+        history:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    StudioDeliverable:
+      allOf:
+        - $ref: "#/components/schemas/StudioEditable"
+        - type: object
+          required: [id, clientId, revision, stage, shared, archived, scheduled, assets, approvals, createdAt, updatedAt]
+          properties:
+            id:
+              type: string
+            clientId:
+              type: string
+            revision:
+              type: integer
+            stage:
+              type: string
+              enum: [internal_draft, awaiting_reference, reference_changes, in_production, awaiting_final, final_changes, final_approved]
+            shared:
+              type: boolean
+            archived:
+              type: boolean
+            scheduled:
+              type: [object, "null"]
+              properties:
+                at:
+                  type: number
+                actor:
+                  type: string
+                link:
+                  type: [string, "null"]
+            assets:
+              type: array
+              items:
+                $ref: "#/components/schemas/StudioAsset"
+            approvals:
+              type: object
+              additionalProperties:
+                type: object
+                additionalProperties: true
+            createdAt:
+              type: number
+            updatedAt:
+              type: number
+    StudioMessage:
+      type: object
+      required: [id, text, author, authorUid, at]
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+        author:
+          type: string
+        authorUid:
+          type: string
+        at:
+          type: number
     PortalTaskInput:
       type: object
       additionalProperties: false

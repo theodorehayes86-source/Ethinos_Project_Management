@@ -8,6 +8,11 @@
       ".write": false
     },
 
+    "creativeStudio": {
+      ".read": false,
+      ".write": false
+    },
+
     "clientPortalUsers": {
       ".read": false,
       ".write": false

@@ -17,27 +17,1407 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  ActOnCreativeStudioDeliverableBody,
   CreateClientPortalTask201,
+  CreateCreativeStudioDeliverableBody,
   GetClientPortalMe200,
   HealthStatus,
   InviteClientPortalUser201,
   ListClientPortalTasks200,
   ListClientPortalUsers200,
+  ListCreativeStudioActivity200,
+  ListCreativeStudioDeliverables200,
+  ListCreativeStudioDeliveries200,
+  ListCreativeStudioMessages200,
   PortalInvitationInput,
   PortalMembershipInput,
   PortalTaskInput,
+  PreviewCreativeStudioEmail200,
+  PutCreativeStudioConfig200,
+  PutCreativeStudioDefaults200,
   ResendClientPortalInvitation200,
+  SaveCreativeStudioAssetBody,
+  SendCreativeStudioMessage200,
+  SendCreativeStudioMessageBody,
+  StudioAutomation,
+  StudioBootstrap,
+  StudioConfig,
+  StudioItemResponse,
   UpdateClientPortalUser200,
+  UpdateCreativeStudioDeliverableBody,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
 import type { ErrorType, BodyType } from "../custom-fetch";
+
+// https://stackoverflow.com/questions/49579094/typescript-conditional-types-filter-out-readonly-properties-pick-only-requir/49579497#49579497
+type IfEquals<X, Y, A = X, B = never> =
+  (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? A : B;
+
+type WritableKeys<T> = {
+  [P in keyof T]-?: IfEquals<
+    { [Q in P]: T[P] },
+    { -readonly [Q in P]: T[P] },
+    P
+  >;
+}[keyof T];
+
+type UnionToIntersection<U> = (U extends any ? (k: U) => void : never) extends (
+  k: infer I,
+) => void
+  ? I
+  : never;
+type DistributeReadOnlyOverUnions<T> = T extends any ? NonReadonly<T> : never;
+
+type Writable<T> = Pick<T, WritableKeys<T>>;
+type NonReadonly<T> = [T] extends [UnionToIntersection<T>]
+  ? {
+      [P in keyof Writable<T>]: T[P] extends object
+        ? NonReadonly<NonNullable<T[P]>>
+        : T[P];
+    }
+  : DistributeReadOnlyOverUnions<T>;
 
 type AwaitedInput<T> = PromiseLike<T> | T;
 
 type Awaited<O> = O extends AwaitedInput<infer T> ? T : never;
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
+export const getGetCreativeStudioBootstrapUrl = () => {
+  return `/api/creative-studio/bootstrap`;
+};
+
+export const getCreativeStudioBootstrap = async (
+  options?: RequestInit,
+): Promise<StudioBootstrap> => {
+  return customFetch<StudioBootstrap>(getGetCreativeStudioBootstrapUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCreativeStudioBootstrapQueryKey = () => {
+  return [`/api/creative-studio/bootstrap`] as const;
+};
+
+export const getGetCreativeStudioBootstrapQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCreativeStudioBootstrap>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCreativeStudioBootstrap>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetCreativeStudioBootstrapQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCreativeStudioBootstrap>>
+  > = ({ signal }) => getCreativeStudioBootstrap({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCreativeStudioBootstrap>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCreativeStudioBootstrapQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCreativeStudioBootstrap>>
+>;
+export type GetCreativeStudioBootstrapQueryError = ErrorType<unknown>;
+
+export function useGetCreativeStudioBootstrap<
+  TData = Awaited<ReturnType<typeof getCreativeStudioBootstrap>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCreativeStudioBootstrap>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCreativeStudioBootstrapQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getPutCreativeStudioDefaultsUrl = () => {
+  return `/api/creative-studio/defaults`;
+};
+
+export const putCreativeStudioDefaults = async (
+  studioAutomation: StudioAutomation,
+  options?: RequestInit,
+): Promise<PutCreativeStudioDefaults200> => {
+  return customFetch<PutCreativeStudioDefaults200>(
+    getPutCreativeStudioDefaultsUrl(),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(studioAutomation),
+    },
+  );
+};
+
+export const getPutCreativeStudioDefaultsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof putCreativeStudioDefaults>>,
+    TError,
+    { data: BodyType<StudioAutomation> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof putCreativeStudioDefaults>>,
+  TError,
+  { data: BodyType<StudioAutomation> },
+  TContext
+> => {
+  const mutationKey = ["putCreativeStudioDefaults"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof putCreativeStudioDefaults>>,
+    { data: BodyType<StudioAutomation> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return putCreativeStudioDefaults(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PutCreativeStudioDefaultsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof putCreativeStudioDefaults>>
+>;
+export type PutCreativeStudioDefaultsMutationBody = BodyType<StudioAutomation>;
+export type PutCreativeStudioDefaultsMutationError = ErrorType<unknown>;
+
+export const usePutCreativeStudioDefaults = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof putCreativeStudioDefaults>>,
+    TError,
+    { data: BodyType<StudioAutomation> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof putCreativeStudioDefaults>>,
+  TError,
+  { data: BodyType<StudioAutomation> },
+  TContext
+> => {
+  return useMutation(getPutCreativeStudioDefaultsMutationOptions(options));
+};
+
+export const getPutCreativeStudioConfigUrl = (clientId: string) => {
+  return `/api/creative-studio/clients/${clientId}/config`;
+};
+
+export const putCreativeStudioConfig = async (
+  clientId: string,
+  studioConfig: NonReadonly<StudioConfig>,
+  options?: RequestInit,
+): Promise<PutCreativeStudioConfig200> => {
+  return customFetch<PutCreativeStudioConfig200>(
+    getPutCreativeStudioConfigUrl(clientId),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(studioConfig),
+    },
+  );
+};
+
+export const getPutCreativeStudioConfigMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof putCreativeStudioConfig>>,
+    TError,
+    { clientId: string; data: BodyType<NonReadonly<StudioConfig>> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof putCreativeStudioConfig>>,
+  TError,
+  { clientId: string; data: BodyType<NonReadonly<StudioConfig>> },
+  TContext
+> => {
+  const mutationKey = ["putCreativeStudioConfig"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof putCreativeStudioConfig>>,
+    { clientId: string; data: BodyType<NonReadonly<StudioConfig>> }
+  > = (props) => {
+    const { clientId, data } = props ?? {};
+
+    return putCreativeStudioConfig(clientId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PutCreativeStudioConfigMutationResult = NonNullable<
+  Awaited<ReturnType<typeof putCreativeStudioConfig>>
+>;
+export type PutCreativeStudioConfigMutationBody = BodyType<
+  NonReadonly<StudioConfig>
+>;
+export type PutCreativeStudioConfigMutationError = ErrorType<unknown>;
+
+export const usePutCreativeStudioConfig = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof putCreativeStudioConfig>>,
+    TError,
+    { clientId: string; data: BodyType<NonReadonly<StudioConfig>> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof putCreativeStudioConfig>>,
+  TError,
+  { clientId: string; data: BodyType<NonReadonly<StudioConfig>> },
+  TContext
+> => {
+  return useMutation(getPutCreativeStudioConfigMutationOptions(options));
+};
+
+export const getListCreativeStudioDeliverablesUrl = (clientId: string) => {
+  return `/api/creative-studio/clients/${clientId}/deliverables`;
+};
+
+export const listCreativeStudioDeliverables = async (
+  clientId: string,
+  options?: RequestInit,
+): Promise<ListCreativeStudioDeliverables200> => {
+  return customFetch<ListCreativeStudioDeliverables200>(
+    getListCreativeStudioDeliverablesUrl(clientId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListCreativeStudioDeliverablesQueryKey = (clientId: string) => {
+  return [`/api/creative-studio/clients/${clientId}/deliverables`] as const;
+};
+
+export const getListCreativeStudioDeliverablesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listCreativeStudioDeliverables>>,
+  TError = ErrorType<unknown>,
+>(
+  clientId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listCreativeStudioDeliverables>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getListCreativeStudioDeliverablesQueryKey(clientId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listCreativeStudioDeliverables>>
+  > = ({ signal }) =>
+    listCreativeStudioDeliverables(clientId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listCreativeStudioDeliverables>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListCreativeStudioDeliverablesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listCreativeStudioDeliverables>>
+>;
+export type ListCreativeStudioDeliverablesQueryError = ErrorType<unknown>;
+
+export function useListCreativeStudioDeliverables<
+  TData = Awaited<ReturnType<typeof listCreativeStudioDeliverables>>,
+  TError = ErrorType<unknown>,
+>(
+  clientId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listCreativeStudioDeliverables>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListCreativeStudioDeliverablesQueryOptions(
+    clientId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateCreativeStudioDeliverableUrl = (clientId: string) => {
+  return `/api/creative-studio/clients/${clientId}/deliverables`;
+};
+
+export const createCreativeStudioDeliverable = async (
+  clientId: string,
+  createCreativeStudioDeliverableBody: CreateCreativeStudioDeliverableBody,
+  options?: RequestInit,
+): Promise<StudioItemResponse> => {
+  return customFetch<StudioItemResponse>(
+    getCreateCreativeStudioDeliverableUrl(clientId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(createCreativeStudioDeliverableBody),
+    },
+  );
+};
+
+export const getCreateCreativeStudioDeliverableMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createCreativeStudioDeliverable>>,
+    TError,
+    { clientId: string; data: BodyType<CreateCreativeStudioDeliverableBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createCreativeStudioDeliverable>>,
+  TError,
+  { clientId: string; data: BodyType<CreateCreativeStudioDeliverableBody> },
+  TContext
+> => {
+  const mutationKey = ["createCreativeStudioDeliverable"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createCreativeStudioDeliverable>>,
+    { clientId: string; data: BodyType<CreateCreativeStudioDeliverableBody> }
+  > = (props) => {
+    const { clientId, data } = props ?? {};
+
+    return createCreativeStudioDeliverable(clientId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateCreativeStudioDeliverableMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createCreativeStudioDeliverable>>
+>;
+export type CreateCreativeStudioDeliverableMutationBody =
+  BodyType<CreateCreativeStudioDeliverableBody>;
+export type CreateCreativeStudioDeliverableMutationError = ErrorType<unknown>;
+
+export const useCreateCreativeStudioDeliverable = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createCreativeStudioDeliverable>>,
+    TError,
+    { clientId: string; data: BodyType<CreateCreativeStudioDeliverableBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createCreativeStudioDeliverable>>,
+  TError,
+  { clientId: string; data: BodyType<CreateCreativeStudioDeliverableBody> },
+  TContext
+> => {
+  return useMutation(
+    getCreateCreativeStudioDeliverableMutationOptions(options),
+  );
+};
+
+export const getGetCreativeStudioDeliverableUrl = (
+  clientId: string,
+  id: string,
+) => {
+  return `/api/creative-studio/clients/${clientId}/deliverables/${id}`;
+};
+
+export const getCreativeStudioDeliverable = async (
+  clientId: string,
+  id: string,
+  options?: RequestInit,
+): Promise<StudioItemResponse> => {
+  return customFetch<StudioItemResponse>(
+    getGetCreativeStudioDeliverableUrl(clientId, id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetCreativeStudioDeliverableQueryKey = (
+  clientId: string,
+  id: string,
+) => {
+  return [
+    `/api/creative-studio/clients/${clientId}/deliverables/${id}`,
+  ] as const;
+};
+
+export const getGetCreativeStudioDeliverableQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCreativeStudioDeliverable>>,
+  TError = ErrorType<unknown>,
+>(
+  clientId: string,
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCreativeStudioDeliverable>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getGetCreativeStudioDeliverableQueryKey(clientId, id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCreativeStudioDeliverable>>
+  > = ({ signal }) =>
+    getCreativeStudioDeliverable(clientId, id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(clientId && id),
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCreativeStudioDeliverable>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCreativeStudioDeliverableQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCreativeStudioDeliverable>>
+>;
+export type GetCreativeStudioDeliverableQueryError = ErrorType<unknown>;
+
+export function useGetCreativeStudioDeliverable<
+  TData = Awaited<ReturnType<typeof getCreativeStudioDeliverable>>,
+  TError = ErrorType<unknown>,
+>(
+  clientId: string,
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCreativeStudioDeliverable>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCreativeStudioDeliverableQueryOptions(
+    clientId,
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getUpdateCreativeStudioDeliverableUrl = (
+  clientId: string,
+  id: string,
+) => {
+  return `/api/creative-studio/clients/${clientId}/deliverables/${id}`;
+};
+
+export const updateCreativeStudioDeliverable = async (
+  clientId: string,
+  id: string,
+  updateCreativeStudioDeliverableBody: UpdateCreativeStudioDeliverableBody,
+  options?: RequestInit,
+): Promise<StudioItemResponse> => {
+  return customFetch<StudioItemResponse>(
+    getUpdateCreativeStudioDeliverableUrl(clientId, id),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateCreativeStudioDeliverableBody),
+    },
+  );
+};
+
+export const getUpdateCreativeStudioDeliverableMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateCreativeStudioDeliverable>>,
+    TError,
+    {
+      clientId: string;
+      id: string;
+      data: BodyType<UpdateCreativeStudioDeliverableBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateCreativeStudioDeliverable>>,
+  TError,
+  {
+    clientId: string;
+    id: string;
+    data: BodyType<UpdateCreativeStudioDeliverableBody>;
+  },
+  TContext
+> => {
+  const mutationKey = ["updateCreativeStudioDeliverable"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateCreativeStudioDeliverable>>,
+    {
+      clientId: string;
+      id: string;
+      data: BodyType<UpdateCreativeStudioDeliverableBody>;
+    }
+  > = (props) => {
+    const { clientId, id, data } = props ?? {};
+
+    return updateCreativeStudioDeliverable(clientId, id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateCreativeStudioDeliverableMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateCreativeStudioDeliverable>>
+>;
+export type UpdateCreativeStudioDeliverableMutationBody =
+  BodyType<UpdateCreativeStudioDeliverableBody>;
+export type UpdateCreativeStudioDeliverableMutationError = ErrorType<unknown>;
+
+export const useUpdateCreativeStudioDeliverable = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateCreativeStudioDeliverable>>,
+    TError,
+    {
+      clientId: string;
+      id: string;
+      data: BodyType<UpdateCreativeStudioDeliverableBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateCreativeStudioDeliverable>>,
+  TError,
+  {
+    clientId: string;
+    id: string;
+    data: BodyType<UpdateCreativeStudioDeliverableBody>;
+  },
+  TContext
+> => {
+  return useMutation(
+    getUpdateCreativeStudioDeliverableMutationOptions(options),
+  );
+};
+
+export const getActOnCreativeStudioDeliverableUrl = (
+  clientId: string,
+  id: string,
+) => {
+  return `/api/creative-studio/clients/${clientId}/deliverables/${id}/actions`;
+};
+
+export const actOnCreativeStudioDeliverable = async (
+  clientId: string,
+  id: string,
+  actOnCreativeStudioDeliverableBody: ActOnCreativeStudioDeliverableBody,
+  options?: RequestInit,
+): Promise<StudioItemResponse> => {
+  return customFetch<StudioItemResponse>(
+    getActOnCreativeStudioDeliverableUrl(clientId, id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(actOnCreativeStudioDeliverableBody),
+    },
+  );
+};
+
+export const getActOnCreativeStudioDeliverableMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof actOnCreativeStudioDeliverable>>,
+    TError,
+    {
+      clientId: string;
+      id: string;
+      data: BodyType<ActOnCreativeStudioDeliverableBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof actOnCreativeStudioDeliverable>>,
+  TError,
+  {
+    clientId: string;
+    id: string;
+    data: BodyType<ActOnCreativeStudioDeliverableBody>;
+  },
+  TContext
+> => {
+  const mutationKey = ["actOnCreativeStudioDeliverable"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof actOnCreativeStudioDeliverable>>,
+    {
+      clientId: string;
+      id: string;
+      data: BodyType<ActOnCreativeStudioDeliverableBody>;
+    }
+  > = (props) => {
+    const { clientId, id, data } = props ?? {};
+
+    return actOnCreativeStudioDeliverable(clientId, id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ActOnCreativeStudioDeliverableMutationResult = NonNullable<
+  Awaited<ReturnType<typeof actOnCreativeStudioDeliverable>>
+>;
+export type ActOnCreativeStudioDeliverableMutationBody =
+  BodyType<ActOnCreativeStudioDeliverableBody>;
+export type ActOnCreativeStudioDeliverableMutationError = ErrorType<unknown>;
+
+export const useActOnCreativeStudioDeliverable = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof actOnCreativeStudioDeliverable>>,
+    TError,
+    {
+      clientId: string;
+      id: string;
+      data: BodyType<ActOnCreativeStudioDeliverableBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof actOnCreativeStudioDeliverable>>,
+  TError,
+  {
+    clientId: string;
+    id: string;
+    data: BodyType<ActOnCreativeStudioDeliverableBody>;
+  },
+  TContext
+> => {
+  return useMutation(getActOnCreativeStudioDeliverableMutationOptions(options));
+};
+
+export const getSaveCreativeStudioAssetUrl = (clientId: string, id: string) => {
+  return `/api/creative-studio/clients/${clientId}/deliverables/${id}/assets`;
+};
+
+export const saveCreativeStudioAsset = async (
+  clientId: string,
+  id: string,
+  saveCreativeStudioAssetBody: SaveCreativeStudioAssetBody,
+  options?: RequestInit,
+): Promise<StudioItemResponse> => {
+  return customFetch<StudioItemResponse>(
+    getSaveCreativeStudioAssetUrl(clientId, id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(saveCreativeStudioAssetBody),
+    },
+  );
+};
+
+export const getSaveCreativeStudioAssetMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof saveCreativeStudioAsset>>,
+    TError,
+    {
+      clientId: string;
+      id: string;
+      data: BodyType<SaveCreativeStudioAssetBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof saveCreativeStudioAsset>>,
+  TError,
+  { clientId: string; id: string; data: BodyType<SaveCreativeStudioAssetBody> },
+  TContext
+> => {
+  const mutationKey = ["saveCreativeStudioAsset"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof saveCreativeStudioAsset>>,
+    {
+      clientId: string;
+      id: string;
+      data: BodyType<SaveCreativeStudioAssetBody>;
+    }
+  > = (props) => {
+    const { clientId, id, data } = props ?? {};
+
+    return saveCreativeStudioAsset(clientId, id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SaveCreativeStudioAssetMutationResult = NonNullable<
+  Awaited<ReturnType<typeof saveCreativeStudioAsset>>
+>;
+export type SaveCreativeStudioAssetMutationBody =
+  BodyType<SaveCreativeStudioAssetBody>;
+export type SaveCreativeStudioAssetMutationError = ErrorType<unknown>;
+
+export const useSaveCreativeStudioAsset = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof saveCreativeStudioAsset>>,
+    TError,
+    {
+      clientId: string;
+      id: string;
+      data: BodyType<SaveCreativeStudioAssetBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof saveCreativeStudioAsset>>,
+  TError,
+  { clientId: string; id: string; data: BodyType<SaveCreativeStudioAssetBody> },
+  TContext
+> => {
+  return useMutation(getSaveCreativeStudioAssetMutationOptions(options));
+};
+
+export const getListCreativeStudioMessagesUrl = (
+  clientId: string,
+  id: string,
+  thread: "client" | "internal",
+) => {
+  return `/api/creative-studio/clients/${clientId}/deliverables/${id}/messages/${thread}`;
+};
+
+export const listCreativeStudioMessages = async (
+  clientId: string,
+  id: string,
+  thread: "client" | "internal",
+  options?: RequestInit,
+): Promise<ListCreativeStudioMessages200> => {
+  return customFetch<ListCreativeStudioMessages200>(
+    getListCreativeStudioMessagesUrl(clientId, id, thread),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListCreativeStudioMessagesQueryKey = (
+  clientId: string,
+  id: string,
+  thread: "client" | "internal",
+) => {
+  return [
+    `/api/creative-studio/clients/${clientId}/deliverables/${id}/messages/${thread}`,
+  ] as const;
+};
+
+export const getListCreativeStudioMessagesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listCreativeStudioMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  clientId: string,
+  id: string,
+  thread: "client" | "internal",
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listCreativeStudioMessages>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getListCreativeStudioMessagesQueryKey(clientId, id, thread);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listCreativeStudioMessages>>
+  > = ({ signal }) =>
+    listCreativeStudioMessages(clientId, id, thread, {
+      signal,
+      ...requestOptions,
+    });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(clientId && id && thread),
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listCreativeStudioMessages>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListCreativeStudioMessagesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listCreativeStudioMessages>>
+>;
+export type ListCreativeStudioMessagesQueryError = ErrorType<unknown>;
+
+export function useListCreativeStudioMessages<
+  TData = Awaited<ReturnType<typeof listCreativeStudioMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  clientId: string,
+  id: string,
+  thread: "client" | "internal",
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listCreativeStudioMessages>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListCreativeStudioMessagesQueryOptions(
+    clientId,
+    id,
+    thread,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getSendCreativeStudioMessageUrl = (
+  clientId: string,
+  id: string,
+  thread: "client" | "internal",
+) => {
+  return `/api/creative-studio/clients/${clientId}/deliverables/${id}/messages/${thread}`;
+};
+
+export const sendCreativeStudioMessage = async (
+  clientId: string,
+  id: string,
+  thread: "client" | "internal",
+  sendCreativeStudioMessageBody: SendCreativeStudioMessageBody,
+  options?: RequestInit,
+): Promise<SendCreativeStudioMessage200> => {
+  return customFetch<SendCreativeStudioMessage200>(
+    getSendCreativeStudioMessageUrl(clientId, id, thread),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(sendCreativeStudioMessageBody),
+    },
+  );
+};
+
+export const getSendCreativeStudioMessageMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendCreativeStudioMessage>>,
+    TError,
+    {
+      clientId: string;
+      id: string;
+      thread: "client" | "internal";
+      data: BodyType<SendCreativeStudioMessageBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof sendCreativeStudioMessage>>,
+  TError,
+  {
+    clientId: string;
+    id: string;
+    thread: "client" | "internal";
+    data: BodyType<SendCreativeStudioMessageBody>;
+  },
+  TContext
+> => {
+  const mutationKey = ["sendCreativeStudioMessage"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof sendCreativeStudioMessage>>,
+    {
+      clientId: string;
+      id: string;
+      thread: "client" | "internal";
+      data: BodyType<SendCreativeStudioMessageBody>;
+    }
+  > = (props) => {
+    const { clientId, id, thread, data } = props ?? {};
+
+    return sendCreativeStudioMessage(
+      clientId,
+      id,
+      thread,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SendCreativeStudioMessageMutationResult = NonNullable<
+  Awaited<ReturnType<typeof sendCreativeStudioMessage>>
+>;
+export type SendCreativeStudioMessageMutationBody =
+  BodyType<SendCreativeStudioMessageBody>;
+export type SendCreativeStudioMessageMutationError = ErrorType<unknown>;
+
+export const useSendCreativeStudioMessage = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendCreativeStudioMessage>>,
+    TError,
+    {
+      clientId: string;
+      id: string;
+      thread: "client" | "internal";
+      data: BodyType<SendCreativeStudioMessageBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof sendCreativeStudioMessage>>,
+  TError,
+  {
+    clientId: string;
+    id: string;
+    thread: "client" | "internal";
+    data: BodyType<SendCreativeStudioMessageBody>;
+  },
+  TContext
+> => {
+  return useMutation(getSendCreativeStudioMessageMutationOptions(options));
+};
+
+export const getListCreativeStudioActivityUrl = (
+  clientId: string,
+  id: string,
+) => {
+  return `/api/creative-studio/clients/${clientId}/deliverables/${id}/activity`;
+};
+
+export const listCreativeStudioActivity = async (
+  clientId: string,
+  id: string,
+  options?: RequestInit,
+): Promise<ListCreativeStudioActivity200> => {
+  return customFetch<ListCreativeStudioActivity200>(
+    getListCreativeStudioActivityUrl(clientId, id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListCreativeStudioActivityQueryKey = (
+  clientId: string,
+  id: string,
+) => {
+  return [
+    `/api/creative-studio/clients/${clientId}/deliverables/${id}/activity`,
+  ] as const;
+};
+
+export const getListCreativeStudioActivityQueryOptions = <
+  TData = Awaited<ReturnType<typeof listCreativeStudioActivity>>,
+  TError = ErrorType<unknown>,
+>(
+  clientId: string,
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listCreativeStudioActivity>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getListCreativeStudioActivityQueryKey(clientId, id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listCreativeStudioActivity>>
+  > = ({ signal }) =>
+    listCreativeStudioActivity(clientId, id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(clientId && id),
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listCreativeStudioActivity>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListCreativeStudioActivityQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listCreativeStudioActivity>>
+>;
+export type ListCreativeStudioActivityQueryError = ErrorType<unknown>;
+
+export function useListCreativeStudioActivity<
+  TData = Awaited<ReturnType<typeof listCreativeStudioActivity>>,
+  TError = ErrorType<unknown>,
+>(
+  clientId: string,
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listCreativeStudioActivity>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListCreativeStudioActivityQueryOptions(
+    clientId,
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getListCreativeStudioDeliveriesUrl = (clientId: string) => {
+  return `/api/creative-studio/clients/${clientId}/deliveries`;
+};
+
+export const listCreativeStudioDeliveries = async (
+  clientId: string,
+  options?: RequestInit,
+): Promise<ListCreativeStudioDeliveries200> => {
+  return customFetch<ListCreativeStudioDeliveries200>(
+    getListCreativeStudioDeliveriesUrl(clientId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListCreativeStudioDeliveriesQueryKey = (clientId: string) => {
+  return [`/api/creative-studio/clients/${clientId}/deliveries`] as const;
+};
+
+export const getListCreativeStudioDeliveriesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listCreativeStudioDeliveries>>,
+  TError = ErrorType<unknown>,
+>(
+  clientId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listCreativeStudioDeliveries>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListCreativeStudioDeliveriesQueryKey(clientId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listCreativeStudioDeliveries>>
+  > = ({ signal }) =>
+    listCreativeStudioDeliveries(clientId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listCreativeStudioDeliveries>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListCreativeStudioDeliveriesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listCreativeStudioDeliveries>>
+>;
+export type ListCreativeStudioDeliveriesQueryError = ErrorType<unknown>;
+
+export function useListCreativeStudioDeliveries<
+  TData = Awaited<ReturnType<typeof listCreativeStudioDeliveries>>,
+  TError = ErrorType<unknown>,
+>(
+  clientId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listCreativeStudioDeliveries>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListCreativeStudioDeliveriesQueryOptions(
+    clientId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getPreviewCreativeStudioEmailUrl = (clientId: string) => {
+  return `/api/creative-studio/clients/${clientId}/preview`;
+};
+
+export const previewCreativeStudioEmail = async (
+  clientId: string,
+  options?: RequestInit,
+): Promise<PreviewCreativeStudioEmail200> => {
+  return customFetch<PreviewCreativeStudioEmail200>(
+    getPreviewCreativeStudioEmailUrl(clientId),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getPreviewCreativeStudioEmailMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof previewCreativeStudioEmail>>,
+    TError,
+    { clientId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof previewCreativeStudioEmail>>,
+  TError,
+  { clientId: string },
+  TContext
+> => {
+  const mutationKey = ["previewCreativeStudioEmail"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof previewCreativeStudioEmail>>,
+    { clientId: string }
+  > = (props) => {
+    const { clientId } = props ?? {};
+
+    return previewCreativeStudioEmail(clientId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PreviewCreativeStudioEmailMutationResult = NonNullable<
+  Awaited<ReturnType<typeof previewCreativeStudioEmail>>
+>;
+
+export type PreviewCreativeStudioEmailMutationError = ErrorType<unknown>;
+
+export const usePreviewCreativeStudioEmail = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof previewCreativeStudioEmail>>,
+    TError,
+    { clientId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof previewCreativeStudioEmail>>,
+  TError,
+  { clientId: string },
+  TContext
+> => {
+  return useMutation(getPreviewCreativeStudioEmailMutationOptions(options));
+};
 
 export const getGetClientPortalMeUrl = () => {
   return `/api/client-portal/me`;

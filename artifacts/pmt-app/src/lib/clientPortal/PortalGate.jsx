@@ -6,6 +6,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { Loader2 } from 'lucide-react';
 import ClientPortal from './ClientPortal.jsx';
 import { isClientAccount, wantsClientEntry } from './core.js';
+import { captureStudioLink } from '../creativeStudio/core.js';
 
 const Spinner = () => (
   <div className="min-h-[100dvh] flex items-center justify-center bg-indigo-50">
@@ -14,6 +15,8 @@ const Spinner = () => (
 );
 
 export default function PortalGate({ auth, apiBase, StaffApp, bypass = false }) {
+  // Preserve Creative Studio email deep links across sign-in redirects.
+  useState(() => captureStudioLink());
   const [state, setState] = useState({ ready: false, user: null });
   const [clientEntry, setClientEntry] = useState(() => wantsClientEntry(window.location.search));
 

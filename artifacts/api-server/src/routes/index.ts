@@ -8,12 +8,14 @@ import teamsAuthRouter from "./teams-auth";
 import teamsChatRouter from "./teams-chat";
 import adminAttendanceRouter from "./admin-attendance";
 import clientPortalRouter from "./client-portal";
+import creativeStudioRouter from "./creative-studio";
 import { staffApiBoundary } from "../lib/staff-api-boundary";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use("/client-portal", clientPortalRouter);
+router.use("/creative-studio", creativeStudioRouter);
 router.use(staffApiBoundary);
 router.use("/export", exportRouter);
 router.use("/auth", authRouter);

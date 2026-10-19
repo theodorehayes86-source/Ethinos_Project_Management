@@ -6,6 +6,10 @@ import LoginView from './components/LoginView.jsx';
 import EmployeeView from './components/EmployeeView.jsx';
 import ManagerDashboard from './components/ManagerDashboard.jsx';
 import BottomNav from './components/BottomNav.jsx';
+import StudioWorkspace from './lib/creativeStudio/StudioWorkspace.jsx';
+import StudioControlPanel from './lib/creativeStudio/StudioControlPanel.jsx';
+import { createStudioApi, peekStudioLink } from './lib/creativeStudio/core.js';
+const STUDIO_API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 import NotificationsPanel from './components/NotificationsPanel.jsx';
 import {
   useAppData,
@@ -104,7 +108,7 @@ function MainApp() {
   const [authLoading, setAuthLoading] = useState(true);
   const [loginError, setLoginError] = useState('');
   const [msLoginStatus, setMsLoginStatus] = useState('');
-  const [activeTab, setActiveTab] = useState('my-tasks');
+  const [activeTab, setActiveTab] = useState(() => (peekStudioLink() ? 'studio' : 'my-tasks'));
   const [showNotifications, setShowNotifications] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [userLoading, setUserLoading] = useState(false);
@@ -192,11 +196,27 @@ function MainApp() {
     setCurrentUser(found || null);
     setUserLoading(false);
     if (found && MANAGEMENT_ROLES.includes(found.role)) {
-      setActiveTab('team');
+      // A pending Creative Studio link wins over the manager default tab.
+      setActiveTab(t => (t === 'studio' && peekStudioLink() ? t : 'team'));
     }
   }, [firebaseUser, users]);
 
   const isManager = MANAGEMENT_ROLES.includes(currentUser?.role);
+  const [studioCaps, setStudioCaps] = useState({ nav: false, manage: false });
+  const [studioPane, setStudioPane] = useState('work');
+  useEffect(() => {
+    if (!currentUser?.id || !auth.currentUser) { setStudioCaps({ nav: false, manage: false }); return; }
+    let live = true;
+    createStudioApi({ base: STUDIO_API_BASE, getToken: async () => (auth.currentUser ? auth.currentUser.getIdToken() : null) }).bootstrap().then(b => {
+      if (!live) return;
+      const anyEnabled = (b.clients || []).some(c => b.configs?.[c.id]?.enabled === true);
+      const nav = !!b.capabilities?.canEdit || anyEnabled || !!b.capabilities?.canManageSettings;
+      setStudioCaps({ nav, manage: !!b.capabilities?.canManageSettings });
+      if (!nav) setActiveTab(t => (t === 'studio' ? (MANAGEMENT_ROLES.includes(currentUser?.role) ? 'team' : 'my-tasks') : t));
+      else if (peekStudioLink()) { setStudioPane('work'); setActiveTab('studio'); }
+    }).catch(() => { if (live) { setStudioCaps({ nav: false, manage: false }); setActiveTab(t => (t === 'studio' ? 'my-tasks' : t)); } });
+    return () => { live = false; };
+  }, [currentUser?.id]);
   const hasChecklistAccess = currentUser ? checklistAccess.includes(currentUser.role) : false;
 
   useEffect(() => {
@@ -448,6 +468,21 @@ function MainApp() {
             users={users}
           />
         )}
+        {activeTab === 'studio' && studioCaps.nav && (
+          <div className="flex-1 overflow-y-auto bg-[#fffaf3]">
+            {studioCaps.manage && (
+              <div className="flex gap-1 p-2 sticky top-0 z-10 bg-[#fffaf3]/95 backdrop-blur border-b border-[#efe6d8]">
+                {[['work', 'Workspace'], ['settings', 'Studio settings']].map(([id, label]) => (
+                  <button key={id} data-testid={`button-studio-pane-${id}`} onClick={() => setStudioPane(id)}
+                    className={`flex-1 py-2 rounded-full text-xs font-bold ${studioPane === id ? 'bg-[#1f2440] text-white' : 'text-slate-500'}`}>{label}</button>
+                ))}
+              </div>
+            )}
+            {studioPane === 'settings' && studioCaps.manage
+              ? <div className="p-3"><StudioControlPanel auth={auth} apiBase={STUDIO_API_BASE} users={users} clients={allClients} /></div>
+              : <StudioWorkspace auth={auth} apiBase={STUDIO_API_BASE} currentUser={currentUser} />}
+          </div>
+        )}
         {activeTab === 'checklist' && hasChecklistAccess && (
           <ChecklistDashboardScreen
             clientLogs={clientLogs}
@@ -464,6 +499,7 @@ function MainApp() {
         isManager={isManager}
         approvalCount={pendingApprovals.length}
         hasChecklistAccess={hasChecklistAccess}
+        hasStudioAccess={studioCaps.nav}
       />
 
       {showClients && isManager && (

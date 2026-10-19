@@ -27,3 +27,14 @@ Email automation sub-tab.
 
 **How to apply:** Keep operational creative work in the main studio; put email
 automation configuration in Control Centre → Creative Studio.
+
+Do not automatically retry an ambiguous Creative Studio email transport failure.
+Keep email delivery opt-in during rollout, separate from client module enablement.
+
+**Why:** Microsoft Graph email sending does not provide transactional idempotency
+with Firebase. A lost response may still mean an email was sent; blind retries can
+spam clients. The user has not authorized real rollout emails.
+
+**How to apply:** Show uncertain delivery in the delivery log for investigation.
+Check the sender mailbox before any manual resend, and obtain rollout approval
+before enabling real transport.

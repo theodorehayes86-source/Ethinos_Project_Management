@@ -17,6 +17,8 @@ import ApprovalsView from './PMT/ApprovalsView';
 import TeamView from './PMT/TeamView';
 import ChecklistDashboard from './PMT/ChecklistDashboard';
 import Sidebar from './PMT/Sidebar';
+import StudioWorkspace from './lib/creativeStudio/StudioWorkspace.jsx';
+import { createStudioApi, peekStudioLink } from './lib/creativeStudio/core.js';
 import Notifications from './PMT/Notifications';
 import ProfileDropdown from './PMT/ProfileDropdown';
 import LoginView from './PMT/LoginView';
@@ -1012,7 +1014,7 @@ async function generatePkce() {
 }
 
 const App = () => {
-  const [activeTab, setActiveTab] = useState('home');
+  const [activeTab, setActiveTab] = useState(() => (peekStudioLink() ? 'studio' : 'home'));
   const [collapsedClients, setCollapsedClients] = useState(new Set());
   const [currentUserId, setCurrentUserId] = useState(null);
   const [loginError, setLoginError] = useState('');
@@ -1637,7 +1639,25 @@ const App = () => {
   const isTestMode = !!testModeUserId;
   const canSeeAllMetricsData = metricsAllDataRoles.includes(currentUser?.role);
   const canSeeAllReportsData = reportsAllDataRoles.includes(currentUser?.role);
-  const canSeeControlCenter = canManageClientPortal(currentUser?.role) || Object.values(controlCenterTabAccess).some(roles => (roles || []).includes(currentUser?.role));
+  // Creative Studio capabilities come from the server so nav and API scope agree.
+  const [studioCaps, setStudioCaps] = useState({ nav: false, manage: false, loaded: false });
+  useEffect(() => {
+    if (!firebaseUser || !currentUser?.id) { setStudioCaps({ nav: false, manage: false, loaded: false }); return; }
+    let live = true;
+    const api = createStudioApi({ base: import.meta.env.VITE_API_BASE_URL || '/api', getToken: () => firebaseUser.getIdToken() });
+    api.bootstrap().then(b => {
+      if (!live) return;
+      const anyEnabled = (b.clients || []).some(c => b.configs?.[c.id]?.enabled === true);
+      const nav = !!b.capabilities?.canEdit || anyEnabled;
+      setStudioCaps({ nav, manage: !!b.capabilities?.canManageSettings, loaded: true });
+      // Honour a pending ?deliverable= link once access is confirmed.
+      if (nav && peekStudioLink()) { setSelectedClient(null); setActiveTab('studio'); }
+    }).catch(() => { if (live) setStudioCaps({ nav: false, manage: false, loaded: true }); });
+    return () => { live = false; };
+  }, [firebaseUser, currentUser?.id]);
+  const canSeeStudio = studioCaps.nav;
+  const canManageStudio = studioCaps.manage;
+  const canSeeControlCenter = canManageClientPortal(currentUser?.role) || Object.values(controlCenterTabAccess).some(roles => (roles || []).includes(currentUser?.role)) || canManageStudio;
   const canCreateChecklists = (controlCenterTabAccess.checklistTemplates || []).includes(currentUser?.role);
   const canSeeUserManagement = userManagementAccessRoles.includes(currentUser?.role);
   const canSeeEmployeeView = employeeViewAccessRoles.includes(currentUser?.role);
@@ -1719,6 +1739,7 @@ const App = () => {
     employees: 'Employees',
     settings: 'Settings',
     'master-data': 'Control Center',
+    studio: 'Creative Studio',
   };
 
   const isMinimized = sidebarMinimized || activeTab === 'clients' || selectedClient !== null;
@@ -2009,6 +2030,7 @@ const App = () => {
     setIsNotifOpen(false);
     setSelectedClient(null);
     setActiveTab('home');
+    try { sessionStorage.removeItem('flowpro_studio_link'); } catch { /* ignore */ }
     setCurrentUserId(null);
     setDbReady(false);
     setMsLoginPending(false);
@@ -2023,7 +2045,8 @@ const App = () => {
     if (activeTab === 'approvals' && !canSeeApprovals) setActiveTab('home');
     if (activeTab === 'team' && !canSeeTeam) setActiveTab('home');
     if (activeTab === 'checklist' && !canSeeChecklist) setActiveTab('home');
-  }, [activeTab, canSeeControlCenter, canSeeEmployeeView, canSeeMetrics, canSeeReports, canSeeApprovals, canSeeTeam, canSeeChecklist]);
+    if (activeTab === 'studio' && studioCaps.loaded && !canSeeStudio) setActiveTab('home');
+  }, [canSeeStudio, studioCaps.loaded, activeTab, canSeeControlCenter, canSeeEmployeeView, canSeeMetrics, canSeeReports, canSeeApprovals, canSeeTeam, canSeeChecklist]);
 
   // This tab was the Azure redirect target.
   // While processing: show the same spinner as the normal loading state (seamless).
@@ -2136,6 +2159,7 @@ const App = () => {
         canSeeApprovals={canSeeApprovals}
         canSeeTeam={canSeeTeam}
         canSeeChecklist={canSeeChecklist}
+        canSeeStudio={canSeeStudio}
         pendingApprovalsCount={pendingApprovalsCount}
       />
 
@@ -2280,8 +2304,13 @@ const App = () => {
             />
           )}
 
+          {activeTab === 'studio' && !selectedClient && canSeeStudio && (
+            <StudioWorkspace auth={auth} apiBase={import.meta.env.VITE_API_BASE_URL || '/api'} currentUser={currentUser} />
+          )}
+
           {activeTab === 'master-data' && !selectedClient && canSeeControlCenter && (
             <MasterDataView
+              canManageStudio={canManageStudio}
               taskCategories={taskCategories}
               setTaskCategories={persistTaskCategories}
               taskTemplates={taskTemplates}

@@ -1,7 +1,7 @@
 import React from 'react';
-import { Users, CheckSquare, Star, ClipboardList } from 'lucide-react';
+import { Users, CheckSquare, Star, ClipboardList, Palette } from 'lucide-react';
 
-export default function BottomNav({ activeTab, onTabChange, isManager, approvalCount = 0, hasChecklistAccess = false }) {
+export default function BottomNav({ activeTab, onTabChange, isManager, approvalCount = 0, hasChecklistAccess = false, hasStudioAccess = false }) {
   const tabs = isManager
     ? [
         { id: 'my-tasks',   label: 'My Tasks',  icon: CheckSquare },
@@ -14,11 +14,12 @@ export default function BottomNav({ activeTab, onTabChange, isManager, approvalC
         ...(hasChecklistAccess ? [{ id: 'checklist', label: 'Checklist', icon: ClipboardList }] : []),
       ];
 
+  const allTabs = hasStudioAccess ? [...tabs, { id: 'studio', label: 'Studio', icon: Palette }] : tabs;
   return (
     <div className="fixed bottom-0 inset-x-0 z-[60]">
     <div className="max-w-[430px] mx-auto bg-white border-t border-slate-200 safe-bottom">
       <div className="flex">
-        {tabs.map(tab => {
+        {allTabs.map(tab => {
           const Icon = tab.icon;
           const active = activeTab === tab.id;
           return (
