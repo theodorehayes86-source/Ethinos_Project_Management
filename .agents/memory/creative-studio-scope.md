@@ -18,3 +18,12 @@ preserve explicit user-to-client memberships. Keep studio work tracking distinct
 from ordinary tasks. “Deliverables”
 is the proposed work-item name; it has not yet been confirmed by the user. Do not confuse
 work items with the images, videos and other assets attached to them.
+
+Email automation belongs in a Creative Studio tab within Control Centre, alongside
+the client enablement settings, not in the main Creative Studio workspace.
+
+**Why:** The user explicitly requested this location rather than the artifact's
+Email automation sub-tab.
+
+**How to apply:** Keep operational creative work in the main studio; put email
+automation configuration in Control Centre → Creative Studio.
