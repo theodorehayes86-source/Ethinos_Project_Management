@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { getAdminAuth, getAdminDatabase } from "./firebase-admin";
 import { isStaffEmail, membershipAllows, normalizeMembership, projectClientTask, safeKey } from "./client-portal";
-import { values, type RecordData } from "./creative-studio";
+import { ids, values, type RecordData } from "./creative-studio";
 import { isEmailConfigured, isTeamsConfigured, resolveEntraObjectId, sendEmail, sendTeamsActivityNotification } from "./microsoft-graph";
 import { logger } from "./logger";
 
@@ -10,6 +10,7 @@ export type ClientTaskUpdateEvent = {
   actorUid: string;
   at: number;
 } & (
+  { kind: "created" } |
   { kind: "status"; before: string; after: string } |
   { kind: "message" | "note" | "link"; text: string; url: string | null } |
   { kind: "subtask-added" | "subtask-completed" | "subtask-reopened"; title: string }
@@ -33,9 +34,9 @@ const compact = (value: unknown, max: number) => {
   return plain.length > max ? `${plain.slice(0, max - 1)}…` : plain;
 };
 type NotificationSetting = { enabled?: boolean; teamsActivityEnabled?: boolean; customSubject?: string; customIntroText?: string };
-const settingPath = "settings/notifications/client-task-updated";
 
 function updateDetails(event: ClientTaskUpdateEvent) {
+  if (event.kind === "created") return { change: "Client created a new task", text: "" };
   if (event.kind === "status") return { change: `Status changed from ${statusLabel(event.before)} to ${statusLabel(event.after)}`, text: "" };
   if ("title" in event) return { change: { "subtask-added": "Subtask added", "subtask-completed": "Subtask completed", "subtask-reopened": "Subtask reopened" }[event.kind], text: event.title };
   return { change: { message: "New client message", note: "New client note", link: "New client link" }[event.kind], text: event.text || event.url || "" };
@@ -46,6 +47,8 @@ function updateDetails(event: ClientTaskUpdateEvent) {
  * successful even when delivery, configuration or ledger storage fails. */
 export async function sendClientTaskUpdateEmail(clientId: string, taskId: string, event: ClientTaskUpdateEvent): Promise<void> {
   try {
+    const created = event.kind === "created";
+    const settingPath = `settings/notifications/${created ? "client-task-created" : "client-task-updated"}`;
     if (![clientId, taskId, event.id, event.actorUid].every(safeKey) || clientId.startsWith("__")) return;
     const context = async () => {
       const actor = await getAdminAuth().getUser(event.actorUid);
@@ -55,16 +58,20 @@ export async function sendClientTaskUpdateEmail(clientId: string, taskId: string
       const client = values(await read("clients")).find(c => c.id === clientId && !c.deleted && !c.archived);
       const task = await read(`clientLogs/${clientId}/${taskId}`);
       if (!client || !task || !projectClientTask(taskId, task, clientId)) return null;
+      if (created && (task.source !== "client-portal" || task.creatorId !== event.actorUid)) return null;
       const allMemberships = Object.entries(await read("clientPortalUsers") ?? {});
       const clientEmails = new Set(allMemberships.map(([, m]) => String((m as RecordData)?.email ?? "").trim().toLowerCase()));
       const clientUids = new Set(allMemberships.map(([uid]) => uid));
       // Ordinary tasks have a single assigneeId. Multi-selection in staff forms
       // creates separate tasks; do not invent assigneeIds or trust assigneeEmail.
       const assigneeId = task.assigneeId;
-      if ((typeof assigneeId !== "string" && typeof assigneeId !== "number") || !String(assigneeId)) return null;
+      if (!created && ((typeof assigneeId !== "string" && typeof assigneeId !== "number") || !String(assigneeId))) return null;
       const recipients = new Map<string, { id: string; teamsEnabled: boolean }>();
       for (const user of values(await read("users"))) {
-        if (String(user.id) !== String(assigneeId) || user.disabled === true || user.active === false || user.archived || user.role === "Client") continue;
+        const assigned = created
+          ? ids(user.assignedProjects).includes(client.name) || ids(client.ownerIds).includes(String(user.id))
+          : String(user.id) === String(assigneeId);
+        if (!assigned || user.disabled === true || user.active === false || user.archived || user.role === "Client") continue;
         const email = typeof user.email === "string" ? user.email.trim().toLowerCase() : "";
         if (email.length > 254 || email.indexOf("@") > 64 ||
             !/^[a-z0-9_%+-](?:[a-z0-9._%+-]*[a-z0-9_%+-])?@ethinos\.com$/i.test(email) || email.includes("..") ||
@@ -76,11 +83,18 @@ export async function sendClientTaskUpdateEmail(clientId: string, taskId: string
     };
     const initial = await context();
     if (!initial) return;
-    for (const recipient of initial.recipients.keys()) {
+    const recipients = [...initial.recipients.keys()];
+    // Client-wide fan-out is bounded, avoiding a long sequential mail send for
+    // each member without creating an unbounded burst against Microsoft Graph.
+    const concurrency = created ? 4 : 1;
+    for (let start = 0; start < recipients.length; start += concurrency) {
+      await Promise.all(recipients.slice(start, start + concurrency).map(async recipient => {
       // Keep the legacy email ledger unchanged. A sent email must never suppress
       // Teams, and failures or settings in either channel cannot block the other.
       for (const channel of ["email", "teams"] as const) {
-        const ledger = channel === "email" ? "clientTaskUpdateEmailDeliveries" : "clientTaskUpdateTeamsDeliveries";
+        const ledger = created
+          ? channel === "email" ? "clientTaskCreatedEmailDeliveries" : "clientTaskCreatedTeamsDeliveries"
+          : channel === "email" ? "clientTaskUpdateEmailDeliveries" : "clientTaskUpdateTeamsDeliveries";
         const ref = db().ref(`${ledger}/${clientId}/${taskId}/${event.id}/${hash(recipient)}`);
         let claimed = false;
         try {
@@ -106,12 +120,15 @@ export async function sendClientTaskUpdateEmail(clientId: string, taskId: string
             }
             const intro = typeof settings.customIntroText === "string" ? settings.customIntroText.trim().slice(0, 2000) : "";
             const prefix = typeof settings.customSubject === "string" ? compact(settings.customSubject, 160) : "";
-            const bodyHtml = `<h2>Client task update</h2>${intro ? `<p>${escape(intro)}</p>` : ""}` +
-              `<p>Client: ${escape(live.client.name)}</p><p>Task: ${escape(live.task.name)}</p><p>Updated by: ${escape(live.actorName)}</p>` +
+            if (created) detail = `<p>Category: ${escape(live.task.category || "Uncategorised")}</p>` +
+              `<p>Due date: ${escape(live.task.dueDate || "Not set")}</p>` +
+              `<p style="white-space:pre-wrap">${escape(live.task.clientDescription)}</p>`;
+            const bodyHtml = `<h2>${created ? "New client task" : "Client task update"}</h2>${intro ? `<p>${escape(intro)}</p>` : ""}` +
+              `<p>Client: ${escape(live.client.name)}</p><p>Task: ${escape(live.task.name)}</p><p>${created ? "Created" : "Updated"} by: ${escape(live.actorName)}</p>` +
               `<p>${escape(change)}</p>${detail}<p>Time: ${escape(new Date(event.at).toISOString())} (UTC)</p>`;
             // BCC settings are intentionally ignored: only assigned staff receive
             // this event. No assumed app URL or invented task deep link.
-            await sendEmail({ to: recipient, subject: `${prefix ? `${prefix} — ` : ""}Client update on a shared task`, bodyHtml, sensitive: true });
+            await sendEmail({ to: recipient, subject: `${prefix ? `${prefix} — ` : ""}${created ? `New client task — ${compact(live.client.name, 80)}` : "Client update on a shared task"}`, bodyHtml, sensitive: true });
           } else {
             const target = live.recipients.get(recipient)!;
             // Match notify.ts: staff must opt in to Teams at user level.
@@ -150,6 +167,7 @@ export async function sendClientTaskUpdateEmail(clientId: string, taskId: string
           logger.warn("Client task update notification delivery could not be confirmed; automatic retry disabled");
         }
       }
+      }));
     }
   } catch {
     logger.warn("Client task update notifications could not be processed; task changes remain saved");

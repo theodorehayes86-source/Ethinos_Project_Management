@@ -532,6 +532,94 @@ describe("client task update email (mocked Microsoft Graph only)", () => {
   );
 });
 
+describe("client-created task notifications", () => {
+  const event: ClientTaskUpdateEvent = { id: "created", actorUid: client.uid, at: 1700000000000, kind: "created" };
+  const notify = () => sendClientTaskUpdateEmail("alpha", "stable-key", event);
+  const settingPath = "settings/notifications/client-task-created";
+  beforeEach(() => {
+    Object.assign(valueAt(parent), {
+      source: "client-portal", creatorId: client.uid, assigneeId: null,
+      clientDescription: "Client brief <script>alert(1)</script>", dueDate: "20th Oct 2026", category: "Social",
+    });
+    state.data.users.staffKey.teamsNotificationsEnabled = true;
+  });
+  it("notifies each assigned staff member and owner once, without needing a task assignee", async () => {
+    Object.assign(state.data.users, {
+      second: { id: "second", email: "second@ethinos.com", assignedProjects: ["Alpha"], teamsNotificationsEnabled: true },
+      owner: { id: "owner", email: "owner@ethinos.com", assignedProjects: [], teamsNotificationsEnabled: true },
+      duplicate: { id: "duplicate", email: "STAFF@ETHINOS.COM", assignedProjects: ["Alpha"], teamsNotificationsEnabled: true },
+      unrelated: { id: "other", email: "other@ethinos.com", assignedProjects: ["Beta"], teamsNotificationsEnabled: true },
+      disabled: { id: "disabled", email: "disabled@ethinos.com", assignedProjects: ["Alpha"], disabled: true },
+      inactive: { id: "inactive", email: "inactive@ethinos.com", assignedProjects: ["Alpha"], active: false },
+      archived: { id: "archived", email: "archived@ethinos.com", assignedProjects: ["Alpha"], archived: true },
+      external: { id: "external", email: "outside@example.test", assignedProjects: ["Alpha"] },
+      role: { id: "role", email: "role@ethinos.com", role: "Client", assignedProjects: ["Alpha"] },
+      hybrid: { id: "hybrid", email: "hybrid@ethinos.com", assignedProjects: ["Alpha"] },
+    });
+    state.data.clientPortalUsers.hybrid = { email: "hybrid@ethinos.com", disabled: false, clientIds: ["alpha"] };
+    await notify();
+    expect(state.mail.mock.calls.map(([args]) => args.to).sort()).toEqual(["owner@ethinos.com", "second@ethinos.com", staff.email]);
+    expect(state.teams).toHaveBeenCalledTimes(3);
+    const email = state.mail.mock.calls[0][0];
+    expect(email.subject).toBe("New client task — Alpha");
+    expect(email.bodyHtml).toContain("Created by: Client Name");
+    expect(email.bodyHtml).toContain("20th Oct 2026");
+    expect(email.bodyHtml).toContain("&lt;script&gt;");
+    for (const secret of ["INTERNAL_MESSAGE", "INTERNAL_STEP", "INTERNAL_COMMENT", "INTERNAL_DESCRIPTION", "https://internal.test"]) {
+      expect(email.bodyHtml).not.toContain(secret);
+    }
+    expect(state.teams.mock.calls[0][0]).toMatchObject({
+      taskId: "stable-key", sensitive: true, previewText: expect.stringContaining("Client created a new task"),
+    });
+    await notify();
+    expect(state.mail).toHaveBeenCalledTimes(3);
+    expect(state.teams).toHaveBeenCalledTimes(3);
+  });
+  it.each([
+    [undefined, undefined, 1, 1], [false, false, 0, 0], [true, false, 1, 0], [false, true, 0, 1],
+  ])("has independent creation email=%s and Teams=%s controls", async (enabled, teamsActivityEnabled, emailCount, teamsCount) => {
+    saveAt(settingPath, { enabled, teamsActivityEnabled });
+    saveAt("settings/notifications/client-task-updated", { enabled: false, teamsActivityEnabled: false });
+    await notify();
+    expect(state.mail).toHaveBeenCalledTimes(emailCount);
+    expect(state.teams).toHaveBeenCalledTimes(teamsCount);
+  });
+  it("keeps Teams user preferences and sends email even when Teams is opted out", async () => {
+    state.data.users.staffKey.teamsNotificationsEnabled = false;
+    await notify();
+    expect(state.mail).toHaveBeenCalledTimes(1);
+    expect(state.teams).not.toHaveBeenCalled();
+  });
+  it("still sends Teams when email delivery fails and does not replay ambiguous email", async () => {
+    state.mail.mockRejectedValueOnce(new Error("Transport failure"));
+    await notify();
+    await notify();
+    expect(state.mail).toHaveBeenCalledTimes(1);
+    expect(state.teams).toHaveBeenCalledTimes(1);
+  });
+  it("rechecks assignment after recipient lookup before sending the Teams alert", async () => {
+    state.resolveEntra.mockImplementationOnce(async () => {
+      state.data.users.staffKey.assignedProjects = [];
+      return "entra-object-id";
+    });
+    await notify();
+    expect(state.mail).toHaveBeenCalledTimes(1);
+    expect(state.teams).not.toHaveBeenCalled();
+  });
+  it.each(["source", "creatorId", "visibility"])("does not notify for a non-client-created or unshared task with invalid %s", async field => {
+    valueAt(parent)[field] = "other";
+    await notify();
+    expect(state.mail).not.toHaveBeenCalled();
+    expect(state.teams).not.toHaveBeenCalled();
+  });
+  it("does not notify after client access is revoked", async () => {
+    state.data.clientPortalUsers[client.uid].disabled = true;
+    await notify();
+    expect(state.mail).not.toHaveBeenCalled();
+    expect(state.teams).not.toHaveBeenCalled();
+  });
+});
+
 describe("client update Control Centre settings and independent Teams channel", () => {
   const settingPath = "settings/notifications/client-task-updated";
   const emailLedger = "clientTaskUpdateEmailDeliveries/alpha/stable-key";

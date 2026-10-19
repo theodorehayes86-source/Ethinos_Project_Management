@@ -84,3 +84,14 @@ account or granting access to real clients is unnecessary for previewing that fl
 
 **How to apply:** Reuse client-facing screens with isolated demo data, make the demo
 development-only, and keep its actions away from Firebase, email and live APIs.
+
+## Client-created task alerts
+
+When a client adds a task, all users assigned to that client should receive a
+notification email and a Teams activity alert.
+
+**Why:** The user explicitly requested client-wide notifications on task creation.
+
+**How to apply:** Do not limit creation alerts to the new task's assignee; a
+client-created task can still be unassigned. Keep Test Mode and previews isolated
+from real notification delivery.

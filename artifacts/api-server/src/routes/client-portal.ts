@@ -189,6 +189,9 @@ router.post("/clients/:clientId/tasks", async (req, res): Promise<void> => {
     });
   } else { await ref.update(task); }
   const projected = ListClientPortalTasksResponse.shape.tasks.element.parse(projectClientTask(ref.key!, task));
+  await sendClientTaskUpdateEmail(clientId, ref.key!, {
+    id: "created", kind: "created", actorUid: identity(req).uid, at: now,
+  });
   res.status(201).json({ task: projected });
 });
 

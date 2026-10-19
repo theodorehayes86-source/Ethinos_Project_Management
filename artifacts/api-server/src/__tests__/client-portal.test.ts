@@ -250,6 +250,23 @@ describe("client task API boundary", () => {
       reminderOffsets: ["0"], reminderTime: "09:00", reminderTimezone: "Asia/Kolkata",
     });
   });
+  it("sends a client task creation notification only after saving the task", async () => {
+    state.data.users = [{ id: "team", email: "team@ethinos.com", assignedProjects: ["Alpha"] }];
+    state.mail.mockImplementationOnce(async () => {
+      expect(state.data["clientLogs/alpha/new-task"]).toMatchObject({ source: "client-portal", creatorId: client.uid });
+    });
+    const response = await post("/clients/alpha/tasks", { title: "Please create a campaign", description: "Client brief" });
+    expect(response.status).toBe(201);
+    expect(state.mail).toHaveBeenCalledTimes(1);
+    expect(state.mail.mock.calls[0][0]).toMatchObject({ to: "team@ethinos.com", subject: "New client task — Alpha", sensitive: true });
+  });
+  it("keeps task creation successful when its notification fails", async () => {
+    state.data.users = [{ id: "team", email: "team@ethinos.com", assignedProjects: ["Alpha"] }];
+    state.mail.mockRejectedValueOnce(new Error("Delivery unavailable"));
+    const response = await post("/clients/alpha/tasks", { title: "Saved task", description: "" });
+    expect(response.status).toBe(201);
+    expect(state.data["clientLogs/alpha/new-task"].name).toBe("Saved task");
+  });
   it("does not leave a parent task or collaboration behind when the atomic update fails", async () => {
     state.update.mockRejectedValueOnce(new Error("Database unavailable"));
     const result = await post("/clients/alpha/tasks", { title: "Task", description: "", subtasks: ["First"] });

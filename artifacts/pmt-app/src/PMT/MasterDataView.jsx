@@ -681,10 +681,11 @@ const MasterDataView = ({
   const TEAMS_PING_EVENTS = new Set([
     'mention', 'task-assigned', 'qc-submitted', 'qc-returned',
     'approval-required', 'feedback-response', 'client-added',
-    'assignment-accepted', 'qc-approved', 'task-overdue', 'task-due-soon', 'task-status-changed', 'client-task-updated',
+    'assignment-accepted', 'qc-approved', 'task-overdue', 'task-due-soon', 'task-status-changed', 'client-task-updated', 'client-task-created',
   ]);
 
   const NOTIFICATION_EVENTS = [
+    { id: 'client-task-created', label: 'Client Task Created', description: 'Notifies all active staff assigned to the client, including its owners, when a client creates a task. Teams requires Flow Pro installed and the recipient’s Teams notifications enabled.', when: 'On task creation by a client', defaultOn: true },
     { id: 'client-task-updated', label: 'Client Task Updated', description: 'Notifies the task assignee when a client changes status, posts a message, note or link, or adds, completes or reopens a subtask. Teams requires Flow Pro installed and the assignee’s Teams notifications enabled.', when: 'On a client task update', defaultOn: true },
     { id: 'task-assigned', label: 'Task Assigned', description: 'Sent to the assignee when a task is created and assigned to them.', when: 'On task creation / assignment', defaultOn: true },
     { id: 'approval-required', label: 'Approval Required', description: 'Sent to managers when someone requests to be assigned a task.', when: 'On assignment request', defaultOn: true },
@@ -703,7 +704,7 @@ const MasterDataView = ({
   const getTeamsActivityEnabled = (eventId) => {
     const setting = notificationSettings[eventId];
     if (setting && typeof setting.teamsActivityEnabled === 'boolean') return setting.teamsActivityEnabled;
-    return eventId === 'mention' || eventId === 'client-task-updated';
+    return eventId === 'mention' || eventId === 'client-task-updated' || eventId === 'client-task-created';
   };
 
   const installTeamsApp = async () => {
@@ -2735,6 +2736,8 @@ const MasterDataView = ({
                   </div>
                   {event.id === 'client-task-updated' ? (
                     <p className="text-[11px] text-slate-500">Only the task’s current assigned staff receive these updates. Additional recipients cannot be added.</p>
+                  ) : event.id === 'client-task-created' ? (
+                    <p className="text-[11px] text-slate-500">Only active staff assigned to this client and its owners receive these alerts. Additional recipients cannot be added.</p>
                   ) : <div>
                     <label className="text-[11px] font-semibold text-slate-600 block mb-1">BCC addresses</label>
                     <div className="flex gap-1.5 mb-1.5">

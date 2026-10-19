@@ -72,6 +72,15 @@ describe('client-safe projection', () => {
     expect(source).toContain("event.id === 'client-task-updated' ? (");
     expect(source).toContain('Additional recipients cannot be added.');
   });
+  it('exposes independent email and Teams controls for client task creation', () => {
+    const source = readFileSync(new URL('../PMT/MasterDataView.jsx', import.meta.url), 'utf8');
+    const teams = source.slice(source.indexOf('const TEAMS_PING_EVENTS'), source.indexOf('const NOTIFICATION_EVENTS'));
+    expect(teams).toContain("'client-task-created'");
+    expect(source).toContain("id: 'client-task-created', label: 'Client Task Created'");
+    expect(source).toContain("eventId === 'client-task-created'");
+    expect(source).toContain("event.id === 'client-task-created' ? (");
+    expect(source).toContain('Only active staff assigned to this client and its owners');
+  });
   const task = { id: 't1', name: 'Launch', status: 'WIP', dueDate: '5th Aug 2026', comment: 'INTERNAL SECRET', assigneeName: 'Theo', steps: [{ label: 's' }] };
   it('never exposes internal comment', () => {
     const s = clientSafeTask(task);
