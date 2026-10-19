@@ -56,6 +56,26 @@ function seed(now) {
         stage: 'final_approved', revision: 1, shared: true, archived: false, timezone: 'Asia/Kolkata', plannedAt: at(-48),
         caption: 'Five gifts under 5k.', assets: [], approvals: {},
       },
+      {
+        id: 'd-draft', clientId: 'demo-harbour', title: 'Terracotta planter flat lay', type: 'Post', platforms: ['Instagram'],
+        stage: 'internal_draft', revision: 1, shared: true, archived: false, timezone: 'Asia/Kolkata', plannedAt: at(24 * 9),
+        caption: 'Draft shared for an early look.', assets: [], approvals: {},
+      },
+      {
+        id: 'd-hidden', clientId: 'demo-harbour', title: 'Unshared internal concept', type: 'Reel', platforms: ['Instagram'],
+        stage: 'internal_draft', revision: 1, shared: false, archived: false, timezone: 'Asia/Kolkata', plannedAt: at(24 * 2),
+        caption: '', assets: [], approvals: {},
+      },
+      {
+        id: 'd-archived', clientId: 'demo-harbour', title: 'Retired summer teaser', type: 'Story', platforms: ['Instagram'],
+        stage: 'final_approved', revision: 1, shared: true, archived: true, timezone: 'Asia/Kolkata', plannedAt: at(24 * 3),
+        caption: '', assets: [], approvals: {},
+      },
+      {
+        id: 'd-undated', clientId: 'demo-harbour', title: 'Brand film cutdown', type: 'Reel', platforms: ['YouTube'],
+        stage: 'internal_draft', revision: 1, shared: true, archived: false, timezone: 'Asia/Kolkata', plannedAt: null,
+        caption: '', assets: [], approvals: {},
+      },
     ],
     collab: {
       t1: {

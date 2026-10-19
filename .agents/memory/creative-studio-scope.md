@@ -46,6 +46,12 @@ repeated that all Creative Studio colours must use the existing colour scheme.
 **How to apply:** Reuse the existing app's typography, colours, surfaces and controls
 for both Studio operations and Control Centre settings on desktop and mobile.
 
+Explicitly shared Creative Studio items must appear for assigned clients even before an approval request. Sharing and approval stage are separate.
+
+**Why:** The user expects a shared line item to appear in the client's calendar; retaining draft-stage exclusion made Share misleading.
+
+**How to apply:** Gate visibility on sharing, archive state and client authorization, not approval stage. Keep internal briefs and unpublished asset replacements out of the client projection. Calendar placement uses planned date/time; undated shared items remain accessible separately.
+
 Do not automatically retry an ambiguous Creative Studio email transport failure.
 Keep email delivery opt-in during rollout, separate from client module enablement.
 

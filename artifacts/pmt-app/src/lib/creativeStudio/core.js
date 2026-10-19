@@ -142,7 +142,8 @@ export function summarize(items) {
 }
 
 // What an external member could see for a record (mirrors server filter).
-export const clientVisible = (i) => i.shared && !i.archived && i.stage !== 'internal_draft';
+// Explicit sharing is the only gate: shared drafts are visible to the client (server projects the fields).
+export const clientVisible = (i) => !!i && i.shared === true && !i.archived;
 
 // ---- Deep links ----
 // Email links: /?client=1&studioClient=<id>&studioItem=<id>. Captured before any

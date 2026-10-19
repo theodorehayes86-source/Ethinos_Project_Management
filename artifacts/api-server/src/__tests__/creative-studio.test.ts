@@ -65,6 +65,29 @@ beforeEach(() => {
   state.writes = [];
 });
 describe("Creative Studio security and contracts", () => {
+  it("shows an explicitly shared draft in the assigned client's list and detail without internal data", async () => {
+    item().plannedAt = "2026-10-19T09:00:00.000Z";
+    expect((await action("share")).status).toBe(200);
+    state.verify.mockResolvedValue(external);
+    const listed = await api("get", "/clients/a/deliverables");
+    expect(listed.status).toBe(200);
+    expect(listed.body.deliverables).toHaveLength(1);
+    expect(listed.body.deliverables[0]).toMatchObject({
+      id: "item", shared: true, stage: "internal_draft",
+      plannedAt: "2026-10-19T09:00:00.000Z", timezone: "Asia/Kolkata",
+    });
+    expect(listed.body.deliverables[0]).not.toHaveProperty("brief");
+    expect(listed.body.deliverables[0]).not.toHaveProperty("ownerId");
+    expect(listed.body.deliverables[0].assets).toEqual([]);
+    expect((await api("get", itemPath)).status).toBe(200);
+    expect((await api("get", "/clients/b/deliverables")).status).toBe(403);
+    item().archived = true;
+    expect((await api("get", "/clients/a/deliverables")).body.deliverables).toEqual([]);
+    expect((await api("get", itemPath)).status).toBe(404);
+    item().archived = false; item().shared = false;
+    expect((await api("get", "/clients/a/deliverables")).body.deliverables).toEqual([]);
+    expect((await api("get", itemPath)).status).toBe(404);
+  });
   it("shares an existing draft with a cold Firebase cache and releases its listener", async () => {
     state.cold = true;
     const response = await action("share");

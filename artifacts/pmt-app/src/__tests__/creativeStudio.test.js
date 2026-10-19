@@ -55,7 +55,7 @@ describe('urgency and counts', () => {
   });
   it('client visibility mirrors the server filter', () => {
     expect(clientVisible({ shared: true, archived: false, stage: 'awaiting_reference' })).toBe(true);
-    expect(clientVisible({ shared: true, archived: false, stage: 'internal_draft' })).toBe(false);
+    expect(clientVisible({ shared: true, archived: false, stage: 'internal_draft' })).toBe(true);
     expect(clientVisible({ shared: false, archived: false, stage: 'in_production' })).toBe(false);
     expect(clientVisible({ shared: true, archived: true, stage: 'final_approved' })).toBe(false);
   });

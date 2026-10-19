@@ -51,7 +51,7 @@ async function itemFor(req: Request) {
   const { clientId } = await scope(req);
   if (!safeKey(req.params.id)) fail(400, "Invalid deliverable.");
   const item = await read(`creativeStudio/items/${clientId}/${req.params.id}`);
-  if (!item || (ctx(req).external && (!item.shared || item.archived || item.stage === "internal_draft"))) fail(404, "Deliverable not available.");
+  if (!item || (ctx(req).external && (!item.shared || item.archived))) fail(404, "Deliverable not available.");
   return item as RecordData;
 }
 function staff(req: Request) { if (ctx(req).external) fail(403, "Staff action required."); }
@@ -83,7 +83,7 @@ async function mutate(req: Request, transform: (item: RecordData) => void, actio
     await scope(req);
     const result = await ref.transaction(raw => {
       if (!raw || raw.revision !== req.body.revision) return;
-      if (c.external && (!raw.shared || raw.archived || raw.stage === "internal_draft")) return;
+      if (c.external && (!raw.shared || raw.archived)) return;
       const item = structuredClone(raw);
       transform(item);
       item.revision++;
@@ -150,7 +150,7 @@ router.put("/clients/:clientId/config", route(async (req, res) => {
 }));
 router.get("/clients/:clientId/deliverables", route(async (req, res) => {
   const { clientId } = await scope(req);
-  const deliverables = values(await read(`creativeStudio/items/${clientId}`)).filter(i => !ctx(req).external || (i.shared && !i.archived && i.stage !== "internal_draft")).map(i => project(i, ctx(req).external));
+  const deliverables = values(await read(`creativeStudio/items/${clientId}`)).filter(i => !ctx(req).external || (i.shared && !i.archived)).map(i => project(i, ctx(req).external));
   await scope(req);
   res.json({ deliverables });
 }));

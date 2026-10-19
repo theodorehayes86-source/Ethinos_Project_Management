@@ -224,7 +224,7 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
 
       {mode === 'client' && (
         <div data-testid="status-client-preview" className="mb-3 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs text-indigo-700 flex items-center gap-2">
-          <Eye size={13} /> Preview only: shared, non-draft records as a client member sees them. Your identity and permissions are unchanged.
+          <Eye size={13} /> Preview only: shared, non-archived records (any stage) as a client member sees them. Your identity and permissions are unchanged.
         </div>
       )}
 

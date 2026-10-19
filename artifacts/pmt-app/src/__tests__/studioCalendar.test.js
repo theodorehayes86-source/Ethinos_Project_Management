@@ -86,3 +86,39 @@ describe('workspace wiring', () => {
     }
   });
 });
+
+describe('client portal shared studio items', () => {
+  it('clientVisible: explicit share is the only gate (drafts included, unshared/archived excluded)', async () => {
+    const { clientVisible } = await import('../lib/creativeStudio/core.js');
+    expect(clientVisible({ shared: true, archived: false, stage: 'internal_draft' })).toBe(true);
+    expect(clientVisible({ shared: false, archived: false, stage: 'final_approved' })).toBe(false);
+    expect(clientVisible({ shared: true, archived: true, stage: 'final_approved' })).toBe(false);
+    expect(clientVisible(null)).toBe(false);
+  });
+  it('demo store lists shared drafts and excludes unshared and archived', async () => {
+    const { createDemoStore } = await import('../lib/clientPortal/demo/demoModel.js');
+    const { deliverables } = await createDemoStore().studioApi.list('demo-harbour');
+    const ids = deliverables.map(d => d.id);
+    expect(ids).toEqual(expect.arrayContaining(['d-draft', 'd-undated']));
+    expect(ids).not.toContain('d-hidden');
+    expect(ids).not.toContain('d-archived');
+    const { byDay, unscheduled } = groupStudioByDay(deliverables);
+    const draft = deliverables.find(d => d.id === 'd-draft');
+    const { dayKey } = await import('../lib/creativeStudio/core.js');
+    expect(byDay[dayKey(draft.plannedAt, draft.timezone)].map(d => d.id)).toContain('d-draft');
+    expect(unscheduled.map(d => d.id)).toEqual(['d-undated']);
+  });
+  it('PortalStudio renders the shared StudioCalendar from API items only and opens PortalDetail', () => {
+    const p = src('lib/creativeStudio/PortalStudio.jsx');
+    expect(p).toMatch(/<StudioCalendar items=\{items\} month=\{month\} todayKey=\{portalTodayKey\(\)\} selectedId=\{openId\} onOpen=\{setOpenId\}/);
+    expect(p).toMatch(/button-portal-layout-/);
+    expect(p).toMatch(/if \(open\) return <PortalDetail/);
+    expect(mobile('lib/creativeStudio/PortalStudio.jsx')).toBe(p);
+  });
+  it('portal today key follows the given timezone', async () => {
+    const { portalTodayKey } = await import('../lib/creativeStudio/PortalStudio.jsx');
+    const t = Date.parse('2026-12-31T20:00:00Z');
+    expect(portalTodayKey(t, 'Asia/Kolkata')).toBe('2027-01-01');
+    expect(portalTodayKey(t, 'America/New_York')).toBe('2026-12-31');
+  });
+});
