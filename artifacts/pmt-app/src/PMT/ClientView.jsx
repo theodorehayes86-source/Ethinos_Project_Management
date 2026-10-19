@@ -19,7 +19,8 @@ import { checkLeaveConflict, toDateKey } from '../utils/leaveConflict';
 import CsvImportModal from './CsvImportModal';
 import { templateAppliesToClient } from './shared/checklistApplicability';
 import SharingFields from '../lib/clientPortal/SharingFields.jsx';
-import { sharingFields, isNewlyShared, sharingConfirmMessage, isRealClientId, normalizeVisibility, clientPreviewTasks } from '../lib/clientPortal/core.js';
+import ShareWithClientDialog from './ShareWithClientDialog.jsx';
+import { sharingFields, isNewlyShared, sharingConfirmMessage, isRealClientId, normalizeVisibility, clientPreviewTasks, planClientShare, applyClientShare } from '../lib/clientPortal/core.js';
 
 const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Business Head'];
 const CLIENT_OWNER_ROLES = ['Business Head', 'CSM'];
@@ -487,6 +488,46 @@ const ClientView = ({
     if (creatorLevel > myLevel) return false;
     // Same level or unranked creator: only the creator themselves can edit
     return String(log?.creatorId) === String(currentUser.id);
+  };
+  // ---- Share with client (bulk toolbar + task detail). Permission = canFullyEditTask.
+  const [shareDialog, setShareDialog] = useState(null); // { ids: string[], source: 'bulk' | 'detail', plan }
+  const [shareError, setShareError] = useState('');
+  const openShareDialog = (ids, source) => {
+    const cid = selectedClient?.id;
+    setShareError('');
+    setShareDialog({ clientId: cid, ids: ids.map(String), source, plan: planClientShare(clientLogs[cid] || [], ids, { clientId: cid, canEdit: canFullyEditTask }) });
+  };
+  const handleConfirmShare = async (drafts) => {
+    const cid = selectedClient?.id;
+    if (!shareDialog || !cid || savingRef.current) return;
+    if (String(cid) !== String(shareDialog.clientId)) {
+      setShareError('The selected client changed. Close this dialog and select the tasks again.');
+      return;
+    }
+    const eligibleIds = new Set(shareDialog.plan.eligible.map(e => e.id));
+    const scoped = Object.fromEntries(Object.entries(drafts || {}).filter(([id]) => eligibleIds.has(id)));
+    // Re-check existence, eligibility and permission against the latest data.
+    const { updated, shared, skipped } = applyClientShare(clientLogs[cid] || [], scoped, { clientId: cid, canEdit: canFullyEditTask });
+    if (shared.length === 0) { setShareError(skipped.length ? `Nothing shared: ${skipped[0].label.toLowerCase()}.` : 'Nothing to share.'); return; }
+    savingRef.current = true;
+    setSaving(true);
+    setShareError('');
+    try {
+      await setClientLogs({ ...clientLogs, [cid]: updated });
+      if (shareDialog.source === 'bulk') setSelectedTaskIds(new Set());
+      if (shareDialog.source === 'detail' && detailTask) {
+        const fresh = updated.find(t => String(t.id) === String(detailTask.id));
+        if (fresh) setDetailTask(fresh);
+      }
+      setShareDialog(null);
+      toast({ title: `Shared ${shared.length} task${shared.length > 1 ? 's' : ''} with ${selectedClient.name}`, description: skipped.length ? `${skipped.length} skipped because they changed.` : undefined });
+    } catch (err) {
+      console.error('[PMT] share with client failed', err);
+      setShareError(err?.message || 'Sharing could not be confirmed. Refresh the tasks before trying again.');
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   };
   const canChangeTaskStatus = (log) => {
     if (canFullyEditTask(log)) return true;
@@ -1822,6 +1863,16 @@ const ClientView = ({
                 </button>
               ))}
             </div>
+            {isRealClientId(selectedClient?.id) && (
+              <button
+                data-testid="button-bulk-share-client"
+                onClick={() => openShareDialog([...selectedTaskIds], 'bulk')}
+                disabled={saving}
+                className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-semibold bg-indigo-500 hover:bg-indigo-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Eye size={11} /> Share with client
+              </button>
+            )}
             <button
               onClick={() => handleBatchArchive(selectedClient.id)}
               disabled={saving}
@@ -3665,6 +3716,8 @@ const ClientView = ({
             canEdit={canFullyEditTask(detailTask) && canModifyTaskMeta()}
             clientName={selectedClient?.name || ''}
             setNotifications={setNotifications}
+            onShare={isRealClientId(selectedClient?.id) && canFullyEditTask(detailTask) && !detailTask.taskGroupId && detailTask.taskType !== 'checklist' && !detailTask.archived
+              ? () => openShareDialog([detailTask.id], 'detail') : undefined}
             onClose={() => setDetailTask(null)}
             onUpdate={(updatedTask) => {
               const updatedLogs = (clientLogs[selectedClient.id] || []).map(l =>
@@ -3673,6 +3726,18 @@ const ClientView = ({
               runTaskMutation(() => setClientLogs({ ...clientLogs, [selectedClient.id]: updatedLogs }));
               setDetailTask(updatedTask);
             }}
+          />
+        )}
+
+        {shareDialog && (
+          <ShareWithClientDialog
+            key={shareDialog.ids.join(',')}
+            clientName={selectedClient?.name}
+            plan={shareDialog.plan}
+            saving={saving}
+            error={shareError}
+            onConfirm={handleConfirmShare}
+            onCancel={() => { setShareDialog(null); setShareError(''); }}
           />
         )}
 

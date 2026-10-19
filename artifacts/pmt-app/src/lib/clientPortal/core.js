@@ -326,3 +326,67 @@ export function inviteStatus(u, now = Date.now()) {
 /** Studio clients a portal member can open: enabled ones from the authorized bootstrap. */
 export const portalStudioClients = (bootstrap) =>
   (bootstrap?.clients || []).filter(c => c && bootstrap?.configs?.[c.id]?.enabled === true);
+
+// ---- Staff bulk "Share with client" (Clients view). Only the selected rows
+// change; repeat series / future occurrences are untouched.
+export const SHARE_SKIP_REASONS = {
+  missing: 'No longer exists',
+  checklist: 'Checklist item',
+  grouped: 'Part of a checklist group',
+  archived: 'Archived',
+  synthetic: 'Personal / internal workspace',
+  permission: 'You cannot edit this task',
+};
+
+/** Why a task cannot be shared, or null when eligible. */
+export const shareIneligibleReason = (task, { clientId, canEdit } = {}) => {
+  if (!task) return 'missing';
+  if (!isRealClientId(clientId)) return 'synthetic';
+  if (task.taskType === 'checklist') return 'checklist';
+  if (task.taskGroupId) return 'grouped';
+  if (task.archived) return 'archived';
+  if (typeof canEdit === 'function' && !canEdit(task)) return 'permission';
+  return null;
+};
+
+/** Splits the current selection into eligible rows and skipped rows with reasons. */
+export const planClientShare = (logs, selectedIds, opts = {}) => {
+  const list = Array.isArray(logs) ? logs : Object.values(logs || {});
+  const byId = new Map(list.filter(Boolean).map(t => [String(t.id), t]));
+  const eligible = [];
+  const skipped = [];
+  [...(selectedIds || [])].map(String).forEach(id => {
+    const task = byId.get(id);
+    const reason = shareIneligibleReason(task, opts);
+    if (reason) skipped.push({ id, title: task ? (task.name || task.title || 'Untitled task') : 'Removed task', reason, label: SHARE_SKIP_REASONS[reason] });
+    else eligible.push({ id, task, alreadyShared: normalizeVisibility(task.visibility) === 'client', clientDescription: task.clientDescription || '' });
+  });
+  return { eligible, skipped };
+};
+
+/**
+ * Applies drafts ({ [id]: clientDescription }) to the latest list, re-checking
+ * existence and eligibility. Never reads internal comments. Already shared rows
+ * keep their description when the draft is blank.
+ */
+export const applyClientShare = (logs, drafts, opts = {}) => {
+  const list = Array.isArray(logs) ? logs : Object.values(logs || {});
+  const ids = Object.keys(drafts || {});
+  const shared = [];
+  const skipped = [];
+  const byId = new Map(list.filter(Boolean).map(t => [String(t.id), t]));
+  ids.forEach(id => {
+    const reason = shareIneligibleReason(byId.get(id), opts);
+    if (reason) skipped.push({ id, reason, label: SHARE_SKIP_REASONS[reason] });
+  });
+  const skip = new Set(skipped.map(s => s.id));
+  const updated = list.map(t => {
+    const id = String(t?.id);
+    if (!t || !(id in drafts) || skip.has(id)) return t;
+    const draft = typeof drafts[id] === 'string' ? drafts[id].trim() : '';
+    const keep = normalizeVisibility(t.visibility) === 'client' && !draft ? (t.clientDescription || '') : draft;
+    shared.push(id);
+    return { ...t, ...sharingFields('client', keep) };
+  });
+  return { updated, shared, skipped };
+};

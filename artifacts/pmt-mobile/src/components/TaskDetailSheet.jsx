@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Star, CheckCircle, XCircle, Clock, Tag, Calendar, Loader2, Send, MessageCircle, ListChecks, Check, AlertTriangle, CornerUpLeft, Pencil, Trash2, Smile, Archive, RotateCcw } from 'lucide-react';
+import { Eye, X, Star, CheckCircle, XCircle, Clock, Tag, Calendar, Loader2, Send, MessageCircle, ListChecks, Check, AlertTriangle, CornerUpLeft, Pencil, Trash2, Smile, Archive, RotateCcw } from 'lucide-react';
 import { updateTaskInFirebase, getSubtreeIds } from '../hooks/useFirebaseData.js';
 import { isTaskOverdue } from '../utils/taskUtils.js';
 import { sendNotification } from '../utils/notify.js';
@@ -71,6 +71,7 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
   const [activeSection, setActiveSection] = useState('details');
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const sharingRef = useRef(null);
 
   const [replyingTo, setReplyingTo] = useState(null);
   const [editingMsgId, setEditingMsgId] = useState(null);
@@ -478,7 +479,17 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
               )}
 
               {canEditSharing && (
-                <div className="space-y-2">
+                <div className="space-y-2" ref={sharingRef}>
+                  {savedVisibility !== 'client' && visibility !== 'client' && (
+                    <button
+                      type="button"
+                      data-testid="button-quick-share-client"
+                      onClick={() => { setVisibility('client'); window.setTimeout(() => sharingRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50); }}
+                      className="w-full min-h-[44px] rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700 text-sm font-bold flex items-center justify-center gap-2"
+                    >
+                      <Eye size={15} /> Share with client
+                    </button>
+                  )}
                   <SharingFields
                     compact
                     testIdPrefix="mobile-edit-task"

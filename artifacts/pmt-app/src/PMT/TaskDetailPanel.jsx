@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Plus, Trash2, Send, Link, Check, ExternalLink, AtSign, MessageSquare, CheckCircle, XCircle, CornerDownLeft, Pencil, Clock, FolderOpen } from 'lucide-react';
+import { Eye, X, Plus, Trash2, Send, Link, Check, ExternalLink, AtSign, MessageSquare, CheckCircle, XCircle, CornerDownLeft, Pencil, Clock, FolderOpen } from 'lucide-react';
 import { format, parse, isBefore } from 'date-fns';
 import { sendNotification } from '../utils/notify';
 import DueDateInput from './DueDateInput';
@@ -49,7 +49,7 @@ const tryParseDate = (str) => {
   }
 };
 
-const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEditDueDate = true, setNotifications = () => {}, onClose, onUpdate, seriesCount = 0, clientName = '', saving = false }) => {
+const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEditDueDate = true, setNotifications = () => {}, onClose, onUpdate, seriesCount = 0, clientName = '', saving = false, onShare }) => {
   const [steps, setSteps] = useState(() => task.steps || []);
   const [messages, setMessages] = useState(() => task.messages || []);
   const [localDueDate, setLocalDueDate] = useState(() => tryParseDate(task.dueDate));
@@ -534,6 +534,18 @@ const TaskDetailPanel = ({ task, currentUser, users = [], canEdit = true, canEdi
                 </div>
               )}
             </div>
+            {onShare && (
+              <button
+                type="button"
+                data-testid="button-detail-share-client"
+                onClick={onShare}
+                disabled={saving}
+                className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50"
+                title={task?.visibility === 'client' ? 'Edit what the client sees' : 'Share with client'}
+              >
+                <Eye size={12} /> {task?.visibility === 'client' ? 'Shared' : 'Share with client'}
+              </button>
+            )}
             <button
               onClick={onClose}
               className="flex-shrink-0 p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 transition-all"
