@@ -10,6 +10,10 @@ export interface PortalTask {
   id: string;
   title: string;
   description: string;
+  category: string;
   status: string;
+  statusEditable: boolean;
+  /** Safe explanation when statusEditable is false; empty otherwise */
+  statusEditReason: string;
   dueDate: string;
 }

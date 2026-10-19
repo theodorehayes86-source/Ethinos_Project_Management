@@ -1365,7 +1365,14 @@ export const ListClientPortalTasksResponse = zod.object({
       id: zod.string(),
       title: zod.string(),
       description: zod.string(),
+      category: zod.string(),
       status: zod.string(),
+      statusEditable: zod.boolean(),
+      statusEditReason: zod
+        .string()
+        .describe(
+          "Safe explanation when statusEditable is false; empty otherwise",
+        ),
       dueDate: zod.string(),
     }),
   ),
@@ -1383,6 +1390,8 @@ export const createClientPortalTaskBodyTitleMax = 200;
 
 export const createClientPortalTaskBodyDescriptionMax = 5000;
 
+export const createClientPortalTaskBodyCategoryMax = 100;
+
 export const createClientPortalTaskBodyDueDateRegExp = new RegExp(
   "^\\d{4}-\\d{2}-\\d{2}$",
 );
@@ -1390,10 +1399,44 @@ export const createClientPortalTaskBodyDueDateRegExp = new RegExp(
 export const CreateClientPortalTaskBody = zod.object({
   title: zod.string().min(1).max(createClientPortalTaskBodyTitleMax),
   description: zod.string().max(createClientPortalTaskBodyDescriptionMax),
+  category: zod.string().max(createClientPortalTaskBodyCategoryMax).optional(),
   dueDate: zod
     .string()
     .regex(createClientPortalTaskBodyDueDateRegExp)
     .optional(),
+});
+
+export const updateClientPortalTaskPathClientIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]+$",
+);
+export const updateClientPortalTaskPathTaskIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]+$",
+);
+
+export const UpdateClientPortalTaskParams = zod.object({
+  clientId: zod.coerce.string().regex(updateClientPortalTaskPathClientIdRegExp),
+  taskId: zod.coerce.string().regex(updateClientPortalTaskPathTaskIdRegExp),
+});
+
+export const UpdateClientPortalTaskBody = zod.object({
+  status: zod.enum(["Pending", "In Progress", "Completed"]),
+});
+
+export const UpdateClientPortalTaskResponse = zod.object({
+  task: zod.object({
+    id: zod.string(),
+    title: zod.string(),
+    description: zod.string(),
+    category: zod.string(),
+    status: zod.string(),
+    statusEditable: zod.boolean(),
+    statusEditReason: zod
+      .string()
+      .describe(
+        "Safe explanation when statusEditable is false; empty otherwise",
+      ),
+    dueDate: zod.string(),
+  }),
 });
 
 export const ListClientPortalUsersResponse = zod.object({

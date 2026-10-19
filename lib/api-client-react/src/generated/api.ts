@@ -50,6 +50,8 @@ import type {
   StudioBootstrap,
   StudioConfig,
   StudioItemResponse,
+  UpdateClientPortalTask200,
+  UpdateClientPortalTaskBody,
   UpdateClientPortalUser200,
   UpdateCreativeStudioDeliverableBody,
 } from "./api.schemas";
@@ -1839,6 +1841,115 @@ export const useCreateClientPortalTask = <
   TContext
 > => {
   return useMutation(getCreateClientPortalTaskMutationOptions(options));
+};
+
+export const getUpdateClientPortalTaskUrl = (
+  clientId: string,
+  taskId: string,
+) => {
+  return `/api/client-portal/clients/${clientId}/tasks/${taskId}`;
+};
+
+export const updateClientPortalTask = async (
+  clientId: string,
+  taskId: string,
+  updateClientPortalTaskBody: UpdateClientPortalTaskBody,
+  options?: RequestInit,
+): Promise<UpdateClientPortalTask200> => {
+  return customFetch<UpdateClientPortalTask200>(
+    getUpdateClientPortalTaskUrl(clientId, taskId),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateClientPortalTaskBody),
+    },
+  );
+};
+
+export const getUpdateClientPortalTaskMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateClientPortalTask>>,
+    TError,
+    {
+      clientId: string;
+      taskId: string;
+      data: BodyType<UpdateClientPortalTaskBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateClientPortalTask>>,
+  TError,
+  {
+    clientId: string;
+    taskId: string;
+    data: BodyType<UpdateClientPortalTaskBody>;
+  },
+  TContext
+> => {
+  const mutationKey = ["updateClientPortalTask"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateClientPortalTask>>,
+    {
+      clientId: string;
+      taskId: string;
+      data: BodyType<UpdateClientPortalTaskBody>;
+    }
+  > = (props) => {
+    const { clientId, taskId, data } = props ?? {};
+
+    return updateClientPortalTask(clientId, taskId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateClientPortalTaskMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateClientPortalTask>>
+>;
+export type UpdateClientPortalTaskMutationBody =
+  BodyType<UpdateClientPortalTaskBody>;
+export type UpdateClientPortalTaskMutationError = ErrorType<void>;
+
+export const useUpdateClientPortalTask = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateClientPortalTask>>,
+    TError,
+    {
+      clientId: string;
+      taskId: string;
+      data: BodyType<UpdateClientPortalTaskBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateClientPortalTask>>,
+  TError,
+  {
+    clientId: string;
+    taskId: string;
+    data: BodyType<UpdateClientPortalTaskBody>;
+  },
+  TContext
+> => {
+  return useMutation(getUpdateClientPortalTaskMutationOptions(options));
 };
 
 export const getListClientPortalUsersUrl = () => {

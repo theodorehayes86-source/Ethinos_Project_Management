@@ -11,21 +11,30 @@ export const DEMO_CLIENTS = [
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
 const DAY = 86400000;
-const isoDay = (offset, now) => new Date(now + offset * DAY).toISOString().slice(0, 10);
+// Local calendar day (never toISOString, which shifts across midnight in IST etc).
+const isoDay = (offset, now) => {
+  const d = new Date(now + offset * DAY);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+// Mirrors the backend: client sets these, server stores canonical staff values.
+const CLIENT_TO_CANONICAL = { Pending: 'Pending', 'In Progress': 'WIP', Completed: 'Done' };
 
 class DemoError extends Error { constructor(m, status) { super(m); this.status = status; } }
 
 function seed(now) {
-  const t = (id, clientId, title, status, due, description) => ({ id, clientId, title, status, dueDate: due, description });
+  const t = (id, clientId, title, status, due, category, description, extra = {}) => ({ id, clientId, title, category, status, dueDate: due, description, statusEditable: true, ...extra });
   const at = (h) => new Date(now + h * 3600000).toISOString();
   return {
     seq: 100,
     tasks: [
-      t('t1', 'demo-harbour', 'Approve spring catalogue copy', 'Pending', isoDay(2, now), 'Final copy for the spring catalogue landing page.'),
-      t('t2', 'demo-harbour', 'Share store opening photos', 'WIP', isoDay(-1, now), 'Upload 10 to 15 photos from the Bandra opening.'),
-      t('t3', 'demo-harbour', 'Monthly performance review', 'Done', isoDay(-6, now), 'Reviewed September results with the team.'),
-      t('t4', 'demo-kestrel', 'Confirm festive offer pricing', 'Pending', isoDay(0, now), 'Need the final discount slabs for Diwali.'),
-      t('t5', 'demo-kestrel', 'Review search ad keywords', 'WIP', isoDay(5, now), ''),
+      t('t1', 'demo-harbour', 'Approve spring catalogue copy', 'Pending', isoDay(2, now), 'Content', 'Final copy for the spring catalogue landing page. Please flag any product names that changed.'),
+      t('t2', 'demo-harbour', 'Share store opening photos', 'WIP', isoDay(-1, now), 'Social Media', 'Upload 10 to 15 photos from the Bandra opening to the shared folder.'),
+      t('t3', 'demo-harbour', 'Monthly performance review', 'Done', isoDay(-6, now), 'Reporting', 'Reviewed September results with the team.'),
+      t('t6', 'demo-harbour', 'Homepage banner refresh', 'WIP', isoDay(9, now), 'Website', 'Swap the hero banner for the monsoon collection.', { statusEditable: false, statusEditReason: 'Your agency is tracking time on this task right now.' }),
+      t('t7', 'demo-harbour', 'Brand guideline PDF', 'Pending', null, 'Branding', 'Send the latest logo files and colour codes when convenient.'),
+      t('t8', 'demo-harbour', 'Festive campaign moodboard', 'On Hold', isoDay(14, now), 'Creative', 'Paused until the festive budget is confirmed.', { statusEditable: false, statusEditReason: 'In quality review with your agency.' }),
+      t('t4', 'demo-kestrel', 'Confirm festive offer pricing', 'Pending', isoDay(0, now), 'Performance Marketing', 'Need the final discount slabs for Diwali.'),
+      t('t5', 'demo-kestrel', 'Review search ad keywords', 'WIP', isoDay(5, now), 'SEO', ''),
     ],
     deliverables: [
       {
@@ -63,12 +72,25 @@ export function createDemoStore({ now = () => Date.now() } = {}) {
   const portalApi = {
     me: async () => ({ email: DEMO_EMAIL, clients: clone(DEMO_CLIENTS) }),
     listTasks: async (clientId) => { if (!assigned(clientId)) deny(); return { tasks: clone(state.tasks.filter(x => x.clientId === clientId)) }; },
-    createTask: async (clientId, { title, description, dueDate }) => {
+    createTask: async (clientId, { title, description, dueDate, category }) => {
       if (!assigned(clientId)) deny();
       if (!String(title || '').trim()) throw new DemoError('Title is required.', 400);
-      const task = { id: `t${++state.seq}`, clientId, title: String(title).trim(), status: 'Pending', dueDate: dueDate || null, description: description || '' };
+      const cat = String(category || '').trim();
+      if (cat.length > 100) throw new DemoError('Category must be 100 characters or fewer.', 400);
+      const task = { id: `t${++state.seq}`, clientId, title: String(title).trim(), category: cat, status: 'Pending', dueDate: dueDate || null, description: description || '', statusEditable: true };
       state.tasks = [...state.tasks, task];
       return { task: clone(task) };
+    },
+    updateTaskStatus: async (clientId, taskId, status) => {
+      if (!assigned(clientId)) deny();
+      const task = state.tasks.find(x => x.id === taskId && x.clientId === clientId);
+      if (!task) throw new DemoError('Task not found.', 404);
+      const canonical = CLIENT_TO_CANONICAL[status];
+      if (!canonical) throw new DemoError('Unsupported status.', 400);
+      if (task.statusEditable === false) throw new DemoError(task.statusEditReason || 'This status is managed by your agency.', 409);
+      const updated = { ...task, status: canonical };
+      state.tasks = state.tasks.map(x => (x === task ? updated : x));
+      return { task: clone(updated) };
     },
   };
 

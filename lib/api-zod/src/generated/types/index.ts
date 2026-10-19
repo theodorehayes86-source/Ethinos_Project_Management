@@ -73,5 +73,8 @@ export * from "./studioEditableType";
 export * from "./studioItemResponse";
 export * from "./studioMessage";
 export * from "./studioPhaseAutomation";
+export * from "./updateClientPortalTask200";
+export * from "./updateClientPortalTaskBody";
+export * from "./updateClientPortalTaskBodyStatus";
 export * from "./updateClientPortalUser200";
 export * from "./updateCreativeStudioDeliverableBody";

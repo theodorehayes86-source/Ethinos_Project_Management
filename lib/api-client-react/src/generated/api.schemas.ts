@@ -271,6 +271,8 @@ export interface PortalTaskInput {
   title: string;
   /** @maxLength 5000 */
   description: string;
+  /** @maxLength 100 */
+  category?: string;
   /** @pattern ^\d{4}-\d{2}-\d{2}$ */
   dueDate?: string;
 }
@@ -295,7 +297,11 @@ export interface PortalTask {
   id: string;
   title: string;
   description: string;
+  category: string;
   status: string;
+  statusEditable: boolean;
+  /** Safe explanation when statusEditable is false; empty otherwise */
+  statusEditReason: string;
   dueDate: string;
 }
 
@@ -529,6 +535,23 @@ export type ListClientPortalTasks200 = {
 };
 
 export type CreateClientPortalTask201 = {
+  task: PortalTask;
+};
+
+export type UpdateClientPortalTaskBodyStatus =
+  (typeof UpdateClientPortalTaskBodyStatus)[keyof typeof UpdateClientPortalTaskBodyStatus];
+
+export const UpdateClientPortalTaskBodyStatus = {
+  Pending: "Pending",
+  In_Progress: "In Progress",
+  Completed: "Completed",
+} as const;
+
+export type UpdateClientPortalTaskBody = {
+  status: UpdateClientPortalTaskBodyStatus;
+};
+
+export type UpdateClientPortalTask200 = {
   task: PortalTask;
 };
 

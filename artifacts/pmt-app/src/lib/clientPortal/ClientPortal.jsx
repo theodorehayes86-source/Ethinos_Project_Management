@@ -6,26 +6,14 @@ import {
   signInWithEmailAndPassword, sendEmailVerification, sendPasswordResetEmail, signOut,
 } from 'firebase/auth';
 import {
-  ChevronLeft, Clock, Activity, CheckCircle, AlertTriangle, Calendar, Plus, X, LogOut,
-  Loader2, Mail, RefreshCw, ShieldCheck, Building2, ArrowRight, Lock, Search,
+  CheckCircle, AlertTriangle, LogOut, Loader2, Mail, ShieldCheck, Building2, ArrowRight, Lock,
 } from 'lucide-react';
 import PortalStudio from '../creativeStudio/PortalStudio.jsx';
 import { peekStudioLink, createStudioApi } from '../creativeStudio/core.js';
-import { createPortalApi, isRevocationError, portalStats, filterPortalTasks, portalStudioClients } from './core.js';
+import { createPortalApi, isRevocationError, portalStudioClients } from './core.js';
+import ClientTasks from './ClientTasks.jsx';
 
 const POLL_MS = 30000;
-
-const STATUS_STYLE = {
-  pending: 'bg-amber-50 text-amber-700 border-amber-200',
-  wip: 'bg-blue-50 text-blue-700 border-blue-200',
-  done: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-};
-const statusKey = (s) => {
-  const v = String(s || 'Pending').toLowerCase();
-  if (v === 'done' || v === 'completed') return 'done';
-  if (v === 'wip' || v === 'in progress') return 'wip';
-  return 'pending';
-};
 
 function Shell({ children }) {
   return (
@@ -162,212 +150,16 @@ function VerifyGate({ user, onSignOut, onVerified }) {
   );
 }
 
-function StatCard({ label, value, icon, tone }) {
-  return (
-    <div className={`bg-white border ${tone === 'red' ? 'border-red-100' : 'border-slate-100'} rounded-xl px-4 py-3 shadow-sm`}>
-      <div className="flex items-center justify-between">
-        <span className={`text-[10px] font-bold uppercase tracking-wider ${tone === 'red' ? 'text-red-500' : 'text-slate-500'}`}>{label}</span>
-        {icon}
-      </div>
-      <p className={`text-xl font-black mt-1 ${tone === 'red' ? 'text-red-600' : 'text-slate-900'}`}>{value}</p>
-    </div>
-  );
-}
-
-function AddTaskModal({ clientName, onClose, onSubmit }) {
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [dueDate, setDueDate] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const submit = async (e) => {
-    e.preventDefault();
-    if (!title.trim()) { setError('Title is required.'); return; }
-    setBusy(true); setError('');
-    try { await onSubmit({ title: title.trim(), description: description.trim(), dueDate: dueDate || undefined }); onClose(); }
-    catch (err) { setError(err?.message || 'Could not add task.'); }
-    finally { setBusy(false); }
-  };
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
-      <form onSubmit={submit} className="relative bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl p-5 space-y-3 shadow-xl">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-base font-bold text-slate-900">Add a task</h3>
-            <p className="text-xs text-slate-500">For {clientName}. Your agency team will pick it up.</p>
-          </div>
-          <button type="button" onClick={onClose} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center"><X size={15} className="text-slate-600" /></button>
-        </div>
-        <label className="block space-y-1.5">
-          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Title <span className="text-red-500">*</span></span>
-          <input data-testid="input-portal-task-title" autoFocus value={title} onChange={e => setTitle(e.target.value)} maxLength={200} className={inputCls} />
-        </label>
-        <label className="block space-y-1.5">
-          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Description</span>
-          <textarea data-testid="input-portal-task-description" value={description} onChange={e => setDescription(e.target.value)} rows={4} maxLength={4000} className={`${inputCls} resize-none`} />
-        </label>
-        <label className="block space-y-1.5">
-          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Due date <span className="text-slate-400 normal-case font-normal">(optional)</span></span>
-          <input data-testid="input-portal-task-due" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className={inputCls} />
-        </label>
-        {error && <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>}
-        <button data-testid="button-portal-task-submit" type="submit" disabled={busy} className={primaryBtn}>
-          {busy ? <Loader2 size={16} className="animate-spin" /> : <Plus size={15} />} Add task
-        </button>
-      </form>
-    </div>
-  );
-}
-
-function SkeletonRows() {
-  return (
-    <div className="space-y-2 p-4">
-      {[0, 1, 2, 3].map(i => <div key={i} className="h-10 rounded-lg bg-slate-100 animate-pulse" />)}
-    </div>
-  );
-}
-
-function ClientDetail({ client, api, auth, onBack, onRevoked }) {
-  const [tasks, setTasks] = useState(null);
-  const [error, setError] = useState('');
-  const [showAdd, setShowAdd] = useState(false);
-  const [query, setQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const seqRef = useRef(0);
-
-  const load = useCallback(async () => {
-    const seq = ++seqRef.current;
-    const uid = auth.currentUser?.uid;
-    const stale = () => seq !== seqRef.current || auth.currentUser?.uid !== uid;
-    try {
-      const data = await api.listTasks(client.id);
-      if (stale()) return;
-      setTasks(Array.isArray(data?.tasks) ? data.tasks : []);
-      setError('');
-    } catch (err) {
-      if (stale()) return;
-      setTasks(null); // never keep stale private content after an error
-      setError(err?.message || 'Could not load tasks.');
-      if (isRevocationError(err)) onRevoked();
-    }
-  }, [api, auth, client.id, onRevoked]);
-
-  useEffect(() => {
-    setTasks(null);
-    load();
-    const id = setInterval(load, POLL_MS);
-    const onFocus = () => load();
-    const onVis = () => { if (document.visibilityState === 'visible') load(); };
-    window.addEventListener('focus', onFocus);
-    document.addEventListener('visibilitychange', onVis);
-    return () => {
-      seqRef.current += 1;
-      clearInterval(id);
-      window.removeEventListener('focus', onFocus);
-      document.removeEventListener('visibilitychange', onVis);
-    };
-  }, [load]);
-
-  const stats = portalStats(tasks || []);
-  const visibleTasks = filterPortalTasks(tasks || [], { query, status: statusFilter });
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3">
-          <button data-testid="button-portal-back" onClick={onBack} className="p-2 bg-white hover:bg-slate-50 rounded-xl border border-slate-100 shadow-sm">
-            <ChevronLeft size={18} className="text-slate-600" />
-          </button>
-          <h2 data-testid="text-portal-client-name" className="text-xl font-bold text-slate-900 tracking-tight">{client.name}</h2>
-        </div>
-        <div className="flex items-center gap-2">
-          <button data-testid="button-portal-refresh" onClick={load} className="bg-white border border-slate-200 text-slate-700 px-3 py-2 rounded-lg font-semibold text-xs hover:bg-slate-50 flex items-center gap-1.5">
-            <RefreshCw size={13} /> Refresh
-          </button>
-          <button data-testid="button-portal-add-task" onClick={() => setShowAdd(true)} className="bg-indigo-600 text-white px-3.5 py-2 rounded-lg font-bold text-xs hover:bg-indigo-700 flex items-center gap-1.5">
-            <Plus size={13} /> Add task
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-        <StatCard label="Total Pending" value={stats.pending} icon={<Clock size={13} className="text-orange-500" />} />
-        <StatCard label="WIP Tasks" value={stats.wip} icon={<Activity size={13} className="text-blue-500" />} />
-        <StatCard label="Completed" value={stats.done} icon={<CheckCircle size={13} className="text-emerald-500" />} />
-        <StatCard label="Overdue" value={stats.overdue} tone="red" icon={<AlertTriangle size={13} className="text-red-500" />} />
-        <StatCard label="Due Today" value={stats.dueToday} icon={<Calendar size={13} className="text-slate-500" />} />
-      </div>
-
-      <div className="flex gap-2 flex-wrap">
-        <div className="relative flex-1 min-w-[180px]">
-          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input data-testid="input-portal-search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search tasks" className="w-full pl-8 pr-3 py-2 rounded-lg border border-slate-200 bg-white text-xs outline-none focus:ring-2 ring-indigo-500/20" />
-        </div>
-        <select data-testid="select-portal-status" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold text-slate-700 outline-none">
-          <option value="all">All tasks</option>
-          <option value="pending">Pending</option>
-          <option value="wip">In progress</option>
-          <option value="done">Completed</option>
-          <option value="overdue">Overdue</option>
-        </select>
-      </div>
-
-      <div className="bg-white border border-slate-100 rounded-xl shadow-sm overflow-hidden">
-        <div className="hidden md:grid grid-cols-[2fr_1fr_1fr_3fr] gap-4 px-5 py-3 bg-slate-50 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-          <span>Task</span><span>Due date</span><span>Status</span><span>Description</span>
-        </div>
-        {error ? (
-          <div className="p-8 text-center">
-            <AlertTriangle size={26} className="text-red-400 mx-auto mb-2" />
-            <p data-testid="text-portal-tasks-error" className="text-sm font-semibold text-slate-700">{error}</p>
-            <button onClick={load} className="mt-3 text-xs font-bold text-indigo-600 hover:underline">Try again</button>
-          </div>
-        ) : tasks === null ? <SkeletonRows /> : tasks.length === 0 ? (
-          <div className="p-10 text-center">
-            <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center mx-auto mb-3"><Building2 size={20} className="text-indigo-500" /></div>
-            <p className="text-sm font-bold text-slate-800">Nothing shared yet</p>
-            <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto">Tasks your agency shares with you will appear here. You can also add a request.</p>
-          </div>
-        ) : visibleTasks.length === 0 ? (
-          <p className="p-8 text-center text-xs text-slate-400">No tasks match these filters.</p>
-        ) : (
-          <ul className="divide-y divide-slate-100">
-            {visibleTasks.map(t => (
-              <li key={t.id} data-testid={`row-portal-task-${t.id}`} className="px-5 py-3.5 md:grid md:grid-cols-[2fr_1fr_1fr_3fr] md:gap-4 md:items-start space-y-1.5 md:space-y-0">
-                <p className="text-sm font-semibold text-slate-900 break-words">{t.title}</p>
-                <p className="text-xs text-slate-600 flex items-center gap-1"><Calendar size={11} className="text-slate-400 md:hidden" />{t.dueDate || <span className="text-slate-300">No due date</span>}</p>
-                <span className={`inline-flex w-fit text-[11px] font-bold px-2 py-0.5 rounded-full border ${STATUS_STYLE[statusKey(t.status)]}`}>{t.status || 'Pending'}</span>
-                <p className="text-xs text-slate-500 whitespace-pre-wrap break-words">{t.description || <span className="text-slate-300">No description</span>}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {showAdd && (
-        <AddTaskModal
-          clientName={client.name}
-          onClose={() => setShowAdd(false)}
-          onSubmit={async (payload) => {
-            try { await api.createTask(client.id, payload); }
-            catch (err) { if (isRevocationError(err)) onRevoked(); throw err; }
-            await load();
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-// portalApi / studioApi / onSignOut are injected only by the dev-only demo wrapper.
-export default function ClientPortal({ auth, user, apiBase, onExitToStaff, portalApi, studioApi: injectedStudioApi, onSignOut }) {
+// portalApi / studioApi / onSignOut / initialClientId / initialTaskView are injected
+// only by the dev-only demo wrapper; production never passes them.
+export default function ClientPortal({ auth, user, apiBase, onExitToStaff, portalApi, studioApi: injectedStudioApi, onSignOut, initialClientId, initialTaskView }) {
   const [verified, setVerified] = useState(!!user?.emailVerified);
   const [clients, setClients] = useState(null);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState(null);
   const [section, setSection] = useState(() => (peekStudioLink() ? 'creative' : 'tasks'));
   const seqRef = useRef(0);
+  const initialRef = useRef(initialClientId || null);
   // Creative approvals tab exists only while the authorized Studio bootstrap
   // returns at least one enabled client for this member.
   const [studioAvailable, setStudioAvailable] = useState(null); // null = not yet known
@@ -396,7 +188,9 @@ export default function ClientPortal({ auth, user, apiBase, onExitToStaff, porta
       const list = Array.isArray(data?.clients) ? data.clients : [];
       setClients(list);
       setError('');
-      setSelected(sel => (sel && list.some(c => String(c.id) === String(sel.id)) ? sel : (list.length === 1 ? list[0] : null)));
+      const wanted = initialRef.current ? list.find(c => String(c.id) === String(initialRef.current)) : null;
+      initialRef.current = null; // applies to the first load only
+      setSelected(sel => (sel && list.some(c => String(c.id) === String(sel.id)) ? sel : (wanted || (list.length === 1 ? list[0] : null))));
     } catch (err) {
       if (stale()) return;
       clearPrivate();
@@ -494,8 +288,9 @@ export default function ClientPortal({ auth, user, apiBase, onExitToStaff, porta
         ) : clients === null ? (
           <div className="grid gap-3 sm:grid-cols-2 mt-2">{[0, 1].map(i => <div key={i} className="h-20 rounded-xl bg-white/70 animate-pulse" />)}</div>
         ) : selected ? (
-          <ClientDetail
+          <ClientTasks
             key={selected.id}
+            initialView={initialTaskView}
             client={selected}
             api={api}
             auth={auth}

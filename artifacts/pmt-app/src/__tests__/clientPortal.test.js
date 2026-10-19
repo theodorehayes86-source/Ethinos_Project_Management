@@ -106,7 +106,7 @@ describe('stats', () => {
       { status: 'Completed', dueDate: '2026-08-01' },
       { status: 'On Hold', dueDate: '2026-08-01' },
     ], now);
-    expect(s).toEqual({ pending: 1, wip: 1, done: 1, overdue: 1, dueToday: 1 });
+    expect(s).toEqual({ pending: 0, wip: 1, done: 1, hold: 1, overdue: 1, dueToday: 1 });
     expect(parseLooseDate('5th Aug 2026').getDate()).toBe(5);
   });
 });

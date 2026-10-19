@@ -80,17 +80,15 @@ export const clientPreviewTasks = (logs) =>
     .filter(t => t && !t.taskGroupId && t.taskType !== 'checklist' && !t.archived && normalizeVisibility(t.visibility) === 'client')
     .map(t => clientSafeTask(t));
 
-/** Portal task stats from the API task shape. */
+/** Portal task stats from the API task shape. On Hold is its own bucket. */
 export const portalStats = (tasks, now = new Date()) => {
   const today = new Date(now); today.setHours(0, 0, 0, 0);
-  const out = { pending: 0, wip: 0, done: 0, overdue: 0, dueToday: 0 };
+  const out = { pending: 0, wip: 0, done: 0, hold: 0, overdue: 0, dueToday: 0 };
   (tasks || []).forEach(t => {
-    const st = String(t.status || 'Pending').toLowerCase();
-    if (st === 'done' || st === 'completed') out.done += 1;
-    else if (st === 'wip' || st === 'in progress') out.wip += 1;
-    else out.pending += 1;
+    const b = portalStatusBucket(t.status);
+    out[b] += 1;
     const d = parseLooseDate(t.dueDate);
-    if (d && st !== 'done' && st !== 'completed') {
+    if (d && b !== 'done') {
       if (d.getTime() === today.getTime()) out.dueToday += 1;
       else if (d < today) out.overdue += 1;
     }
@@ -98,23 +96,87 @@ export const portalStats = (tasks, now = new Date()) => {
   return out;
 };
 
-/** Portal list filter: free-text over title/description + status bucket. */
+/** Status bucket used by KPIs, filters and badges. */
 export const portalStatusBucket = (status) => {
   const v = String(status || 'Pending').toLowerCase();
   if (v === 'done' || v === 'completed') return 'done';
   if (v === 'wip' || v === 'in progress') return 'wip';
+  if (v === 'on hold' || v === 'hold') return 'hold';
   return 'pending';
 };
+
+/** Free-text over title/category/description + status bucket (shared by list and calendar). */
 export const filterPortalTasks = (tasks, { query = '', status = 'all' } = {}, now = new Date()) => {
   const q = query.trim().toLowerCase();
   const today = new Date(now); today.setHours(0, 0, 0, 0);
   return (tasks || []).filter(t => {
-    if (q && !`${t.title || ''} ${t.description || ''}`.toLowerCase().includes(q)) return false;
+    if (q && !`${t.title || ''} ${t.category || ''} ${t.description || ''}`.toLowerCase().includes(q)) return false;
     if (status === 'all') return true;
     const b = portalStatusBucket(t.status);
     if (status === 'overdue') { const d = parseLooseDate(t.dueDate); return b !== 'done' && !!d && d < today; }
     return b === status;
   });
+};
+
+/** The only statuses a client may set (PATCH contract). On Hold is legacy display-only. */
+export const PORTAL_TASK_STATUSES = ['Pending', 'In Progress', 'Completed'];
+const STATUS_FOR_BUCKET = { pending: 'Pending', wip: 'In Progress', done: 'Completed', hold: 'On Hold' };
+/** Maps canonical/legacy values (WIP, Done, On Hold) onto the dropdown option. */
+export const portalStatusValue = (status) => STATUS_FOR_BUCKET[portalStatusBucket(status)];
+export const isPortalTaskStatus = (s) => PORTAL_TASK_STATUSES.includes(s);
+
+/** Server may mark a task read-only; absent flag means editable. */
+export const statusEditState = (task) => (task?.statusEditable === false
+  ? { editable: false, reason: String(task.statusEditReason || 'Your agency is managing this status.') }
+  : { editable: true, reason: '' });
+
+export const PORTAL_CATEGORY_MAX = 100;
+export const validatePortalTask = ({ title, category } = {}) => {
+  const e = {};
+  if (!String(title || '').trim()) e.title = 'Title is required.';
+  if (String(category || '').trim().length > PORTAL_CATEGORY_MAX) e.category = `Category must be ${PORTAL_CATEGORY_MAX} characters or fewer.`;
+  return e;
+};
+
+/** Replace one task in a list by id with the server copy (no duplicates). */
+export const mergeTask = (tasks, task) => {
+  if (!task || task.id === undefined || task.id === null) return tasks;
+  const list = Array.isArray(tasks) ? tasks : [];
+  let found = false;
+  const out = list.map(t => (String(t.id) === String(task.id) ? ((found = true), { ...t, ...task }) : t));
+  return found ? out : [...out, task];
+};
+
+// ---- Calendar helpers: local calendar days only, never via toISOString (UTC shift).
+const pad = (n) => String(n).padStart(2, '0');
+export const localDateKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+/** 6x7 Monday-first grid of local days for a month. */
+export const monthGrid = (year, month) => {
+  const first = new Date(year, month, 1);
+  const offset = (first.getDay() + 6) % 7;
+  return Array.from({ length: 42 }, (_, i) => {
+    const d = new Date(year, month, 1 - offset + i);
+    return { date: d, key: localDateKey(d), inMonth: d.getMonth() === month };
+  });
+};
+
+export const shiftMonth = ({ year, month }, delta) => {
+  const d = new Date(year, month + delta, 1);
+  return { year: d.getFullYear(), month: d.getMonth() };
+};
+
+/** Groups tasks by local due-date key; unparseable/missing dates go to undated. */
+export const groupTasksByDue = (tasks) => {
+  const byDate = {};
+  const undated = [];
+  (tasks || []).forEach(t => {
+    const d = parseLooseDate(t.dueDate);
+    if (!d) { undated.push(t); return; }
+    const k = localDateKey(d);
+    (byDate[k] = byDate[k] || []).push(t);
+  });
+  return { byDate, undated };
 };
 
 const MONTHS = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
@@ -156,11 +218,13 @@ export function createPortalApi({ base, getToken, fetchImpl }) {
   return {
     me: () => call('/client-portal/me'),
     listTasks: (clientId) => call(`/client-portal/clients/${enc(clientId)}/tasks`),
-    createTask: (clientId, { title, description, dueDate }) =>
+    createTask: (clientId, { title, description, dueDate, category }) =>
       call(`/client-portal/clients/${enc(clientId)}/tasks`, {
         method: 'POST',
-        body: { title, description, ...(dueDate ? { dueDate } : {}) },
+        body: { title, description, ...(dueDate ? { dueDate } : {}), ...(category ? { category } : {}) },
       }),
+    updateTaskStatus: (clientId, taskId, status) =>
+      call(`/client-portal/clients/${enc(clientId)}/tasks/${enc(taskId)}`, { method: 'PATCH', body: { status } }),
     adminListUsers: () => call('/client-portal/admin/users'),
     adminCreateUser: (email, clientIds) => call('/client-portal/admin/users', { method: 'POST', body: { email, clientIds } }),
     adminUpdateUser: (uid, patch) => call(`/client-portal/admin/users/${enc(uid)}`, { method: 'PATCH', body: patch }),

@@ -10,4 +10,5 @@ export {
   SaveCreativeStudioAssetBody,
   SendCreativeStudioMessageBody,
   UpdateCreativeStudioDeliverableBody,
+  UpdateClientPortalTaskBody,
 } from "./generated/api";

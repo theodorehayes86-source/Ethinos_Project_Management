@@ -42,7 +42,7 @@ vi.mock("../lib/firebase-admin", () => {
       await state.transaction(path);
       const value = fn(state.data[path] ?? null);
       if (value === undefined) return { committed: false };
-      state.data[path] = value; return { committed: true };
+      state.data[path] = value; return { committed: true, snapshot: { val: () => value } };
     },
   });
   return {
@@ -73,6 +73,8 @@ const membership = { email: client.email, disabled: false, clientIds: ["alpha"] 
 const api = "/api/client-portal";
 const get = (path: string) => request(app).get(`${api}${path}`).set("Authorization", "Bearer test");
 const post = (path: string, body: object) => request(app).post(`${api}${path}`).set("Authorization", "Bearer test").send(body);
+const patchTask = (body: object, clientId = "alpha", taskId = "shared") =>
+  request(app).patch(`${api}/clients/${clientId}/tasks/${taskId}`).set("Authorization", "Bearer test").send(body);
 const sharedTask = {
   name: "Shared deliverable", clientDescription: "Approved copy", visibility: "client",
   status: "Pending", dueDate: "15th Oct 2026", comment: "INTERNAL_SECRET",
@@ -140,11 +142,12 @@ describe("client task API boundary", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ tasks: [{
       id: "shared", title: "Shared deliverable", description: "Approved copy", status: "Pending", dueDate: "2026-10-15",
+      category: "", statusEditable: true, statusEditReason: "",
     }] });
     expect(JSON.stringify(res.body)).not.toMatch(/SECRET|PRIVATE|HIDDEN/);
   });
   it("does not fall back to internal descriptions", () => {
-    expect(projectClientTask("a", { name: "A", visibility: "client", comment: "secret" })?.description).toBe("");
+    expect(projectClientTask("a", { name: "A", visibility: "client", comment: "secret", description: "private" })?.description).toBe("");
     expect(projectClientTask("a", { name: "A" })).toBeNull();
   });
   it("removes tasks returned to Internal on next read", async () => {
@@ -168,7 +171,8 @@ describe("client task API boundary", () => {
       visibility: "client", status: "Pending", taskType: "task", creatorId: client.uid,
       clientId: "alpha", assigneeId: null, dueDate: "16th Oct 2026", repeatFrequency: "Once",
     });
-    expect(Object.keys(res.body.task).sort()).toEqual(["description", "dueDate", "id", "status", "title"]);
+    expect(res.body.task).toMatchObject({ category: "", statusEditable: true, statusEditReason: "" });
+    expect(Object.keys(res.body.task).sort()).toEqual(["category", "description", "dueDate", "id", "status", "statusEditReason", "statusEditable", "title"]);
   });
   it.each(["visibility", "clientId", "creatorId", "status", "assigneeId", "taskType", "steps", "templateId", "taskGroupId", "repeatFrequency"])(
     "rejects forged %s", async field => {
@@ -187,8 +191,8 @@ describe("client task API boundary", () => {
     expect((await post(path, {})).status).toBe(403);
     expect(state.writes).toEqual([]);
   });
-  it("denies edits and deletion", async () => {
-    expect((await request(app).patch(`${api}/clients/alpha/tasks/shared`).set("Authorization", "Bearer test").send({ status: "Done" })).status).toBe(403);
+  it("denies internal status names and deletion", async () => {
+    expect((await patchTask({ status: "Done" })).status).toBe(400);
     expect((await request(app).delete(`${api}/clients/alpha/tasks/shared`).set("Authorization", "Bearer test")).status).toBe(403);
   });
   it("rate limits task creation", async () => {
@@ -206,6 +210,117 @@ describe("client task API boundary", () => {
   it("preserves staff API access", async () => {
     state.verify.mockResolvedValue({ uid: "staff", email: "staff@ethinos.com" });
     expect((await request(app).post("/api/notify").set("Authorization", "Bearer test")).status).toBe(200);
+  });
+});
+
+describe("client task category and atomic status updates (mocked Firebase only)", () => {
+  beforeEach(() => {
+    state.data["clientLogs/alpha/shared"] = structuredClone(sharedTask);
+  });
+  it("persists optional categories and projects them without internal descriptions", async () => {
+    const created = await post("/clients/alpha/tasks", { title: "Brief", description: "", category: "  Design  " });
+    expect(created.status).toBe(201);
+    expect(created.body.task.category).toBe("Design");
+    expect(created.body.task.description).toBe("");
+    expect(state.data["clientLogs/alpha/new-task"].category).toBe("Design");
+    expect((await post("/clients/alpha/tasks", { title: "Brief", description: "", category: "x".repeat(101) })).status).toBe(400);
+    expect((await post("/clients/alpha/tasks", { title: "Brief", description: "", category: 1 })).status).toBe(400);
+    state.data["clientLogs/alpha"].shared = { ...sharedTask, category: "Content", clientDescription: undefined, description: "INTERNAL_SECRET" };
+    expect((await get("/clients/alpha/tasks")).body.tasks[0]).toMatchObject({ category: "Content", description: "" });
+  });
+  it("defaults a created category to empty", async () => {
+    const created = await post("/clients/alpha/tasks", { title: "Brief", description: "" });
+    expect(created.body.task.category).toBe("");
+    expect(state.data["clientLogs/alpha/new-task"].category).toBe("");
+  });
+  it.each([["Pending", "Pending"], ["In Progress", "WIP"], ["Completed", "Done"]])(
+    "maps %s to canonical %s while preserving every other stored field", async (input, stored) => {
+      const path = "clientLogs/alpha/shared";
+      const original = { ...sharedTask, id: "not-the-storage-key", category: "Design", timerState: "stopped",
+        timerStartedAt: null, timeTaken: "1h", completionDate: "retained", completedAt: 123,
+        internalCustomField: { secret: true } };
+      state.data[path] = original;
+      const res = await patchTask({ status: input });
+      expect(res.status).toBe(200);
+      expect(state.data[path]).toEqual({ ...original, status: stored, updatedAt: expect.any(Number) });
+      expect(res.body.task).toMatchObject({ id: "shared", status: stored, category: "Design", statusEditable: true });
+      expect(JSON.stringify(res.body)).not.toMatch(/SECRET|PRIVATE|internalCustomField|elapsedMs|completedAt|completionDate/);
+      expect(state.transaction).toHaveBeenCalledExactlyOnceWith(path);
+      expect(state.writes).toEqual([]);
+      expect(state.mail).not.toHaveBeenCalled();
+    },
+  );
+  it.each([{}, { status: "On Hold" }, { status: "WIP" }, { status: "Done" }, { status: "completed" },
+    { status: "Completed", category: "forged" }, { status: "Completed", visibility: "client" },
+    { status: "Completed", comment: "forged" }, { status: null }])("rejects strict unsupported body %j", async body => {
+    expect((await patchTask(body)).status).toBe(400);
+    expect(state.transaction).not.toHaveBeenCalled();
+  });
+  it.each(["bad.key", "bad%2Fkey", "x".repeat(129)])("rejects invalid stable key %s", async key => {
+    expect((await patchTask({ status: "Completed" }, "alpha", key)).status).toBe(400);
+    expect(state.transaction).not.toHaveBeenCalled();
+  });
+  it.each([null, { ...sharedTask, visibility: "internal" }, { ...sharedTask, taskType: "checklist" },
+    { ...sharedTask, taskType: "taskgroup" }, { ...sharedTask, taskGroupId: "group" },
+    { ...sharedTask, archived: true }, { ...sharedTask, clientId: "beta" }])("rejects non-shared ordinary task %j", async value => {
+    state.data["clientLogs/alpha/shared"] = value;
+    expect((await patchTask({ status: "Completed" })).status).toBe(404);
+    expect(state.data["clientLogs/alpha/shared"]).toEqual(value);
+  });
+  it.each([{ timerState: "running" }, { timerState: "paused" }, { qcEnabled: true },
+    { qcStatus: "sent" }, { qcStatus: "approved" }, { qcStatus: "rejected" }])("blocks lifecycle managed by staff %j", async fields => {
+    const value = { ...sharedTask, ...fields };
+    state.data["clientLogs/alpha/shared"] = value;
+    state.data["clientLogs/alpha"].shared = value;
+    const listed = (await get("/clients/alpha/tasks")).body.tasks[0];
+    expect(listed.statusEditable).toBe(false);
+    expect(listed.statusEditReason).toMatch(/account team/);
+    const res = await patchTask({ status: "Completed" });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe(listed.statusEditReason);
+    expect(state.data["clientLogs/alpha/shared"]).toEqual(value);
+  });
+  it.each(["beta", "missing", "__personal__"])("rejects foreign client %s before its task transaction", async id => {
+    expect((await patchTask({ status: "Completed" }, id)).status).toBe(403);
+    expect(state.transaction).not.toHaveBeenCalled();
+  });
+  it.each([{ ...membership, disabled: true }, { ...membership, clientIds: [] }, null,
+    { ...membership, deletionInProgress: true },
+    { ...membership, onboardingRequired: true, invitation: { status: "revoked" } }])("rejects revoked membership %j", async value => {
+    state.data["clientPortalUsers/client-a"] = value;
+    expect((await patchTask({ status: "Completed" })).status).toBe(403);
+    expect(state.transaction).not.toHaveBeenCalled();
+  });
+  it("rejects an unverified or revoked session", async () => {
+    state.verify.mockResolvedValueOnce({ ...client, email_verified: false });
+    expect((await patchTask({ status: "Completed" })).status).toBe(403);
+    state.verify.mockRejectedValueOnce(new Error("revoked"));
+    expect((await patchTask({ status: "Completed" })).status).toBe(401);
+    expect(state.transaction).not.toHaveBeenCalled();
+  });
+  it("rechecks current visibility inside the transaction after concurrent staff edits", async () => {
+    state.transaction.mockImplementationOnce(() => {
+      state.data["clientLogs/alpha/shared"] = { ...sharedTask, visibility: "internal" };
+    });
+    expect((await patchTask({ status: "Completed" })).status).toBe(404);
+    expect(state.data["clientLogs/alpha/shared"].status).toBe("Pending");
+  });
+  it("preserves concurrent staff fields from the current transaction value", async () => {
+    state.transaction.mockImplementationOnce(() => {
+      state.data["clientLogs/alpha/shared"] = { ...sharedTask, category: "Updated", comment: "NEW_SECRET", elapsedMs: 4567 };
+    });
+    expect((await patchTask({ status: "In Progress" })).status).toBe(200);
+    expect(state.data["clientLogs/alpha/shared"]).toMatchObject({ category: "Updated", comment: "NEW_SECRET", elapsedMs: 4567, status: "WIP" });
+  });
+  it("rechecks membership immediately before writing", async () => {
+    // Directory access happens between the first and second membership reads.
+    const clients = state.data.clients;
+    Object.defineProperty(state.data, "clients", { configurable: true, get: () => {
+      state.data["clientPortalUsers/client-a"] = { ...membership, disabled: true };
+      return clients;
+    } });
+    expect((await patchTask({ status: "Completed" })).status).toBe(403);
+    expect(state.transaction).not.toHaveBeenCalled();
   });
 });
 

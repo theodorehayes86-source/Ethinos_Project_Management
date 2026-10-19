@@ -447,6 +447,44 @@ paths:
                 properties:
                   task:
                     $ref: "#/components/schemas/PortalTask"
+  /client-portal/clients/{clientId}/tasks/{taskId}:
+    parameters:
+      - name: clientId
+        in: path
+        required: true
+        schema: { type: string, pattern: "^[A-Za-z0-9_-]+$" }
+      - name: taskId
+        in: path
+        required: true
+        schema: { type: string, pattern: "^[A-Za-z0-9_-]+$" }
+    patch:
+      operationId: updateClientPortalTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [status]
+              properties:
+                status: { type: string, enum: [Pending, In Progress, Completed] }
+      responses:
+        "200":
+          description: Updated safe task projection; stored statuses are Pending, WIP and Done respectively
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [task]
+                properties:
+                  task:
+                    $ref: "#/components/schemas/PortalTask"
+        "400": { description: Invalid task key or unsupported status or extra fields }
+        "401": { description: Sign-in required }
+        "403": { description: Verified active assigned client access required }
+        "404": { description: Shared ordinary task not found }
+        "409": { description: Internal timer or quality review prevents client status changes }
   /client-portal/admin/users:
     get:
       operationId: listClientPortalUsers
@@ -919,6 +957,7 @@ components:
       properties:
         title: { type: string, minLength: 1, maxLength: 200 }
         description: { type: string, maxLength: 5000 }
+        category: { type: string, maxLength: 100 }
         dueDate: { type: string, pattern: "^\\d{4}-\\d{2}-\\d{2}$" }
     PortalInvitationInput:
       type: object
@@ -949,12 +988,15 @@ components:
         name: { type: string }
     PortalTask:
       type: object
-      required: [id, title, description, status, dueDate]
+      required: [id, title, description, category, status, dueDate, statusEditable, statusEditReason]
       properties:
         id: { type: string }
         title: { type: string }
         description: { type: string }
+        category: { type: string }
         status: { type: string }
+        statusEditable: { type: boolean }
+        statusEditReason: { type: string, description: Safe explanation when statusEditable is false; empty otherwise }
         dueDate: { type: string }
     PortalUser:
       type: object

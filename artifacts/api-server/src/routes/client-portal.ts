@@ -3,6 +3,7 @@ import type { DecodedIdToken } from "firebase-admin/auth";
 import { format } from "date-fns";
 import {
   CreateClientPortalTaskBody,
+  UpdateClientPortalTaskBody, UpdateClientPortalTaskParams, UpdateClientPortalTaskResponse,
   GetClientPortalMeResponse, ListClientPortalTasksResponse, ListClientPortalTasksParams,
   InviteClientPortalUserBody, ListClientPortalUsersResponse,
   UpdateClientPortalUserBody, UpdateClientPortalUserParams, UpdateClientPortalUserResponse,
@@ -12,7 +13,7 @@ import { getAdminAuth, getAdminDatabase } from "../lib/firebase-admin";
 import { createHash } from "node:crypto";
 import { acceptInvitation, assertClientIdentity, inspectInvitation, InvitationError, issueInvitation, revokeInvitation } from "../lib/client-invitations";
 import { logger } from "../lib/logger";
-import { clientDirectory, isStaffEmail, membershipAllows, normalizeDueDate, normalizeMembership, projectClientTask, safeKey, type PortalMembership } from "../lib/client-portal";
+import { clientDirectory, clientTaskStatusEditReason, isStaffEmail, membershipAllows, normalizeDueDate, normalizeMembership, projectClientTask, safeKey, type PortalMembership } from "../lib/client-portal";
 import { deleteClientAccount } from "../lib/client-account-deletion";
 
 const router: IRouter = Router();
@@ -111,7 +112,7 @@ router.get("/clients/:clientId/tasks", async (req, res): Promise<void> => {
   const raw = (await database().ref(`clientLogs/${clientId}`).once("value")).val();
   const tasks = Object.entries(raw ?? {}).flatMap(([key, value]) => {
     if (!value || typeof value !== "object") return [];
-    const task = projectClientTask(key, value as Record<string, unknown>);
+    const task = projectClientTask(key, value as Record<string, unknown>, clientId);
     return task ? [task] : [];
   });
   // Recheck after loading to avoid serving a read that raced a membership revocation.
@@ -124,7 +125,7 @@ router.post("/clients/:clientId/tasks", async (req, res): Promise<void> => {
   const body = CreateClientPortalTaskBody.strict().safeParse(req.body);
   if (!params.success || !safeKey(params.data.clientId) || !body.success || !body.data.title.trim() ||
       (body.data.dueDate && normalizeDueDate(body.data.dueDate) !== body.data.dueDate)) {
-    res.status(400).json({ error: "Provide a task title, description and optional valid due date only." }); return;
+    res.status(400).json({ error: "Provide a task title, description, optional category (up to 100 characters) and optional valid due date only." }); return;
   }
   const { clientId } = params.data;
   if (!await getMembership(req, res, clientId)) return;
@@ -135,6 +136,7 @@ router.post("/clients/:clientId/tasks", async (req, res): Promise<void> => {
   const ref = database().ref(`clientLogs/${clientId}`).push();
   const task = {
     id: ref.key!, name: body.data.title.trim(), clientDescription: body.data.description.trim(),
+    category: body.data.category?.trim() ?? "",
     comment: "", visibility: "client", status: "Pending", taskType: "task",
     date: format(new Date(), "do MMM yyyy"),
     dueDate: body.data.dueDate ? format(new Date(`${body.data.dueDate}T12:00:00`), "do MMM yyyy") : null,
@@ -147,6 +149,42 @@ router.post("/clients/:clientId/tasks", async (req, res): Promise<void> => {
   await ref.update(task);
   const projected = ListClientPortalTasksResponse.shape.tasks.element.parse(projectClientTask(ref.key!, task));
   res.status(201).json({ task: projected });
+});
+
+router.patch("/clients/:clientId/tasks/:taskId", async (req, res): Promise<void> => {
+  const params = UpdateClientPortalTaskParams.safeParse(req.params);
+  const body = UpdateClientPortalTaskBody.strict().safeParse(req.body);
+  if (!params.success || !safeKey(params.data.clientId) || !safeKey(params.data.taskId) || !body.success) {
+    res.status(400).json({ error: "Provide a valid task and only status: Pending, In Progress or Completed." }); return;
+  }
+  const { clientId, taskId } = params.data;
+  if (!await getMembership(req, res, clientId)) return;
+  if (!await validClients([clientId])) { res.status(403).json({ error: "Client access is not available." }); return; }
+  // Use the stable storage key, never a task's mutable id or an entire client collection.
+  const ref = database().ref(`clientLogs/${clientId}/${taskId}`);
+  // Prime Firebase's local transaction cache; an uncached existing task can
+  // otherwise appear as null in the first callback. Never write this read back.
+  await ref.once("value");
+  // Recheck membership immediately before the write, not just at request entry.
+  if (!await getMembership(req, res, clientId)) return;
+  const status = { Pending: "Pending", "In Progress": "WIP", Completed: "Done" }[body.data.status];
+  let blockedReason = "";
+  const result = await ref.transaction(current => {
+    // Firebase may retry this callback with concurrent staff edits. Always recheck
+    // visibility and lifecycle on that current value and preserve every other field.
+    blockedReason = "";
+    if (!current || typeof current !== "object" ||
+        (current.clientId != null && current.clientId !== clientId) || !projectClientTask(taskId, current)) return;
+    blockedReason = clientTaskStatusEditReason(current);
+    if (blockedReason) return;
+    return { ...current, status, updatedAt: Date.now() };
+  }, undefined, false);
+  if (!result.committed) {
+    res.status(blockedReason ? 409 : 404).json({ error: blockedReason || "Shared task not found." }); return;
+  }
+  // A revoked client must not receive task data if access changed during the write.
+  if (!await getMembership(req, res, clientId)) return;
+  res.json(UpdateClientPortalTaskResponse.parse({ task: projectClientTask(taskId, result.snapshot.val()) }));
 });
 
 router.get("/admin/users", async (_req, res): Promise<void> => {

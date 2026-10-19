@@ -41,15 +41,30 @@ export function normalizeDueDate(value: unknown): string {
 }
 
 /** Allow-list only. Never spread a stored task or fall back to its internal comment. */
-export function projectClientTask(id: string, task: Record<string, unknown>) {
-  if (task.visibility !== "client" || task.taskType === "checklist" || task.taskGroupId || task.archived) return null;
+export function clientTaskStatusEditReason(task: Record<string, unknown>): string {
+  if (task.timerState === "running" || task.timerState === "paused") {
+    return "Your account team must stop the task timer before its status can be changed.";
+  }
+  if (task.qcEnabled || task.qcStatus) {
+    return "Your account team manages status changes for tasks with internal quality review.";
+  }
+  return "";
+}
+
+export function projectClientTask(id: string, task: Record<string, unknown>, clientId?: string) {
+  if (clientId && task.clientId != null && task.clientId !== clientId) return null;
+  if (task.visibility !== "client" || (task.taskType != null && task.taskType !== "task") || task.taskGroupId || task.archived) return null;
   const status = ["Pending", "In Progress", "WIP", "Completed", "Done", "On Hold"].includes(String(task.status))
     ? String(task.status) : "Pending";
+  const statusEditReason = clientTaskStatusEditReason(task);
   return {
     id,
     title: typeof task.name === "string" ? task.name : "",
     description: typeof task.clientDescription === "string" ? task.clientDescription : "",
+    category: typeof task.category === "string" ? task.category : "",
     status,
+    statusEditable: !statusEditReason,
+    statusEditReason,
     dueDate: normalizeDueDate(task.dueDate),
   };
 }

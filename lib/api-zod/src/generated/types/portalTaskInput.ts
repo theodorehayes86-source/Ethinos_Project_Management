@@ -14,6 +14,8 @@ export interface PortalTaskInput {
   title: string;
   /** @maxLength 5000 */
   description: string;
+  /** @maxLength 100 */
+  category?: string;
   /** @pattern ^\d{4}-\d{2}-\d{2}$ */
   dueDate?: string;
 }

@@ -4,7 +4,7 @@ description: Product boundaries for invited client users and sharing approval
 ---
 
 Clients see only the clients they have been explicitly added to. They may view shared
-ordinary tasks and add tasks, but cannot create checklists or templates or enter staff
+ordinary tasks, add tasks and update their status, but cannot create checklists or templates or enter staff
 screens. Each client has an Internal and a Client view; staff explicitly choose task
 visibility when creating or editing.
 
@@ -26,6 +26,15 @@ view where it is enabled.
 **How to apply:** Keep client signup separate from staff registration, derive client
 membership from the invitation rather than user-selected roles or accounts, and
 condition Studio visibility on enablement for assigned accounts.
+
+Client tasks should show category and the client-facing description, with list and
+calendar views.
+
+**Why:** The user requested these fields, status interactions and a calendar in the
+client view after trying Test Mode.
+
+**How to apply:** Include them in real and demo client views on desktop and mobile;
+keep internal notes separate and preserve internal QC/timer safeguards.
 
 Client Portal must offer permanent deletion of an email/login account and its access,
 separately from Disable.
