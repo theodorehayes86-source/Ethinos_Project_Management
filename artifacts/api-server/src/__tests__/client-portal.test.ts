@@ -119,6 +119,29 @@ beforeEach(() => {
 });
 
 describe("client task API boundary", () => {
+  it("uses the identical safe task projection for staff preview and actual clients", async () => {
+    const actual = await get("/clients/alpha/tasks");
+    state.verify.mockResolvedValue({ uid: "admin", email: "admin@ethinos.com" });
+    const preview = await get("/clients/alpha/tasks?preview=client");
+    expect(preview.status).toBe(200);
+    expect(preview.body).toEqual(actual.body);
+    expect(state.writes).toEqual([]);
+  });
+  it("denies preview to clients and unrelated or disabled staff", async () => {
+    expect((await get("/clients/alpha/tasks?preview=client")).status).toBe(403);
+    state.verify.mockResolvedValue({ uid: "staff", email: "staff@ethinos.com" });
+    state.data.users = [{ email: "staff@ethinos.com", role: "Employee", assignedProjects: ["OTHER_CLIENT"] }];
+    expect((await get("/clients/alpha/tasks?preview=client")).status).toBe(403);
+    state.data.users[0].assignedProjects = ["Alpha"];
+    expect((await get("/clients/alpha/tasks?preview=client")).status).toBe(200);
+    state.data.users[0].disabled = true;
+    expect((await get("/clients/alpha/tasks?preview=client")).status).toBe(403);
+  });
+  it("does not let the preview query enable client task writes by staff", async () => {
+    state.verify.mockResolvedValue({ uid: "admin", email: "admin@ethinos.com" });
+    expect((await post("/clients/alpha/tasks?preview=client", { title: "Forbidden", description: "" })).status).toBe(403);
+    expect(state.writes).toEqual([]);
+  });
   it("requires a token before reading anything", async () => {
     expect((await request(app).get(`${api}/me`)).status).toBe(401);
     expect(state.reads).toEqual([]);

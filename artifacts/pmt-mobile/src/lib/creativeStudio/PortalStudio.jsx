@@ -14,7 +14,15 @@ const monthTitle = (m) => { const [y, mo] = m.split('-').map(Number); return new
 import { inputCls, btnPrimary, btnGhost, btnAccent, StageBadge, ErrorBanner, SkeletonList, EmptyState, ThreadPanel, Field } from './StudioUI.jsx';
 
 // injectedApi: dev-only demo dependency (never selectable from a URL in production).
-export default function PortalStudio({ auth, apiBase, onRevoked, api: injectedApi }) {
+/** Read-only staff preview adapter: server-projected list only; no actions or posts. */
+export const studioPreviewApi = (api, clients) => ({
+  bootstrap: async () => ({ clients }),
+  list: (clientId) => api.previewList(clientId),
+  messages: (clientId, id, thread) => api.messages(clientId, id, thread),
+});
+
+// readOnly: staff preview. Same rendering as the client; approvals/replies are suppressed.
+export default function PortalStudio({ auth, apiBase, onRevoked, api: injectedApi, readOnly = false }) {
   const realApi = useMemo(() => (injectedApi ? null : createStudioApi({ base: apiBase, getToken: async () => (auth.currentUser ? auth.currentUser.getIdToken() : null) })), [auth, apiBase, injectedApi]);
   const api = injectedApi || realApi;
   const [items, setItems] = useState(null);
@@ -31,7 +39,7 @@ export default function PortalStudio({ auth, apiBase, onRevoked, api: injectedAp
   const setLayout = (v) => { setLayoutRaw(v); try { sessionStorage.setItem(LAYOUT_KEY, v); } catch { /* ignore */ } };
   const [month, setMonth] = useState(() => portalTodayKey().slice(0, 7));
   const seq = useRef(0);
-  const uid = auth.currentUser?.uid;
+  const uid = readOnly ? null : auth.currentUser?.uid;
 
   const load = useCallback(async () => {
     const s = ++seq.current;
@@ -53,19 +61,20 @@ export default function PortalStudio({ auth, apiBase, onRevoked, api: injectedAp
     return () => { seq.current += 1; clearInterval(t); };
   }, [load]);
 
-  const mine = (i) => ['reference', 'final'].some(p => i.approvals?.[p]?.status === 'pending' && i.approvals[p].approverUid === uid && i.stage === `awaiting_${p}`);
+  const mine = (i) => ['reference', 'final'].some(p => i.approvals?.[p]?.status === 'pending' && (readOnly || i.approvals[p].approverUid === uid) && i.stage === `awaiting_${p}`);
   const open = items?.find(i => i.id === openId);
   const name = (id) => clients.find(c => c.id === id)?.name || '';
 
   if (error) return <ErrorBanner message={error} onRetry={load} />;
   if (!items) return <SkeletonList rows={3} />;
-  if (open) return <PortalDetail item={open} api={api} uid={uid} clientName={name(open.clientId)} onBack={() => setOpenId(null)} onChange={(d) => setItems(l => l.map(i => (i.id === d.id ? d : i)))} onReload={load} />;
+  if (open) return <PortalDetail item={open} api={api} uid={uid} readOnly={readOnly} clientName={name(open.clientId)} onBack={() => setOpenId(null)} onChange={(d) => setItems(l => l.map(i => (i.id === d.id ? d : i)))} onReload={load} />;
 
   const waiting = items.filter(mine);
   const linkMissing = openId && !open;
   const rest = items.filter(i => !mine(i));
   return (
     <div className="cs-root space-y-5 text-left text-slate-900">
+      {readOnly && <PreviewNotice />}
       <div className="flex items-end justify-between gap-2">
         <div><p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-600">Creative</p><h2 className="cs-display text-3xl leading-none mt-1">Shared content</h2></div>
         <button data-testid="button-portal-studio-refresh" onClick={load} className={btnGhost}><RefreshCw size={13} /> Refresh</button>
@@ -76,8 +85,8 @@ export default function PortalStudio({ auth, apiBase, onRevoked, api: injectedAp
       ) : (
         <>
           <section>
-            <h3 className="cs-display text-xl mb-2">Waiting on your decision <span className="text-sm text-slate-400">({waiting.length})</span></h3>
-            {waiting.length === 0 ? <p className="text-xs text-slate-400">No approvals assigned to you right now.</p> : <List list={waiting} name={name} onOpen={setOpenId} accent />}
+            <h3 className="cs-display text-xl mb-2">{readOnly ? 'Waiting on a client decision' : 'Waiting on your decision'} <span className="text-sm text-slate-400">({waiting.length})</span></h3>
+            {waiting.length === 0 ? <p className="text-xs text-slate-400">{readOnly ? 'No client approvals pending.' : 'No approvals assigned to you right now.'}</p> : <List list={waiting} name={name} onOpen={setOpenId} accent />}
           </section>
           <section aria-label="All shared content">
             <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -128,13 +137,18 @@ function List({ list, name, onOpen, accent }) {
   );
 }
 
-function PortalDetail({ item, api, uid, clientName, onBack, onChange, onReload }) {
+function PreviewNotice() {
+  return <p data-testid="notice-client-preview" role="note" className="text-[11px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2">Staff preview. Read-only: this is what the client sees. Decisions and replies can only be made by the assigned client approver.</p>;
+}
+
+function PortalDetail({ item, api, uid, readOnly, clientName, onBack, onChange, onReload }) {
   const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState('');
-  const phase = ['reference', 'final'].find(p => item.approvals?.[p]?.status === 'pending' && item.approvals[p].approverUid === uid && item.stage === `awaiting_${p}`);
+  const phase = ['reference', 'final'].find(p => item.approvals?.[p]?.status === 'pending' && (readOnly || item.approvals[p].approverUid === uid) && item.stage === `awaiting_${p}`);
   const decide = async (decision) => {
+    if (readOnly) return;
     if (decision === 'changes_requested' && !feedback.trim()) { setError('Describe the changes you need.'); return; }
     setBusy(true); setError('');
     try {
@@ -146,6 +160,7 @@ function PortalDetail({ item, api, uid, clientName, onBack, onChange, onReload }
   const snapshot = phase ? item.approvals[phase].snapshot : null;
   return (
     <div className="cs-root space-y-4 text-left text-slate-900">
+      {readOnly && <PreviewNotice />}
       <button data-testid="button-portal-studio-back" onClick={onBack} className={btnGhost}><ChevronLeft size={14} /> Shared content</button>
       <div className="rounded-3xl border border-slate-200 bg-white p-4 sm:p-6 space-y-4">
         <div>
@@ -173,7 +188,12 @@ function PortalDetail({ item, api, uid, clientName, onBack, onChange, onReload }
           <p className="text-[11px] text-slate-400 mt-1">File access depends on the file's own sharing permissions.</p>
         </div>
 
-        {phase ? (
+        {phase && readOnly ? (
+          <div data-testid="panel-portal-decision-preview" className="rounded-2xl bg-slate-50 border border-slate-200 p-4 space-y-1">
+            <p className="cs-display text-xl">{phase === 'reference' ? 'Reference approval' : 'Final post approval'}</p>
+            <p className="text-xs text-slate-500">Requested {fmtStamp(item.approvals[phase].requestedAt)}. Awaiting the assigned client approver; approve and request-changes controls are shown only to them.</p>
+          </div>
+        ) : phase ? (
           <div data-testid="panel-portal-decision" className="rounded-2xl bg-white border border-slate-200 text-slate-800 p-4 space-y-3">
             <p className="cs-display text-xl">{phase === 'reference' ? 'Reference approval' : 'Final post approval'}</p>
             <p className="text-xs text-slate-500">Requested {fmtStamp(item.approvals[phase].requestedAt)}. Your decision applies to this exact revision.</p>
@@ -195,7 +215,7 @@ function PortalDetail({ item, api, uid, clientName, onBack, onChange, onReload }
       </div>
       <div>
         <p className="cs-display text-xl mb-2 flex items-center gap-2"><MessageSquare size={16} /> Conversation</p>
-        <ThreadPanel api={api} clientId={item.clientId} itemId={item.id} thread="client" />
+        <ThreadPanel api={api} clientId={item.clientId} itemId={item.id} thread="client" readOnly={readOnly} />
       </div>
     </div>
   );

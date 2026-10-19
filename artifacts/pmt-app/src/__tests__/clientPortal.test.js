@@ -96,11 +96,10 @@ describe('client-safe projection', () => {
     expect(clientSafeTask({ ...task, category: { internal: 'SECRET' } }).category).toBe('');
     const desktop = readFileSync(new URL('../PMT/ClientView.jsx', import.meta.url), 'utf8');
     const mobile = readFileSync(new URL('../../../pmt-mobile/src/components/ClientPreviewSheet.jsx', import.meta.url), 'utf8');
-    expect(desktop).toContain('<span>Category</span>');
+    // Both previews now render the real portal ClientTasks (which shows category via CategoryChip).
     for (const source of [desktop, mobile]) {
-      expect(source).toContain('preview-category-${t.id}');
-      expect(source).toContain("t.category ||");
-      expect(source).toContain('Uncategorised');
+      expect(source).toMatch(/<ClientTasks [^>]*readOnly \/>/);
+      expect(source).not.toContain('preview-category-');
     }
   });
   it('keeps the task date distinct from its due date in both previews', () => {
@@ -111,11 +110,10 @@ describe('client-safe projection', () => {
     expect(clientSafeTask({ ...task, date: { internal: 'SECRET' } }).date).toBeNull();
     const desktop = readFileSync(new URL('../PMT/ClientView.jsx', import.meta.url), 'utf8');
     const mobile = readFileSync(new URL('../../../pmt-mobile/src/components/ClientPreviewSheet.jsx', import.meta.url), 'utf8');
-    expect(desktop).toContain('<span>Date</span>');
+    // The real portal projection has no task date, so previews must not invent one.
     for (const source of [desktop, mobile]) {
-      expect(source).toContain('preview-date-${t.id}');
-      expect(source).toContain('t.date ||');
-      expect(source).toContain('No date');
+      expect(source).not.toContain('preview-date-');
+      expect(source).not.toContain('clientPreviewTasks');
     }
   });
 });

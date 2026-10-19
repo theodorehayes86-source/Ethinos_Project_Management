@@ -1,7 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { X, Search, ChevronLeft, Eye, Lock, Calendar, Building2 } from 'lucide-react';
+import { X, Search, ChevronLeft, Eye, Lock, Building2 } from 'lucide-react';
 import TaskDetailSheet from './TaskDetailSheet.jsx';
-import { clientPreviewTasks, isRealClientId } from '../lib/clientPortal/core.js';
+import { isRealClientId, createPortalApi, previewPortalApi } from '../lib/clientPortal/core.js';
+import ClientTasks from '../lib/clientPortal/ClientTasks.jsx';
+import { auth } from '../firebase.js';
 
 const STATUS_COLORS = {
   Pending: 'bg-amber-100 text-amber-700',
@@ -34,7 +36,11 @@ export default function ClientPreviewSheet({ clients, clientLogs, currentUser, u
       .map(([key, t]) => ({ ...t, id: t?.id ?? key, _clientId: String(client.id), _clientName: client.name }))
       .filter(t => t && !t.taskGroupId && t.taskType !== 'checklist' && !t.archived && canSeeTask(t, client));
   }, [client, clientLogs, canSeeTask]);
-  const previewTasks = useMemo(() => (client ? clientPreviewTasks(clientLogs[String(client.id)] || {}) : []), [client, clientLogs]);
+  // Client preview = real portal ClientTasks over the server's client projection, read-only.
+  const previewApi = useMemo(() => previewPortalApi(createPortalApi({
+    base: import.meta.env.VITE_API_BASE_URL || '/api',
+    getToken: async () => (auth.currentUser ? auth.currentUser.getIdToken() : null),
+  })), []);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end">
@@ -77,30 +83,19 @@ export default function ClientPreviewSheet({ clients, clientLogs, currentUser, u
                   </button>
                 ))}
               </div>
-              <span className="text-[10px] font-bold text-slate-400">{mode === 'client' ? previewTasks.length : internalTasks.length} tasks</span>
+              <span className="text-[10px] font-bold text-slate-400">{mode === 'client' ? 'Client view' : `${internalTasks.length} tasks`}</span>
             </div>
             <div className="flex-1 overflow-y-auto px-5 pb-4 space-y-2">
-              {mode === 'client' && (
-                <p className="text-[11px] font-semibold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">Read-only: exactly what the client sees in the portal.</p>
-              )}
-              {(mode === 'client' ? previewTasks : internalTasks).length === 0 && (
+              {mode === 'client' ? (
+                <div data-testid="panel-client-preview">
+                  <ClientTasks key={client.id} client={{ id: String(client.id), name: client.name }} api={previewApi} auth={auth} readOnly />
+                </div>
+              ) : internalTasks.length === 0 ? (
                 <div className="text-center py-10">
                   <Building2 size={28} className="text-slate-200 mx-auto mb-2" />
-                  <p className="text-sm text-slate-400 font-medium">{mode === 'client' ? 'Nothing shared with this client' : 'No tasks'}</p>
+                  <p className="text-sm text-slate-400 font-medium">No tasks</p>
                 </div>
-              )}
-              {mode === 'client' ? previewTasks.map(t => (
-                <div key={t.id} className="px-4 py-3 rounded-xl border border-slate-200 bg-white space-y-1.5">
-                  <p className="text-sm font-bold text-slate-800">{t.title}</p>
-                  <p data-testid={`preview-date-${t.id}`} className="text-xs text-slate-600 break-words"><span className="font-semibold">Date:</span> {t.date || 'No date'}</p>
-                  <p data-testid={`preview-category-${t.id}`} className="text-xs text-slate-600 break-words"><span className="font-semibold">Category:</span> {t.category || 'Uncategorised'}</p>
-                  <div className="flex items-center gap-2 text-[11px]">
-                    <span className={`font-bold px-2 py-0.5 rounded-full ${STATUS_COLORS[t.status] || 'bg-slate-100 text-slate-600'}`}>{t.status}</span>
-                    <span className="flex items-center gap-1 text-slate-500"><Calendar size={10} />{t.dueDate || 'No due date'}</span>
-                  </div>
-                  <p className="text-xs text-slate-500 whitespace-pre-wrap">{t.description || 'No client description'}</p>
-                </div>
-              )) : internalTasks.map(t => (
+              ) : internalTasks.map(t => (
                 <button key={t.id} onClick={() => setSelectedTask(t)} className="w-full text-left px-4 py-3 rounded-xl border border-slate-200 bg-white space-y-1">
                   <div className="flex items-center gap-2">
                     <p className="flex-1 text-sm font-bold text-slate-800 truncate">{t.name || t.comment || 'Task'}</p>

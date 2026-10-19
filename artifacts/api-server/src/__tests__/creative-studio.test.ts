@@ -65,6 +65,20 @@ beforeEach(() => {
   state.writes = [];
 });
 describe("Creative Studio security and contracts", () => {
+  it("returns identical client-safe Studio data to authorized preview without staff fields", async () => {
+    item().shared = true;
+    const preview = await api("get", "/clients/a/deliverables?preview=client");
+    expect(preview.status).toBe(200);
+    state.verify.mockResolvedValue(external);
+    const actual = await api("get", "/clients/a/deliverables");
+    expect(preview.body).toEqual(actual.body);
+    expect(JSON.stringify(preview.body)).not.toContain("SECRET_BRIEF");
+    expect(preview.body.deliverables[0].assets).toEqual([]);
+    expect(state.writes).toEqual([]);
+    state.verify.mockResolvedValue({ uid: "editorAuth", email: "editor@ethinos.com" });
+    state.data.users.editor.assignedProjects = [];
+    expect((await api("get", "/clients/a/deliverables?preview=client")).status).toBe(403);
+  });
   it("shows an explicitly shared draft in the assigned client's list and detail without internal data", async () => {
     item().plannedAt = "2026-10-19T09:00:00.000Z";
     expect((await action("share")).status).toBe(200);

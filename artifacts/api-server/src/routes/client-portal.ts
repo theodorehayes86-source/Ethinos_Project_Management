@@ -15,6 +15,7 @@ import { acceptInvitation, assertClientIdentity, inspectInvitation, InvitationEr
 import { logger } from "../lib/logger";
 import { clientDirectory, clientTaskStatusEditReason, isStaffEmail, membershipAllows, normalizeDueDate, normalizeMembership, projectClientTask, safeKey, type PortalMembership } from "../lib/client-portal";
 import { deleteClientAccount } from "../lib/client-account-deletion";
+import { ids, permissions, values } from "../lib/creative-studio";
 import clientTaskCollaborationRouter from "./client-task-collaboration";
 import { sendClientTaskUpdateEmail, type ClientTaskUpdateEvent } from "../lib/client-task-update-email";
 
@@ -110,7 +111,9 @@ router.get("/clients/:clientId/tasks", async (req, res): Promise<void> => {
   const params = ListClientPortalTasksParams.safeParse(req.params);
   if (!params.success || !safeKey(params.data.clientId)) { res.status(400).json({ error: "Invalid client." }); return; }
   const { clientId } = params.data;
-  if (!await getMembership(req, res, clientId)) return;
+  const preview = req.query.preview === "client";
+  const allowed = () => preview ? allowStaffPreview(req, res, clientId) : getMembership(req, res, clientId);
+  if (!await allowed()) return;
   if (!await validClients([clientId])) { res.status(403).json({ error: "Client access is not available." }); return; }
   const raw = (await database().ref(`clientLogs/${clientId}`).once("value")).val();
   const tasks = Object.entries(raw ?? {}).flatMap(([key, value]) => {
@@ -119,9 +122,25 @@ router.get("/clients/:clientId/tasks", async (req, res): Promise<void> => {
     return task ? [task] : [];
   });
   // Recheck after loading to avoid serving a read that raced a membership revocation.
-  if (!await getMembership(req, res, clientId)) return;
+  if (!await allowed()) return;
   res.json(ListClientPortalTasksResponse.parse({ tasks }));
 });
+
+async function allowStaffPreview(req: Request, res: Response, clientId: string): Promise<boolean> {
+  const actor = identity(req);
+  const read = async (path: string) => (await database().ref(path).once("value")).val();
+  if (!isStaffEmail(actor.email) || await read(`clientPortalUsers/${actor.uid}`)) {
+    res.status(403).json({ error: "Staff preview access required." }); return false;
+  }
+  const staff = values(await read("users")).find(u => String(u.email).toLowerCase() === actor.email!.toLowerCase()
+    && u.disabled !== true && u.active !== false && !u.archived);
+  const client = values(await read("clients")).find(c => String(c.id) === clientId && !c.deleted && !c.archived);
+  if (!staff || !client || clientId.startsWith("__") ||
+    (!permissions(staff, client, {}).manager && !ids(staff.assignedProjects).includes(client.name))) {
+    res.status(403).json({ error: "Active staff client access required." }); return false;
+  }
+  return true;
+}
 
 router.post("/clients/:clientId/tasks", async (req, res): Promise<void> => {
   const params = ListClientPortalTasksParams.safeParse(req.params);

@@ -52,7 +52,8 @@ function Entry({ e }) {
  * api: object with getTaskCollaboration / addCollaborationEntry / addCollaborationSubtask / setCollaborationSubtask.
  * onClosed(err): called once when the server says the parent task is no longer shared/accessible.
  */
-export default function TaskCollaboration({ api, clientId, taskId, onClosed, viewer = 'client' }) {
+// readOnly: staff client preview. Loads the real shared thread (GET only); every write path is blocked.
+export default function TaskCollaboration({ api, clientId, taskId, onClosed, viewer = 'client', readOnly = false }) {
   const [data, setData] = useState(null); // { entries, subtasks }
   const [loadError, setLoadError] = useState('');
   const [closed, setClosed] = useState(false);
@@ -133,6 +134,7 @@ export default function TaskCollaboration({ api, clientId, taskId, onClosed, vie
   const submitEntry = async (e) => {
     e?.preventDefault();
     if (busyRef.current.entry || closedRef.current) return;
+    if (readOnly) return;
     const payload = { type: mode, text: text.trim(), url: mode === 'link' ? safeExternalUrl(url) : null };
     const errs = validateCollabEntry({ ...payload, url: mode === 'link' ? url : null });
     if (Object.keys(errs).length) { setEntryError(Object.values(errs)[0]); return; }
@@ -159,6 +161,7 @@ export default function TaskCollaboration({ api, clientId, taskId, onClosed, vie
   const submitSubtask = async (e) => {
     e?.preventDefault();
     if (busyRef.current.sub || closedRef.current) return;
+    if (readOnly) return;
     const payload = { title: subTitle.trim() };
     const errs = validateCollabSubtask(payload);
     if (errs.title) { setSubError(errs.title); return; }
@@ -183,6 +186,7 @@ export default function TaskCollaboration({ api, clientId, taskId, onClosed, vie
   };
 
   const toggleSubtask = async (st, completed) => {
+    if (readOnly) return;
     const id = String(st.id);
     if (busyRef.current.toggle.has(id) || closedRef.current) return;
     busyRef.current.toggle.add(id);
@@ -208,7 +212,7 @@ export default function TaskCollaboration({ api, clientId, taskId, onClosed, vie
       <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
         <MessageSquare size={10} /> Shared with client
       </span>
-      <span className="text-[10px] text-slate-400">{viewer === 'staff' ? 'The client sees everything in this section. Internal chat stays private.' : 'Visible to you and your agency team.'}</span>
+      <span className="text-[10px] text-slate-400">{readOnly ? 'Preview only. Replies and subtask changes are made in the portal by the client or internally by staff.' : viewer === 'staff' ? 'The client sees everything in this section. Internal chat stays private.' : 'Visible to you and your agency team.'}</span>
     </div>
   );
 
@@ -253,7 +257,7 @@ export default function TaskCollaboration({ api, clientId, taskId, onClosed, vie
                   return (
                     <li key={id} data-testid={`collab-subtask-${id}`} className="rounded-lg hover:bg-slate-50 px-2 py-1.5">
                       <label className="flex items-start gap-2 cursor-pointer">
-                        <input type="checkbox" data-testid={`checkbox-collab-subtask-${id}`} checked={!!st.completed} disabled={busy}
+                        <input type="checkbox" data-testid={`checkbox-collab-subtask-${id}`} checked={!!st.completed} disabled={busy || readOnly}
                           onChange={e => toggleSubtask(st, e.target.checked)} className="mt-0.5 w-4 h-4 accent-indigo-600" />
                         <span className={`text-sm flex-1 break-words ${st.completed ? 'line-through text-slate-400' : 'text-slate-800'}`}>{st.title}</span>
                         {busy && <Loader2 size={12} className="animate-spin text-indigo-500 mt-1" />}
@@ -270,14 +274,14 @@ export default function TaskCollaboration({ api, clientId, taskId, onClosed, vie
                 })}
               </ul>
             )}
-            <form onSubmit={submitSubtask} className="flex gap-2">
+            {!readOnly && <form onSubmit={submitSubtask} className="flex gap-2">
               <input data-testid="input-collab-subtask" value={subTitle} onChange={e => { setSubTitle(e.target.value); setSubError(''); }} maxLength={COLLAB_LIMITS.title}
                 disabled={subBusy} placeholder="Add a subtask" className={fieldCls} />
               <button type="submit" data-testid="button-collab-subtask-add" disabled={subBusy || !subTitle.trim()}
                 className="shrink-0 px-3 rounded-lg bg-white border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50 flex items-center gap-1">
                 {subBusy ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />} Add
               </button>
-            </form>
+            </form>}
             {subError && <p role="alert" data-testid="text-collab-subtask-error" className="text-[11px] font-semibold text-red-600">{subError}{subSlot.current && <> · <button type="button" onClick={submitSubtask} className="underline text-indigo-600">Retry</button></>}</p>}
           </div>
 
@@ -285,10 +289,10 @@ export default function TaskCollaboration({ api, clientId, taskId, onClosed, vie
           <div className="space-y-2">
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5"><MessageSquare size={12} /> Discussion, notes and links</p>
             {data.entries.length === 0
-              ? <p className="text-xs text-slate-400 bg-slate-50 rounded-lg px-3 py-3 text-center">No messages yet. Start the conversation below.</p>
+              ? <p className="text-xs text-slate-400 bg-slate-50 rounded-lg px-3 py-3 text-center">{readOnly ? 'No messages yet.' : 'No messages yet. Start the conversation below.'}</p>
               : <ul className="space-y-2 max-h-[360px] overflow-y-auto pr-1">{data.entries.map(e => <Entry key={e.id} e={e} />)}</ul>}
 
-            <form onSubmit={submitEntry} className="rounded-xl border border-slate-200 bg-slate-50/60 p-2.5 space-y-2">
+            {!readOnly && <form onSubmit={submitEntry} className="rounded-xl border border-slate-200 bg-slate-50/60 p-2.5 space-y-2">
               <div className="flex gap-1" role="tablist" aria-label="Post type">
                 {MODES.map(({ id, label, Icon }) => (
                   <button key={id} type="button" role="tab" aria-selected={mode === id} data-testid={`button-collab-mode-${id}`} disabled={entryBusy}
@@ -316,7 +320,7 @@ export default function TaskCollaboration({ api, clientId, taskId, onClosed, vie
                   {entryBusy ? 'Posting…' : entryError && entrySlot.current ? 'Retry' : mode === 'note' ? 'Add note' : mode === 'link' ? 'Add link' : 'Send'}
                 </button>
               </div>
-            </form>
+            </form>}
           </div>
         </>
       )}

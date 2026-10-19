@@ -13,6 +13,7 @@ import {
 import { STUDIO_CONFIG_CHANGED } from './access.js';
 import ClientSelect from './ClientSelect.jsx';
 import StudioCalendar from './StudioCalendar.jsx';
+import PortalStudio, { studioPreviewApi } from './PortalStudio.jsx';
 import { isStudioLayout } from './calendar.js';
 import StudioReminderLog, { canSeeReminderLog } from './StudioReminderLog.jsx';
 import {
@@ -163,6 +164,9 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
   }), [items, enabledClients, mode, showArchived, type, clientF, stageF, ownerF, deadlineF]);
 
   const counts = useMemo(() => summarize(filtered), [filtered]);
+  // Client preview renders the real PortalStudio over the server's client projection (read-only).
+  const previewClients = useMemo(() => enabledClients.filter(c => clientF === 'all' || c.id === clientF).map(c => ({ id: c.id, name: c.name })), [enabledClients, clientF]);
+  const previewApi = useMemo(() => studioPreviewApi(api, previewClients), [api, previewClients]);
   const monthItems = useMemo(() => filtered.filter(i => i.plannedAt && monthKey(i.plannedAt, i.timezone) === month)
     .sort((a, b) => Date.parse(a.plannedAt) - Date.parse(b.plannedAt)), [filtered, month]);
   const groups = useMemo(() => {
@@ -224,9 +228,17 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
 
       {mode === 'client' && (
         <div data-testid="status-client-preview" className="mb-3 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs text-indigo-700 flex items-center gap-2">
-          <Eye size={13} /> Preview only: shared, non-archived records (any stage) as a client member sees them. Your identity and permissions are unchanged.
+          <Eye size={13} /> Preview only: the client portal for the selected client(s), from the server's client projection. Your identity and permissions are unchanged.
         </div>
       )}
+
+      {mode === 'client' ? (
+        <div data-testid="panel-studio-client-preview" className="bg-white rounded-2xl border border-slate-200 p-3 md:p-5">
+          {previewClients.length === 0
+            ? <EmptyState icon={<Eye size={20} />} title="No client to preview" body="Select a client with Creative Studio enabled." />
+            : <PortalStudio key={previewClients.map(c => c.id).join('|')} auth={auth} api={previewApi} readOnly />}
+        </div>
+      ) : (<>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
         {cards.map((c, idx) => (
@@ -385,6 +397,7 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
           onClose={() => setEditing(null)}
           onSaved={(d) => { upsert(d); setEditing(null); setSelectedId(d.id); }} />
       )}
+      </>)}
     </div>
   );
 }

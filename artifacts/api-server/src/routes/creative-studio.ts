@@ -150,7 +150,8 @@ router.put("/clients/:clientId/config", route(async (req, res) => {
 }));
 router.get("/clients/:clientId/deliverables", route(async (req, res) => {
   const { clientId } = await scope(req);
-  const deliverables = values(await read(`creativeStudio/items/${clientId}`)).filter(i => !ctx(req).external || (i.shared && !i.archived)).map(i => project(i, ctx(req).external));
+  const externalView = ctx(req).external || req.query.preview === "client";
+  const deliverables = values(await read(`creativeStudio/items/${clientId}`)).filter(i => !externalView || (i.shared && !i.archived)).map(i => project(i, externalView));
   await scope(req);
   res.json({ deliverables });
 }));

@@ -36,6 +36,12 @@ client view after trying Test Mode.
 **How to apply:** Include them in real and demo client views and staff Client preview on desktop and mobile;
 keep internal notes separate and preserve internal QC/timer safeguards.
 
+Staff Client view must match the real portal, not a separately maintained imitation.
+
+**Why:** The user explicitly said there cannot be a mismatch after shared items differed between views.
+
+**How to apply:** Reuse portal renderers and server-side safe projections for ordinary tasks and Creative Studio on desktop/mobile. Staff previews must be labelled read-only and must not impersonate an approver or make client mutations.
+
 Clients can message, leave notes, add links and create subtasks inside shared tasks.
 The account team must be able to read and respond to this shared activity.
 

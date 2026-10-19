@@ -129,6 +129,15 @@ export const portalStatusValue = (status) => STATUS_FOR_BUCKET[portalStatusBucke
 export const isPortalTaskStatus = (s) => PORTAL_TASK_STATUSES.includes(s);
 
 /** Server may mark a task read-only; absent flag means editable. */
+export const PREVIEW_NOTICE = 'Staff preview. Read-only: this is what the client sees. Decisions, status changes and replies can only be made by the client.';
+
+/** Read-only task-list adapter for staff preview: server-projected tasks, no mutations. */
+export const previewPortalApi = (api) => ({
+  listTasks: (clientId) => api.previewTasks(clientId),
+  // Existing staff-authorized collaboration GET: same client-visible entries/links/subtasks.
+  getTaskCollaboration: (clientId, taskId) => api.getTaskCollaboration(clientId, taskId),
+});
+
 export const statusEditState = (task) => (task?.statusEditable === false
   ? { editable: false, reason: String(task.statusEditReason || 'Your agency is managing this status.') }
   : { editable: true, reason: '' });
@@ -221,6 +230,8 @@ export function createPortalApi({ base, getToken, fetchImpl }) {
   return {
     me: () => call('/client-portal/me'),
     listTasks: (clientId) => call(`/client-portal/clients/${enc(clientId)}/tasks`),
+    // Staff-only: same projected task list the client portal receives.
+    previewTasks: (clientId) => call(`/client-portal/clients/${enc(clientId)}/tasks?preview=client`),
     createTask: (clientId, { title, description, dueDate, category }) =>
       call(`/client-portal/clients/${enc(clientId)}/tasks`, {
         method: 'POST',

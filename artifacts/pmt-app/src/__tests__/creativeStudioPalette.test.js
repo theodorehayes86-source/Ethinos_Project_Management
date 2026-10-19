@@ -34,7 +34,7 @@ describe('Creative Studio palette', () => {
   });
   it('portal decision panel is light with semantic actions', () => {
     const p = desktop('PortalStudio.jsx');
-    const panel = p.slice(p.indexOf('panel-portal-decision'), p.indexOf('panel-portal-decision') + 1500);
+    const panel = p.slice(p.indexOf('"panel-portal-decision"'), p.indexOf('"panel-portal-decision"') + 1500);
     expect(panel).toMatch(/bg-white border border-slate-200/);
     expect(panel).toMatch(/bg-emerald-600/);
     expect(panel).toMatch(/bg-red-50 text-red-700/);

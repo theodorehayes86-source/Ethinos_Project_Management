@@ -38,6 +38,8 @@ export function createStudioApi({ base, getToken }) {
     deliveries: (clientId) => call(`/clients/${enc(clientId)}/deliveries`),
     preview: (clientId, opts = {}) => call(`/clients/${enc(clientId)}/preview`, { method: 'POST', body: opts.phase ? { phase: opts.phase } : {} }),
     list: (clientId) => call(`/clients/${enc(clientId)}/deliverables`),
+    // Staff-only: server-projected client view (shared, non-archived, external projection).
+    previewList: (clientId) => call(`/clients/${enc(clientId)}/deliverables?preview=client`),
     get: (clientId, id) => call(item(clientId, id)),
     create: (clientId, body) => call(`/clients/${enc(clientId)}/deliverables`, { method: 'POST', body }),
     update: (clientId, id, body) => call(item(clientId, id), { method: 'PATCH', body }),

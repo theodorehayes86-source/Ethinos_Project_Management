@@ -10,7 +10,7 @@ import {
 import {
   isRevocationError, portalStats, filterPortalTasks, portalStatusBucket, portalStatusValue,
   PORTAL_TASK_STATUSES, isPortalTaskStatus, statusEditState, validatePortalTask, PORTAL_CATEGORY_MAX,
-  mergeTask, monthGrid, shiftMonth, groupTasksByDue, localDateKey, parseLooseDate,
+  mergeTask, monthGrid, shiftMonth, groupTasksByDue, localDateKey, parseLooseDate, PREVIEW_NOTICE,
 } from './core.js';
 import TaskCollaboration from './TaskCollaboration.jsx';
 
@@ -298,7 +298,8 @@ function SkeletonRows() {
   return <div className="space-y-2 p-4">{[0, 1, 2, 3].map(i => <div key={i} className="h-10 rounded-lg bg-slate-100 animate-pulse" />)}</div>;
 }
 
-export default function ClientTasks({ client, api, auth, onBack, onRevoked, initialView = 'list', initialTaskId }) {
+// readOnly: staff preview. Same list/calendar/detail; add, status changes and conversation writes are suppressed; the shared thread is shown read-only.
+export default function ClientTasks({ client, api, auth, onBack, onRevoked = () => {}, initialView = 'list', initialTaskId, readOnly = false }) {
   const [tasks, setTasks] = useState(null);
   const [error, setError] = useState('');
   const [showAdd, setShowAdd] = useState(false);
@@ -326,7 +327,8 @@ export default function ClientTasks({ client, api, auth, onBack, onRevoked, init
       if (stale()) return;
       // A status save started or finished meanwhile: this snapshot may predate it.
       if (epoch !== epochRef.current || inflight.current.size > 0) return;
-      setTasks(Array.isArray(data?.tasks) ? data.tasks : []);
+      const list = Array.isArray(data?.tasks) ? data.tasks : [];
+      setTasks(readOnly ? list.map(t => ({ ...t, statusEditable: false, statusEditReason: 'Preview only. The client manages this status.' })) : list);
       setError('');
     } catch (err) {
       if (stale()) return;
@@ -334,7 +336,7 @@ export default function ClientTasks({ client, api, auth, onBack, onRevoked, init
       setError(err?.message || 'Could not load tasks.');
       if (isRevocationError(err)) onRevoked();
     }
-  }, [api, auth, client.id, onRevoked]);
+  }, [api, auth, client.id, onRevoked, readOnly]);
 
   useEffect(() => {
     setTasks(null);
@@ -354,7 +356,7 @@ export default function ClientTasks({ client, api, auth, onBack, onRevoked, init
 
   const changeStatus = useCallback(async (task, next) => {
     const id = String(task.id);
-    if (!isPortalTaskStatus(next) || inflight.current.has(id) || !statusEditState(task).editable) return;
+    if (readOnly || !isPortalTaskStatus(next) || inflight.current.has(id) || !statusEditState(task).editable) return;
     const op = (opRef.current[id] || 0) + 1;
     opRef.current[id] = op;
     const uid = auth.currentUser?.uid;
@@ -376,7 +378,7 @@ export default function ClientTasks({ client, api, auth, onBack, onRevoked, init
       epochRef.current += 1;
       if (aliveRef.current) setSaving(s => { const n = { ...s }; delete n[id]; return n; });
     }
-  }, [api, auth, client.id, onRevoked]);
+  }, [api, auth, client.id, onRevoked, readOnly]);
 
   const statusPropsFor = (t) => ({ saving: !!saving[String(t.id)], error: statusErrors[String(t.id)], onChange: changeStatus, onRetry: changeStatus });
 
@@ -388,20 +390,21 @@ export default function ClientTasks({ client, api, auth, onBack, onRevoked, init
 
   return (
     <div className="space-y-3">
+      {readOnly && <p data-testid="notice-client-preview" role="note" className="text-[11px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2">{PREVIEW_NOTICE}</p>}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3 min-w-0">
-          <button data-testid="button-portal-back" onClick={onBack} className="p-2 bg-white hover:bg-slate-50 rounded-xl border border-slate-100 shadow-sm">
+          {onBack && <button data-testid="button-portal-back" onClick={onBack} className="p-2 bg-white hover:bg-slate-50 rounded-xl border border-slate-100 shadow-sm">
             <ChevronLeft size={18} className="text-slate-600" />
-          </button>
+          </button>}
           <h2 data-testid="text-portal-client-name" className="text-xl font-bold text-slate-900 tracking-tight truncate">{client.name}</h2>
         </div>
         <div className="flex items-center gap-2">
           <button data-testid="button-portal-refresh" onClick={load} className="bg-white border border-slate-200 text-slate-700 px-3 py-2 rounded-lg font-semibold text-xs hover:bg-slate-50 flex items-center gap-1.5">
             <RefreshCw size={13} /> Refresh
           </button>
-          <button data-testid="button-portal-add-task" onClick={() => setShowAdd(true)} className="bg-indigo-600 text-white px-3.5 py-2 rounded-lg font-bold text-xs hover:bg-indigo-700 flex items-center gap-1.5">
+          {!readOnly && <button data-testid="button-portal-add-task" onClick={() => setShowAdd(true)} className="bg-indigo-600 text-white px-3.5 py-2 rounded-lg font-bold text-xs hover:bg-indigo-700 flex items-center gap-1.5">
             <Plus size={13} /> Add task
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -476,13 +479,14 @@ export default function ClientTasks({ client, api, auth, onBack, onRevoked, init
               clientId={client.id}
               taskId={openTask.id}
               viewer="client"
+              readOnly={readOnly}
               onClosed={(err) => { setOpenId(null); if (err?.status === 401 || err?.status === 403) onRevoked(); else load(); }}
             />
           )}
         />
       )}
 
-      {showAdd && (
+      {showAdd && !readOnly && (
         <AddTaskModal
           clientName={client.name}
           onClose={() => setShowAdd(false)}

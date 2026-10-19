@@ -22,7 +22,8 @@ import SharingFields from '../lib/clientPortal/SharingFields.jsx';
 import ShareWithClientDialog from './ShareWithClientDialog.jsx';
 import TaskCollaboration from '../lib/clientPortal/TaskCollaboration.jsx';
 import { auth } from '../firebase.js';
-import { sharingFields, isNewlyShared, sharingConfirmMessage, isRealClientId, normalizeVisibility, clientPreviewTasks, planClientShare, applyClientShare, createPortalApi, isCollaborationEligible } from '../lib/clientPortal/core.js';
+import { sharingFields, isNewlyShared, sharingConfirmMessage, isRealClientId, normalizeVisibility, planClientShare, applyClientShare, createPortalApi, isCollaborationEligible, previewPortalApi } from '../lib/clientPortal/core.js';
+import ClientTasks from '../lib/clientPortal/ClientTasks.jsx';
 
 const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Business Head'];
 const CLIENT_OWNER_ROLES = ['Business Head', 'CSM'];
@@ -496,6 +497,8 @@ const ClientView = ({
     base: import.meta.env.VITE_API_BASE_URL || '/api',
     getToken: async () => (auth.currentUser ? auth.currentUser.getIdToken() : null),
   }), []);
+  // Staff "Client preview": real portal ClientTasks over the server's client projection, read-only.
+  const previewTaskApi = useMemo(() => previewPortalApi(collabApi), [collabApi]);
   // ---- Share with client (bulk toolbar + task detail). Permission = canFullyEditTask.
   const [shareDialog, setShareDialog] = useState(null); // { ids: string[], source: 'bulk' | 'detail', plan }
   const [shareError, setShareError] = useState('');
@@ -1501,7 +1504,6 @@ const ClientView = ({
       `${user.name} ${user.email || ''}`.toLowerCase().includes(assigneeQuery.toLowerCase())
     );
     if (detailViewMode === 'client' && isRealClientId(selectedClient.id)) {
-      const previewTasks = clientPreviewTasks(clientLogs[selectedClient.id] || []);
       return (
         <div className="min-h-full p-4 font-sans animate-in fade-in duration-500 text-left space-y-3">
           <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -1519,25 +1521,8 @@ const ClientView = ({
             </div>
             <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 border border-indigo-100 px-3 py-2 rounded-lg flex items-center gap-1.5"><Eye size={13}/> Read-only: exactly what the client sees</span>
           </div>
-          <div className="bg-white border border-slate-100 rounded-xl shadow-sm overflow-hidden" data-testid="panel-client-preview">
-            <div className="grid grid-cols-[1fr_2fr_1fr_1fr_1fr_3fr] gap-4 px-5 py-3 bg-slate-50 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-              <span>Date</span><span>Task</span><span>Category</span><span>Due date</span><span>Status</span><span>Client description</span>
-            </div>
-            {previewTasks.length === 0 ? (
-              <div className="p-10 text-center">
-                <p className="text-sm font-bold text-slate-800">No tasks shared with this client</p>
-                <p className="text-xs text-slate-500 mt-1">Set a task's visibility to Client from its edit form to share it.</p>
-              </div>
-            ) : previewTasks.map(t => (
-              <div key={t.id} className="grid grid-cols-[1fr_2fr_1fr_1fr_1fr_3fr] gap-4 px-5 py-3.5 border-b border-slate-100 last:border-0">
-                <p data-testid={`preview-date-${t.id}`} className="text-xs text-slate-600 break-words min-w-0">{t.date || <span className="text-slate-400">No date</span>}</p>
-                <p className="text-sm font-semibold text-slate-900 break-words">{t.title}</p>
-                <p data-testid={`preview-category-${t.id}`} className="text-xs text-slate-600 break-words min-w-0">{t.category || <span className="text-slate-400">Uncategorised</span>}</p>
-                <p className="text-xs text-slate-600">{t.dueDate || <span className="text-slate-300">No due date</span>}</p>
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full border border-slate-200 bg-slate-50 text-slate-700 w-fit h-fit">{t.status}</span>
-                <p className="text-xs text-slate-500 whitespace-pre-wrap break-words">{t.description || <span className="text-slate-300">No client description</span>}</p>
-              </div>
-            ))}
+          <div data-testid="panel-client-preview">
+            <ClientTasks key={selectedClient.id} client={{ id: String(selectedClient.id), name: selectedClient.name }} api={previewTaskApi} auth={auth} readOnly />
           </div>
         </div>
       );
