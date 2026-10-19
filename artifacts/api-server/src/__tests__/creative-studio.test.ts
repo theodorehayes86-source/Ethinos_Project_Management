@@ -331,6 +331,42 @@ describe("Creative Studio revisions and conversations", () => {
     expect((await api("get", path)).body.messages).toHaveLength(1);
     expect((await api("post", path, { idempotencyKey: "retry-1", text: "Changed" })).status).toBe(409);
   });
+  it("uses the authenticated client's account name for chat, not a role or request-supplied name", async () => {
+    item().shared = true;
+    state.verify.mockResolvedValue(external);
+    state.getUser.mockResolvedValue({ email: external.email, emailVerified: true, displayName: "  Alex Example  " });
+    const path = `${itemPath}/messages/client`;
+    const result = await api("post", path, { idempotencyKey: "named-client", text: "Please revise" });
+    expect(result.status).toBe(200);
+    expect(result.body.message.author).toBe("Alex Example");
+    expect((await api("get", path)).body.messages[0].author).toBe("Alex Example");
+    expect((await api("post", path, { idempotencyKey: "spoof", text: "Hello", author: "Someone else" })).status).toBe(400);
+  });
+  it("resolves legacy client labels without rewriting history or exposing account fields", async () => {
+    item().shared = true;
+    state.verify.mockResolvedValue(external);
+    state.data.creativeStudio.clientMessages = { a: { item: {
+      legacy: { id: "legacy", author: "Client", authorUid: "external", at: 1, text: "Old message" },
+      named: { id: "named", author: "Saved Name", authorUid: "external", at: 2, text: "Another" },
+    } } };
+    state.getUser.mockResolvedValue({ displayName: "Alex Example", email: external.email, customClaims: { private: true } });
+    const result = await api("get", `${itemPath}/messages/client`);
+    expect(result.status).toBe(200);
+    expect(result.body.messages.map((m: any) => m.author)).toEqual(["Alex Example", "Saved Name"]);
+    expect(JSON.stringify(result.body)).not.toContain(external.email);
+    expect(JSON.stringify(result.body)).not.toContain("customClaims");
+    expect(state.data.creativeStudio.clientMessages.a.item.legacy.author).toBe("Client");
+    state.getUser.mockRejectedValueOnce(new Error("Profile unavailable"));
+    expect((await api("get", `${itemPath}/messages/client`)).body.messages[0].author).toBe("Client");
+  });
+  it.each([undefined, "", "   ", "private@example.test"])("keeps a safe chat fallback when the account name is %s", async displayName => {
+    item().shared = true;
+    state.verify.mockResolvedValue(external);
+    state.getUser.mockResolvedValue({ displayName });
+    const result = await api("post", `${itemPath}/messages/client`, { idempotencyKey: "fallback", text: "Hello" });
+    expect(result.status).toBe(200);
+    expect(result.body.message.author).toBe("Client");
+  });
 });
 describe("Creative Studio mail safety", () => {
   it("does not acquire a lock or perform database writes when Graph is unconfigured", async () => {

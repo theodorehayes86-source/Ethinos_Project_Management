@@ -8,6 +8,10 @@ import { deliveryEnabled, queueStudioEmail, renderStudioEmail, studioDeliveries 
 const router = Router();
 const db = () => getAdminDatabase();
 const read = async (path: string) => (await db().ref(path).once("value")).val();
+const clientChatName = (displayName: unknown) => {
+  const name = typeof displayName === "string" ? displayName.trim().slice(0, 100) : "";
+  return name && !name.includes("@") ? name : "Client";
+};
 type Context = { uid: string; email: string; external: boolean; user: RecordData; clients: RecordData[]; configs: RecordData; users: RecordData[] };
 const ctx = (req: Request): Context => (req as any).studio;
 const route = (fn: (req: Request, res: Response) => Promise<any>) => (req: Request, res: Response, next: NextFunction) => { Promise.resolve(fn(req, res)).catch(next); };
@@ -255,15 +259,26 @@ router.get("/clients/:clientId/deliverables/:id/messages/:thread", route(async (
   const item = await itemFor(req), thread = String(req.params.thread);
   if (!["internal", "client"].includes(thread) || (ctx(req).external && thread !== "client")) fail(403, "Thread access denied.");
   const messages = values(await read(`creativeStudio/${thread}Messages/${item.clientId}/${item.id}`));
+  // Resolve legacy role labels only; keep saved names and message history intact.
+  const names = new Map<string, string>();
+  if (thread === "client") {
+    await Promise.all([...new Set(messages.filter(m => m.author === "Client" && safeKey(m.authorUid)).map(m => String(m.authorUid)))].map(async uid => {
+      try {
+        const user = await getAdminAuth().getUser(uid);
+        names.set(uid, clientChatName(user.displayName));
+      } catch { /* Deleted or unavailable profiles retain the safe role fallback. */ }
+    }));
+  }
   await itemFor(req);
-  res.json({ messages: messages.sort((a, b) => a.at - b.at) });
+  res.json({ messages: messages.map(m => m.author === "Client" && names.has(m.authorUid) ? { ...m, author: names.get(m.authorUid) } : m).sort((a, b) => a.at - b.at) });
 }));
 router.post("/clients/:clientId/deliverables/:id/messages/:thread", route(async (req, res) => {
   const item = await itemFor(req), thread = String(req.params.thread), c = ctx(req);
   if (!["internal", "client"].includes(thread) || (c.external && thread !== "client")) fail(403, "Thread access denied.");
   strict(req.body, ["idempotencyKey", "text"]);
   if (!safeKey(req.body.idempotencyKey)) fail(400, "A stable retry key is required.");
-  const message = { id: `${c.uid}_${req.body.idempotencyKey}`, text: text(req.body.text, 5000, true), author: c.external ? "Client" : c.user.name ?? "Staff", authorUid: c.uid, at: Date.now() };
+  const author = c.external ? clientChatName((await getAdminAuth().getUser(c.uid)).displayName) : c.user.name ?? "Staff";
+  const message = { id: `${c.uid}_${req.body.idempotencyKey}`, text: text(req.body.text, 5000, true), author, authorUid: c.uid, at: Date.now() };
   const ref = db().ref(`creativeStudio/${thread}Messages/${item.clientId}/${item.id}/${message.id}`);
   await itemFor(req);
   const result = await ref.transaction(current => current ?? message);
