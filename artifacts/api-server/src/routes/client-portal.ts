@@ -18,8 +18,12 @@ import { deleteClientAccount } from "../lib/client-account-deletion";
 import { ids, permissions, values } from "../lib/creative-studio";
 import clientTaskCollaborationRouter from "./client-task-collaboration";
 import { sendClientTaskUpdateEmail, type ClientTaskUpdateEvent } from "../lib/client-task-update-email";
+import { clientTaskReminder, initialTaskCollaboration, validateClientTaskOptions } from "../lib/client-task-creation";
 
 const router: IRouter = Router();
+const clientTaskInput = CreateClientPortalTaskBody.extend({
+  links: CreateClientPortalTaskBody.shape.links.unwrap().element.strict().array().max(50).optional(),
+});
 type PortalRequest = Request & { portalIdentity: DecodedIdToken };
 const identity = (req: Request) => (req as PortalRequest).portalIdentity;
 const database = () => getAdminDatabase();
@@ -144,10 +148,11 @@ async function allowStaffPreview(req: Request, res: Response, clientId: string):
 
 router.post("/clients/:clientId/tasks", async (req, res): Promise<void> => {
   const params = ListClientPortalTasksParams.safeParse(req.params);
-  const body = CreateClientPortalTaskBody.strict().safeParse(req.body);
+  const body = clientTaskInput.strict().safeParse(req.body);
   if (!params.success || !safeKey(params.data.clientId) || !body.success || !body.data.title.trim() ||
-      (body.data.dueDate && normalizeDueDate(body.data.dueDate) !== body.data.dueDate)) {
-    res.status(400).json({ error: "Provide a task title, description, optional category (up to 100 characters) and optional valid due date only." }); return;
+      (body.success && validateClientTaskOptions(body.data))) {
+    res.status(400).json({ error: body.success ? validateClientTaskOptions(body.data) || "Provide a task title."
+      : "Provide valid task details, reminder dates, subtasks and HTTP/HTTPS links only." }); return;
   }
   const { clientId } = params.data;
   if (!await getMembership(req, res, clientId)) return;
@@ -156,19 +161,33 @@ router.post("/clients/:clientId/tasks", async (req, res): Promise<void> => {
     res.status(429).json({ error: "Too many tasks submitted. Try again in a minute." }); return;
   }
   const ref = database().ref(`clientLogs/${clientId}`).push();
+  const account = await getAdminAuth().getUser(identity(req).uid);
+  if (account.disabled || !account.emailVerified || account.email?.toLowerCase() !== identity(req).email?.toLowerCase()) {
+    res.status(403).json({ error: "A verified active client account is required." }); return;
+  }
+  const creatorName = account.displayName?.trim().slice(0, 100);
+  const authorName = creatorName && !creatorName.includes("@") ? creatorName : "Client";
+  const now = Date.now();
   const task = {
     id: ref.key!, name: body.data.title.trim(), clientDescription: body.data.description.trim(),
     category: body.data.category?.trim() ?? "",
     comment: "", visibility: "client", status: "Pending", taskType: "task",
     date: format(new Date(), "do MMM yyyy"),
     dueDate: body.data.dueDate ? format(new Date(`${body.data.dueDate}T12:00:00`), "do MMM yyyy") : null,
-    creatorId: identity(req).uid, creatorRole: "Client", creatorName: "Client",
+    creatorId: identity(req).uid, creatorRole: "Client", creatorName: authorName,
     source: "client-portal", clientId, assigneeId: null, assigneeName: "Unassigned",
     repeatFrequency: "Once", timerState: "idle", elapsedMs: 0,
-    createdAt: Date.now(), updatedAt: Date.now(),
+    ...clientTaskReminder(body.data),
+    createdAt: now, updatedAt: now,
   };
+  const collaboration = initialTaskCollaboration(body.data, identity(req).uid, authorName, now);
   if (!await getMembership(req, res, clientId)) return;
-  await ref.update(task);
+  if (Object.keys(collaboration).length) {
+    await database().ref().update({
+      [`clientLogs/${clientId}/${ref.key}`]: task,
+      [`clientTaskCollaboration/${clientId}/${ref.key}`]: collaboration,
+    });
+  } else { await ref.update(task); }
   const projected = ListClientPortalTasksResponse.shape.tasks.element.parse(projectClientTask(ref.key!, task));
   res.status(201).json({ task: projected });
 });

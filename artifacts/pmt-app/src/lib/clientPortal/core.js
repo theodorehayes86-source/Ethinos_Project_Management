@@ -143,11 +143,116 @@ export const statusEditState = (task) => (task?.statusEditable === false
   : { editable: true, reason: '' });
 
 export const PORTAL_CATEGORY_MAX = 100;
-export const validatePortalTask = ({ title, category } = {}) => {
+export const PORTAL_TIMEZONES = [
+  { value: 'Asia/Kolkata', label: 'IST - India' },
+  { value: 'Europe/London', label: 'GMT/BST - London' },
+  { value: 'America/New_York', label: 'ET - New York' },
+  { value: 'America/Chicago', label: 'CT - Chicago' },
+  { value: 'America/Denver', label: 'MT - Denver' },
+  { value: 'America/Los_Angeles', label: 'PT - Los Angeles' },
+  { value: 'Europe/Berlin', label: 'CET/CEST - Berlin' },
+  { value: 'Asia/Dubai', label: 'GST - Dubai' },
+  { value: 'Asia/Singapore', label: 'SGT - Singapore' },
+  { value: 'Asia/Tokyo', label: 'JST - Tokyo' },
+  { value: 'Australia/Sydney', label: 'AET - Sydney' },
+];
+export const TASK_CREATE_LIMITS = { subtasks: 100, subtaskText: 300, links: 50, linkText: 4000, linkUrl: 2000 };
+export const DEFAULT_REMINDER_TIME = '09:00';
+export const DEFAULT_REMINDER_TZ = 'Asia/Kolkata';
+
+const isRealDate = (v) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v || ''));
+  if (!m) return false;
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  return d.getUTCFullYear() === +m[1] && d.getUTCMonth() === +m[2] - 1 && d.getUTCDate() === +m[3];
+};
+const isRealTime = (v) => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(v || ''));
+export const isValidTimezone = (tz) => {
+  if (typeof tz !== 'string' || !tz) return false;
+  try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); return true; } catch { return false; }
+};
+/** http/https only, no credentials, no whitespace, <= 2000 chars. Returns href-ready string or null. */
+export const safeLinkUrl = (raw) => {
+  const v = String(raw || '').trim();
+  if (!v || v.length > TASK_CREATE_LIMITS.linkUrl || /\s/.test(v)) return null;
+  try {
+    const u = new URL(v);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    if (u.username || u.password) return null;
+    return v;
+  } catch { return null; }
+};
+
+/** Returns { field: message }; subtasks/links errors are arrays indexed by row. Empty object = valid. */
+export const validatePortalTask = ({ title, category, dueDate, reminderDate, reminderTime, reminderTimezone, subtasks, links, description } = {}) => {
   const e = {};
   if (!String(title || '').trim()) e.title = 'Title is required.';
   if (String(category || '').trim().length > PORTAL_CATEGORY_MAX) e.category = `Category must be ${PORTAL_CATEGORY_MAX} characters or fewer.`;
+  if (String(description || '').length > 4000) e.description = 'Description must be 4000 characters or fewer.';
+  if (dueDate && !isRealDate(dueDate)) e.dueDate = 'Enter a valid due date.';
+  if (reminderDate) {
+    if (!isRealDate(reminderDate)) e.reminderDate = 'Enter a valid reminder date.';
+    else if (!dueDate) e.reminderDate = 'Set a due date to use a reminder.';
+    else if (isRealDate(dueDate) && reminderDate > dueDate) e.reminderDate = 'Reminder must be on or before the due date.';
+    if (reminderTime && !isRealTime(reminderTime)) e.reminderTime = 'Enter a valid time.';
+    if (reminderTimezone && !isValidTimezone(reminderTimezone)) e.reminderTimezone = 'Choose a valid timezone.';
+  }
+  const rows = Array.isArray(subtasks) ? subtasks : [];
+  const subErr = rows.map(r => {
+    const t = String(r ?? '').trim();
+    return t.length > TASK_CREATE_LIMITS.subtaskText ? `Keep it under ${TASK_CREATE_LIMITS.subtaskText} characters.` : '';
+  });
+  const filled = rows.filter(r => String(r ?? '').trim());
+  if (filled.length > TASK_CREATE_LIMITS.subtasks) e.subtasksTotal = `Add at most ${TASK_CREATE_LIMITS.subtasks} subtasks.`;
+  if (subErr.some(Boolean)) e.subtasks = subErr;
+  const lrows = Array.isArray(links) ? links : [];
+  const linkErr = lrows.map(r => {
+    const url = String(r?.url ?? '').trim();
+    const text = String(r?.text ?? '').trim();
+    if (!url && !text) return {};
+    const x = {};
+    if (!safeLinkUrl(url)) x.url = 'Enter a full http:// or https:// link without spaces or credentials.';
+    if (text.length > TASK_CREATE_LIMITS.linkText) x.text = `Keep it under ${TASK_CREATE_LIMITS.linkText} characters.`;
+    return x;
+  });
+  if (lrows.filter(r => String(r?.url ?? '').trim() || String(r?.text ?? '').trim()).length > TASK_CREATE_LIMITS.links) e.linksTotal = `Add at most ${TASK_CREATE_LIMITS.links} links.`;
+  if (linkErr.some(x => x.url || x.text)) e.links = linkErr;
   return e;
+};
+
+/** Reminder summary for detail view, or null when the task has no reminder. */
+export const reminderSummary = (task) => {
+  const d = task?.reminderDate;
+  if (!d || !isRealDate(d)) return null;
+  const [y, m, day] = d.split('-').map(Number);
+  const date = new Date(y, m - 1, day).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  const time = isRealTime(task.reminderTime) ? task.reminderTime : DEFAULT_REMINDER_TIME;
+  const tz = isValidTimezone(task.reminderTimezone) ? task.reminderTimezone : DEFAULT_REMINDER_TZ;
+  const label = PORTAL_TIMEZONES.find(t => t.value === tz)?.label || tz;
+  return { date, time, timezone: tz, text: `${date} at ${time} (${label})` };
+};
+
+/** Form state -> API payload. Blank rows dropped; link text defaults to its URL. */
+export const buildCreateTaskPayload = (form) => {
+  const subtasks = (form.subtasks || []).map(s => String(s ?? '').trim()).filter(Boolean);
+  const links = (form.links || [])
+    .map(l => ({ text: String(l?.text ?? '').trim(), url: String(l?.url ?? '').trim() }))
+    .filter(l => l.url || l.text)
+    .map(l => ({ text: l.text || l.url, url: l.url }));
+  const hasReminder = !!(form.dueDate && form.reminderDate);
+  return {
+    title: String(form.title || '').trim(),
+    category: String(form.category || '').trim() || undefined,
+    description: String(form.description || '').trim(),
+    dueDate: form.dueDate || undefined,
+    ...(hasReminder ? {
+      reminderDate: form.reminderDate,
+      reminderTime: form.reminderTime || DEFAULT_REMINDER_TIME,
+      reminderTimezone: form.reminderTimezone || DEFAULT_REMINDER_TZ,
+    } : {}),
+    ...(subtasks.length ? { subtasks } : {}),
+    ...(links.length ? { links } : {}),
+  };
 };
 
 /** Replace one task in a list by id with the server copy (no duplicates). */
@@ -232,10 +337,16 @@ export function createPortalApi({ base, getToken, fetchImpl }) {
     listTasks: (clientId) => call(`/client-portal/clients/${enc(clientId)}/tasks`),
     // Staff-only: same projected task list the client portal receives.
     previewTasks: (clientId) => call(`/client-portal/clients/${enc(clientId)}/tasks?preview=client`),
-    createTask: (clientId, { title, description, dueDate, category }) =>
+    createTask: (clientId, { title, description, dueDate, category, reminderDate, reminderTime, reminderTimezone, subtasks, links }) =>
       call(`/client-portal/clients/${enc(clientId)}/tasks`, {
         method: 'POST',
-        body: { title, description, ...(dueDate ? { dueDate } : {}), ...(category ? { category } : {}) },
+        body: {
+          title, description,
+          ...(dueDate ? { dueDate } : {}), ...(category ? { category } : {}),
+          ...(reminderDate ? { reminderDate, ...(reminderTime ? { reminderTime } : {}), ...(reminderTimezone ? { reminderTimezone } : {}) } : {}),
+          ...(Array.isArray(subtasks) && subtasks.length ? { subtasks: subtasks.map(String) } : {}),
+          ...(Array.isArray(links) && links.length ? { links: links.map(l => ({ text: l.text, url: l.url })) } : {}),
+        },
       }),
     getTaskCollaboration: (clientId, taskId) =>
       call(`/client-portal/clients/${enc(clientId)}/tasks/${enc(taskId)}/collaboration`),

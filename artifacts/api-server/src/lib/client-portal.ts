@@ -57,6 +57,17 @@ export function projectClientTask(id: string, task: Record<string, unknown>, cli
   const status = ["Pending", "In Progress", "WIP", "Completed", "Done", "On Hold"].includes(String(task.status))
     ? String(task.status) : "Pending";
   const statusEditReason = clientTaskStatusEditReason(task);
+  const dueDate = normalizeDueDate(task.dueDate);
+  let reminder: Record<string, string> = {};
+  const offset = Array.isArray(task.reminderOffsets) ? Number(task.reminderOffsets[0]) : NaN;
+  if (task.source === "client-portal" && dueDate && Number.isSafeInteger(offset)) {
+    const reminderDate = new Date(Date.parse(`${dueDate}T00:00:00Z`) + offset * 86_400_000);
+    if (Number.isFinite(reminderDate.getTime())) reminder = {
+      reminderDate: reminderDate.toISOString().slice(0, 10),
+      reminderTime: typeof task.reminderTime === "string" ? task.reminderTime : "09:00",
+      reminderTimezone: typeof task.reminderTimezone === "string" ? task.reminderTimezone : "Asia/Kolkata",
+    };
+  }
   return {
     id,
     title: typeof task.name === "string" ? task.name : "",
@@ -65,7 +76,8 @@ export function projectClientTask(id: string, task: Record<string, unknown>, cli
     status,
     statusEditable: !statusEditReason,
     statusEditReason,
-    dueDate: normalizeDueDate(task.dueDate),
+    dueDate,
+    ...reminder,
   };
 }
 

@@ -1117,6 +1117,23 @@ components:
         description: { type: string, maxLength: 5000 }
         category: { type: string, maxLength: 100 }
         dueDate: { type: string, pattern: "^\\d{4}-\\d{2}-\\d{2}$" }
+        reminderDate: { type: string, pattern: "^\\d{4}-\\d{2}-\\d{2}$" }
+        reminderTime: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$" }
+        reminderTimezone: { type: string, minLength: 1, maxLength: 100 }
+        subtasks:
+          type: array
+          maxItems: 100
+          items: { type: string, minLength: 1, maxLength: 300 }
+        links:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            additionalProperties: false
+            required: [text, url]
+            properties:
+              text: { type: string, minLength: 1, maxLength: 4000 }
+              url: { type: string, minLength: 1, maxLength: 2000 }
     PortalInvitationInput:
       type: object
       additionalProperties: false
@@ -1156,6 +1173,9 @@ components:
         statusEditable: { type: boolean }
         statusEditReason: { type: string, description: Safe explanation when statusEditable is false; empty otherwise }
         dueDate: { type: string }
+        reminderDate: { type: string }
+        reminderTime: { type: string }
+        reminderTimezone: { type: string }
     PortalUser:
       type: object
       required: [uid, email, disabled, clientIds]

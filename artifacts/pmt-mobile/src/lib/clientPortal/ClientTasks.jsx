@@ -4,15 +4,16 @@
 // Duplicated in pmt-mobile; keep in sync.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ChevronLeft, ChevronRight, Clock, Activity, CheckCircle, AlertTriangle, Calendar, Plus, X,
+  ChevronLeft, ChevronRight, Clock, Activity, CheckCircle, AlertTriangle, Calendar, Plus, X, Bell,
   Loader2, RefreshCw, Building2, Search, List, CalendarDays, Lock, Tag, PauseCircle, RotateCcw,
 } from 'lucide-react';
 import {
   isRevocationError, portalStats, filterPortalTasks, portalStatusBucket, portalStatusValue,
-  PORTAL_TASK_STATUSES, isPortalTaskStatus, statusEditState, validatePortalTask, PORTAL_CATEGORY_MAX,
-  mergeTask, monthGrid, shiftMonth, groupTasksByDue, localDateKey, parseLooseDate, PREVIEW_NOTICE,
+  PORTAL_TASK_STATUSES, isPortalTaskStatus, statusEditState,
+  mergeTask, reminderSummary, monthGrid, shiftMonth, groupTasksByDue, localDateKey, parseLooseDate, PREVIEW_NOTICE,
 } from './core.js';
 import TaskCollaboration from './TaskCollaboration.jsx';
+import AddTaskModal from './AddTaskModal.jsx';
 
 const POLL_MS = 30000;
 const inputCls = 'w-full min-h-[44px] px-3.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 outline-none focus:ring-2 ring-indigo-500/20 focus:border-indigo-300';
@@ -94,64 +95,9 @@ function StatCard({ label, value, icon, tone }) {
   );
 }
 
-function AddTaskModal({ clientName, onClose, onSubmit }) {
-  const [form, setForm] = useState({ title: '', category: '', description: '', dueDate: '' });
-  const [busy, setBusy] = useState(false);
-  const [errors, setErrors] = useState({});
-  const [error, setError] = useState('');
-  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
-  const submit = async (e) => {
-    e.preventDefault();
-    if (busy) return;
-    const v = validatePortalTask(form);
-    setErrors(v);
-    if (Object.keys(v).length) return;
-    setBusy(true); setError('');
-    try {
-      await onSubmit({ title: form.title.trim(), category: form.category.trim() || undefined, description: form.description.trim(), dueDate: form.dueDate || undefined });
-      onClose();
-    } catch (err) { setError(err?.message || 'Could not add task.'); setBusy(false); }
-  };
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
-      <form onSubmit={submit} className="relative bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl p-5 space-y-3 shadow-xl max-h-[92dvh] overflow-y-auto">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-base font-bold text-slate-900">Add a task</h3>
-            <p className="text-xs text-slate-500">For {clientName}. Your agency team will pick it up.</p>
-          </div>
-          <button type="button" onClick={onClose} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center"><X size={15} className="text-slate-600" /></button>
-        </div>
-        <label className="block space-y-1.5">
-          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Title <span className="text-red-500">*</span></span>
-          <input data-testid="input-portal-task-title" autoFocus value={form.title} onChange={set('title')} maxLength={200} className={inputCls} />
-          {errors.title && <span className="text-[11px] font-semibold text-red-600">{errors.title}</span>}
-        </label>
-        <label className="block space-y-1.5">
-          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Category <span className="text-slate-400 normal-case font-normal">(optional, e.g. Social, SEO, Website)</span></span>
-          <input data-testid="input-portal-task-category" value={form.category} onChange={set('category')} maxLength={PORTAL_CATEGORY_MAX} className={inputCls} />
-          {errors.category && <span className="text-[11px] font-semibold text-red-600">{errors.category}</span>}
-        </label>
-        <label className="block space-y-1.5">
-          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Description</span>
-          <textarea data-testid="input-portal-task-description" value={form.description} onChange={set('description')} rows={4} maxLength={4000} placeholder="What do you need, and any links or context" className={`${inputCls} py-2.5 resize-none`} />
-        </label>
-        <label className="block space-y-1.5">
-          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Due date <span className="text-slate-400 normal-case font-normal">(optional)</span></span>
-          <input data-testid="input-portal-task-due" type="date" value={form.dueDate} onChange={set('dueDate')} className={inputCls} />
-        </label>
-        {error && <p role="alert" className="text-xs font-semibold text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>}
-        <button data-testid="button-portal-task-submit" type="submit" disabled={busy} className={primaryBtn}>
-          {busy ? <Loader2 size={16} className="animate-spin" /> : <Plus size={15} />} Add task
-        </button>
-      </form>
-    </div>
-  );
-}
-
 function TaskDetail({ task, statusProps, onClose, collaboration }) {
   const due = fmtDue(task.dueDate);
+  const reminder = reminderSummary(task);
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" role="dialog" aria-modal="true" aria-label={task.title}>
       <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
@@ -173,6 +119,12 @@ function TaskDetail({ task, statusProps, onClose, collaboration }) {
             <p className="text-sm font-semibold text-slate-800 flex items-center gap-1.5"><Calendar size={13} className="text-slate-400" />{due || <span className="text-slate-400 font-normal">No due date</span>}</p>
           </div>
         </div>
+        {reminder && (
+          <div className="space-y-1">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Reminder</p>
+            <p data-testid="text-portal-task-detail-reminder" className="text-sm font-semibold text-slate-800 flex items-center gap-1.5"><Bell size={13} className="text-slate-400" />{reminder.text}</p>
+          </div>
+        )}
         <div className="space-y-1.5">
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Description</p>
           <div data-testid="text-portal-task-detail-description" className="text-sm text-slate-700 whitespace-pre-wrap break-words bg-slate-50 border border-slate-100 rounded-xl px-3.5 py-3 min-h-[60px]">

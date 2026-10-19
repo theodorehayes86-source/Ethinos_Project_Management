@@ -16,4 +16,7 @@ export interface PortalTask {
   /** Safe explanation when statusEditable is false; empty otherwise */
   statusEditReason: string;
   dueDate: string;
+  reminderDate?: string;
+  reminderTime?: string;
+  reminderTimezone?: string;
 }

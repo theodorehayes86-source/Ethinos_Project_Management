@@ -327,6 +327,19 @@ export interface StudioMessage {
   at: number;
 }
 
+export type PortalTaskInputLinksItem = {
+  /**
+   * @minLength 1
+   * @maxLength 4000
+   */
+  text: string;
+  /**
+   * @minLength 1
+   * @maxLength 2000
+   */
+  url: string;
+};
+
 export interface PortalTaskInput {
   /**
    * @minLength 1
@@ -339,6 +352,19 @@ export interface PortalTaskInput {
   category?: string;
   /** @pattern ^\d{4}-\d{2}-\d{2}$ */
   dueDate?: string;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  reminderDate?: string;
+  /** @pattern ^([01]\d|2[0-3]):[0-5]\d$ */
+  reminderTime?: string;
+  /**
+   * @minLength 1
+   * @maxLength 100
+   */
+  reminderTimezone?: string;
+  /** @maxItems 100 */
+  subtasks?: string[];
+  /** @maxItems 50 */
+  links?: PortalTaskInputLinksItem[];
 }
 
 export interface PortalInvitationInput {
@@ -367,6 +393,9 @@ export interface PortalTask {
   /** Safe explanation when statusEditable is false; empty otherwise */
   statusEditReason: string;
   dueDate: string;
+  reminderDate?: string;
+  reminderTime?: string;
+  reminderTimezone?: string;
 }
 
 export type PortalUserInvitationStatus =

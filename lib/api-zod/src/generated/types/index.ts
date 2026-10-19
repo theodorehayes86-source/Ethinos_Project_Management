@@ -44,6 +44,7 @@ export * from "./portalInvitationInput";
 export * from "./portalMembershipInput";
 export * from "./portalTask";
 export * from "./portalTaskInput";
+export * from "./portalTaskInputLinksItem";
 export * from "./portalUser";
 export * from "./portalUserInvitationStatus";
 export * from "./previewCreativeStudioEmail200";

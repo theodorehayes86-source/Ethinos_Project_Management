@@ -17,13 +17,14 @@ const state = vi.hoisted(() => ({
   updateUser: vi.fn(),
   deleteUser: vi.fn(),
   transaction: vi.fn(),
+  update: vi.fn(),
   set: vi.fn(),
   cold: false,
   retained: new Map<string, Set<Function>>(),
 }));
 
 vi.mock("../lib/firebase-admin", () => {
-  const ref = (path: string, valueFilter?: string): any => ({
+  const ref = (path = "", valueFilter?: string): any => ({
     key: path.split("/").at(-1),
     on: (_event: string, listener: () => void) => {
       const listeners = state.retained.get(path) ?? new Set();
@@ -43,7 +44,12 @@ vi.mock("../lib/firebase-admin", () => {
     orderByChild: () => ({ equalTo: () => ref(path) }),
     orderByValue: () => ({ equalTo: (value: string) => ref(path, value) }),
     push: () => ref(`${path}/new-task`),
-    update: async (value: any) => { state.writes.push(path); state.data[path] = { ...state.data[path], ...value }; },
+    update: async (value: any) => {
+      await state.update(path, value);
+      state.writes.push(path);
+      if (!path) { Object.assign(state.data, value); }
+      else { state.data[path] = { ...state.data[path], ...value }; }
+    },
     set: async (value: any) => { await state.set(path); state.data[path] = value; },
     transaction: async (fn: (current: any) => any) => {
       await state.transaction(path);
@@ -108,11 +114,12 @@ beforeEach(() => {
   state.mail.mockResolvedValue(undefined);
   state.getUser.mockResolvedValue({ uid: "new-client", email: "new@example.test", disabled: false });
   state.authUser.mockImplementation(async (uid: string) => ({
-    uid, email: state.data[`clientPortalUsers/${uid}`]?.email ?? "new@example.test", disabled: false,
+    uid, email: state.data[`clientPortalUsers/${uid}`]?.email ?? "new@example.test", disabled: false, emailVerified: true,
   }));
   state.updateUser.mockResolvedValue({});
   state.deleteUser.mockResolvedValue(undefined);
   state.transaction.mockReset();
+  state.update.mockReset();
   state.cold = false; state.retained.clear();
   state.set.mockReset();
   state.createUser.mockResolvedValue({ uid: "new-client", email: "new@example.test", disabled: false });
@@ -206,6 +213,78 @@ describe("client task API boundary", () => {
     });
     expect(res.body.task).toMatchObject({ category: "", statusEditable: true, statusEditReason: "" });
     expect(Object.keys(res.body.task).sort()).toEqual(["category", "description", "dueDate", "id", "status", "statusEditReason", "statusEditable", "title"]);
+  });
+  it("creates reminders, links and subtasks together as client-safe collaboration", async () => {
+    state.authUser.mockResolvedValue({ email: client.email, emailVerified: true, displayName: "Alex Example" });
+    const result = await post("/clients/alpha/tasks", {
+      title: "Client brief", description: "Please review", dueDate: "2026-11-03",
+      reminderDate: "2026-11-01", reminderTime: "14:30", reminderTimezone: "America/New_York",
+      subtasks: ["  Check copy  ", "Approve design"], links: [{ text: "  Brief  ", url: "https://example.test/brief" }],
+    });
+    expect(result.status).toBe(201);
+    expect(state.writes).toEqual([""]);
+    expect(state.data["clientLogs/alpha/new-task"]).toMatchObject({
+      reminderOffsets: ["-2"], reminderTime: "14:30", reminderTimezone: "America/New_York",
+      visibility: "client", taskType: "task", creatorName: "Alex Example", assigneeId: null,
+    });
+    const collaboration = state.data["clientTaskCollaboration/alpha/new-task"];
+    expect(Object.values(collaboration.subtasks)).toEqual([
+      expect.objectContaining({ title: "Check copy", completed: false, authorName: "Alex Example", authorUid: client.uid }),
+      expect.objectContaining({ title: "Approve design", completed: false }),
+    ]);
+    expect(Object.values(collaboration.entries)).toEqual([
+      expect.objectContaining({ type: "link", text: "Brief", url: "https://example.test/brief" }),
+    ]);
+    expect(state.data["clientLogs/alpha/new-task"]).not.toHaveProperty("steps");
+    expect(result.body.task).toMatchObject({ reminderDate: "2026-11-01", reminderTime: "14:30", reminderTimezone: "America/New_York" });
+    const detail = await get("/clients/alpha/tasks/new-task/collaboration");
+    expect(detail.status).toBe(200);
+    expect(detail.body.subtasks.map((s: any) => s.title)).toEqual(["Check copy", "Approve design"]);
+    expect(detail.body.entries[0]).toMatchObject({ type: "link", text: "Brief", url: "https://example.test/brief" });
+  });
+  it("uses IST and 09:00 when a client sets only a reminder date", async () => {
+    expect((await post("/clients/alpha/tasks", {
+      title: "Due today", description: "", dueDate: "2026-10-19", reminderDate: "2026-10-19",
+    })).status).toBe(201);
+    expect(state.data["clientLogs/alpha/new-task"]).toMatchObject({
+      reminderOffsets: ["0"], reminderTime: "09:00", reminderTimezone: "Asia/Kolkata",
+    });
+  });
+  it("does not leave a parent task or collaboration behind when the atomic update fails", async () => {
+    state.update.mockRejectedValueOnce(new Error("Database unavailable"));
+    const result = await post("/clients/alpha/tasks", { title: "Task", description: "", subtasks: ["First"] });
+    expect(result.status).toBe(500);
+    expect(state.writes).toEqual([]);
+    expect(state.data["clientLogs/alpha/new-task"]).toBeUndefined();
+    expect(state.data["clientTaskCollaboration/alpha/new-task"]).toBeUndefined();
+  });
+  it("does not write a task when membership is revoked while preparing its collaboration", async () => {
+    state.authUser.mockImplementationOnce(async () => {
+      state.data["clientPortalUsers/client-a"] = { ...membership, disabled: true };
+      return { email: client.email, emailVerified: true };
+    });
+    expect((await post("/clients/alpha/tasks", { title: "Task", description: "", subtasks: ["First"] })).status).toBe(403);
+    expect(state.writes).toEqual([]);
+  });
+  it.each([
+    { reminderDate: "2026-10-20" },
+    { dueDate: "2026-10-20", reminderDate: "2026-10-21" },
+    { dueDate: "2026-03-01", reminderDate: "2026-02-30" },
+    { reminderTime: "09:00" }, { reminderTimezone: "Asia/Kolkata" },
+    { dueDate: "2026-10-20", reminderDate: "2026-10-20", reminderTime: "25:00" },
+    { dueDate: "2026-10-20", reminderDate: "2026-10-20", reminderTimezone: "Invented/Zone" },
+    { dueDate: "2026-10-20", reminderDate: "2026-10-20", reminderTimezone: "" },
+    { subtasks: ["   "] }, { subtasks: ["x".repeat(301)] },
+    { subtasks: Array(101).fill("Task") },
+    { links: [{ text: "Unsafe", url: "javascript:alert(1)" }] },
+    { links: [{ text: "Unsafe", url: "https://user:password@example.test" }] },
+    { links: [{ text: "", url: "https://example.test" }] },
+    { links: [{ text: "Whitespace", url: "https://example.test/a b" }] },
+    { links: [{ text: "Extra fields", url: "https://example.test", authorUid: "forged" }] },
+    { links: Array(51).fill({ text: "Link", url: "https://example.test" }) },
+  ])("rejects invalid create-task options without writing: %j", async options => {
+    expect((await post("/clients/alpha/tasks", { title: "Task", description: "", ...options })).status).toBe(400);
+    expect(state.writes).toEqual([]);
   });
   it.each(["visibility", "clientId", "creatorId", "status", "assigneeId", "taskType", "steps", "templateId", "taskGroupId", "repeatFrequency"])(
     "rejects forged %s", async field => {

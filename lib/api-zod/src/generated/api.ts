@@ -1374,6 +1374,9 @@ export const ListClientPortalTasksResponse = zod.object({
           "Safe explanation when statusEditable is false; empty otherwise",
         ),
       dueDate: zod.string(),
+      reminderDate: zod.string().optional(),
+      reminderTime: zod.string().optional(),
+      reminderTimezone: zod.string().optional(),
     }),
   ),
 });
@@ -1395,6 +1398,23 @@ export const createClientPortalTaskBodyCategoryMax = 100;
 export const createClientPortalTaskBodyDueDateRegExp = new RegExp(
   "^\\d{4}-\\d{2}-\\d{2}$",
 );
+export const createClientPortalTaskBodyReminderDateRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const createClientPortalTaskBodyReminderTimeRegExp = new RegExp(
+  "^([01]\\d|2[0-3]):[0-5]\\d$",
+);
+export const createClientPortalTaskBodyReminderTimezoneMax = 100;
+
+export const createClientPortalTaskBodySubtasksItemMax = 300;
+
+export const createClientPortalTaskBodySubtasksMax = 100;
+
+export const createClientPortalTaskBodyLinksItemTextMax = 4000;
+
+export const createClientPortalTaskBodyLinksItemUrlMax = 2000;
+
+export const createClientPortalTaskBodyLinksMax = 50;
 
 export const CreateClientPortalTaskBody = zod.object({
   title: zod.string().min(1).max(createClientPortalTaskBodyTitleMax),
@@ -1403,6 +1423,35 @@ export const CreateClientPortalTaskBody = zod.object({
   dueDate: zod
     .string()
     .regex(createClientPortalTaskBodyDueDateRegExp)
+    .optional(),
+  reminderDate: zod
+    .string()
+    .regex(createClientPortalTaskBodyReminderDateRegExp)
+    .optional(),
+  reminderTime: zod
+    .string()
+    .regex(createClientPortalTaskBodyReminderTimeRegExp)
+    .optional(),
+  reminderTimezone: zod
+    .string()
+    .min(1)
+    .max(createClientPortalTaskBodyReminderTimezoneMax)
+    .optional(),
+  subtasks: zod
+    .array(zod.string().min(1).max(createClientPortalTaskBodySubtasksItemMax))
+    .max(createClientPortalTaskBodySubtasksMax)
+    .optional(),
+  links: zod
+    .array(
+      zod.object({
+        text: zod
+          .string()
+          .min(1)
+          .max(createClientPortalTaskBodyLinksItemTextMax),
+        url: zod.string().min(1).max(createClientPortalTaskBodyLinksItemUrlMax),
+      }),
+    )
+    .max(createClientPortalTaskBodyLinksMax)
     .optional(),
 });
 
@@ -1436,6 +1485,9 @@ export const UpdateClientPortalTaskResponse = zod.object({
         "Safe explanation when statusEditable is false; empty otherwise",
       ),
     dueDate: zod.string(),
+    reminderDate: zod.string().optional(),
+    reminderTime: zod.string().optional(),
+    reminderTimezone: zod.string().optional(),
   }),
 });
 

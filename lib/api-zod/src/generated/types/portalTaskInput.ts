@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { PortalTaskInputLinksItem } from "./portalTaskInputLinksItem";
 
 export interface PortalTaskInput {
   /**
@@ -18,4 +19,17 @@ export interface PortalTaskInput {
   category?: string;
   /** @pattern ^\d{4}-\d{2}-\d{2}$ */
   dueDate?: string;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  reminderDate?: string;
+  /** @pattern ^([01]\d|2[0-3]):[0-5]\d$ */
+  reminderTime?: string;
+  /**
+   * @minLength 1
+   * @maxLength 100
+   */
+  reminderTimezone?: string;
+  /** @maxItems 100 */
+  subtasks?: string[];
+  /** @maxItems 50 */
+  links?: PortalTaskInputLinksItem[];
 }
