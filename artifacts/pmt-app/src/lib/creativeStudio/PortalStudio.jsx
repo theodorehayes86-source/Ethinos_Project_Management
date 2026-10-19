@@ -52,9 +52,9 @@ export default function PortalStudio({ auth, apiBase, onRevoked }) {
   const linkMissing = openId && !open;
   const rest = items.filter(i => !mine(i));
   return (
-    <div className="cs-root space-y-5 text-left text-[#1f2440]">
+    <div className="cs-root space-y-5 text-left text-slate-900">
       <div className="flex items-end justify-between gap-2">
-        <div><p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#ff6b3d]">Creative</p><h2 className="cs-display text-3xl leading-none mt-1">Shared content</h2></div>
+        <div><p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-600">Creative</p><h2 className="cs-display text-3xl leading-none mt-1">Shared content</h2></div>
         <button data-testid="button-portal-studio-refresh" onClick={load} className={btnGhost}><RefreshCw size={13} /> Refresh</button>
       </div>
       {linkMissing && <ErrorBanner message="That item is not shared with you or is no longer available." onRetry={() => setOpenId(null)} />}
@@ -63,8 +63,8 @@ export default function PortalStudio({ auth, apiBase, onRevoked }) {
       ) : (
         <>
           <section>
-            <h3 className="cs-display text-xl mb-2">Waiting on your decision <span className="text-sm text-stone-400">({waiting.length})</span></h3>
-            {waiting.length === 0 ? <p className="text-xs text-stone-400">No approvals assigned to you right now.</p> : <List list={waiting} name={name} onOpen={setOpenId} accent />}
+            <h3 className="cs-display text-xl mb-2">Waiting on your decision <span className="text-sm text-slate-400">({waiting.length})</span></h3>
+            {waiting.length === 0 ? <p className="text-xs text-slate-400">No approvals assigned to you right now.</p> : <List list={waiting} name={name} onOpen={setOpenId} accent />}
           </section>
           {rest.length > 0 && <section><h3 className="cs-display text-xl mb-2">All shared</h3><List list={rest} name={name} onOpen={setOpenId} /></section>}
         </>
@@ -78,12 +78,12 @@ function List({ list, name, onOpen, accent }) {
     <div className="grid gap-2 sm:grid-cols-2">
       {list.map(i => (
         <button key={i.id} data-testid={`card-portal-deliverable-${i.id}`} onClick={() => onOpen(i.id)}
-          className={`text-left rounded-2xl border p-3 transition-all hover:-translate-y-px ${accent ? 'border-[#ff6b3d] bg-[#fff4ea]' : 'border-[#ece3d5] bg-white/80'}`}>
-          <p className="text-[10px] font-black uppercase tracking-wider text-stone-400">{name(i.clientId)} · {i.type}</p>
+          className={`text-left rounded-2xl border p-3 transition-all hover:-translate-y-px ${accent ? 'border-indigo-600 bg-indigo-50' : 'border-slate-200 bg-white/80'}`}>
+          <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{name(i.clientId)} · {i.type}</p>
           <p className="text-sm font-bold truncate mt-0.5">{i.title}</p>
           <div className="flex items-center justify-between mt-2 gap-2">
             <StageBadge stage={i.stage} />
-            <span className="text-[11px] text-stone-500">{i.plannedAt ? relativeDay(i.plannedAt, i.timezone) : 'Date to be confirmed'}</span>
+            <span className="text-[11px] text-slate-500">{i.plannedAt ? relativeDay(i.plannedAt, i.timezone) : 'Date to be confirmed'}</span>
           </div>
         </button>
       ))}
@@ -108,39 +108,39 @@ function PortalDetail({ item, api, uid, clientName, onBack, onChange, onReload }
   };
   const snapshot = phase ? item.approvals[phase].snapshot : null;
   return (
-    <div className="cs-root space-y-4 text-left text-[#1f2440]">
+    <div className="cs-root space-y-4 text-left text-slate-900">
       <button data-testid="button-portal-studio-back" onClick={onBack} className={btnGhost}><ChevronLeft size={14} /> Shared content</button>
-      <div className="rounded-3xl border border-[#e7dfd2] bg-[#fffdf9] p-4 sm:p-6 space-y-4">
+      <div className="rounded-3xl border border-slate-200 bg-white p-4 sm:p-6 space-y-4">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-stone-400">{clientName} · {item.type} · revision {item.revision}</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">{clientName} · {item.type} · revision {item.revision}</p>
           <h2 data-testid="text-portal-deliverable-title" className="cs-display text-3xl leading-tight break-words">{item.title}</h2>
           <div className="flex flex-wrap gap-2 items-center mt-2">
             <StageBadge stage={item.stage} />
-            <span className="text-xs text-stone-500">{item.plannedAt ? `${fmtInstant(item.plannedAt, item.timezone, { weekday: 'short' })} ${tzShort(item.timezone)}` : 'Posting date to be confirmed'}</span>
-            <span className="text-xs text-stone-500">{(item.platforms || []).join(', ')}</span>
+            <span className="text-xs text-slate-500">{item.plannedAt ? `${fmtInstant(item.plannedAt, item.timezone, { weekday: 'short' })} ${tzShort(item.timezone)}` : 'Posting date to be confirmed'}</span>
+            <span className="text-xs text-slate-500">{(item.platforms || []).join(', ')}</span>
           </div>
         </div>
-        <div><p className="text-[10px] font-black uppercase tracking-[0.14em] text-stone-400 mb-1">Caption</p><p className="text-sm whitespace-pre-wrap break-words">{(snapshot?.caption ?? item.caption) || 'No caption.'}</p></div>
+        <div><p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400 mb-1">Caption</p><p className="text-sm whitespace-pre-wrap break-words">{(snapshot?.caption ?? item.caption) || 'No caption.'}</p></div>
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-stone-400 mb-1">{snapshot ? 'Submitted assets' : 'Assets'}</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400 mb-1">{snapshot ? 'Submitted assets' : 'Assets'}</p>
           <ul className="space-y-1.5">
             {(snapshot?.assets || item.assets || []).map((a, idx) => (
-              <li key={a.id || idx} className="flex items-center gap-2 rounded-xl border border-[#ece3d5] bg-white px-3 py-2">
-                <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-[#1f2440] text-[#fffaf3]">{ASSET_KINDS.find(k => k.id === a.kind)?.label || a.kind}</span>
+              <li key={a.id || idx} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+                <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-slate-900 text-white">{ASSET_KINDS.find(k => k.id === a.kind)?.label || a.kind}</span>
                 <span className="text-sm flex-1 truncate">{a.label}</span>
                 {isHttps(a.url) && <a data-testid={`link-portal-asset-${a.id || idx}`} href={a.url} target="_blank" rel="noopener noreferrer" className="text-xs font-bold inline-flex items-center gap-1 underline">Open <ExternalLink size={11} /></a>}
               </li>
             ))}
-            {!(snapshot?.assets || item.assets || []).length && <li className="text-xs text-stone-400">No assets shared.</li>}
+            {!(snapshot?.assets || item.assets || []).length && <li className="text-xs text-slate-400">No assets shared.</li>}
           </ul>
-          <p className="text-[11px] text-stone-400 mt-1">File access depends on the file's own sharing permissions.</p>
+          <p className="text-[11px] text-slate-400 mt-1">File access depends on the file's own sharing permissions.</p>
         </div>
 
         {phase ? (
-          <div data-testid="panel-portal-decision" className="rounded-2xl bg-[#1f2440] text-[#fffaf3] p-4 space-y-3">
+          <div data-testid="panel-portal-decision" className="rounded-2xl bg-slate-900 text-white p-4 space-y-3">
             <p className="cs-display text-xl">{phase === 'reference' ? 'Reference approval' : 'Final post approval'}</p>
             <p className="text-xs opacity-75">Requested {fmtStamp(item.approvals[phase].requestedAt)}. Your decision applies to this exact revision.</p>
-            <Field label={<span className="text-[#fffaf3]/70">Feedback (required for changes)</span>}>
+            <Field label={<span className="text-white/70">Feedback (required for changes)</span>}>
               <textarea data-testid="input-portal-feedback" rows={3} value={feedback} onChange={e => setFeedback(e.target.value)} className={inputCls} />
             </Field>
             {error && <ErrorBanner message={error} />}

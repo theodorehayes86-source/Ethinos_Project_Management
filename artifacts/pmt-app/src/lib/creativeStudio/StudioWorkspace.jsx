@@ -4,12 +4,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Plus, ChevronLeft, ChevronRight, CalendarDays, LayoutList, Eye, Users, Copy, Archive, ArchiveRestore,
   Pencil, Share2, EyeOff, CalendarCheck, Undo2, BellRing, ExternalLink, Link2, CheckCircle2,
-  AlertTriangle, Sparkles, X, Clock, RefreshCw, Lock,
+  AlertTriangle, Sparkles, X, Clock, RefreshCw, Lock, Activity, Settings2,
 } from 'lucide-react';
 import {
   createStudioApi, TYPES, PLATFORMS, ASSET_KINDS, TIMEZONES, stageLabel, isHttps, localToUtc, utcToLocal,
   dayKey, monthKey, urgency, relativeDay, fmtInstant, fmtStamp, tzShort, summarize, clientVisible, STAGES, peekStudioLink, writeStudioLink,
 } from './core.js';
+import { STUDIO_CONFIG_CHANGED } from './access.js';
 import {
   inputCls, btnPrimary, btnAccent, btnGhost, StageBadge, UrgencyTag, Field, Sheet, ErrorBanner,
   SkeletonList, EmptyState, ThreadPanel,
@@ -69,27 +70,56 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
   const enabledClients = useMemo(() => (boot?.clients || []).filter(c => boot.configs?.[c.id]?.enabled === true), [boot]);
   const editable = useMemo(() => new Set(boot?.capabilities?.editableClientIds || []), [boot]);
 
+  // Keep bootstrap fresh: enablement/revocation must reach a mounted workspace.
+  const bootSeq = useRef(0);
   const loadBoot = useCallback(async () => {
-    setBootError('');
-    try { setBoot(await api.bootstrap()); } catch (e) { setBootError(e.message); }
+    const seq = ++bootSeq.current;
+    try {
+      const b = await api.bootstrap();
+      if (seq !== bootSeq.current) return;
+      setBoot(b); setBootError('');
+    } catch (e) {
+      if (seq !== bootSeq.current) return;
+      setBootError(e.message);
+      // Scope lost: drop every cached record rather than showing stale private data.
+      if (e.status === 401 || e.status === 403) { setBoot(null); setItems(null); setSelectedId(null); }
+    }
   }, [api]);
-  useEffect(() => { loadBoot(); }, [loadBoot]);
+  useEffect(() => {
+    loadBoot();
+    const t = setInterval(loadBoot, 45000);
+    const onFocus = () => loadBoot();
+    window.addEventListener('focus', onFocus);
+    window.addEventListener(STUDIO_CONFIG_CHANGED, onFocus);
+    return () => { bootSeq.current += 1; clearInterval(t); window.removeEventListener('focus', onFocus); window.removeEventListener(STUDIO_CONFIG_CHANGED, onFocus); };
+  }, [loadBoot]);
 
   const loadItems = useCallback(async () => {
     if (!boot) return;
-    setLoadError('');
-    try {
-      const lists = await Promise.all(enabledClients.map(c => api.list(c.id).then(d => d.deliverables || [])));
-      setItems(lists.flat());
-    } catch (e) { setLoadError(e.message); setItems(i => i || []); }
-  }, [api, boot, enabledClients]);
+    const seq = ++itemsSeq.current;
+    const results = await Promise.allSettled(enabledClients.map(c => api.list(c.id).then(d => ({ id: c.id, list: d.deliverables || [] }))));
+    if (seq !== itemsSeq.current) return;
+    const failed = results.filter(r => r.status === 'rejected');
+    const okIds = new Set(results.filter(r => r.status === 'fulfilled').map(r => r.value.id));
+    const fresh = results.filter(r => r.status === 'fulfilled').flatMap(r => r.value.list);
+    setItems(prev => {
+      // Keep previous rows only for clients whose failure was a transient network error.
+      const transient = new Set(enabledClients.filter((c, idx) => results[idx].status === 'rejected' && results[idx].reason?.status === 0).map(c => c.id));
+      const kept = (prev || []).filter(i => transient.has(i.clientId) && !okIds.has(i.clientId));
+      return [...fresh, ...kept];
+    });
+    setLoadError(failed.length ? failed[0].reason?.message || 'Some clients could not be loaded.' : '');
+    if (failed.some(r => r.reason?.status === 401 || r.reason?.status === 403)) loadBoot();
+  }, [api, boot, enabledClients, loadBoot]);
+  const itemsSeq = useRef(0);
   useEffect(() => {
+    if (!boot) return undefined;
     loadItems();
     const t = setInterval(loadItems, 45000);
     const onFocus = () => loadItems();
     window.addEventListener('focus', onFocus);
-    return () => { clearInterval(t); window.removeEventListener('focus', onFocus); };
-  }, [loadItems]);
+    return () => { itemsSeq.current += 1; clearInterval(t); window.removeEventListener('focus', onFocus); };
+  }, [loadItems, boot]);
 
   const upsert = useCallback((d) => setItems(list => {
     const l = list || [];
@@ -132,141 +162,149 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
   const selected = (items || []).find(i => i.id === selectedId) || null;
   const missingLink = !!(selectedId && items && !selected && !loadError);
 
-  if (bootError) return <div className="p-6 max-w-lg"><ErrorBanner message={bootError} onRetry={loadBoot} /></div>;
-  if (!boot) return <div className="p-4 md:p-6 space-y-4"><div className="h-24 rounded-3xl bg-[#f3eadc]/70 animate-pulse" /><SkeletonList /></div>;
+  if (bootError && !boot) return <div className="p-6 max-w-lg"><ErrorBanner message={bootError} onRetry={loadBoot} /></div>;
+  if (!boot) return <div className="p-4 md:p-6 space-y-4"><div className="h-24 rounded-3xl bg-slate-100 animate-pulse" /><SkeletonList /></div>;
   if (enabledClients.length === 0) {
     return (
       <div className="p-6 max-w-xl mx-auto">
-        <EmptyState icon={<Lock size={20} />} title="No studio clients available"
-          body={boot.capabilities?.canManageSettings ? 'Enable an existing client in Control Center, Creative Studio tab.' : 'Creative Studio has not been enabled for any client you can access.'} />
+        {boot.capabilities?.canManageSettings ? (
+          <EmptyState icon={<Settings2 size={20} />} title="Creative Studio is not enabled for any client yet"
+            body="You manage studio settings for existing clients. Open Control Center, then the Creative Studio tab, select a client and switch on Studio enabled. Assign creative owners or editors from that client's project members, then return here to plan content. Enabling does not create clients, send invitations or change project membership." />
+        ) : (
+          <EmptyState icon={<Lock size={20} />} title="No studio clients available"
+            body="Creative Studio has not been enabled for any client you can access. Ask the client's Business Head, CSM or an administrator to enable it in Control Center." />
+        )}
       </div>
     );
   }
 
   const canCreate = enabledClients.some(c => editable.has(c.id));
   const cards = [
-    { k: 'approved', label: 'Approved', v: counts.approved, tone: 'bg-[#1f2440] text-[#fffaf3]' },
-    { k: 'wip', label: 'WIP / Awaiting approval', v: counts.wip, tone: 'bg-white/80 text-[#1f2440]' },
-    { k: 'soon', label: 'Close to post date', v: counts.soon, tone: 'bg-[#ff6b3d] text-white', sub: counts.overdue ? `${counts.overdue} overdue` : null },
-    { k: 'scheduled', label: 'Scheduled', v: counts.scheduled, tone: 'bg-white/80 text-[#1f2440]' },
-    { k: 'ans', label: 'Approved not scheduled', v: counts.approvedNotScheduled, tone: 'bg-[#f1ec8f] text-[#1f2440]' },
+    { k: 'approved', label: 'Approved', v: counts.approved, box: 'bg-emerald-50/60 border-emerald-200', chip: 'bg-emerald-100 text-emerald-600', Icon: CheckCircle2 },
+    { k: 'wip', label: 'WIP / Awaiting approval', v: counts.wip, box: 'bg-amber-50/60 border-amber-200', chip: 'bg-amber-100 text-amber-600', Icon: Activity },
+    { k: 'soon', label: 'Close to post date', v: counts.soon, box: 'bg-rose-50/60 border-rose-200', chip: 'bg-rose-100 text-rose-600', Icon: AlertTriangle, sub: counts.overdue ? `${counts.overdue} overdue` : null },
+    { k: 'scheduled', label: 'Scheduled', v: counts.scheduled, box: 'bg-blue-50/60 border-blue-200', chip: 'bg-blue-100 text-blue-600', Icon: Clock },
+    { k: 'ans', label: 'Approved, not scheduled', v: counts.approvedNotScheduled, box: 'bg-white border-slate-200', chip: 'bg-slate-100 text-slate-500', Icon: CalendarDays },
   ];
+  const seg = (on) => `px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${on ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-800'}`;
 
   return (
-    <div className="cs-root min-h-full p-3 md:p-6 text-left text-[#1f2440]">
-      <div className="flex flex-wrap items-end gap-3 justify-between mb-4 cs-rise">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#ff6b3d]">Creative Studio</p>
-          <h2 className="cs-display text-3xl md:text-4xl leading-none mt-1">Content plan</h2>
+    <div className="cs-root min-h-full p-3 md:p-6 text-left text-slate-900 font-sans">
+      <div className="flex flex-wrap items-center gap-3 justify-between mb-5">
+        <div className="flex items-baseline gap-2">
+          <h2 className="text-lg font-black tracking-tight uppercase">Creative Studio</h2>
+          <span className="text-xs text-slate-400">/ {view === 'plan' ? 'Content calendar' : 'Deliverables tracker'}</span>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div role="tablist" aria-label="Viewing mode" className="flex p-1 rounded-full bg-[#1f2440]/5 border border-[#e7dfd2]">
-            {[['team', 'Ethinos team', Users], ['client', 'Client viewing', Eye]].map(([id, label, Icon]) => (
-              <button key={id} role="tab" aria-selected={mode === id} data-testid={`button-mode-${id}`} onClick={() => setMode(id)}
-                className={`px-3 py-1.5 rounded-full text-[11px] font-bold inline-flex items-center gap-1.5 transition-colors ${mode === id ? 'bg-[#1f2440] text-[#fffaf3]' : 'text-stone-600'}`}>
-                <Icon size={12} /> {label}
-              </button>
-            ))}
-          </div>
-          <div className="flex p-1 rounded-full bg-[#1f2440]/5 border border-[#e7dfd2]">
-            {[['plan', 'Calendar', CalendarDays], ['tracker', 'Deliverables', LayoutList]].map(([id, label, Icon]) => (
-              <button key={id} data-testid={`button-view-${id}`} onClick={() => setView(id)}
-                className={`px-3 py-1.5 rounded-full text-[11px] font-bold inline-flex items-center gap-1.5 transition-colors ${view === id ? 'bg-white text-[#1f2440] shadow-sm' : 'text-stone-500'}`}>
-                <Icon size={12} /> {label}
-              </button>
-            ))}
-          </div>
-          {mode === 'team' && canCreate && (
-            <button data-testid="button-add-content" onClick={() => setEditing({})} className={btnAccent}><Plus size={14} /> Add content</button>
-          )}
+        <div role="tablist" aria-label="Viewing as" className="flex items-center gap-1 p-1 rounded-xl bg-white border border-slate-200">
+          <span className="text-[11px] text-slate-400 px-2">Viewing as</span>
+          {[['team', 'Ethinos team'], ['client', 'Client']].map(([id, label]) => (
+            <button key={id} role="tab" aria-selected={mode === id} data-testid={`button-mode-${id}`} onClick={() => setMode(id)} className={seg(mode === id)}>{label}</button>
+          ))}
         </div>
       </div>
 
       {mode === 'client' && (
-        <div data-testid="status-client-preview" className="mb-3 rounded-2xl border border-[#f1ec8f] bg-[#fdfbe0] px-3 py-2 text-xs text-[#5b5520] flex items-center gap-2">
-          <Eye size={13} /> Preview only. Showing shared, non-draft records as a client member would see them. Your permissions are unchanged.
+        <div data-testid="status-client-preview" className="mb-3 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs text-indigo-700 flex items-center gap-2">
+          <Eye size={13} /> Preview only: shared, non-draft records as a client member sees them. Your identity and permissions are unchanged.
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
         {cards.map((c, idx) => (
-          <div key={c.k} data-testid={`card-count-${c.k}`} className={`cs-rise rounded-2xl border border-[#e7dfd2] p-3 ${c.tone} ${idx === 0 ? 'col-span-2 md:col-span-1' : ''}`} style={{ animationDelay: `${idx * 50}ms` }}>
-            <p className="text-[10px] font-black uppercase tracking-[0.12em] opacity-75">{c.label}</p>
-            <p className="cs-display text-3xl mt-1 tabular-nums">{c.v}</p>
-            {c.sub && <p className="text-[10px] font-bold mt-0.5">{c.sub}</p>}
+          <div key={c.k} data-testid={`card-count-${c.k}`} className={`rounded-2xl border p-4 ${c.box} ${idx === 4 ? 'col-span-2 md:col-span-1' : ''}`}>
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-sm text-slate-700">{c.label}</p>
+              <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${c.chip}`}><c.Icon size={15} /></span>
+            </div>
+            <p className="text-3xl font-bold mt-2 tabular-nums">{c.v}</p>
+            {c.sub && <p className="text-[11px] font-semibold text-rose-600 mt-0.5">{c.sub}</p>}
           </div>
         ))}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
-        <div className="flex gap-1">
-          {['All', ...TYPES].map(t => (
-            <button key={t} data-testid={`filter-type-${t}`} onClick={() => setType(t)}
-              className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-colors ${type === t ? 'bg-[#1f2440] text-[#fffaf3] border-[#1f2440]' : 'bg-white/70 border-[#e7dfd2] text-stone-600'}`}>
-              {t === 'All' ? 'All' : `${t}s`}
-            </button>
+        <div className="flex p-1 rounded-xl bg-white border border-slate-200">
+          {[['plan', 'Content plan'], ['tracker', 'Deliverables']].map(([id, label]) => (
+            <button key={id} data-testid={`button-view-${id}`} onClick={() => setView(id)} className={seg(view === id)}>{label}</button>
           ))}
         </div>
-        <select data-testid="select-filter-client" value={clientF} onChange={e => setClientF(e.target.value)} className={`${inputCls} !w-auto !py-1.5`} aria-label="Client filter">
+        <div className="flex p-1 rounded-xl bg-white border border-slate-200">
+          {['All', ...TYPES].map(t => (
+            <button key={t} data-testid={`filter-type-${t}`} onClick={() => setType(t)} className={seg(type === t)}>{t === 'All' ? 'All' : `${t}s`}</button>
+          ))}
+        </div>
+        <select data-testid="select-filter-client" value={clientF} onChange={e => setClientF(e.target.value)} className={`${inputCls} !w-auto !py-2`} aria-label="Client filter">
           <option value="all">All clients</option>
           {enabledClients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
-        <select data-testid="select-filter-stage" value={stageF} onChange={e => setStageF(e.target.value)} className={`${inputCls} !w-auto !py-1.5`} aria-label="Stage filter">
+        <select data-testid="select-filter-stage" value={stageF} onChange={e => setStageF(e.target.value)} className={`${inputCls} !w-auto !py-2`} aria-label="Stage filter">
           <option value="all">All stages</option>
           {Object.keys(STAGES).map(s => <option key={s} value={s}>{stageLabel(s)}</option>)}
         </select>
         {mode === 'team' && (
           <>
-            <select data-testid="select-filter-owner" value={ownerF} onChange={e => setOwnerF(e.target.value)} className={`${inputCls} !w-auto !py-1.5`} aria-label="Owner filter">
+            <select data-testid="select-filter-owner" value={ownerF} onChange={e => setOwnerF(e.target.value)} className={`${inputCls} !w-auto !py-2`} aria-label="Owner filter">
               <option value="all">All owners</option>
               {(boot.owners || []).map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
             </select>
-            <select data-testid="select-filter-deadline" value={deadlineF} onChange={e => setDeadlineF(e.target.value)} className={`${inputCls} !w-auto !py-1.5`} aria-label="Deadline filter">
+            <select data-testid="select-filter-deadline" value={deadlineF} onChange={e => setDeadlineF(e.target.value)} className={`${inputCls} !w-auto !py-2`} aria-label="Deadline filter">
               <option value="all">Any deadline</option>
               <option value="week">Due within 7 days</option>
               <option value="overdue">Production overdue</option>
               <option value="none">No deadline</option>
             </select>
-            <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-stone-600">
+            <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600">
               <input data-testid="checkbox-show-archived" type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} /> Archived
             </label>
           </>
         )}
-        <button data-testid="button-refresh-studio" onClick={loadItems} className={`${btnGhost} ml-auto`} aria-label="Refresh"><RefreshCw size={13} /></button>
+        <button data-testid="button-refresh-studio" onClick={loadItems} className={btnGhost} aria-label="Refresh"><RefreshCw size={13} /></button>
+        {mode === 'team' && canCreate && (
+          <button data-testid="button-add-content" onClick={() => setEditing({})} className={`${btnPrimary} md:ml-auto`}><Plus size={14} /> Add content</button>
+        )}
       </div>
 
       {missingLink && (
         <div className="mb-3"><ErrorBanner message="That deliverable is not available. It may be archived elsewhere, disabled, or outside your access." onRetry={() => setSelectedId(null)} /></div>
       )}
+      {bootError && <div className="mb-3"><ErrorBanner message={`Could not refresh access: ${bootError}`} onRetry={loadBoot} /></div>}
       {loadError && <div className="mb-3"><ErrorBanner message={loadError} onRetry={loadItems} /></div>}
 
-      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_420px] gap-4 items-start">
-        <div className="min-w-0">
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_380px] gap-4 items-start">
+        <div className="min-w-0 bg-white rounded-2xl border border-slate-200 p-3 md:p-5">
           {items === null ? <SkeletonList /> : view === 'plan' ? (
             <section aria-label="Content calendar">
-              <div className="flex items-center gap-2 mb-3">
-                <button data-testid="button-month-prev" onClick={() => setMonth(m => shiftMonth(m, -1))} className={btnGhost} aria-label="Previous month"><ChevronLeft size={14} /></button>
-                <h3 data-testid="text-month" className="cs-display text-2xl">{monthTitle(month)}</h3>
-                <button data-testid="button-month-next" onClick={() => setMonth(m => shiftMonth(m, 1))} className={btnGhost} aria-label="Next month"><ChevronRight size={14} /></button>
-                <button data-testid="button-month-today" onClick={() => setMonth(nowMonth())} className="text-[11px] font-bold text-[#ff6b3d] hover:underline">This month</button>
-                <span data-testid="text-month-count" className="ml-auto text-[11px] font-bold text-stone-500">{monthItems.length} item{monthItems.length === 1 ? '' : 's'}</span>
+              <div className="flex flex-wrap items-center gap-2 mb-4">
+                <button data-testid="button-month-prev" onClick={() => setMonth(m => shiftMonth(m, -1))} className="p-1.5 rounded-lg hover:bg-slate-100" aria-label="Previous month"><ChevronLeft size={16} /></button>
+                <h3 data-testid="text-month" className="text-xl font-bold">{monthTitle(month)}</h3>
+                <button data-testid="button-month-next" onClick={() => setMonth(m => shiftMonth(m, 1))} className="p-1.5 rounded-lg hover:bg-slate-100" aria-label="Next month"><ChevronRight size={16} /></button>
+                <span data-testid="text-month-count" className="text-xs text-slate-400">{monthItems.length} item{monthItems.length === 1 ? '' : 's'}</span>
+                <button data-testid="button-month-today" onClick={() => setMonth(nowMonth())} className="text-xs font-semibold text-indigo-600 hover:underline">Today</button>
+                <div className="hidden xl:flex items-center gap-3 ml-auto text-xs text-slate-600">
+                  <span className="flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-emerald-500" />Approved</span>
+                  <span className="flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-amber-500" />WIP / Awaiting approval</span>
+                  <span className="flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-rose-500" />Within 3 days of posting</span>
+                  <span className="flex items-center gap-1.5"><Clock size={11} className="text-blue-500" />Scheduled</span>
+                </div>
               </div>
               {groups.length === 0 ? (
-                <EmptyState icon={<CalendarDays size={20} />} title="Nothing planned this month" body={unscheduled.length ? `${unscheduled.length} deliverable(s) still need a posting date in the tracker.` : 'Adjust filters or add content.'} />
+                <EmptyState icon={<CalendarDays size={20} />} title="Nothing planned this month" body={unscheduled.length ? `${unscheduled.length} deliverable(s) still need a posting date. See the Deliverables view.` : 'Adjust filters or add content.'} />
               ) : (
-                <div className="space-y-4">
-                  {groups.map(([k, list]) => (
-                    <div key={k} className="cs-rise">
-                      <div className="flex items-baseline gap-2 mb-1.5 sticky top-0 z-[1] py-1 bg-gradient-to-b from-[#fffaf3] to-transparent">
-                        <span className="cs-display text-lg">{dayTitle(k)}</span>
-                        <span className="text-[10px] font-black uppercase tracking-widest text-stone-400">{relativeDay(list[0].plannedAt, list[0].timezone)}</span>
+                <>
+                  <div className="hidden md:grid grid-cols-[120px_minmax(0,1fr)_160px_150px] gap-3 px-2 mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                    <span /><span className="pl-3">Content · Stage</span><span>Platform · Time</span><span>Status · Schedule</span>
+                  </div>
+                  <div className="space-y-3">
+                    {groups.map(([k, list]) => (
+                      <div key={k} className="md:grid md:grid-cols-[120px_minmax(0,1fr)] gap-3">
+                        <DateBadge dayKeyStr={k} item={list[0]} count={list.length} />
+                        <div className="space-y-2 mt-2 md:mt-0">
+                          {list.map(i => <Row key={i.id} i={i} active={i.id === selectedId} onOpen={() => setSelectedId(i.id)} clientName={clientName(i.clientId)} />)}
+                        </div>
                       </div>
-                      <div className="space-y-1.5">
-                        {list.map(i => <Row key={i.id} i={i} active={i.id === selectedId} onOpen={() => setSelectedId(i.id)} clientName={clientName(i.clientId)} />)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                </>
               )}
             </section>
           ) : (
@@ -274,25 +312,25 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
               {filtered.length === 0 ? (
                 <EmptyState icon={<LayoutList size={20} />} title="No deliverables match" body="Change filters, or add content to start tracking." />
               ) : (
-                <div className="rounded-2xl border border-[#e7dfd2] bg-white/70 overflow-hidden">
-                  <div className="hidden md:grid grid-cols-[2fr_1fr_1fr_1fr_1.3fr] gap-2 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-stone-400 border-b border-[#efe6d8]">
+                <div className="rounded-2xl border border-slate-200 bg-white/70 overflow-hidden">
+                  <div className="hidden md:grid grid-cols-[2fr_1fr_1fr_1fr_1.3fr] gap-2 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-200">
                     <span>Deliverable</span><span>Owner</span><span>Production due</span><span>Posting</span><span>Stage</span>
                   </div>
                   {[...filtered].sort((a, b) => String(a.productionDueDate || '9').localeCompare(String(b.productionDueDate || '9'))).map(i => (
                     <button key={i.id} data-testid={`row-deliverable-${i.id}`} onClick={() => setSelectedId(i.id)}
-                      className={`w-full text-left grid grid-cols-1 md:grid-cols-[2fr_1fr_1fr_1fr_1.3fr] gap-1 md:gap-2 px-3 py-2.5 border-b border-[#f3ece1] last:border-0 hover:bg-[#fff4ea] transition-colors ${i.id === selectedId ? 'bg-[#fff4ea]' : ''} ${i.archived ? 'opacity-60' : ''}`}>
-                      <span className="min-w-0"><span className="block text-sm font-bold truncate">{i.title}</span><span className="text-[11px] text-stone-500">{clientName(i.clientId)} · {i.type}</span></span>
-                      <span className="text-xs text-stone-600">{mode === 'team' ? ownerName(i.ownerId) : ''}</span>
-                      <span className="text-xs text-stone-600">{mode === 'team' ? (i.productionDueDate || 'Not set') : ''}</span>
-                      <span className="text-xs text-stone-600">{i.plannedAt ? `${fmtInstant(i.plannedAt, i.timezone)} ${tzShort(i.timezone)}` : 'Unscheduled'}</span>
+                      className={`w-full text-left grid grid-cols-1 md:grid-cols-[2fr_1fr_1fr_1fr_1.3fr] gap-1 md:gap-2 px-3 py-2.5 border-b border-slate-100 last:border-0 hover:bg-indigo-50 transition-colors ${i.id === selectedId ? 'bg-indigo-50' : ''} ${i.archived ? 'opacity-60' : ''}`}>
+                      <span className="min-w-0"><span className="block text-sm font-bold truncate">{i.title}</span><span className="text-[11px] text-slate-500">{clientName(i.clientId)} · {i.type}</span></span>
+                      <span className="text-xs text-slate-600">{mode === 'team' ? ownerName(i.ownerId) : ''}</span>
+                      <span className="text-xs text-slate-600">{mode === 'team' ? (i.productionDueDate || 'Not set') : ''}</span>
+                      <span className="text-xs text-slate-600">{i.plannedAt ? `${fmtInstant(i.plannedAt, i.timezone)} ${tzShort(i.timezone)}` : 'Unscheduled'}</span>
                       <span className="flex items-center gap-1.5 flex-wrap"><StageBadge stage={i.stage} />{i.scheduled && <CalendarCheck size={13} className="text-emerald-600" aria-label="Scheduled" />}<UrgencyTag u={urgency(i)} /></span>
                     </button>
                   ))}
                 </div>
               )}
               <div>
-                <h3 className="cs-display text-xl mb-2">Without a posting date <span className="text-sm text-stone-400">({unscheduled.length})</span></h3>
-                {unscheduled.length === 0 ? <p className="text-xs text-stone-400">Every deliverable has a planned post time.</p> : (
+                <h3 className="cs-display text-xl mb-2">Without a posting date <span className="text-sm text-slate-400">({unscheduled.length})</span></h3>
+                {unscheduled.length === 0 ? <p className="text-xs text-slate-400">Every deliverable has a planned post time.</p> : (
                   <div className="space-y-1.5">{unscheduled.map(i => <Row key={i.id} i={i} active={i.id === selectedId} onOpen={() => setSelectedId(i.id)} clientName={clientName(i.clientId)} />)}</div>
                 )}
               </div>
@@ -301,15 +339,15 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
         </div>
 
         {selected ? (
-          <div className="fixed inset-0 z-[110] bg-[#fffaf3] overflow-y-auto lg:static lg:z-auto lg:bg-transparent lg:overflow-visible lg:sticky lg:top-4">
+          <div className="fixed inset-0 z-[110] bg-white overflow-y-auto lg:static lg:z-auto lg:bg-transparent lg:overflow-visible lg:sticky lg:top-4">
             <Detail key={selected.id} item={selected} api={api} boot={boot} mode={mode} editable={editable.has(selected.clientId)}
               clientName={clientName(selected.clientId)} ownerName={ownerName} currentUser={currentUser}
               onClose={() => setSelectedId(null)} onChange={upsert} onEdit={() => setEditing(selected)}
               onDuplicated={(d) => { upsert(d); setSelectedId(d.id); }} onReload={loadItems} />
           </div>
         ) : (
-          <div className="hidden lg:block rounded-3xl border border-dashed border-[#e2d6c4] p-8 text-center text-xs text-stone-400">
-            <Sparkles size={18} className="mx-auto mb-2 text-[#ff6b3d]" /> Select a deliverable to see assets, approvals and conversations.
+          <div className="hidden lg:block rounded-3xl border border-dashed border-slate-200 p-8 text-center text-xs text-slate-400">
+            <Sparkles size={18} className="mx-auto mb-2 text-indigo-600" /> Select a deliverable to see assets, approvals and conversations.
           </div>
         )}
       </div>
@@ -325,20 +363,59 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
   );
 }
 
-function Row({ i, active, onOpen, clientName }) {
+const rowTone = (i) => {
   const u = urgency(i);
+  if (u === 'overdue' || u === 'soon') return 'bg-rose-50/70 border-rose-200';
+  if (i.stage === 'final_approved') return 'bg-emerald-50/60 border-emerald-200';
+  if (i.stage === 'internal_draft') return 'bg-white border-slate-200';
+  return 'bg-amber-50/60 border-amber-200';
+};
+const typeChip = { Post: 'bg-indigo-50 text-indigo-600', Reel: 'bg-rose-50 text-rose-600', Story: 'bg-sky-50 text-sky-600' };
+
+function DateBadge({ dayKeyStr, item, count }) {
+  const [y, m, d] = dayKeyStr.split('-').map(Number);
+  const wd = new Intl.DateTimeFormat('en-IN', { weekday: 'short', timeZone: 'UTC' }).format(new Date(Date.UTC(y, m - 1, d))).toUpperCase();
+  const u = urgency(item);
+  const tone = u === 'overdue' || u === 'soon' ? 'border-rose-200 text-rose-600' : item.stage === 'final_approved' ? 'border-emerald-200 text-emerald-600' : 'border-amber-200 text-amber-600';
+  return (
+    <div className="flex items-start gap-2">
+      <div className={`w-11 shrink-0 rounded-xl border bg-white text-center py-1 ${tone}`}>
+        <p className="text-[9px] font-bold">{wd}</p>
+        <p className="text-lg font-bold leading-tight">{d}</p>
+      </div>
+      <div className="pt-1">
+        <p className="text-xs font-semibold text-slate-800">{relativeDay(item.plannedAt, item.timezone)}</p>
+        <p className="text-[10px] text-slate-400">{count} item{count === 1 ? '' : 's'}</p>
+      </div>
+    </div>
+  );
+}
+
+function StatusPill({ i }) {
+  const u = urgency(i);
+  if (u === 'overdue') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-rose-200 bg-white text-[10px] font-semibold text-rose-600"><i className="w-1.5 h-1.5 rounded-full bg-rose-500" />Overdue</span>;
+  if (u === 'soon') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-rose-200 bg-white text-[10px] font-semibold text-rose-600"><i className="w-1.5 h-1.5 rounded-full bg-rose-500" />Close to post date</span>;
+  if (i.stage === 'final_approved') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-emerald-200 bg-white text-[10px] font-semibold text-emerald-600"><i className="w-1.5 h-1.5 rounded-full bg-emerald-500" />Approved</span>;
+  if (i.stage === 'internal_draft') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-500"><i className="w-1.5 h-1.5 rounded-full bg-slate-400" />Draft</span>;
+  return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-amber-200 bg-white text-[10px] font-semibold text-amber-600"><i className="w-1.5 h-1.5 rounded-full bg-amber-500" />WIP / Awaiting</span>;
+}
+
+function Row({ i, active, onOpen, clientName }) {
   return (
     <button data-testid={`card-content-${i.id}`} onClick={onOpen}
-      className={`w-full text-left flex items-center gap-3 rounded-2xl border px-3 py-2.5 transition-all ${active ? 'border-[#1f2440] bg-white shadow-sm' : 'border-[#ece3d5] bg-white/70 hover:bg-white hover:-translate-y-px'} ${i.archived ? 'opacity-60' : ''}`}>
-      <span className={`w-1.5 self-stretch rounded-full ${u === 'overdue' ? 'bg-rose-500' : u === 'soon' ? 'bg-[#ff6b3d]' : i.scheduled ? 'bg-emerald-500' : 'bg-[#e2d6c4]'}`} />
-      <span className="flex-1 min-w-0">
-        <span className="block text-sm font-bold truncate">{i.title}</span>
-        <span className="block text-[11px] text-stone-500 truncate">{clientName} · {i.type} · {(i.platforms || []).join(', ') || 'No platforms'}</span>
+      className={`w-full text-left grid grid-cols-[auto_minmax(0,1fr)] md:grid-cols-[auto_minmax(0,1fr)_160px_150px] items-center gap-x-3 gap-y-1 rounded-xl border px-3 py-2.5 transition-colors ${rowTone(i)} ${active ? 'ring-2 ring-indigo-500 border-indigo-500' : 'hover:border-slate-300'} ${i.archived ? 'opacity-60' : ''}`}>
+      <span className={`w-6 h-6 rounded-md text-[10px] font-bold flex items-center justify-center ${typeChip[i.type] || 'bg-slate-100 text-slate-600'}`}>{(i.type || '?')[0]}</span>
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold truncate">{i.title}</span>
+        <span className="block text-[11px] text-slate-500 truncate">{clientName} · {stageLabel(i.stage)}</span>
       </span>
-      <span className="text-right shrink-0 space-y-1">
-        <span className="block text-[11px] font-bold tabular-nums">{i.plannedAt ? `${fmtInstant(i.plannedAt, i.timezone, { day: undefined, month: undefined })} ${tzShort(i.timezone)}` : 'No date'}</span>
-        <span className="flex items-center gap-1 justify-end"><StageBadge stage={i.stage} />{i.scheduled && <CalendarCheck size={13} className="text-emerald-600" aria-label="Scheduled" />}</span>
-        <UrgencyTag u={u} />
+      <span className="col-start-2 md:col-start-auto min-w-0">
+        <span className="block text-xs text-slate-700 truncate">{(i.platforms || []).join(' · ') || 'No platforms'}</span>
+        <span className="block text-[11px] text-slate-400">{i.plannedAt ? `${fmtInstant(i.plannedAt, i.timezone, { day: undefined, month: undefined })} ${tzShort(i.timezone)}` : 'No posting date'}</span>
+      </span>
+      <span className="col-start-2 md:col-start-auto flex md:flex-col items-start gap-1">
+        <StatusPill i={i} />
+        <span className={`inline-flex items-center gap-1 text-[10px] ${i.scheduled ? 'text-blue-600 font-semibold' : 'text-slate-400'}`}><Clock size={10} />{i.scheduled ? 'Scheduled' : 'Not scheduled'}</span>
       </span>
     </button>
   );
@@ -375,23 +452,23 @@ function Detail({ item, api, boot, mode, editable, clientName, ownerName, curren
     : [['overview', 'Overview'], ['assets', 'Assets'], ['approvals', 'Approvals'], ['chat', 'Chat'], ['history', 'History']];
 
   return (
-    <article data-testid="panel-deliverable-detail" className="cs-rise lg:rounded-3xl lg:border border-[#e7dfd2] bg-[#fffdf9] lg:shadow-[0_20px_60px_-30px_rgba(31,36,64,0.4)] min-h-full lg:min-h-0">
-      <header className="p-4 border-b border-[#efe6d8]">
+    <article data-testid="panel-deliverable-detail" className="cs-rise lg:rounded-2xl lg:border border-slate-200 bg-white lg:shadow-sm min-h-full lg:min-h-0">
+      <header className="p-4 border-b border-slate-200">
         <div className="flex items-start gap-2">
-          <button data-testid="button-close-detail" onClick={onClose} className="p-1.5 -ml-1 rounded-full hover:bg-[#f3eadc]" aria-label="Close detail"><X size={16} /></button>
+          <button data-testid="button-close-detail" onClick={onClose} className="p-1.5 -ml-1 rounded-full hover:bg-slate-100" aria-label="Close detail"><X size={16} /></button>
           <div className="flex-1 min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-stone-400">{item.type} · {clientName} · rev {item.revision}</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">{item.type} · {clientName} · rev {item.revision}</p>
             <h3 data-testid="text-detail-title" className="cs-display text-2xl leading-tight break-words">{item.title}</h3>
             <div className="flex flex-wrap items-center gap-1.5 mt-2">
               <StageBadge stage={item.stage} testid="status-detail-stage" />
-              {item.archived && <span className="text-[10px] font-bold uppercase text-stone-500">Archived</span>}
-              {item.shared ? <span className="text-[10px] font-bold uppercase text-[#1f2440]">Shared</span> : <span className="text-[10px] font-bold uppercase text-stone-400">Not shared</span>}
+              {item.archived && <span className="text-[10px] font-bold uppercase text-slate-500">Archived</span>}
+              {item.shared ? <span className="text-[10px] font-bold uppercase text-slate-900">Shared</span> : <span className="text-[10px] font-bold uppercase text-slate-400">Not shared</span>}
               <UrgencyTag u={urgency(item)} />
             </div>
           </div>
         </div>
         {preview && !visibleToClient && (
-          <p data-testid="status-hidden-from-client" className="mt-3 text-xs rounded-xl bg-stone-100 text-stone-600 px-3 py-2 flex gap-2 items-center"><EyeOff size={13} /> Client members cannot see this record.</p>
+          <p data-testid="status-hidden-from-client" className="mt-3 text-xs rounded-xl bg-slate-100 text-slate-600 px-3 py-2 flex gap-2 items-center"><EyeOff size={13} /> Client members cannot see this record.</p>
         )}
         {canAct && (
           <div className="flex flex-wrap gap-1.5 mt-3">
@@ -413,7 +490,7 @@ function Detail({ item, api, boot, mode, editable, clientName, ownerName, curren
       <nav className="flex gap-1 px-3 pt-3 overflow-x-auto" role="tablist">
         {tabs.map(([id, label]) => (
           <button key={id} role="tab" aria-selected={tab === id} data-testid={`tab-detail-${id}`} onClick={() => setTab(id)}
-            className={`px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap ${tab === id ? 'bg-[#1f2440] text-[#fffaf3]' : 'text-stone-500 hover:bg-[#f3eadc]'}`}>{label}</button>
+            className={`px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap ${tab === id ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>{label}</button>
         ))}
       </nav>
 
@@ -431,23 +508,23 @@ function Detail({ item, api, boot, mode, editable, clientName, ownerName, curren
             {!preview && item.brief && <Block label="Internal brief" text={item.brief} />}
             <Block label="Client-facing caption" text={item.caption || 'No caption yet.'} />
 
-            <div className="rounded-2xl border border-[#e7dfd2] p-3 bg-white/70">
-              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-stone-500 mb-2">Scheduling</p>
+            <div className="rounded-2xl border border-slate-200 p-3 bg-white/70">
+              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500 mb-2">Scheduling</p>
               {item.scheduled ? (
                 <div className="space-y-2">
                   <p data-testid="status-scheduled" className="text-sm font-bold text-emerald-700 flex items-center gap-1.5"><CalendarCheck size={14} /> Marked scheduled {fmtStamp(item.scheduled.at)}</p>
-                  {item.scheduled.link && isHttps(item.scheduled.link) && <a data-testid="link-schedule" href={item.scheduled.link} target="_blank" rel="noopener noreferrer" className="text-xs text-[#1f2440] underline inline-flex items-center gap-1">Scheduling link <ExternalLink size={11} /></a>}
+                  {item.scheduled.link && isHttps(item.scheduled.link) && <a data-testid="link-schedule" href={item.scheduled.link} target="_blank" rel="noopener noreferrer" className="text-xs text-slate-900 underline inline-flex items-center gap-1">Scheduling link <ExternalLink size={11} /></a>}
                   {canAct && <button data-testid="button-unschedule" disabled={!!busy} onClick={() => run('unsch', { action: 'unschedule' })} className={btnGhost}><Undo2 size={12} /> Undo scheduled</button>}
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <p className="text-xs text-stone-500">Tracking only. Flow Pro never publishes to social platforms.</p>
+                  <p className="text-xs text-slate-500">Tracking only. Flow Pro never publishes to social platforms.</p>
                   {canAct && (
                     <button data-testid="button-mark-scheduled" disabled={!!busy || item.stage !== 'final_approved' || !item.plannedAt || !(item.platforms || []).length} onClick={() => setDialog('schedule')} className={btnPrimary}>
                       <CalendarCheck size={12} /> Mark scheduled
                     </button>
                   )}
-                  {canAct && item.stage !== 'final_approved' && <p className="text-[11px] text-stone-400">Requires current final approval, a posting time and platforms.</p>}
+                  {canAct && item.stage !== 'final_approved' && <p className="text-[11px] text-slate-400">Requires current final approval, a posting time and platforms.</p>}
                 </div>
               )}
             </div>
@@ -462,19 +539,19 @@ function Detail({ item, api, boot, mode, editable, clientName, ownerName, curren
               const a = item.approvals?.[phase];
               const approver = boot.approvers?.find(x => x.uid === a?.approverUid);
               return (
-                <div key={phase} data-testid={`card-approval-${phase}`} className="rounded-2xl border border-[#e7dfd2] p-3 bg-white/70">
+                <div key={phase} data-testid={`card-approval-${phase}`} className="rounded-2xl border border-slate-200 p-3 bg-white/70">
                   <div className="flex items-center justify-between">
                     <p className="cs-display text-lg capitalize">{phase === 'reference' ? 'Reference approval' : 'Final post approval'}</p>
-                    <span className={`text-[10px] font-black uppercase tracking-wider ${a?.status === 'approved' ? 'text-emerald-700' : a?.status === 'changes_requested' ? 'text-rose-600' : a ? 'text-amber-700' : 'text-stone-400'}`}>
+                    <span className={`text-[10px] font-black uppercase tracking-wider ${a?.status === 'approved' ? 'text-emerald-700' : a?.status === 'changes_requested' ? 'text-rose-600' : a ? 'text-amber-700' : 'text-slate-400'}`}>
                       {a ? (a.status === 'changes_requested' ? 'Changes requested' : a.status) : 'Not requested'}
                     </span>
                   </div>
                   {a && (
-                    <div className="mt-2 text-xs text-stone-600 space-y-1">
+                    <div className="mt-2 text-xs text-slate-600 space-y-1">
                       <p>Approver: <b>{approver?.name || 'Designated client member'}</b> · revision {a.revision}</p>
                       {a.requestedAt && <p>Requested {fmtStamp(a.requestedAt)}{a.decidedAt ? `, decided ${fmtStamp(a.decidedAt)}` : ''}</p>}
                       {a.feedback && <p className="rounded-xl bg-rose-50 text-rose-800 px-2.5 py-1.5 whitespace-pre-wrap">{a.feedback}</p>}
-                      {a.snapshot?.assets?.length > 0 && <p className="text-stone-400">Snapshot: {a.snapshot.assets.map(s => `${s.label} r${s.revision}`).join(', ')}</p>}
+                      {a.snapshot?.assets?.length > 0 && <p className="text-slate-400">Snapshot: {a.snapshot.assets.map(s => `${s.label} r${s.revision}`).join(', ')}</p>}
                     </div>
                   )}
                   {canAct && !item.archived && (
@@ -492,7 +569,7 @@ function Detail({ item, api, boot, mode, editable, clientName, ownerName, curren
                 </div>
               );
             })}
-            <p className="text-[11px] text-stone-400 flex items-center gap-1.5"><Clock size={11} /> Automatic reminders follow Control Center settings (default daily 9:00 AM IST). Only the assigned approver can decide.</p>
+            <p className="text-[11px] text-slate-400 flex items-center gap-1.5"><Clock size={11} /> Automatic reminders follow Control Center settings (default daily 9:00 AM IST). Only the assigned approver can decide.</p>
           </div>
         )}
 
@@ -524,16 +601,16 @@ function Detail({ item, api, boot, mode, editable, clientName, ownerName, curren
 }
 
 const Info = ({ label, value }) => (
-  <div><dt className="text-[10px] font-black uppercase tracking-[0.14em] text-stone-400">{label}</dt><dd className="text-sm font-semibold text-[#1f2440] mt-0.5 break-words">{value}</dd></div>
+  <div><dt className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</dt><dd className="text-sm font-semibold text-slate-900 mt-0.5 break-words">{value}</dd></div>
 );
 const Block = ({ label, text }) => (
-  <div><p className="text-[10px] font-black uppercase tracking-[0.14em] text-stone-400 mb-1">{label}</p><p className="text-sm text-stone-700 whitespace-pre-wrap break-words">{text}</p></div>
+  <div><p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400 mb-1">{label}</p><p className="text-sm text-slate-700 whitespace-pre-wrap break-words">{text}</p></div>
 );
 
 function Confirm({ title, body, cta, onClose, onConfirm, busy }) {
   return (
     <Sheet title={title} onClose={onClose} footer={<><button data-testid="button-confirm-cancel" onClick={onClose} className={btnGhost}>Cancel</button><button data-testid="button-confirm" disabled={busy} onClick={onConfirm} className={btnAccent}>{cta}</button></>}>
-      <p className="text-sm text-stone-600">{body}</p>
+      <p className="text-sm text-slate-600">{body}</p>
     </Sheet>
   );
 }
@@ -543,7 +620,7 @@ function ScheduleDialog({ onClose, onSubmit, busy }) {
   const bad = link && !isHttps(link);
   return (
     <Sheet title="Mark scheduled" onClose={onClose} footer={<><button onClick={onClose} className={btnGhost}>Cancel</button><button data-testid="button-confirm-schedule" disabled={busy || bad} onClick={() => onSubmit(link.trim())} className={btnPrimary}>Mark scheduled</button></>}>
-      <p className="text-sm text-stone-600 mb-3">Records that someone scheduled this post in an external tool. Nothing is published.</p>
+      <p className="text-sm text-slate-600 mb-3">Records that someone scheduled this post in an external tool. Nothing is published.</p>
       <Field label="Scheduling link (optional)" error={bad ? 'Use an https:// link.' : ''}><input data-testid="input-schedule-link" value={link} onChange={e => setLink(e.target.value)} className={inputCls} placeholder="https://" /></Field>
     </Sheet>
   );
@@ -556,7 +633,7 @@ function RequestDialog({ phase, approvers, item, onClose, onSubmit, busy }) {
     <Sheet title={phase === 'reference' ? 'Request reference approval' : 'Request final approval'} onClose={onClose}
       footer={<><button onClick={onClose} className={btnGhost}>Cancel</button><button data-testid="button-confirm-request" disabled={busy || !uid || !hasAssets} onClick={() => onSubmit(uid)} className={btnPrimary}>Share and request</button></>}>
       <div className="space-y-3">
-        <p className="text-sm text-stone-600">Shares revision {item.revision} with one designated client approver. The current caption and {phase} assets are snapshotted.</p>
+        <p className="text-sm text-slate-600">Shares revision {item.revision} with one designated client approver. The current caption and {phase} assets are snapshotted.</p>
         {!hasAssets && <ErrorBanner message={`Add at least one ${phase} asset first.`} />}
         {approvers.length === 0 ? (
           <ErrorBanner message="No verified active client members for this client. Invite members through Control Center, Client Portal." />
@@ -588,35 +665,35 @@ function Assets({ item, api, canAct, onChange, onReload, ownerName, preview }) {
   };
   return (
     <div className="space-y-4">
-      <p className="text-[11px] text-stone-500 rounded-xl bg-[#f4f5fb] px-3 py-2 flex gap-2"><Link2 size={12} className="mt-0.5 shrink-0" /> Links only. SharePoint and file access is controlled by the underlying file permissions, not Flow Pro. Replacing an asset invalidates affected approvals.</p>
+      <p className="text-[11px] text-slate-500 rounded-xl bg-slate-50 px-3 py-2 flex gap-2"><Link2 size={12} className="mt-0.5 shrink-0" /> Links only. SharePoint and file access is controlled by the underlying file permissions, not Flow Pro. Replacing an asset invalidates affected approvals.</p>
       {['reference', 'final'].map(phase => {
         const list = (item.assets || []).filter(a => a.phase === phase);
         return (
           <div key={phase}>
             <div className="flex items-center justify-between mb-1.5">
               <p className="cs-display text-lg capitalize">{phase} assets</p>
-              {canAct && <button data-testid={`button-add-asset-${phase}`} onClick={() => setForm({ phase, kind: 'main', label: '', url: '' })} className="text-[11px] font-bold text-[#ff6b3d] inline-flex items-center gap-1"><Plus size={12} /> Add link</button>}
+              {canAct && <button data-testid={`button-add-asset-${phase}`} onClick={() => setForm({ phase, kind: 'main', label: '', url: '' })} className="text-[11px] font-bold text-indigo-600 inline-flex items-center gap-1"><Plus size={12} /> Add link</button>}
             </div>
-            {list.length === 0 ? <p className="text-xs text-stone-400">No {phase} assets.</p> : (
+            {list.length === 0 ? <p className="text-xs text-slate-400">No {phase} assets.</p> : (
               <ul className="space-y-1.5">
                 {list.map(a => (
-                  <li key={a.id} data-testid={`asset-${a.id}`} className="rounded-xl border border-[#ece3d5] bg-white/80 px-3 py-2">
+                  <li key={a.id} data-testid={`asset-${a.id}`} className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#1f2440] text-[#fffaf3]">{ASSET_KINDS.find(k => k.id === a.kind)?.label || a.kind}</span>
+                      <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-900 text-white">{ASSET_KINDS.find(k => k.id === a.kind)?.label || a.kind}</span>
                       <span className="text-sm font-semibold truncate flex-1">{a.label}</span>
-                      <span className="text-[10px] text-stone-400">r{a.revision}</span>
-                      {isHttps(a.url) && <a data-testid={`link-asset-${a.id}`} href={a.url} target="_blank" rel="noopener noreferrer" className="p-1 rounded hover:bg-[#f3eadc]" aria-label={`Open ${a.label}`}><ExternalLink size={13} /></a>}
+                      <span className="text-[10px] text-slate-400">r{a.revision}</span>
+                      {isHttps(a.url) && <a data-testid={`link-asset-${a.id}`} href={a.url} target="_blank" rel="noopener noreferrer" className="p-1 rounded hover:bg-slate-100" aria-label={`Open ${a.label}`}><ExternalLink size={13} /></a>}
                     </div>
-                    {!preview && a.updatedAt && <p className="text-[10px] text-stone-400 mt-0.5">Updated {fmtStamp(a.updatedAt)}{a.updatedBy ? ` by ${ownerName(a.updatedBy)}` : ''}</p>}
+                    {!preview && a.updatedAt && <p className="text-[10px] text-slate-400 mt-0.5">Updated {fmtStamp(a.updatedAt)}{a.updatedBy ? ` by ${ownerName(a.updatedBy)}` : ''}</p>}
                     {!preview && (
                       <div className="flex gap-3 mt-1">
-                        {canAct && <button data-testid={`button-replace-asset-${a.id}`} onClick={() => setForm({ assetId: a.id, phase: a.phase, kind: a.kind, label: a.label, url: '' })} className="text-[11px] font-bold text-[#1f2440] hover:underline">New revision</button>}
-                        {a.history?.length > 0 && <button data-testid={`button-asset-history-${a.id}`} onClick={() => setOpen(open === a.id ? null : a.id)} className="text-[11px] font-bold text-stone-500 hover:underline">{open === a.id ? 'Hide' : 'Show'} history ({a.history.length})</button>}
+                        {canAct && <button data-testid={`button-replace-asset-${a.id}`} onClick={() => setForm({ assetId: a.id, phase: a.phase, kind: a.kind, label: a.label, url: '' })} className="text-[11px] font-bold text-slate-900 hover:underline">New revision</button>}
+                        {a.history?.length > 0 && <button data-testid={`button-asset-history-${a.id}`} onClick={() => setOpen(open === a.id ? null : a.id)} className="text-[11px] font-bold text-slate-500 hover:underline">{open === a.id ? 'Hide' : 'Show'} history ({a.history.length})</button>}
                       </div>
                     )}
                     {open === a.id && (
-                      <ul className="mt-2 space-y-1 border-l-2 border-[#e7dfd2] pl-2">
-                        {a.history.map((h, idx) => <li key={idx} className="text-[11px] text-stone-500 break-all">r{h.revision ?? '?'} · {h.label || a.label} · {h.updatedAt ? fmtStamp(h.updatedAt) : ''} · {h.url}</li>)}
+                      <ul className="mt-2 space-y-1 border-l-2 border-slate-200 pl-2">
+                        {a.history.map((h, idx) => <li key={idx} className="text-[11px] text-slate-500 break-all">r{h.revision ?? '?'} · {h.label || a.label} · {h.updatedAt ? fmtStamp(h.updatedAt) : ''} · {h.url}</li>)}
                       </ul>
                     )}
                   </li>
@@ -658,14 +735,14 @@ function ActivityList({ api, item, ownerName, boot }) {
   const who = (uid) => boot.approvers?.find(a => a.uid === uid)?.name || ownerName(uid);
   if (error) return <ErrorBanner message={error} onRetry={load} />;
   if (!list) return <SkeletonList rows={3} />;
-  if (!list.length) return <p className="text-xs text-stone-400">No activity yet.</p>;
+  if (!list.length) return <p className="text-xs text-slate-400">No activity yet.</p>;
   return (
-    <ol className="relative border-l-2 border-[#e7dfd2] ml-1 space-y-3" data-testid="list-activity">
+    <ol className="relative border-l-2 border-slate-200 ml-1 space-y-3" data-testid="list-activity">
       {[...list].reverse().map((a, idx) => (
         <li key={idx} className="pl-4 relative">
-          <span className="absolute -left-[7px] top-1 w-3 h-3 rounded-full bg-[#fffaf3] border-2 border-[#ff6b3d]" />
-          <p className="text-xs font-bold text-[#1f2440] capitalize">{String(a.action || '').replace(/_/g, ' ')}</p>
-          <p className="text-[11px] text-stone-500">{who(a.actor)} · {fmtStamp(a.at)} · rev {a.revision}</p>
+          <span className="absolute -left-[7px] top-1 w-3 h-3 rounded-full bg-white border-2 border-indigo-600" />
+          <p className="text-xs font-bold text-slate-900 capitalize">{String(a.action || '').replace(/_/g, ' ')}</p>
+          <p className="text-[11px] text-slate-500">{who(a.actor)} · {fmtStamp(a.at)} · rev {a.revision}</p>
         </li>
       ))}
     </ol>
@@ -720,7 +797,7 @@ function Editor({ api, boot, item, clients, defaultClient, onClose, onSaved }) {
           </select>
         </Field>
         <Field label="Type">
-          <div className="flex gap-1">{TYPES.map(t => <button type="button" key={t} data-testid={`button-type-${t}`} onClick={() => set('type', t)} className={`flex-1 py-2 rounded-xl text-xs font-bold border ${f.type === t ? 'bg-[#1f2440] text-[#fffaf3] border-[#1f2440]' : 'bg-white border-[#e7dfd2]'}`}>{t}</button>)}</div>
+          <div className="flex gap-1">{TYPES.map(t => <button type="button" key={t} data-testid={`button-type-${t}`} onClick={() => set('type', t)} className={`flex-1 py-2 rounded-xl text-xs font-bold border ${f.type === t ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-200'}`}>{t}</button>)}</div>
         </Field>
         <Field label="Internal owner" error={errors.ownerId}>
           <select data-testid="select-owner" value={f.ownerId} onChange={e => set('ownerId', e.target.value)} className={inputCls}>
@@ -734,8 +811,8 @@ function Editor({ api, boot, item, clients, defaultClient, onClose, onSaved }) {
         <div className="sm:col-span-2">
           <Field label="Platforms">
             <div className="flex flex-wrap gap-1.5">
-              {PLATFORMS.map(p => <button type="button" key={p} data-testid={`button-platform-${p}`} aria-pressed={f.platforms.includes(p)} onClick={() => togglePlat(p)} className={`px-3 py-1.5 rounded-full text-[11px] font-bold border ${f.platforms.includes(p) ? 'bg-[#ff6b3d] text-white border-[#ff6b3d]' : 'bg-white border-[#e7dfd2]'}`}>{p}</button>)}
-              <button type="button" data-testid="button-platform-all" onClick={() => set('platforms', [...PLATFORMS])} className="px-3 py-1.5 rounded-full text-[11px] font-bold text-[#1f2440] underline">All platforms</button>
+              {PLATFORMS.map(p => <button type="button" key={p} data-testid={`button-platform-${p}`} aria-pressed={f.platforms.includes(p)} onClick={() => togglePlat(p)} className={`px-3 py-1.5 rounded-full text-[11px] font-bold border ${f.platforms.includes(p) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-200'}`}>{p}</button>)}
+              <button type="button" data-testid="button-platform-all" onClick={() => set('platforms', [...PLATFORMS])} className="px-3 py-1.5 rounded-full text-[11px] font-bold text-slate-900 underline">All platforms</button>
             </div>
           </Field>
         </div>
@@ -752,7 +829,7 @@ function Editor({ api, boot, item, clients, defaultClient, onClose, onSaved }) {
           <p className="sm:col-span-2 text-[11px] text-amber-700 flex gap-1.5"><AlertTriangle size={12} className="mt-0.5" /> Material changes can invalidate existing approvals and the scheduled marker.</p>
         )}
         {error && <div className="sm:col-span-2"><ErrorBanner message={error} /></div>}
-        {f.clientId && owners.length === 0 && <p className="sm:col-span-2 text-[11px] text-stone-500 flex gap-1.5"><CheckCircle2 size={12} /> No eligible creative owners for this client. Assign editors in Control Center.</p>}
+        {f.clientId && owners.length === 0 && <p className="sm:col-span-2 text-[11px] text-slate-500 flex gap-1.5"><CheckCircle2 size={12} /> No eligible creative owners for this client. Assign editors in Control Center.</p>}
       </form>
     </Sheet>
   );

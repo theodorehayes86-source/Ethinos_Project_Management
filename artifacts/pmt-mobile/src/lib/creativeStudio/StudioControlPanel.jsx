@@ -18,7 +18,7 @@ export const peopleIndex = (boot) => {
   return m;
 };
 export const DELIVERY_KIND = { request: 'Approval request', reminder: 'Pending reminder', decision: 'Decision notice', escalation: 'Near-post escalation' };
-export const DELIVERY_TONE = { sent: 'text-emerald-700', failed: 'text-rose-600', unconfirmed: 'text-rose-600', queued: 'text-amber-700', sending: 'text-amber-700', suppressed: 'text-stone-500', cancelled: 'text-stone-500', expired: 'text-stone-500' };
+export const DELIVERY_TONE = { sent: 'text-emerald-700', failed: 'text-rose-600', unconfirmed: 'text-rose-600', queued: 'text-amber-700', sending: 'text-amber-700', suppressed: 'text-slate-500', cancelled: 'text-slate-500', expired: 'text-slate-500' };
 
 export default function StudioControlPanel({ auth, apiBase }) {
   const api = useMemo(() => createStudioApi({ base: apiBase, getToken: async () => (auth.currentUser ? auth.currentUser.getIdToken() : null) }), [auth, apiBase]);
@@ -46,12 +46,12 @@ export default function StudioControlPanel({ auth, apiBase }) {
   const enabledCount = (boot.capabilities.manageableClientIds || []).filter(id => boot.configs?.[id]?.enabled).length;
 
   return (
-    <div className="cs-root text-left text-[#1f2440] space-y-4">
-      <div className="rounded-3xl bg-[#1f2440] text-[#fffaf3] p-5 flex flex-wrap items-end gap-4 justify-between">
+    <div className="cs-root text-left text-slate-900 space-y-4">
+      <div className="rounded-2xl bg-white border border-slate-200 p-5 flex flex-wrap items-end gap-4 justify-between">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#ff9b78]">Control Center</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-600">Control Center</p>
           <h2 className="cs-display text-3xl leading-none mt-1">Creative Studio</h2>
-          <p className="text-xs text-[#fffaf3]/70 mt-2 max-w-md">Enable existing clients, assign creative ownership and configure approval emails. Enabling creates no client, invitation or project membership.</p>
+          <p className="text-xs text-slate-500 mt-2 max-w-md">Enable existing clients, assign creative ownership and configure approval emails. Enabling creates no client, invitation or project membership.</p>
         </div>
         <div className="flex gap-4">
           <div><p className="cs-display text-3xl tabular-nums" data-testid="text-enabled-count">{enabledCount}</p><p className="text-[10px] uppercase font-bold tracking-wider opacity-70">Enabled</p></div>
@@ -62,9 +62,9 @@ export default function StudioControlPanel({ auth, apiBase }) {
       {boot.capabilities.canManageDefaults && <Defaults api={api} initial={boot.defaults || DEFAULT_AUTO} />}
 
       <div className="grid lg:grid-cols-[320px_minmax(0,1fr)] gap-4 items-start">
-        <div className="rounded-2xl border border-[#e7dfd2] bg-white/80 p-3">
+        <div className="rounded-2xl border border-slate-200 bg-white/80 p-3">
           <div className="relative mb-2">
-            <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+            <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input data-testid="input-studio-client-search" value={q} onChange={e => setQ(e.target.value)} placeholder="Search existing clients" className={`${inputCls} pl-8`} />
           </div>
           <ul className="space-y-1 max-h-[480px] overflow-y-auto">
@@ -72,15 +72,15 @@ export default function StudioControlPanel({ auth, apiBase }) {
               const on = boot.configs?.[c.id]?.enabled === true;
               return (
                 <li key={c.id}>
-                  <button data-testid={`button-studio-client-${c.id}`} onClick={() => setSelected(c.id)} className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-sm transition-colors ${selected === c.id ? 'bg-[#1f2440] text-[#fffaf3]' : 'hover:bg-[#fff4ea]'}`}>
-                    <span className={`w-2 h-2 rounded-full ${on ? 'bg-emerald-500' : 'bg-stone-300'}`} aria-hidden />
+                  <button data-testid={`button-studio-client-${c.id}`} onClick={() => setSelected(c.id)} className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-sm transition-colors ${selected === c.id ? 'bg-slate-900 text-white' : 'hover:bg-indigo-50'}`}>
+                    <span className={`w-2 h-2 rounded-full ${on ? 'bg-emerald-500' : 'bg-slate-300'}`} aria-hidden />
                     <span className="flex-1 truncate font-semibold">{c.name}</span>
                     <span className="text-[10px] font-bold uppercase opacity-70">{on ? 'On' : 'Off'}</span>
                   </button>
                 </li>
               );
             })}
-            {manageable.length === 0 && <li className="text-xs text-stone-400 p-3">No matching clients.</li>}
+            {manageable.length === 0 && <li className="text-xs text-slate-400 p-3">No matching clients.</li>}
           </ul>
         </div>
         {current ? (
@@ -123,8 +123,8 @@ function Defaults({ api, initial }) {
     try { const d = await api.saveDefaults({ enabled: !!v.enabled, sendTime: v.sendTime, timezone: v.timezone, cadenceDays: Number(v.cadenceDays) }); setV({ ...DEFAULT_AUTO, ...d.defaults }); setMsg('Global defaults saved.'); } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
   return (
-    <section className="rounded-2xl border border-[#e7dfd2] bg-white/80 p-4 space-y-3">
-      <div className="flex items-center gap-2"><Mail size={15} /><h3 className="cs-display text-xl">Global email defaults</h3><span className="text-[10px] font-bold uppercase text-stone-400 ml-1">Administrators</span></div>
+    <section className="rounded-2xl border border-slate-200 bg-white/80 p-4 space-y-3">
+      <div className="flex items-center gap-2"><Mail size={15} /><h3 className="cs-display text-xl">Global email defaults</h3><span className="text-[10px] font-bold uppercase text-slate-400 ml-1">Administrators</span></div>
       <AutomationFields value={v} onChange={setV} prefix="defaults" />
       {error && <ErrorBanner message={error} />}
       <div className="flex items-center gap-3"><button data-testid="button-save-defaults" disabled={busy} onClick={save} className={btnPrimary}><Save size={12} /> Save defaults</button>{msg && <span className="text-xs text-emerald-700 font-semibold">{msg}</span>}</div>
@@ -168,21 +168,21 @@ function ClientConfig({ api, client, config, candidates, people, defaults, onSav
 
   const Picker = ({ k, list, testid }) => (
     <div className="flex flex-wrap gap-1.5">
-      {list.length === 0 && <span className="text-xs text-stone-400">No eligible staff.</span>}
+      {list.length === 0 && <span className="text-xs text-slate-400">No eligible staff.</span>}
       {list.map(u => (
         <button type="button" key={u.id} data-testid={`${testid}-${u.id}`} aria-pressed={v[k].includes(u.id)} onClick={() => toggle(k, u.id)}
-          className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border ${v[k].includes(u.id) ? 'bg-[#1f2440] text-[#fffaf3] border-[#1f2440]' : 'bg-white border-[#e7dfd2]'}`}>{u.name}</button>
+          className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border ${v[k].includes(u.id) ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-200'}`}>{u.name}</button>
       ))}
     </div>
   );
 
   return (
     <div className="space-y-4">
-      <section className="rounded-2xl border border-[#e7dfd2] bg-white/80 p-4 space-y-4">
+      <section className="rounded-2xl border border-slate-200 bg-white/80 p-4 space-y-4">
         <div className="flex items-center gap-3 flex-wrap">
           <h3 data-testid="text-config-client" className="cs-display text-2xl flex-1">{client.name}</h3>
           <button data-testid="button-toggle-studio-enabled" role="switch" aria-checked={v.enabled} onClick={() => setV(p => ({ ...p, enabled: !p.enabled }))}
-            className={`relative w-12 h-7 rounded-full transition-colors ${v.enabled ? 'bg-emerald-500' : 'bg-stone-300'}`}>
+            className={`relative w-12 h-7 rounded-full transition-colors ${v.enabled ? 'bg-emerald-500' : 'bg-slate-300'}`}>
             <span className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white shadow transition-transform ${v.enabled ? 'translate-x-5' : ''}`} />
           </button>
           <span className="text-xs font-bold">{v.enabled ? 'Studio enabled' : 'Studio disabled'}</span>
@@ -197,11 +197,11 @@ function ClientConfig({ api, client, config, candidates, people, defaults, onSav
         </Field>
       </section>
 
-      <section className="rounded-2xl border border-[#e7dfd2] bg-white/80 p-4 space-y-3">
+      <section className="rounded-2xl border border-slate-200 bg-white/80 p-4 space-y-3">
         <div className="flex items-center gap-2"><Mail size={15} /><h3 className="cs-display text-xl">Email automation</h3></div>
-        <p className="text-xs text-stone-500">Approval requests, daily pending-approval reminders, near-post-date escalation to the internal owner and decision notices. Recipients are always the verified designated approver or internal owner; reminders stop after a decision, archive, unsharing or revoked access.</p>
+        <p className="text-xs text-slate-500">Approval requests, daily pending-approval reminders, near-post-date escalation to the internal owner and decision notices. Recipients are always the verified designated approver or internal owner; reminders stop after a decision, archive, unsharing or revoked access.</p>
         <AutomationFields value={v.automation} onChange={(a) => setV(p => ({ ...p, automation: a }))} prefix="client" />
-        <p className="text-[11px] text-stone-400 flex items-center gap-1"><Clock size={11} /> Missed runs are not replayed as a backlog.</p>
+        <p className="text-[11px] text-slate-400 flex items-center gap-1"><Clock size={11} /> Missed runs are not replayed as a backlog.</p>
       </section>
 
       {error && <ErrorBanner message={error} />}
@@ -211,23 +211,23 @@ function ClientConfig({ api, client, config, candidates, people, defaults, onSav
         {msg && <span data-testid="status-config-saved" className="text-xs text-emerald-700 font-semibold">{msg}</span>}
       </div>
 
-      <section className="rounded-2xl border border-[#e7dfd2] bg-white/80 p-4">
-        <div className="flex items-center gap-2 mb-2"><ScrollText size={15} /><h3 className="cs-display text-xl flex-1">Delivery log</h3><button data-testid="button-refresh-deliveries" onClick={loadDeliveries} className="text-[11px] font-bold text-[#ff6b3d]">Refresh</button></div>
+      <section className="rounded-2xl border border-slate-200 bg-white/80 p-4">
+        <div className="flex items-center gap-2 mb-2"><ScrollText size={15} /><h3 className="cs-display text-xl flex-1">Delivery log</h3><button data-testid="button-refresh-deliveries" onClick={loadDeliveries} className="text-[11px] font-bold text-indigo-600">Refresh</button></div>
         {delError ? <ErrorBanner message={delError} onRetry={loadDeliveries} /> : deliveries === null ? <SkeletonList rows={2} /> : deliveries.length === 0 ? (
-          <p className="text-xs text-stone-400">No deliveries recorded.</p>
+          <p className="text-xs text-slate-400">No deliveries recorded.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs" data-testid="table-deliveries">
-              <thead><tr className="text-left text-[10px] uppercase tracking-wider text-stone-400"><th className="py-1 pr-3">Created</th><th className="pr-3">Type</th><th className="pr-3">Recipient</th><th className="pr-3">Item / rev</th><th className="pr-3">Status</th><th>Detail</th></tr></thead>
+              <thead><tr className="text-left text-[10px] uppercase tracking-wider text-slate-400"><th className="py-1 pr-3">Created</th><th className="pr-3">Type</th><th className="pr-3">Recipient</th><th className="pr-3">Item / rev</th><th className="pr-3">Status</th><th>Detail</th></tr></thead>
               <tbody>
                 {deliveries.map((d) => (
-                  <tr key={d.id} data-testid={`row-delivery-${d.id}`} className="border-t border-[#f3ece1] align-top">
+                  <tr key={d.id} data-testid={`row-delivery-${d.id}`} className="border-t border-slate-100 align-top">
                     <td className="py-1.5 pr-3 whitespace-nowrap">{fmtStamp(d.createdAt)}</td>
                     <td className="pr-3">{DELIVERY_KIND[d.kind] || d.kind}</td>
                     <td className="pr-3">{people.get(String(d.recipientUid)) || 'Recipient no longer listed'}</td>
-                    <td className="pr-3 text-stone-500 whitespace-nowrap">{String(d.itemId || '').slice(0, 8)} r{d.revision}</td>
-                    <td className={`pr-3 font-bold capitalize ${DELIVERY_TONE[d.status] || 'text-stone-600'}`}>{d.status}{d.attempts ? <span className="font-normal text-stone-400"> x{d.attempts}</span> : null}</td>
-                    <td className="text-stone-500">{d.error || (d.sentAt ? `Sent ${fmtStamp(d.sentAt)}` : '')}</td>
+                    <td className="pr-3 text-slate-500 whitespace-nowrap">{String(d.itemId || '').slice(0, 8)} r{d.revision}</td>
+                    <td className={`pr-3 font-bold capitalize ${DELIVERY_TONE[d.status] || 'text-slate-600'}`}>{d.status}{d.attempts ? <span className="font-normal text-slate-400"> x{d.attempts}</span> : null}</td>
+                    <td className="text-slate-500">{d.error || (d.sentAt ? `Sent ${fmtStamp(d.sentAt)}` : '')}</td>
                   </tr>
                 ))}
               </tbody>
@@ -238,10 +238,10 @@ function ClientConfig({ api, client, config, candidates, people, defaults, onSav
 
       {preview && (
         <Sheet title="Email preview" onClose={() => setPreview(null)} testid="dialog-email-preview">
-          <p className={`text-[11px] font-bold mb-3 ${preview.deliveryEnabled ? 'text-amber-700' : 'text-stone-500'}`}>{preview.deliveryEnabled ? 'Server delivery is enabled.' : 'Server delivery is suppressed. No email is sent.'} This preview sends nothing.</p>
-          <p className="text-[10px] font-black uppercase tracking-widest text-stone-400">Subject</p>
+          <p className={`text-[11px] font-bold mb-3 ${preview.deliveryEnabled ? 'text-amber-700' : 'text-slate-500'}`}>{preview.deliveryEnabled ? 'Server delivery is enabled.' : 'Server delivery is suppressed. No email is sent.'} This preview sends nothing.</p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Subject</p>
           <p data-testid="text-preview-subject" className="text-sm font-bold mb-3">{preview.subject}</p>
-          <p className="text-[10px] font-black uppercase tracking-widest text-stone-400">Body</p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Body</p>
           <p data-testid="text-preview-body" className="text-sm whitespace-pre-wrap">{preview.body}</p>
         </Sheet>
       )}

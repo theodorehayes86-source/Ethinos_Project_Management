@@ -9,6 +9,7 @@ import BottomNav from './components/BottomNav.jsx';
 import StudioWorkspace from './lib/creativeStudio/StudioWorkspace.jsx';
 import StudioControlPanel from './lib/creativeStudio/StudioControlPanel.jsx';
 import { createStudioApi, peekStudioLink } from './lib/creativeStudio/core.js';
+import { watchStudioAccess } from './lib/creativeStudio/access.js';
 const STUDIO_API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 import NotificationsPanel from './components/NotificationsPanel.jsx';
 import {
@@ -206,16 +207,14 @@ function MainApp() {
   const [studioPane, setStudioPane] = useState('work');
   useEffect(() => {
     if (!currentUser?.id || !auth.currentUser) { setStudioCaps({ nav: false, manage: false }); return; }
-    let live = true;
-    createStudioApi({ base: STUDIO_API_BASE, getToken: async () => (auth.currentUser ? auth.currentUser.getIdToken() : null) }).bootstrap().then(b => {
-      if (!live) return;
-      const anyEnabled = (b.clients || []).some(c => b.configs?.[c.id]?.enabled === true);
-      const nav = !!b.capabilities?.canEdit || anyEnabled || !!b.capabilities?.canManageSettings;
-      setStudioCaps({ nav, manage: !!b.capabilities?.canManageSettings });
-      if (!nav) setActiveTab(t => (t === 'studio' ? (MANAGEMENT_ROLES.includes(currentUser?.role) ? 'team' : 'my-tasks') : t));
-      else if (peekStudioLink()) { setStudioPane('work'); setActiveTab('studio'); }
-    }).catch(() => { if (live) { setStudioCaps({ nav: false, manage: false }); setActiveTab(t => (t === 'studio' ? 'my-tasks' : t)); } });
-    return () => { live = false; };
+    let initial = true;
+    const api = createStudioApi({ base: STUDIO_API_BASE, getToken: async () => (auth.currentUser ? auth.currentUser.getIdToken() : null) });
+    return watchStudioAccess(api, caps => {
+      setStudioCaps(caps);
+      if (!caps.nav) setActiveTab(t => (t === 'studio' ? (MANAGEMENT_ROLES.includes(currentUser?.role) ? 'team' : 'my-tasks') : t));
+      else if (initial && !caps.error && peekStudioLink()) { setStudioPane('work'); setActiveTab('studio'); }
+      if (!caps.error) initial = false;
+    });
   }, [currentUser?.id]);
   const hasChecklistAccess = currentUser ? checklistAccess.includes(currentUser.role) : false;
 

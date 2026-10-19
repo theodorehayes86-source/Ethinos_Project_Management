@@ -29,7 +29,11 @@ export function createStudioApi({ base, getToken }) {
   const item = (c, id) => `/clients/${enc(c)}/deliverables/${enc(id)}`;
   return {
     bootstrap: () => call('/bootstrap'),
-    saveConfig: (clientId, body) => call(`/clients/${enc(clientId)}/config`, { method: 'PUT', body }),
+    saveConfig: async (clientId, body) => {
+      const result = await call(`/clients/${enc(clientId)}/config`, { method: 'PUT', body });
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event('flow-pro:studio-config-changed'));
+      return result;
+    },
     saveDefaults: (body) => call('/defaults', { method: 'PUT', body }),
     deliveries: (clientId) => call(`/clients/${enc(clientId)}/deliveries`),
     preview: (clientId) => call(`/clients/${enc(clientId)}/preview`, { method: 'POST', body: {} }),

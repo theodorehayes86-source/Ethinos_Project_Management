@@ -19,6 +19,7 @@ import ChecklistDashboard from './PMT/ChecklistDashboard';
 import Sidebar from './PMT/Sidebar';
 import StudioWorkspace from './lib/creativeStudio/StudioWorkspace.jsx';
 import { createStudioApi, peekStudioLink } from './lib/creativeStudio/core.js';
+import { watchStudioAccess } from './lib/creativeStudio/access.js';
 import Notifications from './PMT/Notifications';
 import ProfileDropdown from './PMT/ProfileDropdown';
 import LoginView from './PMT/LoginView';
@@ -1643,17 +1644,14 @@ const App = () => {
   const [studioCaps, setStudioCaps] = useState({ nav: false, manage: false, loaded: false });
   useEffect(() => {
     if (!firebaseUser || !currentUser?.id) { setStudioCaps({ nav: false, manage: false, loaded: false }); return; }
-    let live = true;
     const api = createStudioApi({ base: import.meta.env.VITE_API_BASE_URL || '/api', getToken: () => firebaseUser.getIdToken() });
-    api.bootstrap().then(b => {
-      if (!live) return;
-      const anyEnabled = (b.clients || []).some(c => b.configs?.[c.id]?.enabled === true);
-      const nav = !!b.capabilities?.canEdit || anyEnabled;
-      setStudioCaps({ nav, manage: !!b.capabilities?.canManageSettings, loaded: true });
+    let initial = true;
+    return watchStudioAccess(api, caps => {
+      setStudioCaps(caps);
       // Honour a pending ?deliverable= link once access is confirmed.
-      if (nav && peekStudioLink()) { setSelectedClient(null); setActiveTab('studio'); }
-    }).catch(() => { if (live) setStudioCaps({ nav: false, manage: false, loaded: true }); });
-    return () => { live = false; };
+      if (initial && !caps.error && caps.nav && peekStudioLink()) { setSelectedClient(null); setActiveTab('studio'); }
+      if (!caps.error) initial = false;
+    });
   }, [firebaseUser, currentUser?.id]);
   const canSeeStudio = studioCaps.nav;
   const canManageStudio = studioCaps.manage;
