@@ -360,7 +360,8 @@ function ClientDetail({ client, api, auth, onBack, onRevoked }) {
   );
 }
 
-export default function ClientPortal({ auth, user, apiBase, onExitToStaff }) {
+// portalApi / studioApi / onSignOut are injected only by the dev-only demo wrapper.
+export default function ClientPortal({ auth, user, apiBase, onExitToStaff, portalApi, studioApi: injectedStudioApi, onSignOut }) {
   const [verified, setVerified] = useState(!!user?.emailVerified);
   const [clients, setClients] = useState(null);
   const [error, setError] = useState('');
@@ -371,15 +372,15 @@ export default function ClientPortal({ auth, user, apiBase, onExitToStaff }) {
   // returns at least one enabled client for this member.
   const [studioAvailable, setStudioAvailable] = useState(null); // null = not yet known
   const studioSeq = useRef(0);
-  const studioApi = React.useMemo(() => createStudioApi({
+  const studioApi = React.useMemo(() => injectedStudioApi || createStudioApi({
     base: apiBase,
     getToken: async () => (auth.currentUser ? auth.currentUser.getIdToken() : null),
-  }), [auth, apiBase]);
+  }), [auth, apiBase, injectedStudioApi]);
 
-  const api = React.useMemo(() => createPortalApi({
+  const api = React.useMemo(() => portalApi || createPortalApi({
     base: apiBase,
     getToken: async () => (auth.currentUser ? auth.currentUser.getIdToken() : null),
-  }), [auth, apiBase]);
+  }), [auth, apiBase, portalApi]);
 
   const clearPrivate = useCallback(() => { setClients(null); setSelected(null); }, []);
 
@@ -450,6 +451,7 @@ export default function ClientPortal({ auth, user, apiBase, onExitToStaff }) {
     setStudioAvailable(false);
     clearPrivate();
     setError('');
+    if (onSignOut) { onSignOut(); return; }
     try { await signOut(auth); } catch { /* ignore */ }
   };
 
@@ -480,7 +482,7 @@ export default function ClientPortal({ auth, user, apiBase, onExitToStaff }) {
           </div>
         )}
         {section === 'creative' && studioAvailable === true ? (
-          <PortalStudio key={user.uid} auth={auth} apiBase={apiBase} onRevoked={handleStudioRevoked} />
+          <PortalStudio key={user.uid} auth={auth} apiBase={apiBase} onRevoked={handleStudioRevoked} api={injectedStudioApi} />
         ) : section === 'creative' && studioAvailable === null ? (
           <div className="grid gap-3 mt-2" aria-busy="true">{[0, 1].map(i => <div key={i} className="h-20 rounded-xl bg-white/70 animate-pulse" />)}</div>
         ) : error ? (

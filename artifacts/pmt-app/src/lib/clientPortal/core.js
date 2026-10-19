@@ -12,6 +12,11 @@ export const isStaffEmail = (email) =>
 /** True when an authenticated account must be routed into the isolated portal. */
 export const isClientAccount = (user) => !!user && !isStaffEmail(user.email || '');
 
+/** ?clientDemo=1 (honoured only by PortalGate in DEV builds). */
+export const wantsClientDemo = (search) => {
+  try { return new URLSearchParams(search || '').get('clientDemo') === '1'; } catch { return false; }
+};
+
 /** True when the URL explicitly requests the client sign-in entry (?client=1). */
 export const wantsClientEntry = (search) => {
   try {

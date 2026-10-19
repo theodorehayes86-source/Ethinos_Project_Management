@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FlaskConical, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { FlaskConical, X, ChevronDown, ChevronUp, Building2 } from 'lucide-react';
 
 const TEST_USERS = [
   {
@@ -49,6 +49,10 @@ const TEST_USERS = [
     region: 'West',
   },
 ];
+
+// Client demo is NOT a staff test user: it navigates to an isolated in-memory
+// portal (?clientDemo=1) and is never passed to onImpersonate.
+export const CLIENT_DEMO = { email: 'client@example.test', href: '?client=1&clientDemo=1' };
 
 const ROLE_COLORS = {
   'Super Admin': 'bg-red-100 text-red-700',
@@ -119,6 +123,22 @@ const TestModePanel = ({ currentUser, onImpersonate, onExit, isTestMode }) => {
                 </div>
               </button>
             ))}
+          </div>
+
+          <div className="px-3 pb-3 space-y-2">
+            <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Client portal</p>
+            <button
+              data-testid="button-test-client-demo"
+              onClick={() => { window.location.assign(CLIENT_DEMO.href); }}
+              className="w-full text-left px-3 py-2.5 rounded-xl border border-slate-200 hover:border-indigo-200 hover:bg-indigo-50 transition-all"
+            >
+              <div className="flex items-center gap-2">
+                <Building2 size={13} className="text-indigo-600" />
+                <span className="text-sm font-semibold text-slate-800">Test Client</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-indigo-50 text-indigo-700">Client</span>
+              </div>
+              <span className="block text-[10px] text-slate-400 mt-0.5">{CLIENT_DEMO.email} · demo data, no Firebase</span>
+            </button>
           </div>
 
           <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-100">

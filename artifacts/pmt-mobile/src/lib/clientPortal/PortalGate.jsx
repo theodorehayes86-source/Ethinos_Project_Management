@@ -1,12 +1,16 @@
 // Decides between the isolated client portal and the staff app BEFORE the staff
 // app (and its Firebase Realtime Database listeners) is mounted.
 // Duplicated in pmt-mobile; keep in sync.
-import React, { Suspense, useEffect, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { Loader2 } from 'lucide-react';
 import ClientPortal from './ClientPortal.jsx';
 import InviteAccept from './InviteAccept.jsx';
-import { isClientAccount, wantsClientEntry, captureInviteToken, clearInviteToken } from './core.js';
+import { isClientAccount, wantsClientEntry, captureInviteToken, clearInviteToken, wantsClientDemo } from './core.js';
+
+// DEV-ONLY client demo. In production import.meta.env.DEV is statically false,
+// so this branch and the demo chunk are removed and ?clientDemo=1 is ignored.
+const DemoClientPortal = import.meta.env.DEV ? lazy(() => import('./demo/DemoClientPortal.jsx')) : null;
 import { captureStudioLink } from '../creativeStudio/core.js';
 
 const Spinner = () => (
@@ -20,17 +24,21 @@ export default function PortalGate({ auth, apiBase, StaffApp, bypass = false }) 
   useState(() => captureStudioLink());
   // Invite token: captured from #invite= before any routing, held in memory only.
   const [inviteToken, setInviteToken] = useState(() => captureInviteToken());
+  // An active invitation always wins over the demo.
+  const [demo] = useState(() => !!DemoClientPortal && !inviteToken && wantsClientDemo(window.location.search));
   const [state, setState] = useState({ ready: false, user: null });
   const [clientEntry, setClientEntry] = useState(() => wantsClientEntry(window.location.search));
 
   useEffect(() => {
-    if (bypass && !inviteToken) return undefined;
+    if (demo || (bypass && !inviteToken)) return undefined;
     return onAuthStateChanged(auth, (user) => {
       // After a client signs out, stay on the client sign-in screen.
       if (isClientAccount(user)) setClientEntry(true);
       setState({ ready: true, user });
     });
-  }, [auth, bypass, inviteToken]);
+  }, [auth, bypass, inviteToken, demo]);
+
+  if (demo) return <Suspense fallback={<Spinner />}><DemoClientPortal /></Suspense>;
 
   if (bypass && !inviteToken) return <Suspense fallback={<Spinner />}><StaffApp /></Suspense>;
   if (!state.ready) return <Spinner />;

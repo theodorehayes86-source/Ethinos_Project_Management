@@ -5,8 +5,10 @@ import { ChevronLeft, ExternalLink, CheckCircle2, MessageSquare, Palette, Refres
 import { createStudioApi, peekStudioLink, writeStudioLink, isHttps, fmtInstant, tzShort, relativeDay, ASSET_KINDS, fmtStamp } from './core.js';
 import { inputCls, btnPrimary, btnGhost, btnAccent, StageBadge, ErrorBanner, SkeletonList, EmptyState, ThreadPanel, Field } from './StudioUI.jsx';
 
-export default function PortalStudio({ auth, apiBase, onRevoked }) {
-  const api = useMemo(() => createStudioApi({ base: apiBase, getToken: async () => (auth.currentUser ? auth.currentUser.getIdToken() : null) }), [auth, apiBase]);
+// injectedApi: dev-only demo dependency (never selectable from a URL in production).
+export default function PortalStudio({ auth, apiBase, onRevoked, api: injectedApi }) {
+  const realApi = useMemo(() => (injectedApi ? null : createStudioApi({ base: apiBase, getToken: async () => (auth.currentUser ? auth.currentUser.getIdToken() : null) })), [auth, apiBase, injectedApi]);
+  const api = injectedApi || realApi;
   const [items, setItems] = useState(null);
   const [clients, setClients] = useState([]);
   const [error, setError] = useState('');

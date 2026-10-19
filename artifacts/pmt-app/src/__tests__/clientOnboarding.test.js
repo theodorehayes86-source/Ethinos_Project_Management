@@ -117,7 +117,7 @@ describe('wiring and parity', () => {
   });
   it('clientPortal files are mirrored to pmt-mobile', () => {
     const dir = resolve(__dirname, '../lib/clientPortal');
-    for (const f of readdirSync(dir)) {
+    for (const f of readdirSync(dir).filter(f => /\.(jsx?|tsx?)$/.test(f))) {
       expect(readFileSync(resolve(__dirname, '../../../pmt-mobile/src/lib/clientPortal', f), 'utf8'), f).toBe(readFileSync(resolve(dir, f), 'utf8'));
     }
   });

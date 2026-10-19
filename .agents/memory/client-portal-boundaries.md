@@ -34,3 +34,12 @@ separately from Disable.
 
 **How to apply:** Confirm the destructive action, remove the login identity and portal
 access/invitations, and retain client companies and work records.
+
+Client Test Mode uses fictional in-memory accounts and work, not a seeded live
+client or authentication bypass.
+
+**Why:** The user requested a dummy-email client view in Test Mode; creating a real
+account or granting access to real clients is unnecessary for previewing that flow.
+
+**How to apply:** Reuse client-facing screens with isolated demo data, make the demo
+development-only, and keep its actions away from Firebase, email and live APIs.
