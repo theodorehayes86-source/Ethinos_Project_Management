@@ -229,7 +229,7 @@ router.get("/admin/users", async (_req, res): Promise<void> => {
 });
 
 async function sendInvitation(uid: string) {
-  if (!await rateLimit(`invite_${uid}`, 5, 3_600_000)) throw new Error("Invitation rate limit");
+  if (!await rateLimit(`invite_${uid}`, 5, 3_600_000)) throw new InvitationError(429, "This account has reached the invitation resend limit. Wait up to one hour before trying again.");
   await issueInvitation(uid);
 }
 
@@ -303,7 +303,10 @@ router.post("/admin/users/:uid/invite", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Active client account not found." }); return;
   }
   try { await sendInvitation(uid); res.json({ invitationSent: true }); }
-  catch { res.status(503).json({ error: "Invitation could not be sent. Check email delivery or try again later." }); }
+  catch (error) {
+    if (error instanceof InvitationError) { res.status(error.status).json({ error: error.message }); return; }
+    res.status(503).json({ error: "Invitation could not be sent. Check email delivery or try again later." });
+  }
 });
 
 router.post("/admin/users/:uid/invite/revoke", async (req, res): Promise<void> => {

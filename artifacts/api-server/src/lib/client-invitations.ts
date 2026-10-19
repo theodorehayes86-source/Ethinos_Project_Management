@@ -4,6 +4,7 @@ import { getAdminAuth, getAdminDatabase } from "./firebase-admin";
 import { isStaffEmail, normalizeMembership, safeKey } from "./client-portal";
 import { APP_BASE_URL } from "./app-url";
 import { isEmailConfigured, sendEmail } from "./microsoft-graph";
+import { logger } from "./logger";
 
 const db = () => getAdminDatabase();
 const read = async (path: string) => (await db().ref(path).once("value")).val();
@@ -13,6 +14,15 @@ export class InvitationError extends Error {
 }
 const invalid = () => new InvitationError(400, "Invitation is unavailable, expired or already used. Request a new invitation.");
 const ref = (uid: string) => db().ref(`clientPortalUsers/${uid}`);
+async function withLoadedRecord<T>(path: string, operation: () => Promise<T>): Promise<T> {
+  const record = db().ref(path);
+  const retainValue = () => {};
+  record.on("value", retainValue, () => {});
+  try {
+    await record.once("value");
+    return await operation();
+  } finally { record.off("value", retainValue); }
+}
 const usable = (m: any, hash: string) => m && !m.disabled && !m.deletionInProgress && !isStaffEmail(m.email) &&
   m.invitation?.tokenHash === hash && m.invitation.status === "pending" && m.invitation.expiresAt > Date.now();
 
@@ -31,6 +41,10 @@ export async function assertClientIdentity(uid: string, email: string) {
 }
 
 export async function issueInvitation(uid: string) {
+  return withLoadedRecord(`clientPortalUsers/${uid}`, () => issueLoadedInvitation(uid));
+}
+
+async function issueLoadedInvitation(uid: string) {
   if (!isEmailConfigured()) throw new InvitationError(503, "Email delivery is not configured.");
   const before = await read(`clientPortalUsers/${uid}`);
   if (!before || before.disabled || before.deletionInProgress) throw invalid();
@@ -47,18 +61,42 @@ export async function issueInvitation(uid: string) {
       requiresSignIn: current.invitationIdentityCreated !== true || current.invitation?.status === "accepted" } };
   });
   if (!result.committed) throw new InvitationError(409, "Invitation changed. Try again.");
+  let stage = "index";
   try {
     // The index contains only a hash and UID. The raw token exists solely in this email.
     await db().ref(`clientPortalInvitationHashes/${hash}`).set(uid);
     // Deletion may have revoked/removed membership while this index write was in flight.
     if (!usable(await read(`clientPortalUsers/${uid}`), hash)) throw invalid();
+    stage = "email";
     await sendEmail({ to: before.email, subject: "Your Flow Pro client access", sensitive: true,
       bodyHtml: `<p>You have been invited to your client workspace in Flow Pro.</p><p><a href="${APP_BASE_URL}/?client=1#invite=${token}">Accept your invitation</a></p><p>This link expires in 7 days and can only be used once.</p>` });
-  } catch {
-    await db().ref(`clientPortalInvitationHashes/${hash}`).transaction(current => current === uid ? null : undefined);
-    await ref(uid).transaction(current => current?.invitation?.tokenHash === hash && current.invitation.status === "pending"
-      ? { ...current, invitation: { ...current.invitation, status: "revoked" } } : undefined);
-    throw new InvitationError(503, "Invitation could not be delivered. Try again later.");
+  } catch (error) {
+    // Log only a bounded status and stage, never recipient, invitation token,
+    // Graph response body or credentials.
+    const message = error instanceof Error ? error.message : "";
+    const match = message.match(/^Failed to (?:send email via Microsoft Graph|get Microsoft Graph token): (\d{3})/);
+    const status = match ? Number(match[1]) : undefined;
+    logger.warn({ stage, ...(status ? { microsoftStatus: status } : {}) }, "Client invitation delivery failed");
+    try {
+      await withLoadedRecord(`clientPortalInvitationHashes/${hash}`, async () => {
+        await db().ref(`clientPortalInvitationHashes/${hash}`).transaction(current => current === uid ? null : undefined);
+      });
+      await ref(uid).transaction(current => current?.invitation?.tokenHash === hash && current.invitation.status === "pending"
+        ? { ...current, invitation: { ...current.invitation, status: "revoked" } } : undefined);
+    } catch {
+      throw new InvitationError(503, "Invitation failed and link cleanup could not be confirmed. Revoke the invitation before trying again.");
+    }
+    if (error instanceof InvitationError) throw error;
+    if (stage !== "email") throw new InvitationError(503, "Invitation could not be saved. No email was sent. Try again later.");
+    if (message.startsWith("Failed to get Microsoft Graph token"))
+      throw new InvitationError(503, "Microsoft email authentication failed on this server. Ask your hosting team to check its Microsoft credentials.");
+    if (status === 403)
+      throw new InvitationError(503, "Microsoft denied email sending. Check this server's sender mailbox and Microsoft Mail.Send permissions.");
+    if (status === 404)
+      throw new InvitationError(503, "Microsoft could not find the configured sender mailbox. Check this server's sender email setting.");
+    if (status === 429)
+      throw new InvitationError(429, "Microsoft has temporarily limited email sending. Wait before trying again.");
+    throw new InvitationError(503, "Email delivery could not be confirmed. Check the recipient inbox and server email logs before resending.");
   }
 }
 
@@ -88,6 +126,10 @@ export async function inspectInvitation(token: unknown) {
 
 export async function acceptInvitation(body: { token: unknown; displayName?: unknown; password?: unknown }, identity?: DecodedIdToken) {
   const { uid, hash, membership } = await lookup(body.token);
+  return withLoadedRecord(`clientPortalUsers/${uid}`, () => acceptLoadedInvitation(body, identity, uid, hash, membership));
+}
+
+async function acceptLoadedInvitation(body: { token: unknown; displayName?: unknown; password?: unknown }, identity: DecodedIdToken | undefined, uid: string, hash: string, membership: any) {
   const existing = membership.invitation.requiresSignIn !== false;
   if (identity && (identity.uid !== uid || identity.email?.toLowerCase() !== membership.email.toLowerCase()))
     throw new InvitationError(403, "Sign in with the invited account.");
@@ -124,8 +166,10 @@ export async function acceptInvitation(body: { token: unknown; displayName?: unk
 }
 
 export async function revokeInvitation(uid: string) {
-  // Prime the RTDB transaction cache; an uncached transaction may initially observe null.
-  await ref(uid).once("value");
+  return withLoadedRecord(`clientPortalUsers/${uid}`, () => revokeLoadedInvitation(uid));
+}
+
+async function revokeLoadedInvitation(uid: string) {
   const result = await ref(uid).transaction(current => current?.invitation &&
     ["pending", "processing"].includes(current.invitation.status)
     ? { ...current, invitation: { ...current.invitation, status: "revoked", claim: null } } : undefined);

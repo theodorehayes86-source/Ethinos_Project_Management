@@ -647,7 +647,7 @@ describe("permanent client login deletion (mocked Firebase only)", () => {
     await checked;
     expect((await remove()).status).toBe(200);
     release();
-    expect((await resending).status).toBe(503);
+    expect((await resending).status).toBe(409);
     expect(state.mail).not.toHaveBeenCalled();
     expect(state.data["clientPortalUsers/client-a"]).toBeNull();
   });
@@ -660,7 +660,7 @@ describe("permanent client login deletion (mocked Firebase only)", () => {
     await writingHash;
     expect((await remove()).status).toBe(200);
     release();
-    expect((await resending).status).toBe(503);
+    expect((await resending).status).toBe(400);
     expect(state.mail).not.toHaveBeenCalled();
     expect(Object.entries(state.data).filter(([key, value]) => key.startsWith("clientPortalInvitationHashes/") && value === client.uid)).toEqual([]);
   });
@@ -689,6 +689,49 @@ describe("single-link mailbox onboarding", () => {
     expect(response.status).toBe(201);
     return tokenFromEmail();
   }
+  it("sends and accepts an invitation with a cold cache without leaking retained listeners", async () => {
+    state.cold = true;
+    const token = await invite();
+    expect(state.mail).toHaveBeenCalledTimes(1);
+    expect((await publicPost("accept", { token, password: "secure-long-password" })).status).toBe(200);
+    expect([...state.retained.values()].every(listeners => listeners.size === 0)).toBe(true);
+  });
+  it("resends a revoked invitation and revokes the replacement with a cold cache", async () => {
+    await invite();
+    state.cold = true;
+    expect((await post("/admin/users/new-client/invite/revoke", {})).status).toBe(200);
+    expect((await post("/admin/users/new-client/invite", {})).status).toBe(200);
+    expect(state.mail).toHaveBeenCalledTimes(2);
+    expect([...state.retained.values()].every(listeners => listeners.size === 0)).toBe(true);
+  });
+  it.each([
+    ["Failed to send email via Microsoft Graph: 403 SECRET_RESPONSE", 503, /denied email sending/i],
+    ["Failed to send email via Microsoft Graph: 404 SECRET_RESPONSE", 503, /sender mailbox/i],
+    ["Failed to send email via Microsoft Graph: 429 SECRET_RESPONSE", 429, /temporarily limited/i],
+    ["Failed to get Microsoft Graph token: 401 SECRET_RESPONSE", 503, /authentication failed on this server/i],
+    ["Transport lost SECRET_RESPONSE", 503, /could not be confirmed/i],
+  ])("reports a safe actionable invitation delivery failure for %s", async (message, status, expected) => {
+    await invite();
+    state.cold = true;
+    state.mail.mockRejectedValueOnce(new Error(message));
+    const result = await post("/admin/users/new-client/invite", {});
+    expect(result.status).toBe(status);
+    expect(result.body.error).toMatch(expected);
+    expect(JSON.stringify(result.body)).not.toContain("SECRET_RESPONSE");
+    expect(state.data["clientPortalUsers/new-client"].invitation.status).toBe("revoked");
+    expect(Object.entries(state.data).filter(([key, value]) => key.startsWith("clientPortalInvitationHashes/") && value === "new-client")).toHaveLength(1);
+    // The original invitation hash may remain indexed, but it no longer resolves
+    // to a usable invitation. The failed replacement is removed.
+    expect([...state.retained.values()].every(listeners => listeners.size === 0)).toBe(true);
+  });
+  it("reports the resend limit instead of a misleading email delivery error", async () => {
+    await invite();
+    for (let count = 0; count < 4; count++) expect((await post("/admin/users/new-client/invite", {})).status).toBe(200);
+    const blocked = await post("/admin/users/new-client/invite", {});
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.error).toMatch(/resend limit/i);
+    expect(state.mail).toHaveBeenCalledTimes(5);
+  });
   it("inspects without a session, stores only hashes, and blocks pending task access", async () => {
     const token = await invite();
     const res = await publicPost("inspect", { token });
@@ -814,7 +857,7 @@ describe("single-link mailbox onboarding", () => {
       return { uid, email: "new@example.test", disabled: false };
     });
     const results = await Promise.all([post("/admin/users/new-client/invite", {}), post("/admin/users/new-client/invite", {})]);
-    expect(results.map(r => r.status).sort()).toEqual([200, 503]);
+    expect(results.map(r => r.status).sort()).toEqual([200, 409]);
     expect((await publicPost("inspect", { token: first })).status).toBe(400);
     expect((await publicPost("inspect", { token: tokenFromEmail() })).status).toBe(200);
   });
@@ -826,7 +869,7 @@ describe("single-link mailbox onboarding", () => {
     state.updateUser.mockImplementationOnce(() => { started(); return new Promise<void>(resolve => { release = resolve; }); });
     const accepting = publicPost("accept", { token, password: "secure-long-password" }).then(r => r);
     await updating;
-    expect((await post("/admin/users/new-client/invite", {})).status).toBe(503);
+    expect((await post("/admin/users/new-client/invite", {})).status).toBe(409);
     expect((await post("/admin/users/new-client/invite/revoke", {})).status).toBe(200);
     release();
     expect((await accepting).status).toBe(400);
