@@ -15,3 +15,14 @@ The screenshot is a layout reference, not permission to expose Reports, Edit or 
 explicitly expands it. Do not automatically share old internal notes when sharing a task.
 Do not treat completing the implementation as permission to deploy Firebase rules or invite
 real clients; verify live isolation before customer onboarding.
+
+Client onboarding should start with an email invitation. Its link should open
+account creation with the account fixed as a client account. After onboarding,
+clients see only assigned client accounts and the client-facing Creative Studio
+view where it is enabled.
+
+**Why:** The user explicitly described this invitation and account-creation flow.
+
+**How to apply:** Keep client signup separate from staff registration, derive client
+membership from the invitation rather than user-selected roles or accounts, and
+condition Studio visibility on enablement for assigned accounts.
