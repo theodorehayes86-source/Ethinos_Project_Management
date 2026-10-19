@@ -20,10 +20,16 @@ import type {
   AcceptClientPortalInvitation200,
   AcceptClientPortalInvitationBody,
   ActOnCreativeStudioDeliverableBody,
+  ClientTaskCollaborationEntryInput,
+  ClientTaskCollaborationSubtaskInput,
+  ClientTaskCollaborationSubtaskUpdate,
   CreateClientPortalTask201,
+  CreateClientTaskCollaborationEntry201,
+  CreateClientTaskCollaborationSubtask201,
   CreateCreativeStudioDeliverableBody,
   DeleteClientPortalUser200,
   GetClientPortalMe200,
+  GetClientTaskCollaboration200,
   HealthStatus,
   InspectClientPortalInvitation200,
   InspectClientPortalInvitationBody,
@@ -53,6 +59,7 @@ import type {
   UpdateClientPortalTask200,
   UpdateClientPortalTaskBody,
   UpdateClientPortalUser200,
+  UpdateClientTaskCollaborationSubtask200,
   UpdateCreativeStudioDeliverableBody,
 } from "./api.schemas";
 
@@ -1950,6 +1957,466 @@ export const useUpdateClientPortalTask = <
   TContext
 > => {
   return useMutation(getUpdateClientPortalTaskMutationOptions(options));
+};
+
+/**
+ * Shared ordinary tasks only; verified assigned clients or active authorized project staff. No internal task messages, steps or links.
+ */
+export const getGetClientTaskCollaborationUrl = (
+  clientId: string,
+  taskId: string,
+) => {
+  return `/api/client-portal/clients/${clientId}/tasks/${taskId}/collaboration`;
+};
+
+export const getClientTaskCollaboration = async (
+  clientId: string,
+  taskId: string,
+  options?: RequestInit,
+): Promise<GetClientTaskCollaboration200> => {
+  return customFetch<GetClientTaskCollaboration200>(
+    getGetClientTaskCollaborationUrl(clientId, taskId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetClientTaskCollaborationQueryKey = (
+  clientId: string,
+  taskId: string,
+) => {
+  return [
+    `/api/client-portal/clients/${clientId}/tasks/${taskId}/collaboration`,
+  ] as const;
+};
+
+export const getGetClientTaskCollaborationQueryOptions = <
+  TData = Awaited<ReturnType<typeof getClientTaskCollaboration>>,
+  TError = ErrorType<void>,
+>(
+  clientId: string,
+  taskId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getClientTaskCollaboration>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getGetClientTaskCollaborationQueryKey(clientId, taskId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getClientTaskCollaboration>>
+  > = ({ signal }) =>
+    getClientTaskCollaboration(clientId, taskId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(clientId && taskId),
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getClientTaskCollaboration>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetClientTaskCollaborationQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getClientTaskCollaboration>>
+>;
+export type GetClientTaskCollaborationQueryError = ErrorType<void>;
+
+export function useGetClientTaskCollaboration<
+  TData = Awaited<ReturnType<typeof getClientTaskCollaboration>>,
+  TError = ErrorType<void>,
+>(
+  clientId: string,
+  taskId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getClientTaskCollaboration>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetClientTaskCollaborationQueryOptions(
+    clientId,
+    taskId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateClientTaskCollaborationEntryUrl = (
+  clientId: string,
+  taskId: string,
+) => {
+  return `/api/client-portal/clients/${clientId}/tasks/${taskId}/collaboration/entries`;
+};
+
+export const createClientTaskCollaborationEntry = async (
+  clientId: string,
+  taskId: string,
+  clientTaskCollaborationEntryInput: ClientTaskCollaborationEntryInput,
+  options?: RequestInit,
+): Promise<CreateClientTaskCollaborationEntry201> => {
+  return customFetch<CreateClientTaskCollaborationEntry201>(
+    getCreateClientTaskCollaborationEntryUrl(clientId, taskId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(clientTaskCollaborationEntryInput),
+    },
+  );
+};
+
+export const getCreateClientTaskCollaborationEntryMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createClientTaskCollaborationEntry>>,
+    TError,
+    {
+      clientId: string;
+      taskId: string;
+      data: BodyType<ClientTaskCollaborationEntryInput>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createClientTaskCollaborationEntry>>,
+  TError,
+  {
+    clientId: string;
+    taskId: string;
+    data: BodyType<ClientTaskCollaborationEntryInput>;
+  },
+  TContext
+> => {
+  const mutationKey = ["createClientTaskCollaborationEntry"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createClientTaskCollaborationEntry>>,
+    {
+      clientId: string;
+      taskId: string;
+      data: BodyType<ClientTaskCollaborationEntryInput>;
+    }
+  > = (props) => {
+    const { clientId, taskId, data } = props ?? {};
+
+    return createClientTaskCollaborationEntry(
+      clientId,
+      taskId,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateClientTaskCollaborationEntryMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createClientTaskCollaborationEntry>>
+>;
+export type CreateClientTaskCollaborationEntryMutationBody =
+  BodyType<ClientTaskCollaborationEntryInput>;
+export type CreateClientTaskCollaborationEntryMutationError = ErrorType<void>;
+
+export const useCreateClientTaskCollaborationEntry = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createClientTaskCollaborationEntry>>,
+    TError,
+    {
+      clientId: string;
+      taskId: string;
+      data: BodyType<ClientTaskCollaborationEntryInput>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createClientTaskCollaborationEntry>>,
+  TError,
+  {
+    clientId: string;
+    taskId: string;
+    data: BodyType<ClientTaskCollaborationEntryInput>;
+  },
+  TContext
+> => {
+  return useMutation(
+    getCreateClientTaskCollaborationEntryMutationOptions(options),
+  );
+};
+
+export const getCreateClientTaskCollaborationSubtaskUrl = (
+  clientId: string,
+  taskId: string,
+) => {
+  return `/api/client-portal/clients/${clientId}/tasks/${taskId}/collaboration/subtasks`;
+};
+
+export const createClientTaskCollaborationSubtask = async (
+  clientId: string,
+  taskId: string,
+  clientTaskCollaborationSubtaskInput: ClientTaskCollaborationSubtaskInput,
+  options?: RequestInit,
+): Promise<CreateClientTaskCollaborationSubtask201> => {
+  return customFetch<CreateClientTaskCollaborationSubtask201>(
+    getCreateClientTaskCollaborationSubtaskUrl(clientId, taskId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(clientTaskCollaborationSubtaskInput),
+    },
+  );
+};
+
+export const getCreateClientTaskCollaborationSubtaskMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createClientTaskCollaborationSubtask>>,
+    TError,
+    {
+      clientId: string;
+      taskId: string;
+      data: BodyType<ClientTaskCollaborationSubtaskInput>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createClientTaskCollaborationSubtask>>,
+  TError,
+  {
+    clientId: string;
+    taskId: string;
+    data: BodyType<ClientTaskCollaborationSubtaskInput>;
+  },
+  TContext
+> => {
+  const mutationKey = ["createClientTaskCollaborationSubtask"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createClientTaskCollaborationSubtask>>,
+    {
+      clientId: string;
+      taskId: string;
+      data: BodyType<ClientTaskCollaborationSubtaskInput>;
+    }
+  > = (props) => {
+    const { clientId, taskId, data } = props ?? {};
+
+    return createClientTaskCollaborationSubtask(
+      clientId,
+      taskId,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateClientTaskCollaborationSubtaskMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createClientTaskCollaborationSubtask>>
+>;
+export type CreateClientTaskCollaborationSubtaskMutationBody =
+  BodyType<ClientTaskCollaborationSubtaskInput>;
+export type CreateClientTaskCollaborationSubtaskMutationError = ErrorType<void>;
+
+export const useCreateClientTaskCollaborationSubtask = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createClientTaskCollaborationSubtask>>,
+    TError,
+    {
+      clientId: string;
+      taskId: string;
+      data: BodyType<ClientTaskCollaborationSubtaskInput>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createClientTaskCollaborationSubtask>>,
+  TError,
+  {
+    clientId: string;
+    taskId: string;
+    data: BodyType<ClientTaskCollaborationSubtaskInput>;
+  },
+  TContext
+> => {
+  return useMutation(
+    getCreateClientTaskCollaborationSubtaskMutationOptions(options),
+  );
+};
+
+export const getUpdateClientTaskCollaborationSubtaskUrl = (
+  clientId: string,
+  taskId: string,
+  subtaskId: string,
+) => {
+  return `/api/client-portal/clients/${clientId}/tasks/${taskId}/collaboration/subtasks/${subtaskId}`;
+};
+
+export const updateClientTaskCollaborationSubtask = async (
+  clientId: string,
+  taskId: string,
+  subtaskId: string,
+  clientTaskCollaborationSubtaskUpdate: ClientTaskCollaborationSubtaskUpdate,
+  options?: RequestInit,
+): Promise<UpdateClientTaskCollaborationSubtask200> => {
+  return customFetch<UpdateClientTaskCollaborationSubtask200>(
+    getUpdateClientTaskCollaborationSubtaskUrl(clientId, taskId, subtaskId),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(clientTaskCollaborationSubtaskUpdate),
+    },
+  );
+};
+
+export const getUpdateClientTaskCollaborationSubtaskMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateClientTaskCollaborationSubtask>>,
+    TError,
+    {
+      clientId: string;
+      taskId: string;
+      subtaskId: string;
+      data: BodyType<ClientTaskCollaborationSubtaskUpdate>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateClientTaskCollaborationSubtask>>,
+  TError,
+  {
+    clientId: string;
+    taskId: string;
+    subtaskId: string;
+    data: BodyType<ClientTaskCollaborationSubtaskUpdate>;
+  },
+  TContext
+> => {
+  const mutationKey = ["updateClientTaskCollaborationSubtask"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateClientTaskCollaborationSubtask>>,
+    {
+      clientId: string;
+      taskId: string;
+      subtaskId: string;
+      data: BodyType<ClientTaskCollaborationSubtaskUpdate>;
+    }
+  > = (props) => {
+    const { clientId, taskId, subtaskId, data } = props ?? {};
+
+    return updateClientTaskCollaborationSubtask(
+      clientId,
+      taskId,
+      subtaskId,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateClientTaskCollaborationSubtaskMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateClientTaskCollaborationSubtask>>
+>;
+export type UpdateClientTaskCollaborationSubtaskMutationBody =
+  BodyType<ClientTaskCollaborationSubtaskUpdate>;
+export type UpdateClientTaskCollaborationSubtaskMutationError = ErrorType<void>;
+
+export const useUpdateClientTaskCollaborationSubtask = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateClientTaskCollaborationSubtask>>,
+    TError,
+    {
+      clientId: string;
+      taskId: string;
+      subtaskId: string;
+      data: BodyType<ClientTaskCollaborationSubtaskUpdate>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateClientTaskCollaborationSubtask>>,
+  TError,
+  {
+    clientId: string;
+    taskId: string;
+    subtaskId: string;
+    data: BodyType<ClientTaskCollaborationSubtaskUpdate>;
+  },
+  TContext
+> => {
+  return useMutation(
+    getUpdateClientTaskCollaborationSubtaskMutationOptions(options),
+  );
 };
 
 export const getListClientPortalUsersUrl = () => {

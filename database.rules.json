@@ -12,6 +12,10 @@
       ".read": false,
       ".write": false
     },
+    "clientTaskCollaboration": {
+      ".read": false,
+      ".write": false
+    },
 
     "clientPortalUsers": {
       ".read": false,

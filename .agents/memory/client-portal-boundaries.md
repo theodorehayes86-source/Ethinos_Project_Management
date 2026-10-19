@@ -36,6 +36,15 @@ client view after trying Test Mode.
 **How to apply:** Include them in real and demo client views and staff Client preview on desktop and mobile;
 keep internal notes separate and preserve internal QC/timer safeguards.
 
+Clients can message, leave notes, add links and create subtasks inside shared tasks.
+The account team must be able to read and respond to this shared activity.
+
+**Why:** The user expanded the client task interaction scope beyond status changes.
+
+**How to apply:** Keep client-facing collaboration separate from existing internal
+messages, notes, links and checklist steps; sharing a parent must never expose those
+internal records automatically. Client subtasks are not staff checklist/template access.
+
 “Share with client” must be available in the blue selected-task toolbar in the
 Clients view, not only inside task details or editing.
 

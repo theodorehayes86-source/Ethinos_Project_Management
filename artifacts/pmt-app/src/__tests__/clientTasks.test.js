@@ -148,7 +148,7 @@ describe('UI wiring', () => {
   it('list and calendar share filters and the detail view', () => {
     expect(ui).toMatch(/<CalendarView tasks=\{visible\}/);
     expect(ui).toMatch(/<TaskList tasks=\{visible\}/);
-    expect(ui).toMatch(/<TaskDetail task=\{openTask\} statusProps=\{statusPropsFor\(openTask\)\}/);
+    expect(ui).toMatch(/<TaskDetail\s+task=\{openTask\}\s+statusProps=\{statusPropsFor\(openTask\)\}/);
   });
   it('shows no internal task fields', () => {
     expect(ui.slice(ui.indexOf('import React'))).not.toMatch(/\.comment\b|assignee|checklist|qcStatus|timeLogs|clientDescription/);

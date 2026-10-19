@@ -485,6 +485,118 @@ paths:
         "403": { description: Verified active assigned client access required }
         "404": { description: Shared ordinary task not found }
         "409": { description: Internal timer or quality review prevents client status changes }
+  /client-portal/clients/{clientId}/tasks/{taskId}/collaboration:
+    parameters:
+      - $ref: "#/components/parameters/StudioClientId"
+      - $ref: "#/components/parameters/CollaborationTaskId"
+    get:
+      operationId: getClientTaskCollaboration
+      description: Shared ordinary tasks only; verified assigned clients or active authorized project staff. No internal task messages, steps or links.
+      responses:
+        "200":
+          description: At most 200 entries and 100 subtasks, oldest first; server-only actor identifiers omitted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entries, subtasks]
+                properties:
+                  entries:
+                    type: array
+                    maxItems: 200
+                    items: { $ref: "#/components/schemas/ClientTaskCollaborationEntry" }
+                  subtasks:
+                    type: array
+                    maxItems: 100
+                    items: { $ref: "#/components/schemas/ClientTaskCollaborationSubtask" }
+        "400": { description: Invalid key }
+        "401": { description: Session missing or revoked }
+        "403": { description: Verified active client membership or staff project permission required }
+        "404": { description: Shared ordinary task unavailable }
+  /client-portal/clients/{clientId}/tasks/{taskId}/collaboration/entries:
+    parameters:
+      - $ref: "#/components/parameters/StudioClientId"
+      - $ref: "#/components/parameters/CollaborationTaskId"
+    post:
+      operationId: createClientTaskCollaborationEntry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClientTaskCollaborationEntryInput" }
+      responses:
+        "201":
+          description: Created entry or original entry for an identical actor-scoped UUID retry
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entry]
+                properties:
+                  entry: { $ref: "#/components/schemas/ClientTaskCollaborationEntry" }
+        "400": { description: "Invalid or extra fields; links require HTTP(S) URLs without credentials, messages and notes require nonblank text and no URL" }
+        "401": { description: Session missing or revoked }
+        "403": { description: Verified active client membership or staff project permission required }
+        "404": { description: Shared ordinary task unavailable }
+        "409": { description: Request UUID reused for changed content or task entry limit reached }
+        "429": { description: Actor write limit of 60 changes per minute reached }
+  /client-portal/clients/{clientId}/tasks/{taskId}/collaboration/subtasks:
+    parameters:
+      - $ref: "#/components/parameters/StudioClientId"
+      - $ref: "#/components/parameters/CollaborationTaskId"
+    post:
+      operationId: createClientTaskCollaborationSubtask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClientTaskCollaborationSubtaskInput" }
+      responses:
+        "201":
+          description: Created shared subtask, or original subtask for identical actor-scoped UUID retry
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [subtask]
+                properties:
+                  subtask: { $ref: "#/components/schemas/ClientTaskCollaborationSubtask" }
+        "400": { description: Invalid or extra fields or blank title }
+        "401": { description: Session missing or revoked }
+        "403": { description: Verified active client membership or staff project permission required }
+        "404": { description: Shared ordinary task unavailable }
+        "409": { description: Request UUID reused for changed content or task subtask limit reached }
+        "429": { description: Actor write limit of 60 changes per minute reached }
+  /client-portal/clients/{clientId}/tasks/{taskId}/collaboration/subtasks/{subtaskId}:
+    parameters:
+      - $ref: "#/components/parameters/StudioClientId"
+      - $ref: "#/components/parameters/CollaborationTaskId"
+      - name: subtaskId
+        in: path
+        required: true
+        schema: { type: string, pattern: "^[A-Za-z0-9_-]{1,128}$" }
+    patch:
+      operationId: updateClientTaskCollaborationSubtask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClientTaskCollaborationSubtaskUpdate" }
+      responses:
+        "200":
+          description: Updated shared subtask; all other fields preserved
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [subtask]
+                properties:
+                  subtask: { $ref: "#/components/schemas/ClientTaskCollaborationSubtask" }
+        "400": { description: Invalid or extra fields }
+        "401": { description: Session missing or revoked }
+        "403": { description: Verified active client membership or staff project permission required }
+        "404": { description: Shared task or subtask unavailable }
+        "429": { description: Actor write limit of 60 changes per minute reached }
   /client-portal/admin/users:
     get:
       operationId: listClientPortalUsers
@@ -625,6 +737,11 @@ paths:
                 $ref: "#/components/schemas/HealthStatus"
 components:
   parameters:
+    CollaborationTaskId:
+      name: taskId
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[A-Za-z0-9_-]{1,128}$" }
     StudioClientId:
       name: clientId
       in: path
@@ -658,6 +775,47 @@ components:
       scheme: bearer
       bearerFormat: Firebase ID token
   schemas:
+    ClientTaskCollaborationEntry:
+      type: object
+      required: [id, type, text, url, authorName, createdAt]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [message, note, link] }
+        text: { type: string }
+        url: { type: string, nullable: true }
+        authorName: { type: string }
+        createdAt: { type: number, description: Server Unix epoch milliseconds }
+    ClientTaskCollaborationSubtask:
+      type: object
+      required: [id, title, completed, authorName, createdAt]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        completed: { type: boolean }
+        authorName: { type: string }
+        createdAt: { type: number, description: Server Unix epoch milliseconds }
+    ClientTaskCollaborationEntryInput:
+      type: object
+      additionalProperties: false
+      required: [type, text, requestId]
+      properties:
+        type: { type: string, enum: [message, note, link] }
+        text: { type: string, maxLength: 4000 }
+        url: { type: string, maxLength: 2048, description: Required only for links; HTTP(S) only, no credentials }
+        requestId: { type: string, pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" }
+    ClientTaskCollaborationSubtaskInput:
+      type: object
+      additionalProperties: false
+      required: [title, requestId]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        requestId: { type: string, pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" }
+    ClientTaskCollaborationSubtaskUpdate:
+      type: object
+      additionalProperties: false
+      required: [completed]
+      properties:
+        completed: { type: boolean }
     StudioAutomation:
       type: object
       additionalProperties: false

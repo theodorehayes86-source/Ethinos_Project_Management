@@ -1,11 +1,13 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Eye, X, Star, CheckCircle, XCircle, Clock, Tag, Calendar, Loader2, Send, MessageCircle, ListChecks, Check, AlertTriangle, CornerUpLeft, Pencil, Trash2, Smile, Archive, RotateCcw } from 'lucide-react';
 import { updateTaskInFirebase, getSubtreeIds } from '../hooks/useFirebaseData.js';
 import { isTaskOverdue } from '../utils/taskUtils.js';
 import { sendNotification } from '../utils/notify.js';
 import { formatRepeatLabel, formatWeekendRuleLabel } from '../utils/repeatLabel.js';
 import SharingFields from '../lib/clientPortal/SharingFields.jsx';
-import { sharingFields, isNewlyShared, sharingConfirmMessage, isRealClientId, normalizeVisibility } from '../lib/clientPortal/core.js';
+import TaskCollaboration from '../lib/clientPortal/TaskCollaboration.jsx';
+import { auth } from '../firebase.js';
+import { sharingFields, isNewlyShared, sharingConfirmMessage, isRealClientId, normalizeVisibility, createPortalApi, isCollaborationEligible } from '../lib/clientPortal/core.js';
 
 const parseMentions = (text, userList = []) =>
   userList.filter(u => u.name && text.includes(`@${u.name}`));
@@ -72,6 +74,11 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const sharingRef = useRef(null);
+  // Shared client collaboration: same portal endpoints, staff ID token.
+  const collabApi = useMemo(() => createPortalApi({
+    base: import.meta.env.VITE_API_BASE_URL || '/api',
+    getToken: async () => (auth.currentUser ? auth.currentUser.getIdToken() : null),
+  }), []);
 
   const [replyingTo, setReplyingTo] = useState(null);
   const [editingMsgId, setEditingMsgId] = useState(null);
@@ -475,6 +482,12 @@ export default function TaskDetailSheet({ task, onClose, clientLogs, currentUser
                       {remindersSaved ? 'Saved' : 'Save reminders'}
                     </button>
                   </div>
+                </div>
+              )}
+
+              {!readOnly && isCollaborationEligible({ ...task, visibility: savedVisibility }, task._clientId) && (
+                <div data-testid="mobile-shared-collaboration" className="rounded-2xl border border-indigo-100 bg-indigo-50/30 p-3">
+                  <TaskCollaboration key={`${task._clientId}:${task.id}`} api={collabApi} clientId={task._clientId} taskId={task.id} viewer="staff" />
                 </div>
               )}
 

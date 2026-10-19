@@ -1439,6 +1439,156 @@ export const UpdateClientPortalTaskResponse = zod.object({
   }),
 });
 
+/**
+ * Shared ordinary tasks only; verified assigned clients or active authorized project staff. No internal task messages, steps or links.
+ */
+export const getClientTaskCollaborationPathClientIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{1,128}$",
+);
+export const getClientTaskCollaborationPathTaskIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{1,128}$",
+);
+
+export const GetClientTaskCollaborationParams = zod.object({
+  clientId: zod.coerce
+    .string()
+    .regex(getClientTaskCollaborationPathClientIdRegExp),
+  taskId: zod.coerce.string().regex(getClientTaskCollaborationPathTaskIdRegExp),
+});
+
+export const getClientTaskCollaborationResponseEntriesMax = 200;
+
+export const getClientTaskCollaborationResponseSubtasksMax = 100;
+
+export const GetClientTaskCollaborationResponse = zod.object({
+  entries: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        type: zod.enum(["message", "note", "link"]),
+        text: zod.string(),
+        url: zod.string().nullable(),
+        authorName: zod.string(),
+        createdAt: zod.number().describe("Server Unix epoch milliseconds"),
+      }),
+    )
+    .max(getClientTaskCollaborationResponseEntriesMax),
+  subtasks: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        title: zod.string(),
+        completed: zod.boolean(),
+        authorName: zod.string(),
+        createdAt: zod.number().describe("Server Unix epoch milliseconds"),
+      }),
+    )
+    .max(getClientTaskCollaborationResponseSubtasksMax),
+});
+
+export const createClientTaskCollaborationEntryPathClientIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{1,128}$",
+);
+export const createClientTaskCollaborationEntryPathTaskIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{1,128}$",
+);
+
+export const CreateClientTaskCollaborationEntryParams = zod.object({
+  clientId: zod.coerce
+    .string()
+    .regex(createClientTaskCollaborationEntryPathClientIdRegExp),
+  taskId: zod.coerce
+    .string()
+    .regex(createClientTaskCollaborationEntryPathTaskIdRegExp),
+});
+
+export const createClientTaskCollaborationEntryBodyTextMax = 4000;
+
+export const createClientTaskCollaborationEntryBodyUrlMax = 2048;
+
+export const createClientTaskCollaborationEntryBodyRequestIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const CreateClientTaskCollaborationEntryBody = zod.object({
+  type: zod.enum(["message", "note", "link"]),
+  text: zod.string().max(createClientTaskCollaborationEntryBodyTextMax),
+  url: zod
+    .string()
+    .max(createClientTaskCollaborationEntryBodyUrlMax)
+    .optional()
+    .describe("Required only for links; HTTP(S) only"),
+  requestId: zod
+    .string()
+    .regex(createClientTaskCollaborationEntryBodyRequestIdRegExp),
+});
+
+export const createClientTaskCollaborationSubtaskPathClientIdRegExp =
+  new RegExp("^[A-Za-z0-9_-]{1,128}$");
+export const createClientTaskCollaborationSubtaskPathTaskIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{1,128}$",
+);
+
+export const CreateClientTaskCollaborationSubtaskParams = zod.object({
+  clientId: zod.coerce
+    .string()
+    .regex(createClientTaskCollaborationSubtaskPathClientIdRegExp),
+  taskId: zod.coerce
+    .string()
+    .regex(createClientTaskCollaborationSubtaskPathTaskIdRegExp),
+});
+
+export const createClientTaskCollaborationSubtaskBodyTitleMax = 200;
+
+export const createClientTaskCollaborationSubtaskBodyRequestIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const CreateClientTaskCollaborationSubtaskBody = zod.object({
+  title: zod
+    .string()
+    .min(1)
+    .max(createClientTaskCollaborationSubtaskBodyTitleMax),
+  requestId: zod
+    .string()
+    .regex(createClientTaskCollaborationSubtaskBodyRequestIdRegExp),
+});
+
+export const updateClientTaskCollaborationSubtaskPathClientIdRegExp =
+  new RegExp("^[A-Za-z0-9_-]{1,128}$");
+export const updateClientTaskCollaborationSubtaskPathTaskIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{1,128}$",
+);
+export const updateClientTaskCollaborationSubtaskPathSubtaskIdRegExp =
+  new RegExp("^[A-Za-z0-9_-]{1,128}$");
+
+export const UpdateClientTaskCollaborationSubtaskParams = zod.object({
+  clientId: zod.coerce
+    .string()
+    .regex(updateClientTaskCollaborationSubtaskPathClientIdRegExp),
+  taskId: zod.coerce
+    .string()
+    .regex(updateClientTaskCollaborationSubtaskPathTaskIdRegExp),
+  subtaskId: zod.coerce
+    .string()
+    .regex(updateClientTaskCollaborationSubtaskPathSubtaskIdRegExp),
+});
+
+export const UpdateClientTaskCollaborationSubtaskBody = zod.object({
+  completed: zod.boolean(),
+});
+
+export const UpdateClientTaskCollaborationSubtaskResponse = zod.object({
+  subtask: zod.object({
+    id: zod.string(),
+    title: zod.string(),
+    completed: zod.boolean(),
+    authorName: zod.string(),
+    createdAt: zod.number().describe("Server Unix epoch milliseconds"),
+  }),
+});
+
 export const ListClientPortalUsersResponse = zod.object({
   users: zod.array(
     zod.object({

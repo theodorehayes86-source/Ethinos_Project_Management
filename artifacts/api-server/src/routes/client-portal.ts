@@ -15,6 +15,7 @@ import { acceptInvitation, assertClientIdentity, inspectInvitation, InvitationEr
 import { logger } from "../lib/logger";
 import { clientDirectory, clientTaskStatusEditReason, isStaffEmail, membershipAllows, normalizeDueDate, normalizeMembership, projectClientTask, safeKey, type PortalMembership } from "../lib/client-portal";
 import { deleteClientAccount } from "../lib/client-account-deletion";
+import clientTaskCollaborationRouter from "./client-task-collaboration";
 
 const router: IRouter = Router();
 type PortalRequest = Request & { portalIdentity: DecodedIdToken };
@@ -68,6 +69,7 @@ async function requireAdmin(req: Request, res: Response, next: NextFunction): Pr
   next();
 }
 router.use("/admin", requireAdmin);
+router.use("/clients/:clientId/tasks/:taskId/collaboration", clientTaskCollaborationRouter);
 
 async function getMembership(req: Request, res: Response, clientId?: string): Promise<PortalMembership | null> {
   const user = identity(req);

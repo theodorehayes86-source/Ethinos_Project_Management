@@ -226,6 +226,16 @@ export function createPortalApi({ base, getToken, fetchImpl }) {
         method: 'POST',
         body: { title, description, ...(dueDate ? { dueDate } : {}), ...(category ? { category } : {}) },
       }),
+    getTaskCollaboration: (clientId, taskId) =>
+      call(`/client-portal/clients/${enc(clientId)}/tasks/${enc(taskId)}/collaboration`),
+    addCollaborationEntry: (clientId, taskId, { type, text, url, requestId }) =>
+      call(`/client-portal/clients/${enc(clientId)}/tasks/${enc(taskId)}/collaboration/entries`, {
+        method: 'POST', body: { type, text, ...(url ? { url } : {}), requestId },
+      }),
+    addCollaborationSubtask: (clientId, taskId, { title, requestId }) =>
+      call(`/client-portal/clients/${enc(clientId)}/tasks/${enc(taskId)}/collaboration/subtasks`, { method: 'POST', body: { title, requestId } }),
+    setCollaborationSubtask: (clientId, taskId, subtaskId, { completed }) =>
+      call(`/client-portal/clients/${enc(clientId)}/tasks/${enc(taskId)}/collaboration/subtasks/${enc(subtaskId)}`, { method: 'PATCH', body: { completed: !!completed } }),
     updateTaskStatus: (clientId, taskId, status) =>
       call(`/client-portal/clients/${enc(clientId)}/tasks/${enc(taskId)}`, { method: 'PATCH', body: { status } }),
     adminListUsers: () => call('/client-portal/admin/users'),
@@ -392,4 +402,81 @@ export const applyClientShare = (logs, drafts, opts = {}) => {
     return { ...t, ...sharingFields('client', keep) };
   });
   return { updated, shared, skipped };
+};
+
+// ---- Shared task collaboration (client <-> staff). Separate from internal
+// staff messages/steps, which are never sent to these endpoints.
+export const COLLAB_LIMITS = { text: 4000, title: 200, url: 2048 };
+export const COLLAB_ENTRY_TYPES = ['message', 'note', 'link'];
+
+/** Returns a normalised http(s) URL, or null for anything else (javascript:, data:, relative...). */
+export const safeExternalUrl = (raw) => {
+  const v = String(raw || '').trim();
+  if (!v || v.length > COLLAB_LIMITS.url) return null;
+  try {
+    const u = new URL(v);
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.href : null;
+  } catch { return null; }
+};
+
+export const validateCollabEntry = ({ type, text, url } = {}) => {
+  const e = {};
+  const t = String(text || '').trim();
+  if (!COLLAB_ENTRY_TYPES.includes(type)) e.type = 'Choose message, note or link.';
+  if (t.length > COLLAB_LIMITS.text) e.text = `Keep it under ${COLLAB_LIMITS.text} characters.`;
+  if (type === 'link') {
+    if (!safeExternalUrl(url)) e.url = 'Enter a full http:// or https:// link.';
+  } else if (!t) e.text = 'Write something first.';
+  return e;
+};
+
+export const validateCollabSubtask = ({ title } = {}) => {
+  const t = String(title || '').trim();
+  if (!t) return { title: 'Subtask title is required.' };
+  if (t.length > COLLAB_LIMITS.title) return { title: `Keep it under ${COLLAB_LIMITS.title} characters.` };
+  return {};
+};
+
+export const newRequestId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const h = () => Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0');
+  return `${h()}${h()}-${h()}-4${h().slice(1)}-${(8 + Math.floor(Math.random() * 4)).toString(16)}${h().slice(1)}-${h()}${h()}${h()}`;
+};
+
+/** Keeps the same requestId while the payload is unchanged (safe retry); a changed payload gets a new id. */
+export const requestIdFor = (prev, payload) => {
+  const key = JSON.stringify(payload);
+  return prev && prev.key === key ? prev : { key, id: newRequestId() };
+};
+
+/** 401/403/404 on collaboration = parent unshared/revoked: fail closed. */
+export const isCollabClosedError = (err) => [401, 403, 404].includes(err?.status);
+
+/** Staff side: only real-client, shared, ordinary, non-archived tasks get the shared section. */
+export const isCollaborationEligible = (task, clientId) =>
+  !!task && isRealClientId(clientId) && normalizeVisibility(task.visibility) === 'client'
+  && task.taskType !== 'checklist' && !task.taskGroupId && !task.archived;
+
+export const sortCollab = (list) => [...(list || [])].sort((a, b) => (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0));
+export const mergeById = (list, item) => {
+  if (!item || item.id == null) return list || [];
+  const arr = list || [];
+  return arr.some(x => String(x.id) === String(item.id)) ? arr.map(x => (String(x.id) === String(item.id) ? { ...x, ...item } : x)) : [...arr, item];
+};
+
+/**
+ * Race guard between polling loads and mutations: a load may install its
+ * payload only if no mutation started or finished since it began and none is
+ * in flight. Prevents an older snapshot overwriting a newer mutation result.
+ */
+export const createMutationGate = () => {
+  let epoch = 0;
+  let inFlight = 0;
+  return {
+    begin: () => { inFlight += 1; epoch += 1; },
+    end: () => { inFlight = Math.max(0, inFlight - 1); epoch += 1; },
+    snapshot: () => epoch,
+    canInstall: (snap) => snap === epoch && inFlight === 0,
+    inFlight: () => inFlight,
+  };
 };

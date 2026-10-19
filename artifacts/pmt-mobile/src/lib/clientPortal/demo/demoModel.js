@@ -57,6 +57,20 @@ function seed(now) {
         caption: 'Five gifts under 5k.', assets: [], approvals: {},
       },
     ],
+    collab: {
+      t1: {
+        entries: [
+          { id: 'ce1', type: 'message', text: 'Sharing the draft copy here. Shout if any product names look off.', url: null, authorName: 'Priya (Harbour account team)', createdAt: now - 26 * 3600000 },
+          { id: 'ce2', type: 'link', text: 'Spring catalogue draft', url: 'https://example.test/spring-catalogue-draft', authorName: 'Priya (Harbour account team)', createdAt: now - 25 * 3600000 },
+          { id: 'ce3', type: 'note', text: 'Legal wants the warranty line kept as is.', url: null, authorName: 'You (demo client)', createdAt: now - 3 * 3600000 },
+        ],
+        subtasks: [
+          { id: 'cs1', title: 'Check product names on pages 4 to 7', completed: true, authorName: 'You (demo client)', createdAt: now - 20 * 3600000 },
+          { id: 'cs2', title: 'Confirm pricing footnote', completed: false, authorName: 'Priya (Harbour account team)', createdAt: now - 19 * 3600000 },
+        ],
+      },
+    },
+    requests: {},
     messages: { 'd-ref': [{ id: 'm1', author: 'Priya (Harbour account team)', text: 'Two moodboard directions are in the deck. Happy to talk through them.', at: now - 4 * 3600000 }] },
   };
 }
@@ -69,6 +83,24 @@ export function createDemoStore({ now = () => Date.now() } = {}) {
   const studioClient = (clientId) => clientId === 'demo-harbour';
   const deny = () => { throw new DemoError('Not available in this demo workspace.', 403); };
 
+  const sharedTask = (clientId, taskId) => {
+    if (!assigned(clientId)) deny();
+    const task = state.tasks.find(x => x.id === taskId && x.clientId === clientId);
+    if (!task) throw new DemoError('Task not found.', 404);
+    return task;
+  };
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  // Mirrors backend idempotency: same requestId + same payload fingerprint replays;
+  // same requestId with a different payload is a 409 conflict.
+  const replay = (requestId, kind, fingerprint) => {
+    if (!UUID.test(String(requestId || ''))) throw new DemoError('requestId must be a UUID.', 400);
+    const hit = state.requests[`${kind}:${requestId}`];
+    if (!hit) return null;
+    if (hit.fingerprint !== fingerprint) throw new DemoError('This request id was already used for different content.', 409);
+    return clone(hit.res);
+  };
+  const remember = (requestId, kind, fingerprint, res) => { state.requests = { ...state.requests, [`${kind}:${requestId}`]: { fingerprint, res } }; return clone(res); };
+
   const portalApi = {
     me: async () => ({ email: DEMO_EMAIL, clients: clone(DEMO_CLIENTS) }),
     listTasks: async (clientId) => { if (!assigned(clientId)) deny(); return { tasks: clone(state.tasks.filter(x => x.clientId === clientId)) }; },
@@ -80,6 +112,48 @@ export function createDemoStore({ now = () => Date.now() } = {}) {
       const task = { id: `t${++state.seq}`, clientId, title: String(title).trim(), category: cat, status: 'Pending', dueDate: dueDate || null, description: description || '', statusEditable: true };
       state.tasks = [...state.tasks, task];
       return { task: clone(task) };
+    },
+    getTaskCollaboration: async (clientId, taskId) => {
+      const task = sharedTask(clientId, taskId);
+      const c = state.collab[task.id] || { entries: [], subtasks: [] };
+      return clone(c);
+    },
+    addCollaborationEntry: async (clientId, taskId, { type, text, url, requestId }) => {
+      const task = sharedTask(clientId, taskId);
+      const fp = JSON.stringify([taskId, type, String(text || '').trim(), url || null]);
+      const prior = replay(requestId, 'entry', fp); if (prior) return prior;
+      const t = String(text || '').trim();
+      if (!['message', 'note', 'link'].includes(type)) throw new DemoError('Unknown entry type.', 400);
+      if (t.length > 4000) throw new DemoError('Text too long.', 400);
+      let safe = null;
+      if (type === 'link') {
+        try { const u = new URL(String(url || '')); if (!['http:', 'https:'].includes(u.protocol) || u.href.length > 2048) throw 0; safe = u.href; }
+        catch { throw new DemoError('Enter a full http(s) link.', 400); }
+      } else if (!t) throw new DemoError('Text is required.', 400);
+      const entry = { id: `ce${++state.seq}`, type, text: t, url: safe, authorName: 'You (demo client)', createdAt: now() };
+      const c = state.collab[task.id] || { entries: [], subtasks: [] };
+      state.collab = { ...state.collab, [task.id]: { ...c, entries: [...c.entries, entry] } };
+      return remember(requestId, 'entry', fp, { entry: clone(entry) });
+    },
+    addCollaborationSubtask: async (clientId, taskId, { title, requestId }) => {
+      const task = sharedTask(clientId, taskId);
+      const fp = JSON.stringify([taskId, String(title || '').trim()]);
+      const prior = replay(requestId, 'subtask', fp); if (prior) return prior;
+      const t = String(title || '').trim();
+      if (!t || t.length > 200) throw new DemoError('Subtask title must be 1 to 200 characters.', 400);
+      const subtask = { id: `cs${++state.seq}`, title: t, completed: false, authorName: 'You (demo client)', createdAt: now() };
+      const c = state.collab[task.id] || { entries: [], subtasks: [] };
+      state.collab = { ...state.collab, [task.id]: { ...c, subtasks: [...c.subtasks, subtask] } };
+      return remember(requestId, 'subtask', fp, { subtask: clone(subtask) });
+    },
+    setCollaborationSubtask: async (clientId, taskId, subtaskId, { completed }) => {
+      const task = sharedTask(clientId, taskId);
+      const c = state.collab[task.id] || { entries: [], subtasks: [] };
+      const st = c.subtasks.find(x => x.id === subtaskId);
+      if (!st) throw new DemoError('Subtask not found.', 404);
+      const updated = { ...st, completed: !!completed };
+      state.collab = { ...state.collab, [task.id]: { ...c, subtasks: c.subtasks.map(x => (x.id === subtaskId ? updated : x)) } };
+      return { subtask: clone(updated) };
     },
     updateTaskStatus: async (clientId, taskId, status) => {
       if (!assigned(clientId)) deny();

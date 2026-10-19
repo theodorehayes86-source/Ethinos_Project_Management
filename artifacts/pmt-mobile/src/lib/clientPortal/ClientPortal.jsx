@@ -150,9 +150,9 @@ function VerifyGate({ user, onSignOut, onVerified }) {
   );
 }
 
-// portalApi / studioApi / onSignOut / initialClientId / initialTaskView are injected
+// portalApi / studioApi / onSignOut / initialClientId / initialTaskView / initialTaskId are injected
 // only by the dev-only demo wrapper; production never passes them.
-export default function ClientPortal({ auth, user, apiBase, onExitToStaff, portalApi, studioApi: injectedStudioApi, onSignOut, initialClientId, initialTaskView }) {
+export default function ClientPortal({ auth, user, apiBase, onExitToStaff, portalApi, studioApi: injectedStudioApi, onSignOut, initialClientId, initialTaskView, initialTaskId }) {
   const [verified, setVerified] = useState(!!user?.emailVerified);
   const [clients, setClients] = useState(null);
   const [error, setError] = useState('');
@@ -291,6 +291,7 @@ export default function ClientPortal({ auth, user, apiBase, onExitToStaff, porta
           <ClientTasks
             key={selected.id}
             initialView={initialTaskView}
+            initialTaskId={String(selected.id) === String(initialClientId) ? initialTaskId : undefined}
             client={selected}
             api={api}
             auth={auth}

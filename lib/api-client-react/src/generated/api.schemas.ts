@@ -5,6 +5,70 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export type ClientTaskCollaborationEntryType =
+  (typeof ClientTaskCollaborationEntryType)[keyof typeof ClientTaskCollaborationEntryType];
+
+export const ClientTaskCollaborationEntryType = {
+  message: "message",
+  note: "note",
+  link: "link",
+} as const;
+
+export interface ClientTaskCollaborationEntry {
+  id: string;
+  type: ClientTaskCollaborationEntryType;
+  text: string;
+  url: string | null;
+  authorName: string;
+  /** Server Unix epoch milliseconds */
+  createdAt: number;
+}
+
+export interface ClientTaskCollaborationSubtask {
+  id: string;
+  title: string;
+  completed: boolean;
+  authorName: string;
+  /** Server Unix epoch milliseconds */
+  createdAt: number;
+}
+
+export type ClientTaskCollaborationEntryInputType =
+  (typeof ClientTaskCollaborationEntryInputType)[keyof typeof ClientTaskCollaborationEntryInputType];
+
+export const ClientTaskCollaborationEntryInputType = {
+  message: "message",
+  note: "note",
+  link: "link",
+} as const;
+
+export interface ClientTaskCollaborationEntryInput {
+  type: ClientTaskCollaborationEntryInputType;
+  /** @maxLength 4000 */
+  text: string;
+  /**
+   * Required only for links; HTTP(S) only
+   * @maxLength 2048
+   */
+  url?: string;
+  /** @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ */
+  requestId: string;
+}
+
+export interface ClientTaskCollaborationSubtaskInput {
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  title: string;
+  /** @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ */
+  requestId: string;
+}
+
+export interface ClientTaskCollaborationSubtaskUpdate {
+  completed: boolean;
+}
+
 /**
  * Optional phase override; defaults enabled, reference escalation 5 days, final 2 days. Uses inherited sendTime/timezone/cadenceDays. Plain-text templates accept only {{client}}, {{post}}, {{date}}, {{type}}, {{deadline}}.
  */
@@ -553,6 +617,25 @@ export type UpdateClientPortalTaskBody = {
 
 export type UpdateClientPortalTask200 = {
   task: PortalTask;
+};
+
+export type GetClientTaskCollaboration200 = {
+  /** @maxItems 200 */
+  entries: ClientTaskCollaborationEntry[];
+  /** @maxItems 100 */
+  subtasks: ClientTaskCollaborationSubtask[];
+};
+
+export type CreateClientTaskCollaborationEntry201 = {
+  entry: ClientTaskCollaborationEntry;
+};
+
+export type CreateClientTaskCollaborationSubtask201 = {
+  subtask: ClientTaskCollaborationSubtask;
+};
+
+export type UpdateClientTaskCollaborationSubtask200 = {
+  subtask: ClientTaskCollaborationSubtask;
 };
 
 export type ListClientPortalUsers200 = {

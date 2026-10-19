@@ -20,7 +20,9 @@ import CsvImportModal from './CsvImportModal';
 import { templateAppliesToClient } from './shared/checklistApplicability';
 import SharingFields from '../lib/clientPortal/SharingFields.jsx';
 import ShareWithClientDialog from './ShareWithClientDialog.jsx';
-import { sharingFields, isNewlyShared, sharingConfirmMessage, isRealClientId, normalizeVisibility, clientPreviewTasks, planClientShare, applyClientShare } from '../lib/clientPortal/core.js';
+import TaskCollaboration from '../lib/clientPortal/TaskCollaboration.jsx';
+import { auth } from '../firebase.js';
+import { sharingFields, isNewlyShared, sharingConfirmMessage, isRealClientId, normalizeVisibility, clientPreviewTasks, planClientShare, applyClientShare, createPortalApi, isCollaborationEligible } from '../lib/clientPortal/core.js';
 
 const CROSS_DEPT_ROLES = ['Super Admin', 'Admin', 'Business Head'];
 const CLIENT_OWNER_ROLES = ['Business Head', 'CSM'];
@@ -489,6 +491,11 @@ const ClientView = ({
     // Same level or unranked creator: only the creator themselves can edit
     return String(log?.creatorId) === String(currentUser.id);
   };
+  // Shared client collaboration uses the same portal endpoints with the staff ID token.
+  const collabApi = useMemo(() => createPortalApi({
+    base: import.meta.env.VITE_API_BASE_URL || '/api',
+    getToken: async () => (auth.currentUser ? auth.currentUser.getIdToken() : null),
+  }), []);
   // ---- Share with client (bulk toolbar + task detail). Permission = canFullyEditTask.
   const [shareDialog, setShareDialog] = useState(null); // { ids: string[], source: 'bulk' | 'detail', plan }
   const [shareError, setShareError] = useState('');
@@ -3720,6 +3727,15 @@ const ClientView = ({
             setNotifications={setNotifications}
             onShare={isRealClientId(selectedClient?.id) && canFullyEditTask(detailTask) && !detailTask.taskGroupId && detailTask.taskType !== 'checklist' && !detailTask.archived
               ? () => openShareDialog([detailTask.id], 'detail') : undefined}
+            collaboration={isCollaborationEligible(detailTask, selectedClient?.id) && (clientLogs[selectedClient.id] || []).some(t => String(t.id) === String(detailTask.id)) ? (
+              <TaskCollaboration
+                key={`${selectedClient.id}:${detailTask.id}`}
+                api={collabApi}
+                clientId={selectedClient.id}
+                taskId={detailTask.id}
+                viewer="staff"
+              />
+            ) : null}
             onClose={() => setDetailTask(null)}
             onUpdate={(updatedTask) => {
               const updatedLogs = (clientLogs[selectedClient.id] || []).map(l =>

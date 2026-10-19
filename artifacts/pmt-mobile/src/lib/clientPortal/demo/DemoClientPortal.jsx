@@ -11,15 +11,18 @@ export function exitDemoUrl(href) {
   url.searchParams.delete('client');
   url.searchParams.delete('demoTaskClient');
   url.searchParams.delete('demoTaskView');
+  url.searchParams.delete('demoTaskId');
   return url.pathname + url.search;
 }
 
-/** Optional DEV screenshot helpers: ?demoTaskClient=<id>&demoTaskView=calendar|list. */
+/** Optional DEV screenshot helpers: ?demoTaskClient=<id>&demoTaskView=calendar|list&demoTaskId=t1. */
 export function demoInitialProps(search) {
   const q = new URLSearchParams(search || '');
   const client = q.get('demoTaskClient');
   const view = q.get('demoTaskView');
+  const task = q.get('demoTaskId');
   return {
+    initialTaskId: task && /^t\d+$/.test(task) ? task : undefined,
     initialClientId: client && /^demo-[a-z]+$/.test(client) ? client : undefined,
     initialTaskView: view === 'calendar' || view === 'list' ? view : undefined,
   };

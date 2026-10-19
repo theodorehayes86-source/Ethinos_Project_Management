@@ -12,6 +12,7 @@ import {
   PORTAL_TASK_STATUSES, isPortalTaskStatus, statusEditState, validatePortalTask, PORTAL_CATEGORY_MAX,
   mergeTask, monthGrid, shiftMonth, groupTasksByDue, localDateKey, parseLooseDate,
 } from './core.js';
+import TaskCollaboration from './TaskCollaboration.jsx';
 
 const POLL_MS = 30000;
 const inputCls = 'w-full min-h-[44px] px-3.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 outline-none focus:ring-2 ring-indigo-500/20 focus:border-indigo-300';
@@ -149,12 +150,12 @@ function AddTaskModal({ clientName, onClose, onSubmit }) {
   );
 }
 
-function TaskDetail({ task, statusProps, onClose }) {
+function TaskDetail({ task, statusProps, onClose, collaboration }) {
   const due = fmtDue(task.dueDate);
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" role="dialog" aria-modal="true" aria-label={task.title}>
       <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
-      <div data-testid="panel-portal-task-detail" className="relative bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 shadow-xl max-h-[92dvh] overflow-y-auto">
+      <div data-testid="panel-portal-task-detail" className="relative bg-white w-full sm:max-w-2xl rounded-t-3xl sm:rounded-2xl p-5 space-y-4 shadow-xl max-h-[92dvh] overflow-y-auto">
         <div className="flex items-start gap-3">
           <div className="flex-1 min-w-0 space-y-1.5">
             <CategoryChip category={task.category} />
@@ -178,6 +179,7 @@ function TaskDetail({ task, statusProps, onClose }) {
             {task.description || <span className="text-slate-400">No description shared yet.</span>}
           </div>
         </div>
+        {collaboration && <div className="border-t border-slate-100 pt-4">{collaboration}</div>}
       </div>
     </div>
   );
@@ -296,7 +298,7 @@ function SkeletonRows() {
   return <div className="space-y-2 p-4">{[0, 1, 2, 3].map(i => <div key={i} className="h-10 rounded-lg bg-slate-100 animate-pulse" />)}</div>;
 }
 
-export default function ClientTasks({ client, api, auth, onBack, onRevoked, initialView = 'list' }) {
+export default function ClientTasks({ client, api, auth, onBack, onRevoked, initialView = 'list', initialTaskId }) {
   const [tasks, setTasks] = useState(null);
   const [error, setError] = useState('');
   const [showAdd, setShowAdd] = useState(false);
@@ -304,7 +306,7 @@ export default function ClientTasks({ client, api, auth, onBack, onRevoked, init
   const [statusFilter, setStatusFilter] = useState('all');
   const [view, setView] = useState(initialView === 'calendar' ? 'calendar' : 'list');
   const [month, setMonth] = useState(() => { const n = new Date(); return { year: n.getFullYear(), month: n.getMonth() }; });
-  const [openId, setOpenId] = useState(null);
+  const [openId, setOpenId] = useState(initialTaskId ?? null);
   const [saving, setSaving] = useState({});
   const [statusErrors, setStatusErrors] = useState({});
   const seqRef = useRef(0);       // list load sequence
@@ -462,7 +464,23 @@ export default function ClientTasks({ client, api, auth, onBack, onRevoked, init
         </div>
       )}
 
-      {openTask && <TaskDetail task={openTask} statusProps={statusPropsFor(openTask)} onClose={() => setOpenId(null)} />}
+      {openTask && (
+        <TaskDetail
+          task={openTask}
+          statusProps={statusPropsFor(openTask)}
+          onClose={() => setOpenId(null)}
+          collaboration={(
+            <TaskCollaboration
+              key={`${client.id}:${openTask.id}`}
+              api={api}
+              clientId={client.id}
+              taskId={openTask.id}
+              viewer="client"
+              onClosed={(err) => { setOpenId(null); if (err?.status === 401 || err?.status === 403) onRevoked(); else load(); }}
+            />
+          )}
+        />
+      )}
 
       {showAdd && (
         <AddTaskModal
