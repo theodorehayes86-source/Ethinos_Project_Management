@@ -18,7 +18,7 @@ export const peopleIndex = (boot) => {
   return m;
 };
 export const DELIVERY_KIND = { request: 'Approval request', reminder: 'Pending reminder', decision: 'Decision notice', escalation: 'Near-post escalation' };
-export const DELIVERY_TONE = { sent: 'text-emerald-700', failed: 'text-rose-600', unconfirmed: 'text-rose-600', queued: 'text-amber-700', sending: 'text-amber-700', suppressed: 'text-slate-500', cancelled: 'text-slate-500', expired: 'text-slate-500' };
+export const DELIVERY_TONE = { sent: 'text-emerald-700', failed: 'text-red-600', unconfirmed: 'text-red-600', queued: 'text-amber-700', sending: 'text-amber-700', suppressed: 'text-slate-500', cancelled: 'text-slate-500', expired: 'text-slate-500' };
 
 export default function StudioControlPanel({ auth, apiBase }) {
   const api = useMemo(() => createStudioApi({ base: apiBase, getToken: async () => (auth.currentUser ? auth.currentUser.getIdToken() : null) }), [auth, apiBase]);
@@ -72,7 +72,7 @@ export default function StudioControlPanel({ auth, apiBase }) {
               const on = boot.configs?.[c.id]?.enabled === true;
               return (
                 <li key={c.id}>
-                  <button data-testid={`button-studio-client-${c.id}`} onClick={() => setSelected(c.id)} className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-sm transition-colors ${selected === c.id ? 'bg-slate-900 text-white' : 'hover:bg-indigo-50'}`}>
+                  <button data-testid={`button-studio-client-${c.id}`} onClick={() => setSelected(c.id)} className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-sm transition-colors ${selected === c.id ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-indigo-50'}`}>
                     <span className={`w-2 h-2 rounded-full ${on ? 'bg-emerald-500' : 'bg-slate-300'}`} aria-hidden />
                     <span className="flex-1 truncate font-semibold">{c.name}</span>
                     <span className="text-[10px] font-bold uppercase opacity-70">{on ? 'On' : 'Off'}</span>
@@ -171,7 +171,7 @@ function ClientConfig({ api, client, config, candidates, people, defaults, onSav
       {list.length === 0 && <span className="text-xs text-slate-400">No eligible staff.</span>}
       {list.map(u => (
         <button type="button" key={u.id} data-testid={`${testid}-${u.id}`} aria-pressed={v[k].includes(u.id)} onClick={() => toggle(k, u.id)}
-          className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border ${v[k].includes(u.id) ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-200'}`}>{u.name}</button>
+          className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border ${v[k].includes(u.id) ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white border-slate-200 text-slate-600'}`}>{u.name}</button>
       ))}
     </div>
   );

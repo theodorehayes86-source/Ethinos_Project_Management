@@ -4,9 +4,9 @@ import { X, AlertTriangle, RefreshCw, Send, Loader2, RotateCcw, Lock } from 'luc
 import { STAGES, stageLabel, newKey, fmtStamp } from './core.js';
 
 export const inputCls = 'w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-900 outline-none focus:ring-2 ring-indigo-500/20 focus:border-indigo-600 placeholder:text-slate-400';
-export const btnPrimary = 'inline-flex items-center justify-center gap-1.5 px-3.5 py-2 min-h-[38px] rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 disabled:opacity-50 transition-colors';
+export const btnPrimary = 'inline-flex items-center justify-center gap-1.5 px-3.5 py-2 min-h-[38px] rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 disabled:opacity-50 transition-colors';
 export const btnAccent = 'inline-flex items-center justify-center gap-1.5 px-3.5 py-2 min-h-[38px] rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 disabled:opacity-50 transition-colors';
-export const btnGhost = 'inline-flex items-center justify-center gap-1.5 px-3 py-2 min-h-[38px] rounded-xl border border-slate-200 bg-white/80 text-slate-900 text-xs font-semibold hover:bg-indigo-50 disabled:opacity-50 transition-colors';
+export const btnGhost = 'inline-flex items-center justify-center gap-1.5 px-3 py-2 min-h-[38px] rounded-xl border border-slate-200 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50 disabled:opacity-50 transition-colors';
 
 export function StageBadge({ stage, testid }) {
   return (
@@ -17,7 +17,7 @@ export function StageBadge({ stage, testid }) {
 }
 
 export function UrgencyTag({ u }) {
-  if (u === 'overdue') return <span className="text-[10px] font-black uppercase tracking-wider text-rose-600">Overdue</span>;
+  if (u === 'overdue') return <span className="text-[10px] font-black uppercase tracking-wider text-red-600">Overdue</span>;
   if (u === 'soon') return <span className="text-[10px] font-black uppercase tracking-wider text-indigo-600">Close to post</span>;
   return null;
 }
@@ -28,7 +28,7 @@ export function Field({ label, hint, children, error }) {
       <span className="block text-[10px] font-black uppercase tracking-[0.14em] text-slate-500 mb-1.5">{label}</span>
       {children}
       {hint && !error && <span className="block text-[11px] text-slate-400 mt-1">{hint}</span>}
-      {error && <span className="block text-[11px] text-rose-600 mt-1 font-semibold">{error}</span>}
+      {error && <span className="block text-[11px] text-red-600 mt-1 font-semibold">{error}</span>}
     </label>
   );
 }
@@ -56,7 +56,7 @@ export function Sheet({ title, onClose, children, footer, wide, testid }) {
 export function ErrorBanner({ message, onRetry }) {
   if (!message) return null;
   return (
-    <div data-testid="status-studio-error" role="alert" className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs text-rose-700">
+    <div data-testid="status-studio-error" role="alert" className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-700">
       <AlertTriangle size={14} className="mt-0.5 shrink-0" />
       <span className="flex-1 font-semibold">{message}</span>
       {onRetry && <button data-testid="button-studio-retry" onClick={onRetry} className="inline-flex items-center gap-1 font-bold hover:underline"><RefreshCw size={12} /> Retry</button>}
@@ -77,7 +77,7 @@ export function SkeletonList({ rows = 5 }) {
 export function EmptyState({ icon, title, body, action }) {
   return (
     <div className="text-center py-12 px-6 rounded-2xl border border-dashed border-slate-200 bg-slate-50">
-      <div className="mx-auto w-12 h-12 rounded-2xl bg-slate-900 text-white flex items-center justify-center mb-3">{icon}</div>
+      <div className="mx-auto w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mb-3">{icon}</div>
       <p className="cs-display text-lg text-slate-900">{title}</p>
       {body && <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto">{body}</p>}
       {action && <div className="mt-4">{action}</div>}
@@ -158,9 +158,9 @@ export function ThreadPanel({ api, clientId, itemId, thread, readOnly, myName })
             <div className="flex items-baseline gap-2 justify-end">
               <span className="text-[11px] font-bold text-slate-900">{myName || 'You'}</span>
               {m.state === 'pending' ? <span className="text-[10px] text-slate-400 inline-flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> Sending</span>
-                : <button data-testid={`button-retry-message-${m.key}`} onClick={() => deliver(m)} className="text-[10px] font-bold text-rose-600 inline-flex items-center gap-1"><RotateCcw size={10} /> Failed, retry</button>}
+                : <button data-testid={`button-retry-message-${m.key}`} onClick={() => deliver(m)} className="text-[10px] font-bold text-red-600 inline-flex items-center gap-1"><RotateCcw size={10} /> Failed, retry</button>}
             </div>
-            <p className={`text-sm whitespace-pre-wrap break-words ${m.state === 'failed' ? 'text-rose-600' : 'text-slate-500'}`}>{m.text}</p>
+            <p className={`text-sm whitespace-pre-wrap break-words ${m.state === 'failed' ? 'text-red-600' : 'text-slate-500'}`}>{m.text}</p>
           </div>
         ))}
         <div ref={endRef} />

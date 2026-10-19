@@ -28,11 +28,11 @@ Email automation sub-tab.
 **How to apply:** Keep operational creative work in the main studio; put email
 automation configuration in Control Centre → Creative Studio.
 
-Creative Studio must match the normal Flow Pro colour scheme and look, not use a
-separate visual theme.
+All Creative Studio colours must match the existing Flow Pro colour scheme and
+look, not use a separate visual theme.
 
-**Why:** The user rejected the different colour scheme and appearance after seeing
-the initial implementation.
+**Why:** The user rejected the different colour scheme and appearance, then
+repeated that all Creative Studio colours must use the existing colour scheme.
 
 **How to apply:** Reuse the existing app's typography, colours, surfaces and controls
 for both Studio operations and Control Centre settings on desktop and mobile.

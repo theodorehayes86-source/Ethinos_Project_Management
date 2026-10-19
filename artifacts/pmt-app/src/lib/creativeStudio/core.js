@@ -60,12 +60,12 @@ export const TIMEZONES = [
   'Europe/London', 'Europe/Berlin', 'America/New_York', 'America/Chicago', 'America/Los_Angeles', 'UTC',
 ];
 export const STAGES = {
-  internal_draft: { label: 'Internal draft', tone: 'bg-stone-100 text-stone-600 border-stone-200' },
+  internal_draft: { label: 'Internal draft', tone: 'bg-slate-100 text-slate-600 border-slate-200' },
   awaiting_reference: { label: 'Awaiting reference approval', tone: 'bg-amber-50 text-amber-800 border-amber-200' },
-  reference_changes: { label: 'Reference changes requested', tone: 'bg-rose-50 text-rose-700 border-rose-200' },
-  in_production: { label: 'In production', tone: 'bg-sky-50 text-sky-800 border-sky-200' },
+  reference_changes: { label: 'Reference changes requested', tone: 'bg-red-50 text-red-700 border-red-200' },
+  in_production: { label: 'In production', tone: 'bg-blue-50 text-blue-800 border-blue-200' },
   awaiting_final: { label: 'Awaiting final approval', tone: 'bg-amber-50 text-amber-800 border-amber-200' },
-  final_changes: { label: 'Final changes requested', tone: 'bg-rose-50 text-rose-700 border-rose-200' },
+  final_changes: { label: 'Final changes requested', tone: 'bg-red-50 text-red-700 border-red-200' },
   final_approved: { label: 'Final approved', tone: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
 };
 export const stageLabel = (s) => STAGES[s]?.label || s || 'Unknown';

@@ -126,7 +126,7 @@ function PortalDetail({ item, api, uid, clientName, onBack, onChange, onReload }
           <ul className="space-y-1.5">
             {(snapshot?.assets || item.assets || []).map((a, idx) => (
               <li key={a.id || idx} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
-                <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-slate-900 text-white">{ASSET_KINDS.find(k => k.id === a.kind)?.label || a.kind}</span>
+                <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{ASSET_KINDS.find(k => k.id === a.kind)?.label || a.kind}</span>
                 <span className="text-sm flex-1 truncate">{a.label}</span>
                 {isHttps(a.url) && <a data-testid={`link-portal-asset-${a.id || idx}`} href={a.url} target="_blank" rel="noopener noreferrer" className="text-xs font-bold inline-flex items-center gap-1 underline">Open <ExternalLink size={11} /></a>}
               </li>
@@ -137,16 +137,16 @@ function PortalDetail({ item, api, uid, clientName, onBack, onChange, onReload }
         </div>
 
         {phase ? (
-          <div data-testid="panel-portal-decision" className="rounded-2xl bg-slate-900 text-white p-4 space-y-3">
+          <div data-testid="panel-portal-decision" className="rounded-2xl bg-white border border-slate-200 text-slate-800 p-4 space-y-3">
             <p className="cs-display text-xl">{phase === 'reference' ? 'Reference approval' : 'Final post approval'}</p>
-            <p className="text-xs opacity-75">Requested {fmtStamp(item.approvals[phase].requestedAt)}. Your decision applies to this exact revision.</p>
-            <Field label={<span className="text-white/70">Feedback (required for changes)</span>}>
+            <p className="text-xs text-slate-500">Requested {fmtStamp(item.approvals[phase].requestedAt)}. Your decision applies to this exact revision.</p>
+            <Field label={<span className="text-slate-500">Feedback (required for changes)</span>}>
               <textarea data-testid="input-portal-feedback" rows={3} value={feedback} onChange={e => setFeedback(e.target.value)} className={inputCls} />
             </Field>
             {error && <ErrorBanner message={error} />}
             <div className="flex flex-wrap gap-2">
-              <button data-testid="button-portal-approve" disabled={busy} onClick={() => decide('approved')} className={btnAccent}><CheckCircle2 size={13} /> Approve</button>
-              <button data-testid="button-portal-request-changes" disabled={busy} onClick={() => decide('changes_requested')} className={`${btnPrimary} !bg-white/10 border border-white/30`}>Request changes</button>
+              <button data-testid="button-portal-approve" disabled={busy} onClick={() => decide('approved')} className={`${btnAccent} !bg-emerald-600 hover:!bg-emerald-700`}><CheckCircle2 size={13} /> Approve</button>
+              <button data-testid="button-portal-request-changes" disabled={busy} onClick={() => decide('changes_requested')} className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 min-h-[38px] rounded-xl bg-red-50 text-red-700 border border-red-200 text-xs font-bold hover:bg-red-100 disabled:opacity-50">Request changes</button>
             </div>
           </div>
         ) : (

@@ -180,13 +180,13 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
 
   const canCreate = enabledClients.some(c => editable.has(c.id));
   const cards = [
-    { k: 'approved', label: 'Approved', v: counts.approved, box: 'bg-emerald-50/60 border-emerald-200', chip: 'bg-emerald-100 text-emerald-600', Icon: CheckCircle2 },
-    { k: 'wip', label: 'WIP / Awaiting approval', v: counts.wip, box: 'bg-amber-50/60 border-amber-200', chip: 'bg-amber-100 text-amber-600', Icon: Activity },
-    { k: 'soon', label: 'Close to post date', v: counts.soon, box: 'bg-rose-50/60 border-rose-200', chip: 'bg-rose-100 text-rose-600', Icon: AlertTriangle, sub: counts.overdue ? `${counts.overdue} overdue` : null },
-    { k: 'scheduled', label: 'Scheduled', v: counts.scheduled, box: 'bg-blue-50/60 border-blue-200', chip: 'bg-blue-100 text-blue-600', Icon: Clock },
+    { k: 'approved', label: 'Approved', v: counts.approved, box: 'bg-white border-slate-200', chip: 'bg-emerald-50 text-emerald-600', Icon: CheckCircle2 },
+    { k: 'wip', label: 'WIP / Awaiting approval', v: counts.wip, box: 'bg-white border-slate-200', chip: 'bg-amber-50 text-amber-600', Icon: Activity },
+    { k: 'soon', label: 'Close to post date', v: counts.soon, box: 'bg-white border-slate-200', chip: 'bg-red-50 text-red-600', Icon: AlertTriangle, sub: counts.overdue ? `${counts.overdue} overdue` : null },
+    { k: 'scheduled', label: 'Scheduled', v: counts.scheduled, box: 'bg-white border-slate-200', chip: 'bg-blue-50 text-blue-600', Icon: Clock },
     { k: 'ans', label: 'Approved, not scheduled', v: counts.approvedNotScheduled, box: 'bg-white border-slate-200', chip: 'bg-slate-100 text-slate-500', Icon: CalendarDays },
   ];
-  const seg = (on) => `px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${on ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-800'}`;
+  const seg = (on) => `px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${on ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:text-slate-800'}`;
 
   return (
     <div className="cs-root min-h-full p-3 md:p-6 text-left text-slate-900 font-sans">
@@ -217,7 +217,7 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
               <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${c.chip}`}><c.Icon size={15} /></span>
             </div>
             <p className="text-3xl font-bold mt-2 tabular-nums">{c.v}</p>
-            {c.sub && <p className="text-[11px] font-semibold text-rose-600 mt-0.5">{c.sub}</p>}
+            {c.sub && <p className="text-[11px] font-semibold text-red-600 mt-0.5">{c.sub}</p>}
           </div>
         ))}
       </div>
@@ -283,7 +283,7 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
                 <div className="hidden xl:flex items-center gap-3 ml-auto text-xs text-slate-600">
                   <span className="flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-emerald-500" />Approved</span>
                   <span className="flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-amber-500" />WIP / Awaiting approval</span>
-                  <span className="flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-rose-500" />Within 3 days of posting</span>
+                  <span className="flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-red-500" />Within 3 days of posting</span>
                   <span className="flex items-center gap-1.5"><Clock size={11} className="text-blue-500" />Scheduled</span>
                 </div>
               </div>
@@ -365,18 +365,17 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
 
 const rowTone = (i) => {
   const u = urgency(i);
-  if (u === 'overdue' || u === 'soon') return 'bg-rose-50/70 border-rose-200';
-  if (i.stage === 'final_approved') return 'bg-emerald-50/60 border-emerald-200';
-  if (i.stage === 'internal_draft') return 'bg-white border-slate-200';
-  return 'bg-amber-50/60 border-amber-200';
+  // Rows stay neutral; urgency is a thin left accent only.
+  if (u === 'overdue' || u === 'soon') return 'bg-white border-slate-200 border-l-4 border-l-red-400';
+  return 'bg-white border-slate-200';
 };
-const typeChip = { Post: 'bg-indigo-50 text-indigo-600', Reel: 'bg-rose-50 text-rose-600', Story: 'bg-sky-50 text-sky-600' };
+const typeChip = { Post: 'bg-indigo-50 text-indigo-600', Reel: 'bg-slate-100 text-slate-600', Story: 'bg-slate-100 text-slate-600' };
 
 function DateBadge({ dayKeyStr, item, count }) {
   const [y, m, d] = dayKeyStr.split('-').map(Number);
   const wd = new Intl.DateTimeFormat('en-IN', { weekday: 'short', timeZone: 'UTC' }).format(new Date(Date.UTC(y, m - 1, d))).toUpperCase();
   const u = urgency(item);
-  const tone = u === 'overdue' || u === 'soon' ? 'border-rose-200 text-rose-600' : item.stage === 'final_approved' ? 'border-emerald-200 text-emerald-600' : 'border-amber-200 text-amber-600';
+  const tone = u === 'overdue' || u === 'soon' ? 'border-slate-200 text-red-600' : 'border-slate-200 text-slate-700';
   return (
     <div className="flex items-start gap-2">
       <div className={`w-11 shrink-0 rounded-xl border bg-white text-center py-1 ${tone}`}>
@@ -393,8 +392,8 @@ function DateBadge({ dayKeyStr, item, count }) {
 
 function StatusPill({ i }) {
   const u = urgency(i);
-  if (u === 'overdue') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-rose-200 bg-white text-[10px] font-semibold text-rose-600"><i className="w-1.5 h-1.5 rounded-full bg-rose-500" />Overdue</span>;
-  if (u === 'soon') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-rose-200 bg-white text-[10px] font-semibold text-rose-600"><i className="w-1.5 h-1.5 rounded-full bg-rose-500" />Close to post date</span>;
+  if (u === 'overdue') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-red-200 bg-white text-[10px] font-semibold text-red-600"><i className="w-1.5 h-1.5 rounded-full bg-red-500" />Overdue</span>;
+  if (u === 'soon') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-red-200 bg-white text-[10px] font-semibold text-red-600"><i className="w-1.5 h-1.5 rounded-full bg-red-500" />Close to post date</span>;
   if (i.stage === 'final_approved') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-emerald-200 bg-white text-[10px] font-semibold text-emerald-600"><i className="w-1.5 h-1.5 rounded-full bg-emerald-500" />Approved</span>;
   if (i.stage === 'internal_draft') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-500"><i className="w-1.5 h-1.5 rounded-full bg-slate-400" />Draft</span>;
   return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-amber-200 bg-white text-[10px] font-semibold text-amber-600"><i className="w-1.5 h-1.5 rounded-full bg-amber-500" />WIP / Awaiting</span>;
@@ -403,7 +402,7 @@ function StatusPill({ i }) {
 function Row({ i, active, onOpen, clientName }) {
   return (
     <button data-testid={`card-content-${i.id}`} onClick={onOpen}
-      className={`w-full text-left grid grid-cols-[auto_minmax(0,1fr)] md:grid-cols-[auto_minmax(0,1fr)_160px_150px] items-center gap-x-3 gap-y-1 rounded-xl border px-3 py-2.5 transition-colors ${rowTone(i)} ${active ? 'ring-2 ring-indigo-500 border-indigo-500' : 'hover:border-slate-300'} ${i.archived ? 'opacity-60' : ''}`}>
+      className={`w-full text-left grid grid-cols-[auto_minmax(0,1fr)] md:grid-cols-[auto_minmax(0,1fr)_160px_150px] items-center gap-x-3 gap-y-1 rounded-xl border px-3 py-2.5 transition-colors ${rowTone(i)} ${active ? '!bg-indigo-50 border-indigo-200' : 'hover:bg-slate-50'} ${i.archived ? 'opacity-60' : ''}`}>
       <span className={`w-6 h-6 rounded-md text-[10px] font-bold flex items-center justify-center ${typeChip[i.type] || 'bg-slate-100 text-slate-600'}`}>{(i.type || '?')[0]}</span>
       <span className="min-w-0">
         <span className="block text-sm font-semibold truncate">{i.title}</span>
@@ -490,7 +489,7 @@ function Detail({ item, api, boot, mode, editable, clientName, ownerName, curren
       <nav className="flex gap-1 px-3 pt-3 overflow-x-auto" role="tablist">
         {tabs.map(([id, label]) => (
           <button key={id} role="tab" aria-selected={tab === id} data-testid={`tab-detail-${id}`} onClick={() => setTab(id)}
-            className={`px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap ${tab === id ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>{label}</button>
+            className={`px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap ${tab === id ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:bg-slate-100'}`}>{label}</button>
         ))}
       </nav>
 
@@ -542,7 +541,7 @@ function Detail({ item, api, boot, mode, editable, clientName, ownerName, curren
                 <div key={phase} data-testid={`card-approval-${phase}`} className="rounded-2xl border border-slate-200 p-3 bg-white/70">
                   <div className="flex items-center justify-between">
                     <p className="cs-display text-lg capitalize">{phase === 'reference' ? 'Reference approval' : 'Final post approval'}</p>
-                    <span className={`text-[10px] font-black uppercase tracking-wider ${a?.status === 'approved' ? 'text-emerald-700' : a?.status === 'changes_requested' ? 'text-rose-600' : a ? 'text-amber-700' : 'text-slate-400'}`}>
+                    <span className={`text-[10px] font-black uppercase tracking-wider ${a?.status === 'approved' ? 'text-emerald-700' : a?.status === 'changes_requested' ? 'text-red-600' : a ? 'text-amber-700' : 'text-slate-400'}`}>
                       {a ? (a.status === 'changes_requested' ? 'Changes requested' : a.status) : 'Not requested'}
                     </span>
                   </div>
@@ -550,7 +549,7 @@ function Detail({ item, api, boot, mode, editable, clientName, ownerName, curren
                     <div className="mt-2 text-xs text-slate-600 space-y-1">
                       <p>Approver: <b>{approver?.name || 'Designated client member'}</b> · revision {a.revision}</p>
                       {a.requestedAt && <p>Requested {fmtStamp(a.requestedAt)}{a.decidedAt ? `, decided ${fmtStamp(a.decidedAt)}` : ''}</p>}
-                      {a.feedback && <p className="rounded-xl bg-rose-50 text-rose-800 px-2.5 py-1.5 whitespace-pre-wrap">{a.feedback}</p>}
+                      {a.feedback && <p className="rounded-xl bg-red-50 text-red-800 px-2.5 py-1.5 whitespace-pre-wrap">{a.feedback}</p>}
                       {a.snapshot?.assets?.length > 0 && <p className="text-slate-400">Snapshot: {a.snapshot.assets.map(s => `${s.label} r${s.revision}`).join(', ')}</p>}
                     </div>
                   )}
@@ -679,7 +678,7 @@ function Assets({ item, api, canAct, onChange, onReload, ownerName, preview }) {
                 {list.map(a => (
                   <li key={a.id} data-testid={`asset-${a.id}`} className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-900 text-white">{ASSET_KINDS.find(k => k.id === a.kind)?.label || a.kind}</span>
+                      <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{ASSET_KINDS.find(k => k.id === a.kind)?.label || a.kind}</span>
                       <span className="text-sm font-semibold truncate flex-1">{a.label}</span>
                       <span className="text-[10px] text-slate-400">r{a.revision}</span>
                       {isHttps(a.url) && <a data-testid={`link-asset-${a.id}`} href={a.url} target="_blank" rel="noopener noreferrer" className="p-1 rounded hover:bg-slate-100" aria-label={`Open ${a.label}`}><ExternalLink size={13} /></a>}
@@ -797,7 +796,7 @@ function Editor({ api, boot, item, clients, defaultClient, onClose, onSaved }) {
           </select>
         </Field>
         <Field label="Type">
-          <div className="flex gap-1">{TYPES.map(t => <button type="button" key={t} data-testid={`button-type-${t}`} onClick={() => set('type', t)} className={`flex-1 py-2 rounded-xl text-xs font-bold border ${f.type === t ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-200'}`}>{t}</button>)}</div>
+          <div className="flex gap-1">{TYPES.map(t => <button type="button" key={t} data-testid={`button-type-${t}`} onClick={() => set('type', t)} className={`flex-1 py-2 rounded-xl text-xs font-bold border ${f.type === t ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white border-slate-200'}`}>{t}</button>)}</div>
         </Field>
         <Field label="Internal owner" error={errors.ownerId}>
           <select data-testid="select-owner" value={f.ownerId} onChange={e => set('ownerId', e.target.value)} className={inputCls}>
@@ -811,7 +810,7 @@ function Editor({ api, boot, item, clients, defaultClient, onClose, onSaved }) {
         <div className="sm:col-span-2">
           <Field label="Platforms">
             <div className="flex flex-wrap gap-1.5">
-              {PLATFORMS.map(p => <button type="button" key={p} data-testid={`button-platform-${p}`} aria-pressed={f.platforms.includes(p)} onClick={() => togglePlat(p)} className={`px-3 py-1.5 rounded-full text-[11px] font-bold border ${f.platforms.includes(p) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-200'}`}>{p}</button>)}
+              {PLATFORMS.map(p => <button type="button" key={p} data-testid={`button-platform-${p}`} aria-pressed={f.platforms.includes(p)} onClick={() => togglePlat(p)} className={`px-3 py-1.5 rounded-full text-[11px] font-bold border ${f.platforms.includes(p) ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white border-slate-200'}`}>{p}</button>)}
               <button type="button" data-testid="button-platform-all" onClick={() => set('platforms', [...PLATFORMS])} className="px-3 py-1.5 rounded-full text-[11px] font-bold text-slate-900 underline">All platforms</button>
             </div>
           </Field>
