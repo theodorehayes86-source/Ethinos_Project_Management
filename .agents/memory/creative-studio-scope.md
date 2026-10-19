@@ -3,11 +3,18 @@ name: Creative Studio scope
 description: User requirements for studio client enrollment and separate creative work tracking
 ---
 
-Creative Studio needs the ability to add clients and separate tracking of creative
-assets/work items that behave like tasks but are called something else.
+Clients must be added through the normal client process. Normal client access is
+available for all clients; only selected clients are enabled for Creative Studio in
+Control Centre. Do not add a separate client-creation flow inside Creative Studio.
 
-**Why:** The user explicitly requested this separation from ordinary task tracking.
+Creative assets/work items need separate tracking from ordinary tasks and must be
+called something else.
 
-**How to apply:** Keep studio work tracking distinct from ordinary tasks. “Deliverables”
+**Why:** The user clarified that normal client creation and client access are separate
+from optional Creative Studio access, and explicitly requested separate creative tracking.
+
+**How to apply:** Configure studio access per existing client in Control Centre;
+preserve explicit user-to-client memberships. Keep studio work tracking distinct
+from ordinary tasks. “Deliverables”
 is the proposed work-item name; it has not yet been confirmed by the user. Do not confuse
 work items with the images, videos and other assets attached to them.

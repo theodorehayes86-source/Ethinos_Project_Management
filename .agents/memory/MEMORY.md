@@ -5,4 +5,4 @@
 - [Autoscale kills in-process cron](autoscale-cron-schedulers.md) — prod must stay a Reserved VM or schedulers pause with traffic; stale-catch-up + shared lock now self-heal gaps
 - [Custom-domain Keka runtime](custom-domain-keka-runtime.md) — project.ethinos.com uses a separate Apache host; its Keka credentials must be configured independently
 - [External client scope](client-portal-boundaries.md) — clients see assigned workspaces and shared tasks only; ordinary task creation, no checklist/template or staff access.
-- [Creative Studio scope](creative-studio-scope.md) — add studio clients and track creative work separately from ordinary tasks; naming remains proposed.
+- [Creative Studio scope](creative-studio-scope.md) — normal client setup; enable selected clients in Control Centre; creative work tracked separately from tasks.
