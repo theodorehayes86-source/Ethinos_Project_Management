@@ -46,36 +46,131 @@
     },
 
     "users": {
-      ".read": "auth != null && !root.child('clientPortalUsers').child(auth.uid).exists() && auth.token.email.matches(/.*@ethinos[.]com$/)",
-      ".write": "auth != null && !root.child('clientPortalUsers').child(auth.uid).exists() && (root.child('userRoles').child(auth.uid).val() === 'Admin' || root.child('userRoles').child(auth.uid).val() === 'Super Admin')",
+      ".read": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()",
+      ".write": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()",
       ".indexOn": ["email", "managerId"]
     },
 
     "clients": {
-      ".read": "auth != null && !root.child('clientPortalUsers').child(auth.uid).exists() && auth.token.email.matches(/.*@ethinos[.]com$/)",
-      ".write": "auth != null && !root.child('clientPortalUsers').child(auth.uid).exists() && (root.child('userRoles').child(auth.uid).val() === 'Admin' || root.child('userRoles').child(auth.uid).val() === 'Super Admin')"
+      ".read": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()",
+      ".write": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()"
     },
 
     "clientLogs": {
-      ".read": "auth != null && !root.child('clientPortalUsers').child(auth.uid).exists() && auth.token.email.matches(/.*@ethinos[.]com$/)",
-      "$clientId": {
-        ".write": "auth != null && !root.child('clientPortalUsers').child(auth.uid).exists() && auth.token.email.matches(/.*@ethinos[.]com$/) && root.child('userRoles').child(auth.uid).val() !== null && root.child('userRoles').child(auth.uid).val() !== 'Client'"
-      }
+      ".read": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()",
+      ".write": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()"
     },
 
     "config": {
-      ".read": "auth != null && !root.child('clientPortalUsers').child(auth.uid).exists() && auth.token.email.matches(/.*@ethinos[.]com$/)",
+      ".read": false,
       ".write": false
     },
 
     "settings": {
-      ".read": "auth != null && !root.child('clientPortalUsers').child(auth.uid).exists() && auth.token.email.matches(/.*@ethinos[.]com$/)",
-      ".write": "auth != null && !root.child('clientPortalUsers').child(auth.uid).exists() && (root.child('userRoles').child(auth.uid).val() === 'Admin' || root.child('userRoles').child(auth.uid).val() === 'Super Admin')"
+      ".read": false,
+      ".write": false,
+      "integrations": {
+        ".read": false,
+        ".write": false
+      },
+      "hierarchyOrder": {
+        ".read": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()",
+        ".write": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()"
+      },
+      "conditions": {
+        "checklistAccess": {
+          ".read": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()",
+          ".write": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()"
+        }
+      },
+      "notifications": {
+        ".read": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()",
+        ".write": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()"
+      }
     },
 
     "taskCategories": {
-      ".read": "auth != null && !root.child('clientPortalUsers').child(auth.uid).exists() && auth.token.email.matches(/.*@ethinos[.]com$/)",
-      ".write": "auth != null && !root.child('clientPortalUsers').child(auth.uid).exists() && (root.child('userRoles').child(auth.uid).val() === 'Admin' || root.child('userRoles').child(auth.uid).val() === 'Super Admin')"
+      ".read": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()",
+      ".write": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()"
+    },
+    "departments": {
+      ".read": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()",
+      ".write": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()"
+    },
+    "regions": {
+      ".read": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()",
+      ".write": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()"
+    },
+    "taskTemplates": {
+      ".read": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()",
+      ".write": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()"
+    },
+    "checklistTemplates": {
+      ".read": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()",
+      ".write": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()"
+    },
+    "taskGroups": {
+      ".read": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()",
+      ".write": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()"
+    },
+    "controlCenterTabAccess": {
+      ".read": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()",
+      ".write": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()"
+    },
+    "userManagementAccessRoles": {
+      ".read": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()",
+      ".write": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()"
+    },
+    "employeeViewAccessRoles": {
+      ".read": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()",
+      ".write": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()"
+    },
+    "teamViewAccessRoles": {
+      ".read": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()",
+      ".write": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()"
+    },
+    "metricsAccessRoles": {
+      ".read": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()",
+      ".write": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()"
+    },
+    "reportsAccessRoles": {
+      ".read": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()",
+      ".write": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()"
+    },
+    "metricsAllDataRoles": {
+      ".read": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()",
+      ".write": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()"
+    },
+    "reportsAllDataRoles": {
+      ".read": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()",
+      ".write": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()"
+    },
+    "feedbackItems": {
+      ".read": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()",
+      ".write": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()"
+    },
+    "leaveData": {
+      ".read": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()",
+      ".write": false
+    },
+    "publicHolidays": {
+      ".read": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()",
+      ".write": false
+    },
+    "attendanceData": {
+      ".read": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()",
+      ".write": false
+    },
+    "teamsDMs": {
+      ".read": false,
+      ".write": false,
+      "chats": {
+        "$chatKey": {
+          "messages": {
+            ".read": "auth != null && auth.token.email != null && auth.token.email.matches(/^[^@]+@ethinos[.]com$/) && !root.child('clientPortalUsers').child(auth.uid).exists()"
+          }
+        }
+      }
     }
   }
 }
