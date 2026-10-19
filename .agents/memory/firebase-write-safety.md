@@ -41,3 +41,11 @@ response validation without normalization can then break the whole admin list.
 
 **How to apply:** Normalize reads before validating response schemas, and make test
 fixtures omit emptied children rather than always retaining JavaScript empty arrays.
+
+### Cold transaction callbacks can falsely look like missing records
+
+For existing-record transactions that abort on null, retain a value listener on the exact reference across the initial read and transaction, and detach it in `finally`.
+
+**Why:** A completed `once()` detaches its listener and may release the SDK cache. A subsequent transaction can initially receive null despite the record existing remotely; returning undefined aborts without fetching it. This has affected both shared subtasks and Creative Studio actions.
+
+**How to apply:** Keep real revision/missing-record checks intact. Test cold caches separately from concurrent edits and deletion; do not replace null with a stale saved snapshot.

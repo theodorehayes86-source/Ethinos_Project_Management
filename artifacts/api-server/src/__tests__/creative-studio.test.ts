@@ -4,7 +4,8 @@ import request from "supertest";
 import { readFileSync } from "node:fs";
 import { automation as validateAutomation, automationSettings, editable, permissions, project, studioUrgency, timezone } from "../lib/creative-studio";
 
-const state = vi.hoisted(() => ({ data: {} as Record<string, any>, writes: [] as string[], verify: vi.fn(), getUser: vi.fn(), send: vi.fn(), configured: vi.fn() }));
+const state = vi.hoisted(() => ({ data: {} as Record<string, any>, writes: [] as string[], verify: vi.fn(), getUser: vi.fn(), send: vi.fn(), configured: vi.fn(),
+  cold: false, retained: new Map<string, Set<Function>>(), beforeTransaction: null as null | (() => void) }));
 vi.mock("../lib/firebase-admin", () => {
   const get = (path: string) => path.split("/").reduce((v, k) => v?.[k], state.data) ?? null;
   const put = (path: string, value: any) => {
@@ -14,11 +15,18 @@ vi.mock("../lib/firebase-admin", () => {
     state.writes.push(path);
   };
   const ref = (path: string): any => ({
+    on: (_event: string, callback: Function) => {
+      const listeners = state.retained.get(path) ?? new Set();
+      listeners.add(callback); state.retained.set(path, listeners);
+    },
+    off: (_event: string, callback: Function) => { state.retained.get(path)?.delete(callback); },
     once: async () => ({ val: () => structuredClone(get(path)) }),
     set: async (value: any) => put(path, value),
     update: async (value: any) => put(path, { ...get(path), ...value }),
     transaction: async (fn: (current: any) => any) => {
-      const value = fn(structuredClone(get(path)));
+      state.beforeTransaction?.();
+      const cold = state.cold && path.startsWith("creativeStudio/items/") && !state.retained.get(path)?.size;
+      const value = fn(cold ? null : structuredClone(get(path)));
       if (value === undefined) return { committed: false, snapshot: { val: () => get(path) } };
       put(path, value);
       return { committed: true, snapshot: { val: () => value } };
@@ -40,6 +48,7 @@ function item() { return state.data.creativeStudio.items.a.item; }
 function action(action: string, extra: object = {}) { return api("post", `${itemPath}/actions`, { revision: item().revision, action, ...extra }); }
 beforeEach(() => {
   vi.clearAllMocks();
+  state.cold = false; state.retained.clear(); state.beforeTransaction = null;
   delete process.env.CREATIVE_STUDIO_EMAIL_DELIVERY;
   state.verify.mockResolvedValue(staffIdentity);
   state.getUser.mockResolvedValue({ email: external.email, emailVerified: true, disabled: false });
@@ -56,6 +65,36 @@ beforeEach(() => {
   state.writes = [];
 });
 describe("Creative Studio security and contracts", () => {
+  it("shares an existing draft with a cold Firebase cache and releases its listener", async () => {
+    state.cold = true;
+    const response = await action("share");
+    expect(response.status).toBe(200);
+    expect(response.body.deliverable).toMatchObject({ shared: true, revision: 2 });
+    expect(item().shared).toBe(true);
+    expect(state.retained.get("creativeStudio/items/a/item")?.size).toBe(0);
+  });
+  it("retains genuine concurrent revision conflicts without overwriting changes", async () => {
+    state.cold = true;
+    state.beforeTransaction = () => { item().revision = 2; item().caption = "Concurrent edit"; };
+    const response = await action("share");
+    expect(response.status).toBe(409);
+    expect(item()).toMatchObject({ shared: false, revision: 2, caption: "Concurrent edit" });
+    expect(state.writes).toEqual([]);
+    expect(state.retained.get("creativeStudio/items/a/item")?.size).toBe(0);
+  });
+  it("does not recreate an item deleted before the transaction and releases its listener", async () => {
+    state.beforeTransaction = () => { delete state.data.creativeStudio.items.a.item; };
+    expect((await action("share")).status).toBe(409);
+    expect(item()).toBeUndefined();
+    expect(state.writes).toEqual([]);
+    expect(state.retained.get("creativeStudio/items/a/item")?.size).toBe(0);
+  });
+  it("releases the listener when the action is rejected by validation", async () => {
+    // No final approval exists, so scheduling must fail from inside the transform.
+    expect((await action("schedule")).status).toBe(409);
+    expect(state.writes).toEqual([]);
+    expect(state.retained.get("creativeStudio/items/a/item")?.size).toBe(0);
+  });
   it("requires a revoked-token checked session", async () => {
     expect((await request(app).get("/studio/bootstrap")).status).toBe(401);
     state.verify.mockRejectedValue(new Error("revoked"));

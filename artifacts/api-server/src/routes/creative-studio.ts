@@ -73,19 +73,30 @@ async function mutate(req: Request, transform: (item: RecordData) => void, actio
   await scope(req);
   const c = ctx(req), now = Date.now();
   const ref = db().ref(`creativeStudio/items/${req.params.clientId}/${req.params.id}`);
-  const result = await ref.transaction(raw => {
-    if (!raw || raw.revision !== req.body.revision) return;
-    if (c.external && (!raw.shared || raw.archived || raw.stage === "internal_draft")) return;
-    const item = structuredClone(raw);
-    transform(item);
-    item.revision++;
-    item.updatedAt = now;
-    const approvalChanged = JSON.stringify(raw.approvals ?? {}) !== JSON.stringify(item.approvals ?? {});
-    audit(item, c.uid, action, now, approvalChanged ? { approvalBefore: raw.approvals ?? {}, approvalAfter: item.approvals ?? {} } : undefined);
-    return item;
-  });
-  if (!result.committed) fail(409, "This deliverable changed. Reload before trying again.");
-  return result.snapshot.val() as RecordData;
+  // A one-shot read detaches its listener, allowing the RTDB cache to be
+  // discarded. Keep this exact item cached until the transaction finishes:
+  // otherwise a cold initial null aborts even when the item exists remotely.
+  const retainValue = () => {};
+  ref.on("value", retainValue, () => {});
+  try {
+    await ref.once("value");
+    await scope(req);
+    const result = await ref.transaction(raw => {
+      if (!raw || raw.revision !== req.body.revision) return;
+      if (c.external && (!raw.shared || raw.archived || raw.stage === "internal_draft")) return;
+      const item = structuredClone(raw);
+      transform(item);
+      item.revision++;
+      item.updatedAt = now;
+      const approvalChanged = JSON.stringify(raw.approvals ?? {}) !== JSON.stringify(item.approvals ?? {});
+      audit(item, c.uid, action, now, approvalChanged ? { approvalBefore: raw.approvals ?? {}, approvalAfter: item.approvals ?? {} } : undefined);
+      return item;
+    }, undefined, false);
+    if (!result.committed) fail(409, "This deliverable changed. Reload before trying again.");
+    return result.snapshot.val() as RecordData;
+  } finally {
+    ref.off("value", retainValue);
+  }
 }
 
 router.get("/bootstrap", route(async (req, res) => {
