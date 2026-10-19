@@ -36,6 +36,13 @@ client view after trying Test Mode.
 **How to apply:** Include them in real and demo client views on desktop and mobile;
 keep internal notes separate and preserve internal QC/timer safeguards.
 
+“Share with client” must be available in the blue selected-task toolbar in the
+Clients view, not only inside task details or editing.
+
+**Why:** The user reiterated the placement and supplied a screenshot of that toolbar.
+
+**How to apply:** Keep sharing directly accessible after ticking task-row checkboxes.
+
 Client Portal must offer permanent deletion of an email/login account and its access,
 separately from Disable.
 
