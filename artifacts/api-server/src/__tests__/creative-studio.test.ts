@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import express from "express";
 import request from "supertest";
 import { readFileSync } from "node:fs";
-import { editable, permissions, project, studioUrgency, timezone } from "../lib/creative-studio";
+import { automation as validateAutomation, automationSettings, editable, permissions, project, studioUrgency, timezone } from "../lib/creative-studio";
 
 const state = vi.hoisted(() => ({ data: {} as Record<string, any>, writes: [] as string[], verify: vi.fn(), getUser: vi.fn(), send: vi.fn(), configured: vi.fn() }));
 vi.mock("../lib/firebase-admin", () => {
@@ -29,7 +29,7 @@ vi.mock("../lib/firebase-admin", () => {
 vi.mock("../lib/microsoft-graph", () => ({ sendEmail: state.send, isEmailConfigured: state.configured }));
 vi.mock("../lib/logger", () => ({ logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() } }));
 import router from "../routes/creative-studio";
-import { queueStudioEmail, runStudioEmailWorker, studioEmailLink } from "../lib/creative-studio-email";
+import { queueStudioEmail, renderStudioEmail, runStudioEmailWorker, studioEmailLink } from "../lib/creative-studio-email";
 const app = express(); app.use(express.json()); app.use("/studio", router);
 const api = (method: "get" | "post" | "patch" | "put", path: string, body?: object) => request(app)[method](`/studio${path}`).set("Authorization", "Bearer test").send(body);
 const itemPath = "/clients/a/deliverables/item";
@@ -229,6 +229,7 @@ describe("Creative Studio mail safety", () => {
   });
   it("cancels every queued email kind when automation is disabled before delivery", async () => {
     process.env.CREATIVE_STUDIO_EMAIL_DELIVERY = "enabled";
+    item().plannedAt = new Date(Date.now() + 86400000).toISOString();
     await action("request_approval", { phase: "reference", approverUid: "external" });
     await queueStudioEmail(item(), "reminder");
     await queueStudioEmail(item(), "escalation");
@@ -259,7 +260,8 @@ describe("Creative Studio mail safety", () => {
     state.data.users.staff.id = 42;
     state.data.clients.a.id = 7;
     state.data.creativeStudio.configs["7"] = state.data.creativeStudio.configs.a;
-    const record = { ...item(), ownerId: "42", clientId: "7", shared: true, stage: "awaiting_reference", approvals: { reference: { status: "pending", revision: 2 } } };
+    state.data.clientPortalUsers.external.clientIds = ["7"];
+    const record = { ...item(), ownerId: "42", clientId: "7", plannedAt: new Date(Date.now() + 86400000).toISOString(), shared: true, stage: "awaiting_reference", approvals: { reference: { status: "pending", revision: 2, approverUid: "external" } } };
     await queueStudioEmail(record, "escalation");
     const delivery = (Object.values(state.data.creativeStudio.deliveries["7"]) as any[])[0];
     expect(delivery).toMatchObject({ recipientUid: "42", status: "queued" });
@@ -311,5 +313,129 @@ describe("Creative Studio mail safety", () => {
     await runStudioEmailWorker();
     expect(state.send).toHaveBeenCalledTimes(1);
     expect((Object.values(state.data.creativeStudio.deliveries.a) as any[])[0].status).toBe("failed");
+  });
+});
+describe("Creative Studio phase automation", () => {
+  it("merges legacy settings and nested defaults; validates phase templates strictly", async () => {
+    const settings = automationSettings(automation, { reference: { escalationDays: 8 } });
+    expect(settings.reference).toMatchObject({ enabled: true, escalationDays: 8 });
+    expect(settings.final).toMatchObject({ enabled: true, escalationDays: 2 });
+    expect(settings.reference.subject).not.toBe(settings.final.subject);
+    expect(validateAutomation(automation)).toEqual(automation);
+    const phase = { ...settings.reference };
+    expect(() => validateAutomation({ ...automation, reference: { ...phase, escalationDays: -1 } })).toThrow();
+    expect(() => validateAutomation({ ...automation, reference: { ...phase, subject: "Hello\nBcc: victim" } })).toThrow();
+    expect(() => validateAutomation({ ...automation, reference: { ...phase, subject: "{{url}}" } })).toThrow();
+    expect(() => validateAutomation({ ...automation, reference: { ...phase, url: "https://evil.test" } })).toThrow();
+    const response = await api("get", "/bootstrap");
+    expect(response.body.configs.a.automation.reference.escalationDays).toBe(5);
+    expect(state.writes).toEqual([]);
+  });
+  it("suppresses requests, reminders and escalations for a disabled phase at queue time", async () => {
+    process.env.CREATIVE_STUDIO_EMAIL_DELIVERY = "enabled";
+    item().plannedAt = new Date(Date.now() + 86400000).toISOString();
+    state.data.creativeStudio.configs.a.automation = { ...automation, reference: { enabled: false } };
+    await action("request_approval", { phase: "reference", approverUid: "external" });
+    await queueStudioEmail(item(), "reminder");
+    await queueStudioEmail(item(), "escalation");
+    const deliveries = Object.values(state.data.creativeStudio.deliveries.a) as any[];
+    expect(deliveries).toHaveLength(3);
+    expect(deliveries.every(d => d.status === "suppressed")).toBe(true);
+    await runStudioEmailWorker();
+    expect(state.send).not.toHaveBeenCalled();
+  });
+  it("cancels all queued phase notifications when the phase is disabled before transport", async () => {
+    process.env.CREATIVE_STUDIO_EMAIL_DELIVERY = "enabled";
+    item().plannedAt = new Date(Date.now() + 86400000).toISOString();
+    await action("request_approval", { phase: "reference", approverUid: "external" });
+    await queueStudioEmail(item(), "reminder");
+    await queueStudioEmail(item(), "escalation");
+    state.data.creativeStudio.configs.a.automation = { ...automation, reference: { enabled: false } };
+    await runStudioEmailWorker();
+    expect((Object.values(state.data.creativeStudio.deliveries.a) as any[]).every(d => d.status === "cancelled")).toBe(true);
+    expect(state.send).not.toHaveBeenCalled();
+  });
+  it("uses the phase-specific escalation window at queue and send, and checks revoked approvers", async () => {
+    process.env.CREATIVE_STUDIO_EMAIL_DELIVERY = "enabled";
+    item().plannedAt = new Date(Date.now() + 4 * 86400000).toISOString();
+    await action("request_approval", { phase: "reference", approverUid: "external" });
+    await queueStudioEmail(item(), "escalation");
+    expect((Object.values(state.data.creativeStudio.deliveries.a) as any[]).find(d => d.kind === "escalation").status).toBe("queued");
+    state.data.creativeStudio.configs.a.automation = { ...automation, reference: { escalationDays: 2 } };
+    await runStudioEmailWorker();
+    expect((Object.values(state.data.creativeStudio.deliveries.a) as any[]).find(d => d.kind === "escalation").status).toBe("cancelled");
+    item().stage = "awaiting_final";
+    item().approvals.final = { ...item().approvals.reference, revision: 3 };
+    await queueStudioEmail(item(), "escalation");
+    expect((Object.values(state.data.creativeStudio.deliveries.a) as any[]).filter(d => d.kind === "escalation")).toHaveLength(1);
+    item().plannedAt = new Date(Date.now() + 86400000).toISOString();
+    state.data.clientPortalUsers.external.disabled = true;
+    await queueStudioEmail(item(), "escalation");
+    expect((Object.values(state.data.creativeStudio.deliveries.a) as any[]).filter(d => d.kind === "escalation")).toHaveLength(1);
+  });
+  it("renders safe literal substitutions once and sends the same phase template with a trusted deep link", async () => {
+    process.env.CREATIVE_STUDIO_EMAIL_DELIVERY = "enabled";
+    item().title = '<img src=x onerror="bad"> {{client}}\nInjected';
+    item().plannedAt = "2026-11-10T10:00:00Z";
+    item().productionDueDate = "2026-11-08";
+    item().timezone = "America/New_York";
+    const settings = automationSettings(automation);
+    const rendered = renderStudioEmail(item(), { name: "Alpha" }, settings, "final");
+    expect(rendered.subject).not.toContain("\n");
+    expect(rendered.body).toContain("8 Nov 2026");
+    expect(rendered.body).toContain("{{client}}");
+    expect(rendered.bodyHtml).not.toContain("<img");
+    expect(rendered.bodyHtml).toContain("&lt;img");
+    await action("request_approval", { phase: "reference", approverUid: "external" });
+    await runStudioEmailWorker();
+    const expected = renderStudioEmail(item(), { name: "Alpha" }, settings, "reference", "request");
+    expect(state.send).toHaveBeenCalledWith({ to: external.email, subject: expected.subject, bodyHtml: expected.bodyHtml });
+  });
+  it("previews the selected phase using populated examples without writing or sending", async () => {
+    const reference = await api("post", "/clients/a/preview", { phase: "reference" });
+    const final = await api("post", "/clients/a/preview", { phase: "final" });
+    expect(reference.body.subject).toBe("Action needed: approve references for Example campaign post");
+    expect(final.body.subject).toContain("Final approval needed:");
+    expect(final.body.body).toContain("Hi Alpha");
+    expect(final.body.body).not.toContain("{{");
+    expect(final.body.deliveryEnabled).toBe(false);
+    expect((await api("post", "/clients/a/preview", { phase: "bad" })).status).toBe(400);
+    expect((await api("post", "/clients/a/preview", { phase: "final", url: "https://evil.test" })).status).toBe(400);
+    state.verify.mockResolvedValue({ uid: "editorAuth", email: "editor@ethinos.com" });
+    expect((await api("post", "/clients/a/preview", { phase: "final" })).status).toBe(403);
+    expect(state.writes).toEqual([]);
+    expect(state.send).not.toHaveBeenCalled();
+  });
+  it("projects upcoming reminders read-only with full titles, phase, recipients, local schedule and cooldown", async () => {
+    process.env.CREATIVE_STUDIO_EMAIL_DELIVERY = "enabled";
+    item().title = "Full campaign title without truncation";
+    state.getUser.mockResolvedValue({ email: external.email, emailVerified: true, disabled: false, displayName: "Client Approver" });
+    await action("request_approval", { phase: "reference", approverUid: "external" });
+    await queueStudioEmail(item(), "reminder");
+    state.writes = [];
+    const response = await api("get", "/clients/a/deliveries");
+    expect(response.body.deliveries).toHaveLength(2);
+    expect(response.body.upcoming).toHaveLength(1);
+    const next = response.body.upcoming[0];
+    expect(next).toMatchObject({ itemTitle: item().title, approvalPhase: "reference", recipientName: "Client Approver", status: "scheduled", kind: "reminder" });
+    expect(next).not.toHaveProperty("sentAt");
+    expect(next).not.toHaveProperty("openedAt");
+    expect(next.scheduledAt).toBeGreaterThan(Date.now() + 86400000 - 1000);
+    expect(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" }).format(next.scheduledAt)).toBe("09:00");
+    state.data.clientPortalUsers.external.disabled = true;
+    expect((await api("get", "/clients/a/deliveries")).body.upcoming).toEqual([]);
+    expect(state.writes).toEqual([]);
+  });
+  it("does not project disabled, unshared, archived or unauthorized reminders", async () => {
+    await action("request_approval", { phase: "reference", approverUid: "external" });
+    expect((await api("get", "/clients/a/deliveries")).body.upcoming).toEqual([]);
+    process.env.CREATIVE_STUDIO_EMAIL_DELIVERY = "enabled";
+    item().shared = false;
+    expect((await api("get", "/clients/a/deliveries")).body.upcoming).toEqual([]);
+    item().shared = true; item().archived = true;
+    expect((await api("get", "/clients/a/deliveries")).body.upcoming).toEqual([]);
+    item().archived = false;
+    state.data.creativeStudio.configs.a.automation = { ...automation, reference: { enabled: false } };
+    expect((await api("get", "/clients/a/deliveries")).body.upcoming).toEqual([]);
   });
 });

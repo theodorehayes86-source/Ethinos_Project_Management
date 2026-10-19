@@ -25,11 +25,45 @@ export function https(value: any): string {
   catch { fail(400, "Provide an HTTPS link without embedded credentials."); }
   return text(value, 2048, true);
 }
-export const DEFAULTS = { enabled: false, sendTime: "09:00", timezone: "Asia/Kolkata", cadenceDays: 1 };
+export type ApprovalPhase = "reference" | "final";
+export const DEFAULTS = {
+  enabled: false, sendTime: "09:00", timezone: "Asia/Kolkata", cadenceDays: 1,
+  reference: {
+    enabled: true, escalationDays: 5,
+    subject: "Action needed: approve references for {{post}}",
+    body: "Hi {{client}}, references for {{post}} going live on {{date}} are ready. Review the moodboard and thumbnail on SharePoint and approve in Creative Studio.",
+  },
+  final: {
+    enabled: true, escalationDays: 2,
+    subject: "Final approval needed: {{post}} goes live {{date}}",
+    body: "Hi {{client}}, the final {{type}} for {{post}} is ready. Approve by {{deadline}} so the team can schedule it on time.",
+  },
+};
+/** Merge legacy records without losing phase defaults or inherited global settings. */
+export function automationSettings(...layers: (RecordData | null | undefined)[]) {
+  const out = { ...DEFAULTS, reference: { ...DEFAULTS.reference }, final: { ...DEFAULTS.final } };
+  for (const layer of layers) if (layer) {
+    Object.assign(out, layer, {
+      reference: { ...out.reference, ...layer.reference },
+      final: { ...out.final, ...layer.final },
+    });
+  }
+  return out;
+}
 export function automation(body: any) {
-  strict(body, ["enabled", "sendTime", "timezone", "cadenceDays"]);
+  strict(body, ["enabled", "sendTime", "timezone", "cadenceDays", "reference", "final"]);
   if (typeof body.enabled !== "boolean" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(body.sendTime) || !Number.isInteger(body.cadenceDays) || body.cadenceDays < 1 || body.cadenceDays > 30) fail(400, "Invalid automation settings.");
-  return { enabled: body.enabled, sendTime: body.sendTime, timezone: timezone(body.timezone), cadenceDays: body.cadenceDays };
+  const phases: RecordData = {};
+  for (const phase of ["reference", "final"] as const) if (body[phase] !== undefined) {
+    const p = body[phase];
+    strict(p, ["enabled", "escalationDays", "subject", "body"]);
+    if (typeof p.enabled !== "boolean" || !Number.isInteger(p.escalationDays) || p.escalationDays < 0 || p.escalationDays > 365) fail(400, "Invalid phase automation settings.");
+    const subject = text(p.subject, 240, true), templateBody = text(p.body, 10000, true);
+    if (/[\r\n]/.test(subject)) fail(400, "Subject must be a single line.");
+    if ([subject, templateBody].some(t => (t.match(/{{.*?}}/g) ?? []).some(token => !["{{client}}", "{{post}}", "{{date}}", "{{type}}", "{{deadline}}"].includes(token)))) fail(400, "Unsupported template placeholder.");
+    phases[phase] = { enabled: p.enabled, escalationDays: p.escalationDays, subject, body: templateBody };
+  }
+  return { enabled: body.enabled, sendTime: body.sendTime, timezone: timezone(body.timezone), cadenceDays: body.cadenceDays, ...phases };
 }
 export const fields = ["title", "type", "ownerId", "brief", "caption", "platforms", "productionDueDate", "plannedAt", "timezone"];
 export function editable(body: any, creating = false): RecordData {
@@ -88,7 +122,7 @@ export function audit(item: RecordData, actor: string, action: string, now: numb
 }
 
 /** Calendar-day urgency in the posting zone, without assuming every day is 24h. */
-export function studioUrgency(item: RecordData, now = Date.now()): "none" | "near" | "overdue" {
+export function studioUrgency(item: RecordData, now = Date.now(), escalationDays = 3): "none" | "near" | "overdue" {
   if (!item.plannedAt || item.archived || item.scheduled || item.stage === "final_approved") return "none";
   const instant = Date.parse(item.plannedAt);
   if (!Number.isFinite(instant)) return "none";
@@ -98,5 +132,5 @@ export function studioUrgency(item: RecordData, now = Date.now()): "none" | "nea
     const parts = Object.fromEntries(formatter.formatToParts(timestamp).map(p => [p.type, p.value]));
     return Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day)) / 86400000;
   };
-  return ordinal(instant) - ordinal(now) <= 3 ? "near" : "none";
+  return ordinal(instant) - ordinal(now) <= escalationDays ? "near" : "none";
 }

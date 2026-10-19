@@ -5,6 +5,29 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+/**
+ * Optional phase override; defaults enabled, reference escalation 5 days, final 2 days. Uses inherited sendTime/timezone/cadenceDays. Plain-text templates accept only {{client}}, {{post}}, {{date}}, {{type}}, {{deadline}}.
+ */
+export interface StudioPhaseAutomation {
+  enabled: boolean;
+  /**
+   * @minimum 0
+   * @maximum 365
+   */
+  escalationDays: number;
+  /**
+   * Single-line subject.
+   * @minLength 1
+   * @maxLength 240
+   */
+  subject: string;
+  /**
+   * @minLength 1
+   * @maxLength 10000
+   */
+  body: string;
+}
+
 export interface StudioAutomation {
   enabled: boolean;
   /** @pattern ^([01][0-9]|2[0-3]):[0-5][0-9]$ */
@@ -15,6 +38,54 @@ export interface StudioAutomation {
    * @maximum 30
    */
   cadenceDays: number;
+  reference?: StudioPhaseAutomation;
+  final?: StudioPhaseAutomation;
+}
+
+/**
+ * @nullable
+ */
+export type StudioDeliveryApprovalPhase =
+  | (typeof StudioDeliveryApprovalPhase)[keyof typeof StudioDeliveryApprovalPhase]
+  | null;
+
+export const StudioDeliveryApprovalPhase = {
+  reference: "reference",
+  final: "final",
+} as const;
+
+export type StudioDeliveryKind =
+  (typeof StudioDeliveryKind)[keyof typeof StudioDeliveryKind];
+
+export const StudioDeliveryKind = {
+  request: "request",
+  reminder: "reminder",
+  decision: "decision",
+  escalation: "escalation",
+} as const;
+
+export interface StudioDelivery {
+  id: string;
+  itemId: string;
+  clientId: string;
+  /** @nullable */
+  itemTitle: string | null;
+  /** @nullable */
+  approvalPhase: StudioDeliveryApprovalPhase;
+  recipientUid?: string;
+  /** @nullable */
+  recipientName: string | null;
+  revision?: number;
+  kind?: StudioDeliveryKind;
+  /** Stored transport state or scheduled projection; no fabricated opened/read state. */
+  status: string;
+  /** Unix milliseconds; actual delivery rows only. */
+  createdAt?: number;
+  /** Unix milliseconds; confirmed sends only. */
+  sentAt?: number;
+  /** Unix milliseconds; upcoming projections only. */
+  scheduledAt?: number;
+  [key: string]: unknown;
 }
 
 export interface StudioConfig {
@@ -362,12 +433,33 @@ export type ListCreativeStudioActivity200 = {
   activity: ListCreativeStudioActivity200ActivityItem[];
 };
 
-export type ListCreativeStudioDeliveries200DeliveriesItem = {
-  [key: string]: unknown;
+export type ListCreativeStudioDeliveries200UpcomingItemStatus =
+  (typeof ListCreativeStudioDeliveries200UpcomingItemStatus)[keyof typeof ListCreativeStudioDeliveries200UpcomingItemStatus];
+
+export const ListCreativeStudioDeliveries200UpcomingItemStatus = {
+  scheduled: "scheduled",
+} as const;
+
+export type ListCreativeStudioDeliveries200UpcomingItem = StudioDelivery & {
+  status?: ListCreativeStudioDeliveries200UpcomingItemStatus;
 };
 
 export type ListCreativeStudioDeliveries200 = {
-  deliveries: ListCreativeStudioDeliveries200DeliveriesItem[];
+  deliveries: StudioDelivery[];
+  /** Read-only projections of the next authorized reminder per pending item. Empty when delivery is disabled. Never sent/opened records. */
+  upcoming: ListCreativeStudioDeliveries200UpcomingItem[];
+};
+
+export type PreviewCreativeStudioEmailBodyPhase =
+  (typeof PreviewCreativeStudioEmailBodyPhase)[keyof typeof PreviewCreativeStudioEmailBodyPhase];
+
+export const PreviewCreativeStudioEmailBodyPhase = {
+  reference: "reference",
+  final: "final",
+} as const;
+
+export type PreviewCreativeStudioEmailBody = {
+  phase: PreviewCreativeStudioEmailBodyPhase;
 };
 
 export type PreviewCreativeStudioEmail200 = {

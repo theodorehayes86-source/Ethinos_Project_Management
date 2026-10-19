@@ -33,6 +33,7 @@ import type {
   PortalMembershipInput,
   PortalTaskInput,
   PreviewCreativeStudioEmail200,
+  PreviewCreativeStudioEmailBody,
   PutCreativeStudioConfig200,
   PutCreativeStudioDefaults200,
   ResendClientPortalInvitation200,
@@ -1344,6 +1345,7 @@ export const getPreviewCreativeStudioEmailUrl = (clientId: string) => {
 
 export const previewCreativeStudioEmail = async (
   clientId: string,
+  previewCreativeStudioEmailBody: PreviewCreativeStudioEmailBody,
   options?: RequestInit,
 ): Promise<PreviewCreativeStudioEmail200> => {
   return customFetch<PreviewCreativeStudioEmail200>(
@@ -1351,6 +1353,8 @@ export const previewCreativeStudioEmail = async (
     {
       ...options,
       method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(previewCreativeStudioEmailBody),
     },
   );
 };
@@ -1362,14 +1366,14 @@ export const getPreviewCreativeStudioEmailMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof previewCreativeStudioEmail>>,
     TError,
-    { clientId: string },
+    { clientId: string; data: BodyType<PreviewCreativeStudioEmailBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof previewCreativeStudioEmail>>,
   TError,
-  { clientId: string },
+  { clientId: string; data: BodyType<PreviewCreativeStudioEmailBody> },
   TContext
 > => {
   const mutationKey = ["previewCreativeStudioEmail"];
@@ -1383,11 +1387,11 @@ export const getPreviewCreativeStudioEmailMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof previewCreativeStudioEmail>>,
-    { clientId: string }
+    { clientId: string; data: BodyType<PreviewCreativeStudioEmailBody> }
   > = (props) => {
-    const { clientId } = props ?? {};
+    const { clientId, data } = props ?? {};
 
-    return previewCreativeStudioEmail(clientId, requestOptions);
+    return previewCreativeStudioEmail(clientId, data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -1396,7 +1400,8 @@ export const getPreviewCreativeStudioEmailMutationOptions = <
 export type PreviewCreativeStudioEmailMutationResult = NonNullable<
   Awaited<ReturnType<typeof previewCreativeStudioEmail>>
 >;
-
+export type PreviewCreativeStudioEmailMutationBody =
+  BodyType<PreviewCreativeStudioEmailBody>;
 export type PreviewCreativeStudioEmailMutationError = ErrorType<unknown>;
 
 export const usePreviewCreativeStudioEmail = <
@@ -1406,14 +1411,14 @@ export const usePreviewCreativeStudioEmail = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof previewCreativeStudioEmail>>,
     TError,
-    { clientId: string },
+    { clientId: string; data: BodyType<PreviewCreativeStudioEmailBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof previewCreativeStudioEmail>>,
   TError,
-  { clientId: string },
+  { clientId: string; data: BodyType<PreviewCreativeStudioEmailBody> },
   TContext
 > => {
   return useMutation(getPreviewCreativeStudioEmailMutationOptions(options));

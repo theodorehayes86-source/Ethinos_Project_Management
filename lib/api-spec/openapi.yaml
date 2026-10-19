@@ -277,18 +277,41 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [deliveries]
+                required: [deliveries, upcoming]
                 properties:
                   deliveries:
                     type: array
                     items:
-                      type: object
-                      additionalProperties: true
+                      $ref: "#/components/schemas/StudioDelivery"
+                  upcoming:
+                    type: array
+                    description: Read-only projections of the next authorized reminder per pending item. Empty when delivery is disabled. Never sent/opened records.
+                    items:
+                      allOf:
+                        - $ref: "#/components/schemas/StudioDelivery"
+                        - type: object
+                          required: [scheduledAt]
+                          properties:
+                            status:
+                              type: string
+                              enum: [scheduled]
   /creative-studio/clients/{clientId}/preview:
     parameters:
       - $ref: "#/components/parameters/StudioClientId"
     post:
       operationId: previewCreativeStudioEmail
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [phase]
+              properties:
+                phase:
+                  type: string
+                  enum: [reference, final]
       responses:
         "200":
           description: Non-delivering email preview
@@ -504,6 +527,69 @@ components:
           type: integer
           minimum: 1
           maximum: 30
+        reference:
+          $ref: "#/components/schemas/StudioPhaseAutomation"
+        final:
+          $ref: "#/components/schemas/StudioPhaseAutomation"
+    StudioPhaseAutomation:
+      type: object
+      additionalProperties: false
+      required: [enabled, escalationDays, subject, body]
+      description: Optional phase override; defaults enabled, reference escalation 5 days, final 2 days. Uses inherited sendTime/timezone/cadenceDays. Plain-text templates accept only {{client}}, {{post}}, {{date}}, {{type}}, {{deadline}}.
+      properties:
+        enabled:
+          type: boolean
+          default: true
+        escalationDays:
+          type: integer
+          minimum: 0
+          maximum: 365
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 240
+          description: Single-line subject.
+        body:
+          type: string
+          minLength: 1
+          maxLength: 10000
+    StudioDelivery:
+      type: object
+      additionalProperties: true
+      required: [id, itemId, clientId, itemTitle, approvalPhase, recipientName, status]
+      properties:
+        id:
+          type: string
+        itemId:
+          type: string
+        clientId:
+          type: string
+        itemTitle:
+          type: [string, "null"]
+        approvalPhase:
+          type: [string, "null"]
+          enum: [reference, final, null]
+        recipientUid:
+          type: string
+        recipientName:
+          type: [string, "null"]
+        revision:
+          type: integer
+        kind:
+          type: string
+          enum: [request, reminder, decision, escalation]
+        status:
+          type: string
+          description: Stored transport state or scheduled projection; no fabricated opened/read state.
+        createdAt:
+          type: number
+          description: Unix milliseconds; actual delivery rows only.
+        sentAt:
+          type: number
+          description: Unix milliseconds; confirmed sends only.
+        scheduledAt:
+          type: number
+          description: Unix milliseconds; upcoming projections only.
     StudioConfig:
       type: object
       required: [enabled, ownerIds, editorIds, timezone, automation]

@@ -12,6 +12,7 @@ import {
 } from './core.js';
 import { STUDIO_CONFIG_CHANGED } from './access.js';
 import ClientSelect from './ClientSelect.jsx';
+import StudioReminderLog, { canSeeReminderLog } from './StudioReminderLog.jsx';
 import {
   inputCls, btnPrimary, btnAccent, btnGhost, StageBadge, UrgencyTag, Field, Sheet, ErrorBanner,
   SkeletonList, EmptyState, ThreadPanel,
@@ -191,6 +192,8 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
   }
 
   const canCreate = enabledClients.some(c => editable.has(c.id));
+  const showLog = mode === 'team' && canSeeReminderLog(boot);
+  const activeView = view === 'log' && !showLog ? 'plan' : view;
   const cards = [
     { k: 'approved', label: 'Approved', v: counts.approved, box: 'bg-white border-slate-200', chip: 'bg-emerald-50 text-emerald-600', Icon: CheckCircle2 },
     { k: 'wip', label: 'WIP / Awaiting approval', v: counts.wip, box: 'bg-white border-slate-200', chip: 'bg-amber-50 text-amber-600', Icon: Activity },
@@ -205,7 +208,7 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
       <div className="flex flex-wrap items-center gap-3 justify-between mb-5">
         <div className="flex items-baseline gap-2">
           <h2 className="text-lg font-black tracking-tight uppercase">Creative Studio</h2>
-          <span className="text-xs text-slate-400">/ {view === 'plan' ? 'Content calendar' : 'Deliverables tracker'}</span>
+          <span className="text-xs text-slate-400">/ {activeView === 'plan' ? 'Content calendar' : activeView === 'log' ? 'Reminder log' : 'Deliverables tracker'}</span>
         </div>
         <ClientSelect clients={enabledClients} value={clientF} onChange={selectClient} />
         <div role="tablist" aria-label="Viewing as" className="flex items-center gap-1 p-1 rounded-xl bg-white border border-slate-200">
@@ -237,8 +240,8 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="flex p-1 rounded-xl bg-white border border-slate-200">
-          {[['plan', 'Content plan'], ['tracker', 'Deliverables']].map(([id, label]) => (
-            <button key={id} data-testid={`button-view-${id}`} onClick={() => setView(id)} className={seg(view === id)}>{label}</button>
+          {[['plan', 'Content plan'], ['tracker', 'Deliverables'], ...(showLog ? [['log', 'Reminder log']] : [])].map(([id, label]) => (
+            <button key={id} data-testid={`button-view-${id}`} onClick={() => setView(id)} className={seg(activeView === id)}>{label}</button>
           ))}
         </div>
         <div className="flex p-1 rounded-xl bg-white border border-slate-200">
@@ -281,7 +284,7 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
 
       <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_380px] gap-4 items-start">
         <div className="min-w-0 bg-white rounded-2xl border border-slate-200 p-3 md:p-5">
-          {items === null ? <SkeletonList /> : view === 'plan' ? (
+          {activeView === 'log' ? <StudioReminderLog api={api} boot={boot} clientFilter={clientF} /> : items === null ? <SkeletonList /> : activeView === 'plan' ? (
             <section aria-label="Content calendar">
               <div className="flex flex-wrap items-center gap-2 mb-4">
                 <button data-testid="button-month-prev" onClick={() => setMonth(m => shiftMonth(m, -1))} className="p-1.5 rounded-lg hover:bg-slate-100" aria-label="Previous month"><ChevronLeft size={16} /></button>

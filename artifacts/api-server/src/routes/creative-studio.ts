@@ -2,8 +2,8 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import { randomUUID } from "node:crypto";
 import { getAdminAuth, getAdminDatabase } from "../lib/firebase-admin";
 import { isStaffEmail, membershipAllows, normalizeMembership, safeKey } from "../lib/client-portal";
-import { audit, automation, DEFAULTS, editable, fail, https, ids, invalidate, permissions, project, strict, StudioError, text, timezone, values, type RecordData } from "../lib/creative-studio";
-import { queueStudioEmail } from "../lib/creative-studio-email";
+import { audit, automation, automationSettings, editable, fail, https, ids, invalidate, permissions, project, strict, StudioError, text, timezone, values, type RecordData } from "../lib/creative-studio";
+import { deliveryEnabled, queueStudioEmail, renderStudioEmail, studioDeliveries } from "../lib/creative-studio-email";
 
 const router = Router();
 const db = () => getAdminDatabase();
@@ -100,10 +100,10 @@ router.get("/bootstrap", route(async (req, res) => {
     return p.manager || (p.editor && config.enabled);
   }).map(({ id, name }) => ({ id, name }));
   const authorized = new Set(clients.map(c => c.id));
-  const defaults = c.external ? null : await read("creativeStudio/defaults") ?? DEFAULTS;
+  const defaults = c.external ? null : automationSettings(await read("creativeStudio/defaults"));
   const configs = Object.fromEntries(clients.map(client => {
     const config = c.configs[client.id] ?? {};
-    return [client.id, c.external ? { enabled: true, timezone: config.timezone ?? "Asia/Kolkata" } : { ...config, enabled: config.enabled === true, ownerIds: ids(config.ownerIds), editorIds: ids(config.editorIds), timezone: config.timezone ?? "Asia/Kolkata", automation: { ...defaults, ...config.automation } }];
+    return [client.id, c.external ? { enabled: true, timezone: config.timezone ?? "Asia/Kolkata" } : { ...config, enabled: config.enabled === true, ownerIds: ids(config.ownerIds), editorIds: ids(config.editorIds), timezone: config.timezone ?? "Asia/Kolkata", automation: automationSettings(defaults, config.automation) }];
   }));
   const owners = c.external ? [] : c.users.filter(u => u.disabled !== true && u.active !== false && !u.archived).map(u => ({ id: String(u.id), name: u.name ?? "Staff", clientIds: c.clients.filter(cl => authorized.has(cl.id) && permissions(u, cl, c.configs[cl.id] ?? {}).editor).map(cl => cl.id) })).filter(u => u.clientIds.length);
   const staffCandidates = c.external ? [] : c.users.filter(u => u.disabled !== true && u.active !== false && !u.archived).map(u => ({ id: String(u.id), name: u.name ?? "Staff", clientIds: c.clients.filter(cl => manageableClientIds.includes(cl.id) && (ids(u.assignedProjects).includes(cl.name) || permissions(u, cl, c.configs[cl.id] ?? {}).manager)).map(cl => cl.id) })).filter(u => u.clientIds.length);
@@ -120,7 +120,7 @@ router.put("/defaults", route(async (req, res) => {
   if (!["Admin", "Super Admin"].includes(ctx(req).user.role)) fail(403, "Administrator required.");
   const defaults = automation(req.body);
   await db().ref("creativeStudio/defaults").set(defaults);
-  res.json({ defaults });
+  res.json({ defaults: automationSettings(defaults) });
 }));
 router.put("/clients/:clientId/config", route(async (req, res) => {
   const { clientId, client, config: previous } = await scope(req, true);
@@ -135,7 +135,7 @@ router.put("/clients/:clientId/config", route(async (req, res) => {
   })) fail(400, "Creative owners/editors need existing project membership or master-client ownership.");
   const config = { enabled: req.body.enabled, ownerIds: [...new Set(req.body.ownerIds)], editorIds: [...new Set(req.body.editorIds)], timezone: timezone(req.body.timezone), automation: automation(req.body.automation), enabledAt: req.body.enabled && !previous.enabled ? Date.now() : previous.enabledAt ?? 0, updatedAt: Date.now(), updatedBy: ctx(req).uid };
   await db().ref(`creativeStudio/configs/${clientId}`).set(config);
-  res.json({ config });
+  res.json({ config: { ...config, automation: automationSettings(await read("creativeStudio/defaults"), config.automation) } });
 }));
 router.get("/clients/:clientId/deliverables", route(async (req, res) => {
   const { clientId } = await scope(req);
@@ -261,11 +261,20 @@ router.post("/clients/:clientId/deliverables/:id/messages/:thread", route(async 
 }));
 router.get("/clients/:clientId/deliveries", route(async (req, res) => {
   const { clientId } = await scope(req, true);
-  res.json({ deliveries: values(await read(`creativeStudio/deliveries/${clientId}`)).sort((a, b) => b.createdAt - a.createdAt).slice(0, 200) });
+  const result = await studioDeliveries(clientId);
+  await scope(req, true);
+  res.json(result);
 }));
 router.post("/clients/:clientId/preview", route(async (req, res) => {
-  await scope(req, true);
-  res.json({ subject: "Flow Pro: approval pending", body: "A shared creative deliverable is awaiting your approval. Sign in to view the current revision.", deliveryEnabled: process.env.CREATIVE_STUDIO_EMAIL_DELIVERY === "enabled" });
+  const { client, config } = await scope(req, true);
+  strict(req.body, ["phase"]);
+  const phase = req.body.phase;
+  if (!["reference", "final"].includes(phase)) fail(400, "Select reference or final approval phase.");
+  const settings = automationSettings(await read("creativeStudio/defaults"), config.automation);
+  const now = Date.now();
+  const example = { id: "preview-example", title: "Example campaign post", type: "Post", timezone: settings.timezone, plannedAt: new Date(now + 7 * 86400000).toISOString(), productionDueDate: new Date(now + 5 * 86400000).toISOString().slice(0, 10) };
+  const { subject, body } = renderStudioEmail(example, client, settings, phase);
+  res.json({ subject, body, deliveryEnabled: deliveryEnabled() && config.enabled === true && settings.enabled && settings[phase as "reference" | "final"].enabled });
 }));
 router.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   res.status(error instanceof StudioError ? error.status : 500).json({ error: error instanceof StudioError ? error.message : "Creative Studio is unavailable. Try again later." });

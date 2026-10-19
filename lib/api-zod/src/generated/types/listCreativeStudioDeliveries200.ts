@@ -5,8 +5,11 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { ListCreativeStudioDeliveries200DeliveriesItem } from "./listCreativeStudioDeliveries200DeliveriesItem";
+import type { ListCreativeStudioDeliveries200UpcomingItem } from "./listCreativeStudioDeliveries200UpcomingItem";
+import type { StudioDelivery } from "./studioDelivery";
 
 export type ListCreativeStudioDeliveries200 = {
-  deliveries: ListCreativeStudioDeliveries200DeliveriesItem[];
+  deliveries: StudioDelivery[];
+  /** Read-only projections of the next authorized reminder per pending item. Empty when delivery is disabled. Never sent/opened records. */
+  upcoming: ListCreativeStudioDeliveries200UpcomingItem[];
 };

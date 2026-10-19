@@ -36,7 +36,7 @@ export function createStudioApi({ base, getToken }) {
     },
     saveDefaults: (body) => call('/defaults', { method: 'PUT', body }),
     deliveries: (clientId) => call(`/clients/${enc(clientId)}/deliveries`),
-    preview: (clientId) => call(`/clients/${enc(clientId)}/preview`, { method: 'POST', body: {} }),
+    preview: (clientId, opts = {}) => call(`/clients/${enc(clientId)}/preview`, { method: 'POST', body: opts.phase ? { phase: opts.phase } : {} }),
     list: (clientId) => call(`/clients/${enc(clientId)}/deliverables`),
     get: (clientId, id) => call(item(clientId, id)),
     create: (clientId, body) => call(`/clients/${enc(clientId)}/deliverables`, { method: 'POST', body }),

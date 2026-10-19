@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { StudioPhaseAutomation } from "./studioPhaseAutomation";
 
 export interface StudioAutomation {
   enabled: boolean;
@@ -16,4 +17,6 @@ export interface StudioAutomation {
    * @maximum 30
    */
   cadenceDays: number;
+  reference?: StudioPhaseAutomation;
+  final?: StudioPhaseAutomation;
 }

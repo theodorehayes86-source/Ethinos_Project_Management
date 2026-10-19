@@ -11,6 +11,22 @@ export const getCreativeStudioBootstrapResponseDefaultsOneSendTimeRegExp =
   new RegExp("^([01][0-9]|2[0-3]):[0-5][0-9]$");
 export const getCreativeStudioBootstrapResponseDefaultsOneCadenceDaysMax = 30;
 
+export const getCreativeStudioBootstrapResponseDefaultsOneReferenceEnabledDefault = true;
+export const getCreativeStudioBootstrapResponseDefaultsOneReferenceEscalationDaysMin = 0;
+export const getCreativeStudioBootstrapResponseDefaultsOneReferenceEscalationDaysMax = 365;
+
+export const getCreativeStudioBootstrapResponseDefaultsOneReferenceSubjectMax = 240;
+
+export const getCreativeStudioBootstrapResponseDefaultsOneReferenceBodyMax = 10000;
+
+export const getCreativeStudioBootstrapResponseDefaultsOneFinalEnabledDefault = true;
+export const getCreativeStudioBootstrapResponseDefaultsOneFinalEscalationDaysMin = 0;
+export const getCreativeStudioBootstrapResponseDefaultsOneFinalEscalationDaysMax = 365;
+
+export const getCreativeStudioBootstrapResponseDefaultsOneFinalSubjectMax = 240;
+
+export const getCreativeStudioBootstrapResponseDefaultsOneFinalBodyMax = 10000;
+
 export const GetCreativeStudioBootstrapResponse = zod.object({
   clients: zod.array(
     zod.object({
@@ -62,6 +78,68 @@ export const GetCreativeStudioBootstrapResponse = zod.object({
           .number()
           .min(1)
           .max(getCreativeStudioBootstrapResponseDefaultsOneCadenceDaysMax),
+        reference: zod
+          .object({
+            enabled: zod
+              .boolean()
+              .default(
+                getCreativeStudioBootstrapResponseDefaultsOneReferenceEnabledDefault,
+              ),
+            escalationDays: zod
+              .number()
+              .min(
+                getCreativeStudioBootstrapResponseDefaultsOneReferenceEscalationDaysMin,
+              )
+              .max(
+                getCreativeStudioBootstrapResponseDefaultsOneReferenceEscalationDaysMax,
+              ),
+            subject: zod
+              .string()
+              .min(1)
+              .max(
+                getCreativeStudioBootstrapResponseDefaultsOneReferenceSubjectMax,
+              )
+              .describe("Single-line subject."),
+            body: zod
+              .string()
+              .min(1)
+              .max(
+                getCreativeStudioBootstrapResponseDefaultsOneReferenceBodyMax,
+              ),
+          })
+          .optional()
+          .describe(
+            "Optional phase override; defaults enabled, reference escalation 5 days, final 2 days. Uses inherited sendTime\/timezone\/cadenceDays. Plain-text templates accept only {{client}}, {{post}}, {{date}}, {{type}}, {{deadline}}.",
+          ),
+        final: zod
+          .object({
+            enabled: zod
+              .boolean()
+              .default(
+                getCreativeStudioBootstrapResponseDefaultsOneFinalEnabledDefault,
+              ),
+            escalationDays: zod
+              .number()
+              .min(
+                getCreativeStudioBootstrapResponseDefaultsOneFinalEscalationDaysMin,
+              )
+              .max(
+                getCreativeStudioBootstrapResponseDefaultsOneFinalEscalationDaysMax,
+              ),
+            subject: zod
+              .string()
+              .min(1)
+              .max(getCreativeStudioBootstrapResponseDefaultsOneFinalSubjectMax)
+              .describe("Single-line subject."),
+            body: zod
+              .string()
+              .min(1)
+              .max(getCreativeStudioBootstrapResponseDefaultsOneFinalBodyMax),
+          })
+          .optional()
+          .describe(
+            "Optional phase override; defaults enabled, reference escalation 5 days, final 2 days. Uses inherited sendTime\/timezone\/cadenceDays. Plain-text templates accept only {{client}}, {{post}}, {{date}}, {{type}}, {{deadline}}.",
+          ),
       }),
       zod.null(),
     ])
@@ -73,6 +151,22 @@ export const putCreativeStudioDefaultsBodySendTimeRegExp = new RegExp(
 );
 export const putCreativeStudioDefaultsBodyCadenceDaysMax = 30;
 
+export const putCreativeStudioDefaultsBodyReferenceEnabledDefault = true;
+export const putCreativeStudioDefaultsBodyReferenceEscalationDaysMin = 0;
+export const putCreativeStudioDefaultsBodyReferenceEscalationDaysMax = 365;
+
+export const putCreativeStudioDefaultsBodyReferenceSubjectMax = 240;
+
+export const putCreativeStudioDefaultsBodyReferenceBodyMax = 10000;
+
+export const putCreativeStudioDefaultsBodyFinalEnabledDefault = true;
+export const putCreativeStudioDefaultsBodyFinalEscalationDaysMin = 0;
+export const putCreativeStudioDefaultsBodyFinalEscalationDaysMax = 365;
+
+export const putCreativeStudioDefaultsBodyFinalSubjectMax = 240;
+
+export const putCreativeStudioDefaultsBodyFinalBodyMax = 10000;
+
 export const PutCreativeStudioDefaultsBody = zod.object({
   enabled: zod.boolean(),
   sendTime: zod.string().regex(putCreativeStudioDefaultsBodySendTimeRegExp),
@@ -81,11 +175,70 @@ export const PutCreativeStudioDefaultsBody = zod.object({
     .number()
     .min(1)
     .max(putCreativeStudioDefaultsBodyCadenceDaysMax),
+  reference: zod
+    .object({
+      enabled: zod
+        .boolean()
+        .default(putCreativeStudioDefaultsBodyReferenceEnabledDefault),
+      escalationDays: zod
+        .number()
+        .min(putCreativeStudioDefaultsBodyReferenceEscalationDaysMin)
+        .max(putCreativeStudioDefaultsBodyReferenceEscalationDaysMax),
+      subject: zod
+        .string()
+        .min(1)
+        .max(putCreativeStudioDefaultsBodyReferenceSubjectMax)
+        .describe("Single-line subject."),
+      body: zod
+        .string()
+        .min(1)
+        .max(putCreativeStudioDefaultsBodyReferenceBodyMax),
+    })
+    .optional()
+    .describe(
+      "Optional phase override; defaults enabled, reference escalation 5 days, final 2 days. Uses inherited sendTime\/timezone\/cadenceDays. Plain-text templates accept only {{client}}, {{post}}, {{date}}, {{type}}, {{deadline}}.",
+    ),
+  final: zod
+    .object({
+      enabled: zod
+        .boolean()
+        .default(putCreativeStudioDefaultsBodyFinalEnabledDefault),
+      escalationDays: zod
+        .number()
+        .min(putCreativeStudioDefaultsBodyFinalEscalationDaysMin)
+        .max(putCreativeStudioDefaultsBodyFinalEscalationDaysMax),
+      subject: zod
+        .string()
+        .min(1)
+        .max(putCreativeStudioDefaultsBodyFinalSubjectMax)
+        .describe("Single-line subject."),
+      body: zod.string().min(1).max(putCreativeStudioDefaultsBodyFinalBodyMax),
+    })
+    .optional()
+    .describe(
+      "Optional phase override; defaults enabled, reference escalation 5 days, final 2 days. Uses inherited sendTime\/timezone\/cadenceDays. Plain-text templates accept only {{client}}, {{post}}, {{date}}, {{type}}, {{deadline}}.",
+    ),
 });
 
 export const putCreativeStudioDefaultsResponseDefaultsSendTimeRegExp =
   new RegExp("^([01][0-9]|2[0-3]):[0-5][0-9]$");
 export const putCreativeStudioDefaultsResponseDefaultsCadenceDaysMax = 30;
+
+export const putCreativeStudioDefaultsResponseDefaultsReferenceEnabledDefault = true;
+export const putCreativeStudioDefaultsResponseDefaultsReferenceEscalationDaysMin = 0;
+export const putCreativeStudioDefaultsResponseDefaultsReferenceEscalationDaysMax = 365;
+
+export const putCreativeStudioDefaultsResponseDefaultsReferenceSubjectMax = 240;
+
+export const putCreativeStudioDefaultsResponseDefaultsReferenceBodyMax = 10000;
+
+export const putCreativeStudioDefaultsResponseDefaultsFinalEnabledDefault = true;
+export const putCreativeStudioDefaultsResponseDefaultsFinalEscalationDaysMin = 0;
+export const putCreativeStudioDefaultsResponseDefaultsFinalEscalationDaysMax = 365;
+
+export const putCreativeStudioDefaultsResponseDefaultsFinalSubjectMax = 240;
+
+export const putCreativeStudioDefaultsResponseDefaultsFinalBodyMax = 10000;
 
 export const PutCreativeStudioDefaultsResponse = zod.object({
   defaults: zod.object({
@@ -98,6 +251,60 @@ export const PutCreativeStudioDefaultsResponse = zod.object({
       .number()
       .min(1)
       .max(putCreativeStudioDefaultsResponseDefaultsCadenceDaysMax),
+    reference: zod
+      .object({
+        enabled: zod
+          .boolean()
+          .default(
+            putCreativeStudioDefaultsResponseDefaultsReferenceEnabledDefault,
+          ),
+        escalationDays: zod
+          .number()
+          .min(
+            putCreativeStudioDefaultsResponseDefaultsReferenceEscalationDaysMin,
+          )
+          .max(
+            putCreativeStudioDefaultsResponseDefaultsReferenceEscalationDaysMax,
+          ),
+        subject: zod
+          .string()
+          .min(1)
+          .max(putCreativeStudioDefaultsResponseDefaultsReferenceSubjectMax)
+          .describe("Single-line subject."),
+        body: zod
+          .string()
+          .min(1)
+          .max(putCreativeStudioDefaultsResponseDefaultsReferenceBodyMax),
+      })
+      .optional()
+      .describe(
+        "Optional phase override; defaults enabled, reference escalation 5 days, final 2 days. Uses inherited sendTime\/timezone\/cadenceDays. Plain-text templates accept only {{client}}, {{post}}, {{date}}, {{type}}, {{deadline}}.",
+      ),
+    final: zod
+      .object({
+        enabled: zod
+          .boolean()
+          .default(
+            putCreativeStudioDefaultsResponseDefaultsFinalEnabledDefault,
+          ),
+        escalationDays: zod
+          .number()
+          .min(putCreativeStudioDefaultsResponseDefaultsFinalEscalationDaysMin)
+          .max(putCreativeStudioDefaultsResponseDefaultsFinalEscalationDaysMax),
+        subject: zod
+          .string()
+          .min(1)
+          .max(putCreativeStudioDefaultsResponseDefaultsFinalSubjectMax)
+          .describe("Single-line subject."),
+        body: zod
+          .string()
+          .min(1)
+          .max(putCreativeStudioDefaultsResponseDefaultsFinalBodyMax),
+      })
+      .optional()
+      .describe(
+        "Optional phase override; defaults enabled, reference escalation 5 days, final 2 days. Uses inherited sendTime\/timezone\/cadenceDays. Plain-text templates accept only {{client}}, {{post}}, {{date}}, {{type}}, {{deadline}}.",
+      ),
   }),
 });
 
@@ -116,6 +323,22 @@ export const putCreativeStudioConfigBodyAutomationSendTimeRegExp = new RegExp(
 );
 export const putCreativeStudioConfigBodyAutomationCadenceDaysMax = 30;
 
+export const putCreativeStudioConfigBodyAutomationReferenceEnabledDefault = true;
+export const putCreativeStudioConfigBodyAutomationReferenceEscalationDaysMin = 0;
+export const putCreativeStudioConfigBodyAutomationReferenceEscalationDaysMax = 365;
+
+export const putCreativeStudioConfigBodyAutomationReferenceSubjectMax = 240;
+
+export const putCreativeStudioConfigBodyAutomationReferenceBodyMax = 10000;
+
+export const putCreativeStudioConfigBodyAutomationFinalEnabledDefault = true;
+export const putCreativeStudioConfigBodyAutomationFinalEscalationDaysMin = 0;
+export const putCreativeStudioConfigBodyAutomationFinalEscalationDaysMax = 365;
+
+export const putCreativeStudioConfigBodyAutomationFinalSubjectMax = 240;
+
+export const putCreativeStudioConfigBodyAutomationFinalBodyMax = 10000;
+
 export const PutCreativeStudioConfigBody = zod.object({
   enabled: zod.boolean(),
   ownerIds: zod.array(zod.string()),
@@ -131,12 +354,76 @@ export const PutCreativeStudioConfigBody = zod.object({
       .number()
       .min(1)
       .max(putCreativeStudioConfigBodyAutomationCadenceDaysMax),
+    reference: zod
+      .object({
+        enabled: zod
+          .boolean()
+          .default(
+            putCreativeStudioConfigBodyAutomationReferenceEnabledDefault,
+          ),
+        escalationDays: zod
+          .number()
+          .min(putCreativeStudioConfigBodyAutomationReferenceEscalationDaysMin)
+          .max(putCreativeStudioConfigBodyAutomationReferenceEscalationDaysMax),
+        subject: zod
+          .string()
+          .min(1)
+          .max(putCreativeStudioConfigBodyAutomationReferenceSubjectMax)
+          .describe("Single-line subject."),
+        body: zod
+          .string()
+          .min(1)
+          .max(putCreativeStudioConfigBodyAutomationReferenceBodyMax),
+      })
+      .optional()
+      .describe(
+        "Optional phase override; defaults enabled, reference escalation 5 days, final 2 days. Uses inherited sendTime\/timezone\/cadenceDays. Plain-text templates accept only {{client}}, {{post}}, {{date}}, {{type}}, {{deadline}}.",
+      ),
+    final: zod
+      .object({
+        enabled: zod
+          .boolean()
+          .default(putCreativeStudioConfigBodyAutomationFinalEnabledDefault),
+        escalationDays: zod
+          .number()
+          .min(putCreativeStudioConfigBodyAutomationFinalEscalationDaysMin)
+          .max(putCreativeStudioConfigBodyAutomationFinalEscalationDaysMax),
+        subject: zod
+          .string()
+          .min(1)
+          .max(putCreativeStudioConfigBodyAutomationFinalSubjectMax)
+          .describe("Single-line subject."),
+        body: zod
+          .string()
+          .min(1)
+          .max(putCreativeStudioConfigBodyAutomationFinalBodyMax),
+      })
+      .optional()
+      .describe(
+        "Optional phase override; defaults enabled, reference escalation 5 days, final 2 days. Uses inherited sendTime\/timezone\/cadenceDays. Plain-text templates accept only {{client}}, {{post}}, {{date}}, {{type}}, {{deadline}}.",
+      ),
   }),
 });
 
 export const putCreativeStudioConfigResponseConfigAutomationSendTimeRegExp =
   new RegExp("^([01][0-9]|2[0-3]):[0-5][0-9]$");
 export const putCreativeStudioConfigResponseConfigAutomationCadenceDaysMax = 30;
+
+export const putCreativeStudioConfigResponseConfigAutomationReferenceEnabledDefault = true;
+export const putCreativeStudioConfigResponseConfigAutomationReferenceEscalationDaysMin = 0;
+export const putCreativeStudioConfigResponseConfigAutomationReferenceEscalationDaysMax = 365;
+
+export const putCreativeStudioConfigResponseConfigAutomationReferenceSubjectMax = 240;
+
+export const putCreativeStudioConfigResponseConfigAutomationReferenceBodyMax = 10000;
+
+export const putCreativeStudioConfigResponseConfigAutomationFinalEnabledDefault = true;
+export const putCreativeStudioConfigResponseConfigAutomationFinalEscalationDaysMin = 0;
+export const putCreativeStudioConfigResponseConfigAutomationFinalEscalationDaysMax = 365;
+
+export const putCreativeStudioConfigResponseConfigAutomationFinalSubjectMax = 240;
+
+export const putCreativeStudioConfigResponseConfigAutomationFinalBodyMax = 10000;
 
 export const PutCreativeStudioConfigResponse = zod.object({
   config: zod.object({
@@ -154,6 +441,68 @@ export const PutCreativeStudioConfigResponse = zod.object({
         .number()
         .min(1)
         .max(putCreativeStudioConfigResponseConfigAutomationCadenceDaysMax),
+      reference: zod
+        .object({
+          enabled: zod
+            .boolean()
+            .default(
+              putCreativeStudioConfigResponseConfigAutomationReferenceEnabledDefault,
+            ),
+          escalationDays: zod
+            .number()
+            .min(
+              putCreativeStudioConfigResponseConfigAutomationReferenceEscalationDaysMin,
+            )
+            .max(
+              putCreativeStudioConfigResponseConfigAutomationReferenceEscalationDaysMax,
+            ),
+          subject: zod
+            .string()
+            .min(1)
+            .max(
+              putCreativeStudioConfigResponseConfigAutomationReferenceSubjectMax,
+            )
+            .describe("Single-line subject."),
+          body: zod
+            .string()
+            .min(1)
+            .max(
+              putCreativeStudioConfigResponseConfigAutomationReferenceBodyMax,
+            ),
+        })
+        .optional()
+        .describe(
+          "Optional phase override; defaults enabled, reference escalation 5 days, final 2 days. Uses inherited sendTime\/timezone\/cadenceDays. Plain-text templates accept only {{client}}, {{post}}, {{date}}, {{type}}, {{deadline}}.",
+        ),
+      final: zod
+        .object({
+          enabled: zod
+            .boolean()
+            .default(
+              putCreativeStudioConfigResponseConfigAutomationFinalEnabledDefault,
+            ),
+          escalationDays: zod
+            .number()
+            .min(
+              putCreativeStudioConfigResponseConfigAutomationFinalEscalationDaysMin,
+            )
+            .max(
+              putCreativeStudioConfigResponseConfigAutomationFinalEscalationDaysMax,
+            ),
+          subject: zod
+            .string()
+            .min(1)
+            .max(putCreativeStudioConfigResponseConfigAutomationFinalSubjectMax)
+            .describe("Single-line subject."),
+          body: zod
+            .string()
+            .min(1)
+            .max(putCreativeStudioConfigResponseConfigAutomationFinalBodyMax),
+        })
+        .optional()
+        .describe(
+          "Optional phase override; defaults enabled, reference escalation 5 days, final 2 days. Uses inherited sendTime\/timezone\/cadenceDays. Plain-text templates accept only {{client}}, {{post}}, {{date}}, {{type}}, {{deadline}}.",
+        ),
     }),
     updatedAt: zod.number().optional(),
     updatedBy: zod.string().optional(),
@@ -832,7 +1181,92 @@ export const ListCreativeStudioDeliveriesParams = zod.object({
 });
 
 export const ListCreativeStudioDeliveriesResponse = zod.object({
-  deliveries: zod.array(zod.record(zod.string(), zod.unknown())),
+  deliveries: zod.array(
+    zod.object({
+      id: zod.string(),
+      itemId: zod.string(),
+      clientId: zod.string(),
+      itemTitle: zod.string().nullable(),
+      approvalPhase: zod
+        .union([
+          zod.literal("reference"),
+          zod.literal("final"),
+          zod.literal(null),
+        ])
+        .nullable(),
+      recipientUid: zod.string().optional(),
+      recipientName: zod.string().nullable(),
+      revision: zod.number().optional(),
+      kind: zod
+        .enum(["request", "reminder", "decision", "escalation"])
+        .optional(),
+      status: zod
+        .string()
+        .describe(
+          "Stored transport state or scheduled projection; no fabricated opened\/read state.",
+        ),
+      createdAt: zod
+        .number()
+        .optional()
+        .describe("Unix milliseconds; actual delivery rows only."),
+      sentAt: zod
+        .number()
+        .optional()
+        .describe("Unix milliseconds; confirmed sends only."),
+      scheduledAt: zod
+        .number()
+        .optional()
+        .describe("Unix milliseconds; upcoming projections only."),
+    }),
+  ),
+  upcoming: zod
+    .array(
+      zod
+        .object({
+          id: zod.string(),
+          itemId: zod.string(),
+          clientId: zod.string(),
+          itemTitle: zod.string().nullable(),
+          approvalPhase: zod
+            .union([
+              zod.literal("reference"),
+              zod.literal("final"),
+              zod.literal(null),
+            ])
+            .nullable(),
+          recipientUid: zod.string().optional(),
+          recipientName: zod.string().nullable(),
+          revision: zod.number().optional(),
+          kind: zod
+            .enum(["request", "reminder", "decision", "escalation"])
+            .optional(),
+          status: zod
+            .string()
+            .describe(
+              "Stored transport state or scheduled projection; no fabricated opened\/read state.",
+            ),
+          createdAt: zod
+            .number()
+            .optional()
+            .describe("Unix milliseconds; actual delivery rows only."),
+          sentAt: zod
+            .number()
+            .optional()
+            .describe("Unix milliseconds; confirmed sends only."),
+          scheduledAt: zod
+            .number()
+            .optional()
+            .describe("Unix milliseconds; upcoming projections only."),
+        })
+        .and(
+          zod.object({
+            status: zod.enum(["scheduled"]).optional(),
+          }),
+        ),
+    )
+    .describe(
+      "Read-only projections of the next authorized reminder per pending item. Empty when delivery is disabled. Never sent\/opened records.",
+    ),
 });
 
 export const previewCreativeStudioEmailPathClientIdRegExp = new RegExp(
@@ -843,6 +1277,10 @@ export const PreviewCreativeStudioEmailParams = zod.object({
   clientId: zod.coerce
     .string()
     .regex(previewCreativeStudioEmailPathClientIdRegExp),
+});
+
+export const PreviewCreativeStudioEmailBody = zod.object({
+  phase: zod.enum(["reference", "final"]),
 });
 
 export const PreviewCreativeStudioEmailResponse = zod.object({

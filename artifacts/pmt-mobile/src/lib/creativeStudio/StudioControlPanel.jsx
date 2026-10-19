@@ -1,24 +1,60 @@
 // Control Center -> Creative Studio: enablement, studio settings, email automation,
-// previews and delivery logs. Server enforces scope. Duplicated in pmt-mobile.
+// previews; delivery log lives in StudioReminderLog. Server enforces scope. Duplicated in pmt-mobile.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Settings2, Mail, Eye, ScrollText, Save, Power, Search, Clock } from 'lucide-react';
-import { createStudioApi, TIMEZONES, fmtStamp } from './core.js';
+import { Settings2, Mail, Eye, Save, Power, Search, Clock } from 'lucide-react';
+import { createStudioApi, TIMEZONES } from './core.js';
 import { inputCls, btnPrimary, btnGhost, Field, ErrorBanner, SkeletonList, EmptyState, Sheet } from './StudioUI.jsx';
 
-const DEFAULT_AUTO = { enabled: false, sendTime: '09:00', timezone: 'Asia/Kolkata', cadenceDays: 1 };
+export const PHASE_DEFAULTS = {
+  reference: {
+    enabled: true, escalationDays: 5,
+    subject: 'Action needed: approve references for {{post}}',
+    body: 'Hi {{client}}, references for {{post}} going live on {{date}} are ready. Review the moodboard and thumbnail on SharePoint and approve in Creative Studio.',
+  },
+  final: {
+    enabled: true, escalationDays: 2,
+    subject: 'Final approval needed: {{post}} goes live {{date}}',
+    body: 'Hi {{client}}, the final {{type}} for {{post}} is ready. Approve by {{deadline}} so the team can schedule it on time.',
+  },
+};
+export const PHASES = [
+  { id: 'reference', title: 'Reference approval reminder', blurb: 'Sent when references or moodboards need sign-off', trigger: 'Reference uploaded' },
+  { id: 'final', title: 'Final post approval reminder', blurb: 'Sent when the final creative is ready to go live', trigger: 'Final post uploaded' },
+];
+export const PLACEHOLDERS = ['{{client}}', '{{post}}', '{{date}}', '{{type}}', '{{deadline}}'];
+const DEFAULT_AUTO = { enabled: false, sendTime: '09:00', timezone: 'Asia/Kolkata', cadenceDays: 1, reference: PHASE_DEFAULTS.reference, final: PHASE_DEFAULTS.final };
+
+// Deep-merge layers (built-in < global defaults < client config) so older configs
+// without phase objects never yield undefined phases.
+export function mergeAutomation(...layers) {
+  const out = { ...DEFAULT_AUTO, reference: { ...PHASE_DEFAULTS.reference }, final: { ...PHASE_DEFAULTS.final } };
+  for (const l of layers) {
+    if (!l || typeof l !== 'object') continue;
+    for (const [k, v] of Object.entries(l)) {
+      if (k === 'reference' || k === 'final') { if (v && typeof v === 'object') out[k] = { ...out[k], ...Object.fromEntries(Object.entries(v).filter(([, x]) => x !== undefined && x !== null)) }; }
+      else if (v !== undefined && v !== null) out[k] = v;
+    }
+  }
+  return out;
+}
+const phasePayload = (p) => ({ enabled: !!p.enabled, escalationDays: Number(p.escalationDays), subject: String(p.subject || ''), body: String(p.body || '') });
+export const automationPayload = (a) => ({
+  enabled: !!a.enabled, sendTime: a.sendTime, timezone: a.timezone, cadenceDays: Number(a.cadenceDays),
+  reference: phasePayload(a.reference), final: phasePayload(a.final),
+});
+export const scheduleSummary = (a) => {
+  const [h, m] = String(a.sendTime || '09:00').split(':').map(Number);
+  const t = `${((h + 11) % 12) + 1}:${String(m || 0).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
+  const every = Number(a.cadenceDays) === 1 ? 'Daily' : `Every ${a.cadenceDays} days`;
+  return `${every} ${t} until approved`;
+};
 
 // Owners/editors are chosen from server-computed staffCandidates (existing project
 // members via assignedProjects, or client managers) - never from the raw user list.
 export const staffCandidatesFor = (boot, clientId) => (boot?.staffCandidates || []).filter(u => (u.clientIds || []).includes(clientId));
-export const peopleIndex = (boot) => {
-  const m = new Map();
-  for (const u of boot?.staffCandidates || []) m.set(String(u.id), u.name);
-  for (const u of boot?.owners || []) m.set(String(u.id), u.name);
-  for (const a of boot?.approvers || []) m.set(String(a.uid), a.name);
-  return m;
-};
-export const DELIVERY_KIND = { request: 'Approval request', reminder: 'Pending reminder', decision: 'Decision notice', escalation: 'Near-post escalation' };
-export const DELIVERY_TONE = { sent: 'text-emerald-700', failed: 'text-red-600', unconfirmed: 'text-red-600', queued: 'text-amber-700', sending: 'text-amber-700', suppressed: 'text-slate-500', cancelled: 'text-slate-500', expired: 'text-slate-500' };
+// Log helpers moved to StudioReminderLog; re-exported for compatibility.
+export { peopleIndex, DELIVERY_KIND, DELIVERY_TONE } from './StudioReminderLog.jsx';
+import { peopleIndex } from './StudioReminderLog.jsx';
 
 export default function StudioControlPanel({ auth, apiBase }) {
   const api = useMemo(() => createStudioApi({ base: apiBase, getToken: async () => (auth.currentUser ? auth.currentUser.getIdToken() : null) }), [auth, apiBase]);
@@ -109,18 +145,54 @@ function AutomationFields({ value, onChange, prefix }) {
         </select>
       </Field>
       <Field label="Cadence (days)"><input data-testid={`input-${prefix}-cadence`} type="number" min={1} max={30} value={value.cadenceDays ?? 1} onChange={e => set('cadenceDays', Number(e.target.value))} className={inputCls} /></Field>
+      <div className="sm:col-span-4 grid lg:grid-cols-2 gap-3">
+        {PHASES.map(ph => <PhaseCard key={ph.id} phase={ph} master={value} value={value[ph.id]} onChange={(pv) => set(ph.id, pv)} prefix={prefix} />)}
+      </div>
+      <p className="sm:col-span-4 text-[11px] text-slate-400">Placeholders: {PLACEHOLDERS.join(' ')}. Send time, timezone and cadence apply to both reminders.</p>
+    </div>
+  );
+}
+
+function PhaseCard({ phase, master, value, onChange, prefix }) {
+  const v = value || PHASE_DEFAULTS[phase.id];
+  const set = (k, x) => onChange({ ...v, [k]: x });
+  const id = `${prefix}-${phase.id}`;
+  const active = master.enabled && v.enabled;
+  return (
+    <div data-testid={`card-phase-${id}`} className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+      <div className="flex items-start gap-3">
+        <span className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0"><Mail size={15} /></span>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold">{phase.title}</p>
+          <p className="text-[11px] text-slate-500">{phase.blurb}</p>
+        </div>
+        <button type="button" data-testid={`toggle-${id}`} role="switch" aria-checked={!!v.enabled} aria-label={`${phase.title} enabled`} onClick={() => set('enabled', !v.enabled)}
+          className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${v.enabled ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+          <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${v.enabled ? 'translate-x-5' : ''}`} />
+        </button>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        <div className="rounded-lg bg-slate-50 px-2.5 py-2"><p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Trigger</p><p className="text-xs font-semibold">{phase.trigger}</p></div>
+        <div className="rounded-lg bg-slate-50 px-2.5 py-2"><p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Cadence</p><p data-testid={`text-schedule-${id}`} className="text-xs font-semibold">{scheduleSummary(master)}</p></div>
+        <label className="rounded-lg bg-slate-50 px-2.5 py-2 block"><span className="block text-[9px] font-bold uppercase tracking-wider text-slate-400">Escalate (days before post)</span>
+          <input data-testid={`input-${id}-escalation`} type="number" min={0} max={30} value={v.escalationDays ?? ''} onChange={e => set('escalationDays', Number(e.target.value))} className="w-full bg-transparent text-xs font-semibold outline-none" />
+        </label>
+      </div>
+      <Field label="Subject"><input data-testid={`input-${id}-subject`} value={v.subject || ''} maxLength={200} onChange={e => set('subject', e.target.value)} className={inputCls} /></Field>
+      <Field label="Body"><textarea data-testid={`input-${id}-body`} rows={3} value={v.body || ''} maxLength={2000} onChange={e => set('body', e.target.value)} className={inputCls} /></Field>
+      {!active && <p className="text-[11px] text-slate-500">{master.enabled ? 'This reminder is off.' : 'Email reminders are off for all phases.'}</p>}
     </div>
   );
 }
 
 function Defaults({ api, initial }) {
-  const [v, setV] = useState({ ...DEFAULT_AUTO, ...initial });
+  const [v, setV] = useState(() => mergeAutomation(initial));
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [error, setError] = useState('');
   const save = async () => {
     setBusy(true); setError(''); setMsg('');
-    try { const d = await api.saveDefaults({ enabled: !!v.enabled, sendTime: v.sendTime, timezone: v.timezone, cadenceDays: Number(v.cadenceDays) }); setV({ ...DEFAULT_AUTO, ...d.defaults }); setMsg('Global defaults saved.'); } catch (e) { setError(e.message); } finally { setBusy(false); }
+    try { const d = await api.saveDefaults(automationPayload(v)); setV(mergeAutomation(d.defaults)); setMsg('Global defaults saved.'); } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
   return (
     <section className="rounded-2xl border border-slate-200 bg-white/80 p-4 space-y-3">
@@ -135,35 +207,31 @@ function Defaults({ api, initial }) {
 function ClientConfig({ api, client, config, candidates, people, defaults, onSaved }) {
   const [v, setV] = useState({
     enabled: config?.enabled === true, ownerIds: config?.ownerIds || [], editorIds: config?.editorIds || [],
-    timezone: config?.timezone || 'Asia/Kolkata', automation: { ...DEFAULT_AUTO, ...defaults, ...(config?.automation || {}) },
+    timezone: config?.timezone || 'Asia/Kolkata', automation: mergeAutomation(defaults, config?.automation),
   });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [error, setError] = useState('');
   const [preview, setPreview] = useState(null);
-  const [deliveries, setDeliveries] = useState(null);
-  const [delError, setDelError] = useState('');
-  const toggle = (k, id) => setV(p => ({ ...p, [k]: p[k].includes(id) ? p[k].filter(x => x !== id) : [...p[k], id] }));
+  const [previewPhase, setPreviewPhase] = useState('reference');
+  const [dirty, setDirty] = useState(false);
+  const edit = (fn) => { setDirty(true); setV(fn); };
+  const toggle = (k, id) => edit(p => ({ ...p, [k]: p[k].includes(id) ? p[k].filter(x => x !== id) : [...p[k], id] }));
 
-  const loadDeliveries = useCallback(async () => {
-    setDelError('');
-    try { const d = await api.deliveries(client.id); setDeliveries(d.deliveries || []); } catch (e) { setDelError(e.message); }
-  }, [api, client.id]);
-  useEffect(() => { loadDeliveries(); }, [loadDeliveries]);
 
   const save = async () => {
     setBusy(true); setError(''); setMsg('');
     try {
       const d = await api.saveConfig(client.id, {
         enabled: v.enabled, ownerIds: v.ownerIds, editorIds: v.editorIds, timezone: v.timezone,
-        automation: { enabled: !!v.automation.enabled, sendTime: v.automation.sendTime, timezone: v.automation.timezone, cadenceDays: Number(v.automation.cadenceDays) },
+        automation: automationPayload(v.automation),
       });
-      onSaved(d.config); setMsg('Settings saved.');
+      onSaved(d.config); setDirty(false); setMsg('Settings saved.');
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
   const runPreview = async () => {
     setError('');
-    try { setPreview(await api.preview(client.id)); } catch (e) { setError(e.message); }
+    try { setPreview({ ...(await api.preview(client.id, { phase: previewPhase })), phase: previewPhase }); } catch (e) { setError(e.message); }
   };
 
   const Picker = ({ k, list, testid }) => (
@@ -181,7 +249,7 @@ function ClientConfig({ api, client, config, candidates, people, defaults, onSav
       <section className="rounded-2xl border border-slate-200 bg-white/80 p-4 space-y-4">
         <div className="flex items-center gap-3 flex-wrap">
           <h3 data-testid="text-config-client" className="cs-display text-2xl flex-1">{client.name}</h3>
-          <button data-testid="button-toggle-studio-enabled" role="switch" aria-checked={v.enabled} onClick={() => setV(p => ({ ...p, enabled: !p.enabled }))}
+          <button data-testid="button-toggle-studio-enabled" role="switch" aria-checked={v.enabled} onClick={() => edit(p => ({ ...p, enabled: !p.enabled }))}
             className={`relative w-12 h-7 rounded-full transition-colors ${v.enabled ? 'bg-emerald-500' : 'bg-slate-300'}`}>
             <span className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white shadow transition-transform ${v.enabled ? 'translate-x-5' : ''}`} />
           </button>
@@ -191,7 +259,7 @@ function ClientConfig({ api, client, config, candidates, people, defaults, onSav
         <Field label="Creative owners" hint="Grants creative editing to existing project members only. Does not grant Control Center access."><Picker k="ownerIds" list={candidates} testid="button-owner" /></Field>
         <Field label="Creative editors" hint="Only existing project members of this client are eligible."><Picker k="editorIds" list={candidates} testid="button-editor" /></Field>
         <Field label="Default posting timezone">
-          <select data-testid="select-studio-tz" value={v.timezone} onChange={e => setV(p => ({ ...p, timezone: e.target.value }))} className={`${inputCls} sm:max-w-xs`}>
+          <select data-testid="select-studio-tz" value={v.timezone} onChange={e => edit(p => ({ ...p, timezone: e.target.value }))} className={`${inputCls} sm:max-w-xs`}>
             {[...new Set([v.timezone, ...TIMEZONES])].map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </Field>
@@ -200,44 +268,26 @@ function ClientConfig({ api, client, config, candidates, people, defaults, onSav
       <section className="rounded-2xl border border-slate-200 bg-white/80 p-4 space-y-3">
         <div className="flex items-center gap-2"><Mail size={15} /><h3 className="cs-display text-xl">Email automation</h3></div>
         <p className="text-xs text-slate-500">Approval requests, daily pending-approval reminders, near-post-date escalation to the internal owner and decision notices. Recipients are always the verified designated approver or internal owner; reminders stop after a decision, archive, unsharing or revoked access.</p>
-        <AutomationFields value={v.automation} onChange={(a) => setV(p => ({ ...p, automation: a }))} prefix="client" />
+        <AutomationFields value={v.automation} onChange={(a) => edit(p => ({ ...p, automation: a }))} prefix="client" />
         <p className="text-[11px] text-slate-400 flex items-center gap-1"><Clock size={11} /> Missed runs are not replayed as a backlog.</p>
       </section>
 
       {error && <ErrorBanner message={error} />}
       <div className="flex flex-wrap items-center gap-2">
         <button data-testid="button-save-studio-config" disabled={busy} onClick={save} className={btnPrimary}><Save size={12} /> Save settings</button>
+        <select data-testid="select-preview-phase" value={previewPhase} onChange={e => setPreviewPhase(e.target.value)} className={`${inputCls} !w-auto !py-2`} aria-label="Preview phase">
+          <option value="reference">Reference approval</option>
+          <option value="final">Final post approval</option>
+        </select>
         <button data-testid="button-preview-email" onClick={runPreview} className={btnGhost}><Eye size={12} /> Preview email</button>
         {msg && <span data-testid="status-config-saved" className="text-xs text-emerald-700 font-semibold">{msg}</span>}
       </div>
+      <p data-testid="text-preview-note" className={`text-[11px] ${dirty ? 'text-amber-700 font-semibold' : 'text-slate-500'}`}>{dirty ? 'You have unsaved changes. Previews use saved settings, so save first to preview them.' : 'Previews use saved settings and never send email.'}</p>
 
-      <section className="rounded-2xl border border-slate-200 bg-white/80 p-4">
-        <div className="flex items-center gap-2 mb-2"><ScrollText size={15} /><h3 className="cs-display text-xl flex-1">Delivery log</h3><button data-testid="button-refresh-deliveries" onClick={loadDeliveries} className="text-[11px] font-bold text-indigo-600">Refresh</button></div>
-        {delError ? <ErrorBanner message={delError} onRetry={loadDeliveries} /> : deliveries === null ? <SkeletonList rows={2} /> : deliveries.length === 0 ? (
-          <p className="text-xs text-slate-400">No deliveries recorded.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs" data-testid="table-deliveries">
-              <thead><tr className="text-left text-[10px] uppercase tracking-wider text-slate-400"><th className="py-1 pr-3">Created</th><th className="pr-3">Type</th><th className="pr-3">Recipient</th><th className="pr-3">Item / rev</th><th className="pr-3">Status</th><th>Detail</th></tr></thead>
-              <tbody>
-                {deliveries.map((d) => (
-                  <tr key={d.id} data-testid={`row-delivery-${d.id}`} className="border-t border-slate-100 align-top">
-                    <td className="py-1.5 pr-3 whitespace-nowrap">{fmtStamp(d.createdAt)}</td>
-                    <td className="pr-3">{DELIVERY_KIND[d.kind] || d.kind}</td>
-                    <td className="pr-3">{people.get(String(d.recipientUid)) || 'Recipient no longer listed'}</td>
-                    <td className="pr-3 text-slate-500 whitespace-nowrap">{String(d.itemId || '').slice(0, 8)} r{d.revision}</td>
-                    <td className={`pr-3 font-bold capitalize ${DELIVERY_TONE[d.status] || 'text-slate-600'}`}>{d.status}{d.attempts ? <span className="font-normal text-slate-400"> x{d.attempts}</span> : null}</td>
-                    <td className="text-slate-500">{d.error || (d.sentAt ? `Sent ${fmtStamp(d.sentAt)}` : '')}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+      <p className="text-[11px] text-slate-500">Sent and failed reminder emails are listed in Creative Studio, Reminder log.</p>
 
       {preview && (
-        <Sheet title="Email preview" onClose={() => setPreview(null)} testid="dialog-email-preview">
+        <Sheet title={preview.phase === 'final' ? 'Final post approval preview' : 'Reference approval preview'} onClose={() => setPreview(null)} testid="dialog-email-preview">
           <p className={`text-[11px] font-bold mb-3 ${preview.deliveryEnabled ? 'text-amber-700' : 'text-slate-500'}`}>{preview.deliveryEnabled ? 'Server delivery is enabled.' : 'Server delivery is suppressed. No email is sent.'} This preview sends nothing.</p>
           <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Subject</p>
           <p data-testid="text-preview-subject" className="text-sm font-bold mb-3">{preview.subject}</p>

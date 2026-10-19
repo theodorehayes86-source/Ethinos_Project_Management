@@ -4,7 +4,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const FILES = ['core.js', 'StudioUI.jsx', 'StudioWorkspace.jsx', 'StudioControlPanel.jsx', 'PortalStudio.jsx'];
+const FILES = ['core.js', 'StudioUI.jsx', 'StudioWorkspace.jsx', 'StudioControlPanel.jsx', 'PortalStudio.jsx', 'StudioReminderLog.jsx'];
 const desktop = (f) => readFileSync(resolve(__dirname, '../lib/creativeStudio', f), 'utf8');
 const mobile = (f) => readFileSync(resolve(__dirname, '../../../pmt-mobile/src/lib/creativeStudio', f), 'utf8');
 const all = FILES.map(desktop).join('\n');

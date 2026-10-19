@@ -28,6 +28,15 @@ Email automation sub-tab.
 **How to apply:** Keep operational creative work in the main studio; put email
 automation configuration in Control Centre → Creative Studio.
 
+The reminder log belongs in the main Creative Studio tab, not the Control Centre
+email automation section.
+
+**Why:** The user explicitly requested moving the artifact's reminder log into
+Creative Studio while keeping automation functionality in Control Centre.
+
+**How to apply:** Separate read-only delivery history from automation configuration;
+preserve existing client-scoped permissions for viewing logs.
+
 All Creative Studio colours must match the existing Flow Pro colour scheme and
 look, not use a separate visual theme.
 
