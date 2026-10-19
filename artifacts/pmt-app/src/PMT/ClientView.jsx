@@ -1513,8 +1513,8 @@ const ClientView = ({
             <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 border border-indigo-100 px-3 py-2 rounded-lg flex items-center gap-1.5"><Eye size={13}/> Read-only: exactly what the client sees</span>
           </div>
           <div className="bg-white border border-slate-100 rounded-xl shadow-sm overflow-hidden" data-testid="panel-client-preview">
-            <div className="grid grid-cols-[2fr_1fr_1fr_3fr] gap-4 px-5 py-3 bg-slate-50 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-              <span>Task</span><span>Due date</span><span>Status</span><span>Client description</span>
+            <div className="grid grid-cols-[2fr_1fr_1fr_1fr_3fr] gap-4 px-5 py-3 bg-slate-50 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+              <span>Task</span><span>Category</span><span>Due date</span><span>Status</span><span>Client description</span>
             </div>
             {previewTasks.length === 0 ? (
               <div className="p-10 text-center">
@@ -1522,8 +1522,9 @@ const ClientView = ({
                 <p className="text-xs text-slate-500 mt-1">Set a task's visibility to Client from its edit form to share it.</p>
               </div>
             ) : previewTasks.map(t => (
-              <div key={t.id} className="grid grid-cols-[2fr_1fr_1fr_3fr] gap-4 px-5 py-3.5 border-b border-slate-100 last:border-0">
+              <div key={t.id} className="grid grid-cols-[2fr_1fr_1fr_1fr_3fr] gap-4 px-5 py-3.5 border-b border-slate-100 last:border-0">
                 <p className="text-sm font-semibold text-slate-900 break-words">{t.title}</p>
+                <p data-testid={`preview-category-${t.id}`} className="text-xs text-slate-600 break-words min-w-0">{t.category || <span className="text-slate-400">Uncategorised</span>}</p>
                 <p className="text-xs text-slate-600">{t.dueDate || <span className="text-slate-300">No due date</span>}</p>
                 <span className="text-[11px] font-bold px-2 py-0.5 rounded-full border border-slate-200 bg-slate-50 text-slate-700 w-fit h-fit">{t.status}</span>
                 <p className="text-xs text-slate-500 whitespace-pre-wrap break-words">{t.description || <span className="text-slate-300">No client description</span>}</p>

@@ -53,6 +53,7 @@ export const clientSafeTask = (task, overrides = {}) => {
   return {
     id: t.id ?? null,
     title: t.name || t.title || 'Untitled task',
+    category: typeof t.category === 'string' ? t.category : '',
     status: t.status || 'Pending',
     dueDate: t.dueDate || null,
     description: (t.clientDescription ?? '') || '',
@@ -66,6 +67,7 @@ export const sharingConfirmMessage = (task, overrides = {}) => {
     '',
     'The client will see ONLY:',
     `  Title: ${s.title}`,
+    `  Category: ${s.category || 'Uncategorised'}`,
     `  Status: ${s.status}`,
     `  Due date: ${s.dueDate || 'None'}`,
     `  Client description: ${s.description || '(empty)'}`,

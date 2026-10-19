@@ -64,19 +64,33 @@ describe('client-safe projection', () => {
   const task = { id: 't1', name: 'Launch', status: 'WIP', dueDate: '5th Aug 2026', comment: 'INTERNAL SECRET', assigneeName: 'Theo', steps: [{ label: 's' }] };
   it('never exposes internal comment', () => {
     const s = clientSafeTask(task);
-    expect(s).toEqual({ id: 't1', title: 'Launch', status: 'WIP', dueDate: '5th Aug 2026', description: '' });
+    expect(s).toEqual({ id: 't1', title: 'Launch', category: '', status: 'WIP', dueDate: '5th Aug 2026', description: '' });
     expect(JSON.stringify(s)).not.toContain('INTERNAL');
     expect(sharingConfirmMessage(task)).not.toContain('INTERNAL SECRET');
   });
   it('preview includes only client-visible ordinary tasks', () => {
     const list = clientPreviewTasks([
-      { ...task, visibility: 'client', clientDescription: 'Public' },
+      { ...task, category: 'Social Media', visibility: 'client', clientDescription: 'Public' },
       { ...task, id: 't2' },
       { ...task, id: 't3', visibility: 'client', taskGroupId: 'g' },
       { ...task, id: 't4', visibility: 'client', archived: true },
     ]);
     expect(list.map(t => t.id)).toEqual(['t1']);
     expect(list[0].description).toBe('Public');
+    expect(list[0].category).toBe('Social Media');
+  });
+  it('includes category in sharing confirmation and renders it in both client previews', () => {
+    expect(sharingConfirmMessage({ ...task, category: 'Content' })).toContain('Category: Content');
+    expect(clientSafeTask({ ...task, category: null }).category).toBe('');
+    expect(clientSafeTask({ ...task, category: { internal: 'SECRET' } }).category).toBe('');
+    const desktop = readFileSync(new URL('../PMT/ClientView.jsx', import.meta.url), 'utf8');
+    const mobile = readFileSync(new URL('../../../pmt-mobile/src/components/ClientPreviewSheet.jsx', import.meta.url), 'utf8');
+    expect(desktop).toContain('<span>Category</span>');
+    for (const source of [desktop, mobile]) {
+      expect(source).toContain('preview-category-${t.id}');
+      expect(source).toContain("t.category ||");
+      expect(source).toContain('Uncategorised');
+    }
   });
 });
 

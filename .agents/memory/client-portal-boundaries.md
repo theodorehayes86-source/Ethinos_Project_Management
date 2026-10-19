@@ -33,7 +33,7 @@ calendar views.
 **Why:** The user requested these fields, status interactions and a calendar in the
 client view after trying Test Mode.
 
-**How to apply:** Include them in real and demo client views on desktop and mobile;
+**How to apply:** Include them in real and demo client views and staff Client preview on desktop and mobile;
 keep internal notes separate and preserve internal QC/timer safeguards.
 
 “Share with client” must be available in the blue selected-task toolbar in the
