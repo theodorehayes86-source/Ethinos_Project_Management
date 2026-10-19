@@ -1,4 +1,5 @@
 import type { UserRecord } from "firebase-admin/auth";
+import type { Reference } from "firebase-admin/database";
 import { getAdminAuth, getAdminDatabase } from "./firebase-admin";
 import { InvitationError } from "./client-invitations";
 import { isStaffEmail, normalizeMembership, safeKey } from "./client-portal";
@@ -6,8 +7,21 @@ import { isStaffEmail, normalizeMembership, safeKey } from "./client-portal";
 /** Permanently removes login/access only. Client work and historical author IDs are untouched. */
 export async function deleteClientAccount(uid: string): Promise<{ deleted: true }> {
   if (!safeKey(uid)) throw new InvitationError(400, "Invalid client account UID.");
+  const ref = getAdminDatabase().ref(`clientPortalUsers/${uid}`);
+  // A once() read alone may release the cache before the transaction starts.
+  // Retain the membership through revocation and cleanup; never substitute a
+  // stale membership for null inside a transaction.
+  const retainValue = () => {};
+  ref.on("value", retainValue, () => {});
+  try {
+    return await deleteClientAccountData(uid, ref);
+  } finally {
+    ref.off("value", retainValue);
+  }
+}
+
+async function deleteClientAccountData(uid: string, ref: Reference): Promise<{ deleted: true }> {
   const db = getAdminDatabase(), auth = getAdminAuth();
-  const ref = db.ref(`clientPortalUsers/${uid}`);
   const membership = (await ref.once("value")).val();
   let user: UserRecord | undefined;
   try { user = await auth.getUser(uid); }
@@ -47,7 +61,15 @@ export async function deleteClientAccount(uid: string): Promise<{ deleted: true 
     // Query by UID, then conditionally remove each hash. Never replace the shared index collection.
     const hashes = (await db.ref("clientPortalInvitationHashes").orderByValue().equalTo(uid).once("value")).val();
     for (const hash of Object.keys(hashes ?? {})) {
-      await db.ref(`clientPortalInvitationHashes/${hash}`).transaction(current => current === uid ? null : undefined);
+      const hashRef = db.ref(`clientPortalInvitationHashes/${hash}`);
+      const retainHash = () => {};
+      hashRef.on("value", retainHash, () => {});
+      try {
+        await hashRef.once("value");
+        await hashRef.transaction(current => current === uid ? null : undefined);
+      } finally {
+        hashRef.off("value", retainHash);
+      }
     }
     if (membership) {
       await ref.transaction(current => {

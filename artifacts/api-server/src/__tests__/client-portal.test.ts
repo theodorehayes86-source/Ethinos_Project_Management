@@ -18,13 +18,18 @@ const state = vi.hoisted(() => ({
   deleteUser: vi.fn(),
   transaction: vi.fn(),
   set: vi.fn(),
+  cold: false,
+  retained: new Map<string, Set<Function>>(),
 }));
 
 vi.mock("../lib/firebase-admin", () => {
   const ref = (path: string, valueFilter?: string): any => ({
     key: path.split("/").at(-1),
-    on: (_event: string, listener: () => void) => { listener(); },
-    off: () => {},
+    on: (_event: string, listener: () => void) => {
+      const listeners = state.retained.get(path) ?? new Set();
+      listeners.add(listener); state.retained.set(path, listeners); listener();
+    },
+    off: (_event: string, listener: () => void) => { state.retained.get(path)?.delete(listener); },
     once: async () => {
       state.reads.push(path);
       if (path === "clientPortalInvitationHashes") {
@@ -42,7 +47,7 @@ vi.mock("../lib/firebase-admin", () => {
     set: async (value: any) => { await state.set(path); state.data[path] = value; },
     transaction: async (fn: (current: any) => any) => {
       await state.transaction(path);
-      const value = fn(state.data[path] ?? null);
+      const value = fn(state.cold && !state.retained.get(path)?.size ? null : state.data[path] ?? null);
       if (value === undefined) return { committed: false };
       state.data[path] = value; return { committed: true, snapshot: { val: () => value } };
     },
@@ -108,6 +113,7 @@ beforeEach(() => {
   state.updateUser.mockResolvedValue({});
   state.deleteUser.mockResolvedValue(undefined);
   state.transaction.mockReset();
+  state.cold = false; state.retained.clear();
   state.set.mockReset();
   state.createUser.mockResolvedValue({ uid: "new-client", email: "new@example.test", disabled: false });
 });
@@ -408,6 +414,50 @@ describe("permanent client login deletion (mocked Firebase only)", () => {
   const admin = () => state.verify.mockResolvedValue({ uid: "admin", email: "admin@ethinos.com" });
   const missingAuth = () => state.authUser.mockRejectedValue({ code: "auth/user-not-found" });
   beforeEach(admin);
+
+  it("deletes a client and its invitation hashes on a cold cache without touching other records", async () => {
+    state.cold = true;
+    state.data["clientPortalInvitationHashes/own"] = client.uid;
+    state.data["clientPortalInvitationHashes/other"] = "another-client";
+    const tasksBefore = structuredClone(state.data["clientLogs/alpha"]);
+    expect((await remove()).body).toEqual({ deleted: true });
+    expect(state.deleteUser).toHaveBeenCalledExactlyOnceWith(client.uid);
+    expect(state.data["clientPortalUsers/client-a"]).toBeNull();
+    expect(state.data["clientPortalInvitationHashes/own"]).toBeNull();
+    expect(state.data["clientPortalInvitationHashes/other"]).toBe("another-client");
+    expect(state.data["clientLogs/alpha"]).toEqual(tasksBefore);
+    expect([...state.retained.values()].every(listeners => listeners.size === 0)).toBe(true);
+  });
+
+  it("still rejects a real membership identity change and releases its listener", async () => {
+    state.cold = true;
+    state.transaction.mockImplementationOnce(() => {
+      state.data["clientPortalUsers/client-a"] = { ...state.data["clientPortalUsers/client-a"], email: "replacement@example.test" };
+    });
+    expect((await remove()).status).toBe(409);
+    expect(state.deleteUser).not.toHaveBeenCalled();
+    expect(state.data["clientPortalUsers/client-a"].email).toBe("replacement@example.test");
+    expect([...state.retained.values()].every(listeners => listeners.size === 0)).toBe(true);
+  });
+
+  it("releases the retained membership on Auth failure and keeps access blocked", async () => {
+    state.cold = true;
+    state.deleteUser.mockRejectedValueOnce(new Error("Auth offline"));
+    expect((await remove()).status).toBe(503);
+    expect(state.data["clientPortalUsers/client-a"]).toMatchObject({ disabled: true, deletionInProgress: true });
+    expect([...state.retained.values()].every(listeners => listeners.size === 0)).toBe(true);
+  });
+
+  it("does not remove an invitation hash reassigned before cleanup", async () => {
+    state.cold = true;
+    state.data["clientPortalInvitationHashes/own"] = client.uid;
+    state.transaction.mockImplementation((path: string) => {
+      if (path === "clientPortalInvitationHashes/own") state.data[path] = "another-client";
+    });
+    expect((await remove()).body).toEqual({ deleted: true });
+    expect(state.data["clientPortalInvitationHashes/own"]).toBe("another-client");
+    expect([...state.retained.values()].every(listeners => listeners.size === 0)).toBe(true);
+  });
 
   it("requires authentication and rejects clients and non-admin staff", async () => {
     expect((await request(app).delete(`${api}/admin/users/client-a`)).status).toBe(401);
