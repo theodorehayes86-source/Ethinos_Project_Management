@@ -7,9 +7,11 @@ description: Deployment boundary between project.ethinos.com and the Replit-publ
 
 The user says their hosting or development team manages this server.
 
-**Why:** Server configuration changes require coordination with that team; workspace access is not Apache administration access.
+The user confirms production pulls application updates directly from GitHub.
 
-**How to apply:** Prepare host-specific changes and verification instructions for the team rather than claiming that a Replit publish updates Apache.
+**Why:** Application delivery and host administration are separate; a GitHub push can reach production but does not prove Firebase rules or Apache settings were applied.
+
+**How to apply:** Treat GitHub pushes as potentially production-affecting. Verify the live revision afterward. Involve the hosting team only for host changes requiring access the user does not have; do not assume every release needs them.
 
 **Why:** Browser requests reached the custom-domain API successfully, but its Keka settings reported the Base URL only; API key, client ID, and client secret were absent even though they existed in the Replit workspace. Re-saving them through the protected settings endpoint restored both connection testing and full sync.
 
