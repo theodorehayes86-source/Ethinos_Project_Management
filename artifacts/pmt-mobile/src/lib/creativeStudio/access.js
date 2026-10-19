@@ -3,7 +3,7 @@ export const STUDIO_CONFIG_CHANGED = 'flow-pro:studio-config-changed';
 export function studioCapabilities(bootstrap) {
   const caps = bootstrap.capabilities || {};
   return {
-    nav: !!caps.canManageSettings || !!caps.canEdit ||
+    nav: !!caps.canAccessStudio || !!caps.canManageSettings || !!caps.canEdit ||
       (bootstrap.clients || []).some(c => bootstrap.configs?.[c.id]?.enabled === true),
     manage: !!caps.canManageSettings,
     loaded: true,

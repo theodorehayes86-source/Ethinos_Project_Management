@@ -10,6 +10,12 @@ Control Centre. Do not add a separate client-creation flow inside Creative Studi
 Creative assets/work items need separate tracking from ordinary tasks and must be
 called something else.
 
+Social and Design departments should have direct access to Creative Studio.
+
+**Why:** The user explicitly requested direct access for these departments.
+
+**How to apply:** Show the Studio tab without individual editor grants and allow work on assigned, Studio-enabled clients. Department access alone does not grant all-client access or Control Centre management.
+
 **Why:** The user clarified that normal client creation and client access are separate
 from optional Creative Studio access, and explicitly requested separate creative tracking.
 

@@ -7,6 +7,10 @@ const boot = (manage, enabled = false) => ({
   clients: [{ id: 'a' }], configs: { a: { enabled } },
 });
 describe('Studio navigation access', () => {
+  it('shows direct department access without granting settings or editor rights', () => {
+    expect(studioCapabilities({ capabilities: { canAccessStudio: true }, clients: [], configs: {} }))
+      .toEqual({ nav: true, manage: false, loaded: true });
+  });
   it('keeps settings managers visible with zero enabled clients', () => {
     expect(studioCapabilities(boot(true))).toMatchObject({ nav: true, manage: true });
     expect(studioCapabilities(boot(false))).toMatchObject({ nav: false, manage: false });

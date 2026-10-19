@@ -90,11 +90,14 @@ export function editable(body: any, creating = false): RecordData {
   }
   return out;
 }
+export const hasStudioDepartmentAccess = (user: RecordData) =>
+  ["social", "design"].includes(String(user.department ?? "").trim().toLowerCase());
 export function permissions(user: RecordData, client: RecordData, config: RecordData) {
   const admin = ["Admin", "Super Admin"].includes(user.role);
   const owner = ["Business Head", "BH", "CSM"].includes(user.role) && ids(client.ownerIds).includes(String(user.id));
   const manager = admin || owner;
-  const editor = manager || (ids(user.assignedProjects).includes(client.name) && [...ids(config.editorIds), ...ids(config.ownerIds)].includes(String(user.id)));
+  const editor = manager || (ids(user.assignedProjects).includes(client.name) &&
+    (hasStudioDepartmentAccess(user) || [...ids(config.editorIds), ...ids(config.ownerIds)].includes(String(user.id))));
   return { manager, editor, admin };
 }
 export function project(item: RecordData, external: boolean): RecordData {

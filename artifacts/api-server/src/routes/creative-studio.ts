@@ -2,7 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import { randomUUID } from "node:crypto";
 import { getAdminAuth, getAdminDatabase } from "../lib/firebase-admin";
 import { isStaffEmail, membershipAllows, normalizeMembership, safeKey } from "../lib/client-portal";
-import { audit, automation, automationSettings, editable, fail, https, ids, invalidate, permissions, project, strict, StudioError, text, timezone, values, type RecordData } from "../lib/creative-studio";
+import { audit, automation, automationSettings, editable, fail, hasStudioDepartmentAccess, https, ids, invalidate, permissions, project, strict, StudioError, text, timezone, values, type RecordData } from "../lib/creative-studio";
 import { deliveryEnabled, queueStudioEmail, renderStudioEmail, studioDeliveries } from "../lib/creative-studio-email";
 
 const router = Router();
@@ -124,7 +124,7 @@ router.get("/bootstrap", route(async (req, res) => {
     if (!m || !membershipAllows(m, m.email) || !clientIds.length || isStaffEmail(m.email)) continue;
     try { const u = await getAdminAuth().getUser(uid); if (u.emailVerified && !u.disabled && u.email?.toLowerCase() === m.email.toLowerCase()) approvers.push({ uid, name: u.displayName ?? m.email, clientIds }); } catch { /* unavailable auth accounts are not eligible */ }
   }
-  res.json({ clients, configs, owners, staffCandidates, approvers, defaults, capabilities: { isClient: c.external, canManageSettings: manageableClientIds.length > 0, canManageDefaults: !c.external && ["Admin", "Super Admin"].includes(c.user.role), canEdit: editableClientIds.length > 0, manageableClientIds, editableClientIds } });
+  res.json({ clients, configs, owners, staffCandidates, approvers, defaults, capabilities: { isClient: c.external, canAccessStudio: !c.external && hasStudioDepartmentAccess(c.user), canManageSettings: manageableClientIds.length > 0, canManageDefaults: !c.external && ["Admin", "Super Admin"].includes(c.user.role), canEdit: editableClientIds.length > 0, manageableClientIds, editableClientIds } });
 }));
 router.put("/defaults", route(async (req, res) => {
   staff(req);

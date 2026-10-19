@@ -65,6 +65,33 @@ beforeEach(() => {
   state.writes = [];
 });
 describe("Creative Studio security and contracts", () => {
+  it.each(["Social", "Design", " social ", "DESIGN"])("grants %s direct editing for assigned enabled clients only", async department => {
+    state.verify.mockResolvedValue({ uid: "editorAuth", email: "editor@ethinos.com" });
+    state.data.users.editor.department = department;
+    state.data.creativeStudio.configs.a.editorIds = [];
+    const bootstrap = await api("get", "/bootstrap");
+    expect(bootstrap.body.capabilities).toMatchObject({ canAccessStudio: true, canEdit: true, canManageSettings: false, editableClientIds: ["a"] });
+    expect((await api("patch", itemPath, { revision: 1, title: "Department edit" })).status).toBe(200);
+    expect((await api("put", "/clients/a/config", {})).status).toBe(403);
+    expect((await api("get", "/clients/b/deliverables")).status).toBe(403);
+    state.data.creativeStudio.configs.a.enabled = false;
+    expect((await api("get", "/clients/a/deliverables")).status).toBe(403);
+    state.data.creativeStudio.configs.a.enabled = true;
+    state.data.users.editor.assignedProjects = [];
+    expect((await api("get", "/clients/a/deliverables")).status).toBe(403);
+    expect((await api("get", "/bootstrap")).body.capabilities).toMatchObject({ canAccessStudio: true, canEdit: false });
+    state.data.users.editor.disabled = true;
+    expect((await api("get", "/bootstrap")).status).toBe(403);
+  });
+  it("revokes department-derived access when the staff department changes", async () => {
+    state.verify.mockResolvedValue({ uid: "editorAuth", email: "editor@ethinos.com" });
+    state.data.creativeStudio.configs.a.editorIds = [];
+    state.data.users.editor.department = "Social";
+    expect((await api("get", "/clients/a/deliverables")).status).toBe(200);
+    state.data.users.editor.department = "Growth";
+    expect((await api("get", "/clients/a/deliverables")).status).toBe(403);
+    expect((await api("get", "/bootstrap")).body.capabilities.canAccessStudio).toBe(false);
+  });
   it("returns identical client-safe Studio data to authorized preview without staff fields", async () => {
     item().shared = true;
     const preview = await api("get", "/clients/a/deliverables?preview=client");
