@@ -11,6 +11,7 @@ import {
   dayKey, monthKey, urgency, relativeDay, fmtInstant, fmtStamp, tzShort, summarize, clientVisible, STAGES, peekStudioLink, writeStudioLink,
 } from './core.js';
 import { STUDIO_CONFIG_CHANGED } from './access.js';
+import ClientSelect from './ClientSelect.jsx';
 import {
   inputCls, btnPrimary, btnAccent, btnGhost, StageBadge, UrgencyTag, Field, Sheet, ErrorBanner,
   SkeletonList, EmptyState, ThreadPanel,
@@ -69,6 +70,13 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
 
   const enabledClients = useMemo(() => (boot?.clients || []).filter(c => boot.configs?.[c.id]?.enabled === true), [boot]);
   const editable = useMemo(() => new Set(boot?.capabilities?.editableClientIds || []), [boot]);
+  useEffect(() => {
+    if (boot && clientF !== 'all' && !enabledClients.some(c => c.id === clientF)) {
+      setClientF('all');
+      setSelectedId(null);
+    }
+  }, [boot, enabledClients, clientF]);
+  const selectClient = value => { setClientF(value); setSelectedId(null); };
 
   // Keep bootstrap fresh: enablement/revocation must reach a mounted workspace.
   const bootSeq = useRef(0);
@@ -167,6 +175,10 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
   if (enabledClients.length === 0) {
     return (
       <div className="p-6 max-w-xl mx-auto">
+        <div className="mb-4 space-y-3">
+          <h2 className="text-lg font-black tracking-tight text-slate-900 uppercase">Creative Studio</h2>
+          <ClientSelect clients={enabledClients} value={clientF} onChange={selectClient} />
+        </div>
         {boot.capabilities?.canManageSettings ? (
           <EmptyState icon={<Settings2 size={20} />} title="Creative Studio is not enabled for any client yet"
             body="You manage studio settings for existing clients. Open Control Center, then the Creative Studio tab, select a client and switch on Studio enabled. Assign creative owners or editors from that client's project members, then return here to plan content. Enabling does not create clients, send invitations or change project membership." />
@@ -195,6 +207,7 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
           <h2 className="text-lg font-black tracking-tight uppercase">Creative Studio</h2>
           <span className="text-xs text-slate-400">/ {view === 'plan' ? 'Content calendar' : 'Deliverables tracker'}</span>
         </div>
+        <ClientSelect clients={enabledClients} value={clientF} onChange={selectClient} />
         <div role="tablist" aria-label="Viewing as" className="flex items-center gap-1 p-1 rounded-xl bg-white border border-slate-200">
           <span className="text-[11px] text-slate-400 px-2">Viewing as</span>
           {[['team', 'Ethinos team'], ['client', 'Client']].map(([id, label]) => (
@@ -233,10 +246,6 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
             <button key={t} data-testid={`filter-type-${t}`} onClick={() => setType(t)} className={seg(type === t)}>{t === 'All' ? 'All' : `${t}s`}</button>
           ))}
         </div>
-        <select data-testid="select-filter-client" value={clientF} onChange={e => setClientF(e.target.value)} className={`${inputCls} !w-auto !py-2`} aria-label="Client filter">
-          <option value="all">All clients</option>
-          {enabledClients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
         <select data-testid="select-filter-stage" value={stageF} onChange={e => setStageF(e.target.value)} className={`${inputCls} !w-auto !py-2`} aria-label="Stage filter">
           <option value="all">All stages</option>
           {Object.keys(STAGES).map(s => <option key={s} value={s}>{stageLabel(s)}</option>)}
