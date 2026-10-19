@@ -11,27 +11,46 @@ id = "huKsD8nImNjsOGWMWVdpI"
 uri = "file://.local/outputs/Asset-Manager.pptx"
 type = "slides"
 title = "Asset Manager.pptx"
+logical_id = "25c490b8-b1cc-4ff4-a640-e0ec3983fa54"
 
 [[outputs]]
 id = "W0rAwvAtP4IURUIgV8Une"
 uri = "file://teams-app/EthinosFlowPro-teams-app.zip"
 type = "unspecified"
 title = "Ethinos Flow Pro — Teams App Package"
+logical_id = "982aab04-09f4-43dc-812d-ae004b5ae87e"
 
 [[outputs]]
 id = "17_y1cN5zSHWMJLPD84DP"
 uri = "file://teams-app/EthinosFlowPro-LIVE.zip"
 type = "unspecified"
 title = "EthinosFlowPro-LIVE.zip"
+logical_id = "f6813821-8164-440a-ba3c-f8975ff0f752"
 
 [[outputs]]
 id = "PMOoZktXG71LfvtilNgeb"
 uri = "file://teams-app/EthinosFlowPro-TEST.zip"
 type = "unspecified"
 title = "Ethinos Flow Pro — TEST package (Replit dev)"
+logical_id = "b254fad7-df03-4b5a-8ffb-fefb87ac3b5c"
 
 [[outputs]]
 id = "3bKgZeBZZ9xU4em52Sn8l"
 uri = "file://.local/outputs/Flow-Pro-User-Permissions.pptx"
 type = "slides"
 title = "Flow Pro User Permissions.pptx"
+logical_id = "a9fa919c-9628-4cdc-aed6-a9fc54fbca4e"
+
+[[outputs]]
+id = "fud1CQqnYSa-KMejOkk-b"
+uri = "file://docs/production-release-handoff.md"
+type = "text"
+title = "Production release handoff"
+description = "Instructions for your hosting team: Apache/Teams headers, Firebase release safeguards, and production acceptance checks."
+logical_id = "db936ca6-a7d2-486e-a148-61663b3e4e1d"
+content_hash = "sha256:360b6e13166937b021ceabd8046b16e708286b84565135013a6e33abc8815683"
+size = 6348
+mtime_ms = 1792401955561
+storage_uri = "gcs://replit-rams-assets-riker/rams/assets/repl:0b42549a-1a3e-48a8-ac15-18895c6c1b78/db936ca6-a7d2-486e-a148-61663b3e4e1d/a868f188-d8dc-4a4c-8cdd-3804a8ccfc7b"
+storage_version_token = "1792401983255733"
+content_type = "text/markdown"
