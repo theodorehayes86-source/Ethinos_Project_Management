@@ -5,7 +5,7 @@ description: Deployment boundary between project.ethinos.com and the Replit-publ
 
 `project.ethinos.com` resolves to a separate Apache-hosted runtime rather than the Replit-published service. Keka configuration on one runtime does not imply that the other runtime has the same credentials.
 
-The user says their hosting or development team manages this server.
+The user confirms only their hosting team has access to this server or its hosting control panel.
 
 The user confirms production pulls application updates directly from GitHub.
 
