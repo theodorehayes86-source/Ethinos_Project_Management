@@ -92,6 +92,7 @@ export default function ClientPreviewSheet({ clients, clientLogs, currentUser, u
               {mode === 'client' ? previewTasks.map(t => (
                 <div key={t.id} className="px-4 py-3 rounded-xl border border-slate-200 bg-white space-y-1.5">
                   <p className="text-sm font-bold text-slate-800">{t.title}</p>
+                  <p data-testid={`preview-date-${t.id}`} className="text-xs text-slate-600 break-words"><span className="font-semibold">Date:</span> {t.date || 'No date'}</p>
                   <p data-testid={`preview-category-${t.id}`} className="text-xs text-slate-600 break-words"><span className="font-semibold">Category:</span> {t.category || 'Uncategorised'}</p>
                   <div className="flex items-center gap-2 text-[11px]">
                     <span className={`font-bold px-2 py-0.5 rounded-full ${STATUS_COLORS[t.status] || 'bg-slate-100 text-slate-600'}`}>{t.status}</span>

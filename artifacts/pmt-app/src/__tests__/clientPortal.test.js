@@ -64,7 +64,7 @@ describe('client-safe projection', () => {
   const task = { id: 't1', name: 'Launch', status: 'WIP', dueDate: '5th Aug 2026', comment: 'INTERNAL SECRET', assigneeName: 'Theo', steps: [{ label: 's' }] };
   it('never exposes internal comment', () => {
     const s = clientSafeTask(task);
-    expect(s).toEqual({ id: 't1', title: 'Launch', category: '', status: 'WIP', dueDate: '5th Aug 2026', description: '' });
+    expect(s).toEqual({ id: 't1', title: 'Launch', category: '', date: null, status: 'WIP', dueDate: '5th Aug 2026', description: '' });
     expect(JSON.stringify(s)).not.toContain('INTERNAL');
     expect(sharingConfirmMessage(task)).not.toContain('INTERNAL SECRET');
   });
@@ -90,6 +90,21 @@ describe('client-safe projection', () => {
       expect(source).toContain('preview-category-${t.id}');
       expect(source).toContain("t.category ||");
       expect(source).toContain('Uncategorised');
+    }
+  });
+  it('keeps the task date distinct from its due date in both previews', () => {
+    const [preview] = clientPreviewTasks([{ ...task, visibility: 'client', date: '1st Aug 2026' }]);
+    expect(preview.date).toBe('1st Aug 2026');
+    expect(preview.dueDate).toBe('5th Aug 2026');
+    expect(clientSafeTask(task).date).toBeNull();
+    expect(clientSafeTask({ ...task, date: { internal: 'SECRET' } }).date).toBeNull();
+    const desktop = readFileSync(new URL('../PMT/ClientView.jsx', import.meta.url), 'utf8');
+    const mobile = readFileSync(new URL('../../../pmt-mobile/src/components/ClientPreviewSheet.jsx', import.meta.url), 'utf8');
+    expect(desktop).toContain('<span>Date</span>');
+    for (const source of [desktop, mobile]) {
+      expect(source).toContain('preview-date-${t.id}');
+      expect(source).toContain('t.date ||');
+      expect(source).toContain('No date');
     }
   });
 });

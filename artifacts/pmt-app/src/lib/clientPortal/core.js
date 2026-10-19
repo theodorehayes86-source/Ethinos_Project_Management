@@ -54,6 +54,7 @@ export const clientSafeTask = (task, overrides = {}) => {
     id: t.id ?? null,
     title: t.name || t.title || 'Untitled task',
     category: typeof t.category === 'string' ? t.category : '',
+    date: typeof t.date === 'string' ? t.date : null,
     status: t.status || 'Pending',
     dueDate: t.dueDate || null,
     description: (t.clientDescription ?? '') || '',
