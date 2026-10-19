@@ -10,8 +10,8 @@ import {
   Loader2, Mail, RefreshCw, ShieldCheck, Building2, ArrowRight, Lock, Search,
 } from 'lucide-react';
 import PortalStudio from '../creativeStudio/PortalStudio.jsx';
-import { peekStudioLink } from '../creativeStudio/core.js';
-import { createPortalApi, isRevocationError, portalStats, filterPortalTasks } from './core.js';
+import { peekStudioLink, createStudioApi } from '../creativeStudio/core.js';
+import { createPortalApi, isRevocationError, portalStats, filterPortalTasks, portalStudioClients } from './core.js';
 
 const POLL_MS = 30000;
 
@@ -29,13 +29,13 @@ const statusKey = (s) => {
 
 function Shell({ children }) {
   return (
-    <div className="min-h-[100dvh] bg-gradient-to-br from-rose-50 via-slate-50 to-indigo-50 text-left font-sans">
+    <div className="min-h-[100dvh] bg-gradient-to-br from-slate-50 via-slate-50 to-indigo-50 text-left font-sans">
       {children}
     </div>
   );
 }
 
-function AuthCard({ title, subtitle, children }) {
+export function AuthCard({ title, subtitle, children }) {
   return (
     <Shell>
       <div className="min-h-[100dvh] flex items-center justify-center p-5">
@@ -60,8 +60,8 @@ function AuthCard({ title, subtitle, children }) {
   );
 }
 
-const inputCls = 'w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-800 outline-none focus:ring-2 ring-indigo-500/20 focus:border-indigo-400';
-const primaryBtn = 'w-full min-h-[44px] rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2 transition-colors';
+export const inputCls = 'w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-800 outline-none focus:ring-2 ring-indigo-500/20 focus:border-indigo-400';
+export const primaryBtn = 'w-full min-h-[44px] rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2 transition-colors';
 
 function SignIn({ auth, onExitToStaff }) {
   const [mode, setMode] = useState('signin');
@@ -367,6 +367,14 @@ export default function ClientPortal({ auth, user, apiBase, onExitToStaff }) {
   const [selected, setSelected] = useState(null);
   const [section, setSection] = useState(() => (peekStudioLink() ? 'creative' : 'tasks'));
   const seqRef = useRef(0);
+  // Creative approvals tab exists only while the authorized Studio bootstrap
+  // returns at least one enabled client for this member.
+  const [studioAvailable, setStudioAvailable] = useState(null); // null = not yet known
+  const studioSeq = useRef(0);
+  const studioApi = React.useMemo(() => createStudioApi({
+    base: apiBase,
+    getToken: async () => (auth.currentUser ? auth.currentUser.getIdToken() : null),
+  }), [auth, apiBase]);
 
   const api = React.useMemo(() => createPortalApi({
     base: apiBase,
@@ -404,10 +412,42 @@ export default function ClientPortal({ auth, user, apiBase, onExitToStaff }) {
     return () => { seqRef.current += 1; clearInterval(id); window.removeEventListener('focus', onFocus); };
   }, [user, verified, loadMe]);
 
+  const checkStudio = useCallback(async () => {
+    const seq = ++studioSeq.current;
+    const uid = auth.currentUser?.uid;
+    const stale = () => seq !== studioSeq.current || auth.currentUser?.uid !== uid;
+    try {
+      const b = await studioApi.bootstrap();
+      if (stale()) return;
+      setStudioAvailable(portalStudioClients(b).length > 0);
+    } catch (err) {
+      if (stale()) return;
+      // Revoked or disabled: hide and unmount creative content. Transient errors keep the current state.
+      if (err?.status !== 0) setStudioAvailable(false);
+    }
+  }, [auth, studioApi]);
+
+  useEffect(() => {
+    if (studioAvailable === false && section === 'creative') setSection('tasks');
+  }, [studioAvailable, section]);
+
+  useEffect(() => {
+    setStudioAvailable(null);
+    if (!user || !verified) return undefined;
+    checkStudio();
+    const id = setInterval(checkStudio, POLL_MS);
+    const onFocus = () => checkStudio();
+    window.addEventListener('focus', onFocus);
+    return () => { studioSeq.current += 1; clearInterval(id); window.removeEventListener('focus', onFocus); };
+  }, [user, verified, checkStudio]);
+
   const handleRevoked = useCallback(() => { seqRef.current += 1; clearPrivate(); loadMe(); }, [clearPrivate, loadMe]);
+  const handleStudioRevoked = useCallback(() => { studioSeq.current += 1; setStudioAvailable(false); setSection('tasks'); checkStudio(); }, [checkStudio]);
 
   const handleSignOut = async () => {
     seqRef.current += 1; // drop any in-flight /me response
+    studioSeq.current += 1;
+    setStudioAvailable(false);
     clearPrivate();
     setError('');
     try { await signOut(auth); } catch { /* ignore */ }
@@ -431,14 +471,18 @@ export default function ClientPortal({ auth, user, apiBase, onExitToStaff }) {
         </div>
       </header>
       <main className="max-w-6xl mx-auto p-4">
-        <div className="flex gap-1 mb-4 p-1 rounded-full bg-white/70 border border-slate-100 w-fit" role="tablist" aria-label="Portal section">
-          {[['tasks', 'Tasks'], ['creative', 'Creative approvals']].map(([id, label]) => (
-            <button key={id} role="tab" aria-selected={section === id} data-testid={`tab-portal-${id}`} onClick={() => setSection(id)}
-              className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${section === id ? 'bg-[#1f2440] text-white' : 'text-slate-500'}`}>{label}</button>
-          ))}
-        </div>
-        {section === 'creative' ? (
-          <PortalStudio auth={auth} apiBase={apiBase} onRevoked={handleRevoked} />
+        {studioAvailable === true && (
+          <div className="flex gap-1 mb-4 p-1 rounded-full bg-white border border-slate-200 w-fit" role="tablist" aria-label="Portal section">
+            {[['tasks', 'Tasks'], ['creative', 'Creative approvals']].map(([id, label]) => (
+              <button key={id} role="tab" aria-selected={section === id} data-testid={`tab-portal-${id}`} onClick={() => setSection(id)}
+                className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${section === id ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:text-slate-700'}`}>{label}</button>
+            ))}
+          </div>
+        )}
+        {section === 'creative' && studioAvailable === true ? (
+          <PortalStudio key={user.uid} auth={auth} apiBase={apiBase} onRevoked={handleStudioRevoked} />
+        ) : section === 'creative' && studioAvailable === null ? (
+          <div className="grid gap-3 mt-2" aria-busy="true">{[0, 1].map(i => <div key={i} className="h-20 rounded-xl bg-white/70 animate-pulse" />)}</div>
         ) : error ? (
           <div className="bg-white border border-slate-100 rounded-2xl p-8 text-center shadow-sm max-w-md mx-auto mt-10">
             <AlertTriangle size={28} className="text-amber-500 mx-auto mb-2" />

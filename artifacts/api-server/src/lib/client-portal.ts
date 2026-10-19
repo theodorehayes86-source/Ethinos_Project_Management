@@ -1,6 +1,6 @@
 import { format, isValid, parse } from "date-fns";
 
-export type PortalMembership = { email: string; disabled: boolean; clientIds: string[] };
+export type PortalMembership = { email: string; disabled: boolean; clientIds: string[]; onboardingRequired?: boolean; invitationStatus?: "pending" | "expired" | "revoked" | "accepted"; invitationExpiresAt?: number };
 export const isStaffEmail = (email: unknown): boolean =>
   typeof email === "string" && email.toLowerCase().endsWith("@ethinos.com");
 export const safeKey = (value: unknown): value is string =>
@@ -13,11 +13,19 @@ export function normalizeMembership(value: unknown): PortalMembership | null {
   if (typeof record.email !== "string") return null;
   const ids = record.clientIds;
   const clientIds = Array.isArray(ids) ? ids : ids && typeof ids === "object" ? Object.values(ids) : [];
-  return { email: record.email, disabled: record.disabled !== false, clientIds: clientIds.filter(safeKey) };
+  const invitation = record.invitation as Record<string, unknown> | undefined;
+  const invitationStatus = invitation
+    ? invitation.status === "accepted" ? "accepted" : invitation.status === "revoked" ? "revoked"
+      : Number(invitation.expiresAt) <= Date.now() ? "expired" : "pending"
+    : record.onboardingRequired === true ? "revoked" : "accepted";
+  return { email: record.email, disabled: record.disabled !== false, clientIds: clientIds.filter(safeKey),
+    onboardingRequired: record.onboardingRequired === true, invitationStatus,
+    ...(invitation ? { invitationExpiresAt: Number(invitation.expiresAt) } : {}) };
 }
 
 export function membershipAllows(membership: PortalMembership | null, email: string, clientId?: string): boolean {
   return !!membership && membership.disabled === false &&
+    (!membership.onboardingRequired || membership.invitationStatus === "accepted") &&
     membership.email.toLowerCase() === email.toLowerCase() &&
     Array.isArray(membership.clientIds) &&
     (!clientId || membership.clientIds.includes(clientId));

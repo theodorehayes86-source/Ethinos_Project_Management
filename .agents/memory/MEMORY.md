@@ -6,3 +6,4 @@
 - [Custom-domain Keka runtime](custom-domain-keka-runtime.md) — project.ethinos.com uses a separate Apache host; its Keka credentials must be configured independently
 - [External client scope](client-portal-boundaries.md) — clients see assigned workspaces and shared tasks only; ordinary task creation, no checklist/template or staff access.
 - [Creative Studio scope](creative-studio-scope.md) — normal client setup; enable selected clients in Control Centre; creative work tracked separately from tasks.
+- [Preview origin checks](preview-origin-checks.md) — screenshot loopback POSTs can fail CORS while the actual development-origin request works.

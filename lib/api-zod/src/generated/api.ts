@@ -1289,6 +1289,59 @@ export const PreviewCreativeStudioEmailResponse = zod.object({
   deliveryEnabled: zod.boolean(),
 });
 
+/**
+ * Rate-limited mailbox-token inspection. Invalid, used, revoked and expired tokens are rejected.
+ */
+export const inspectClientPortalInvitationBodyTokenMin = 43;
+export const inspectClientPortalInvitationBodyTokenMax = 43;
+
+export const InspectClientPortalInvitationBody = zod.object({
+  token: zod
+    .string()
+    .min(inspectClientPortalInvitationBodyTokenMin)
+    .max(inspectClientPortalInvitationBodyTokenMax),
+});
+
+export const InspectClientPortalInvitationResponse = zod.object({
+  email: zod.string(),
+  requiresSignIn: zod.boolean(),
+  expiresAt: zod.number().describe("Unix epoch milliseconds"),
+  clientNames: zod.array(zod.string()),
+});
+
+/**
+ * Existing identities require a revoked-token-checked Firebase Bearer session for the invited UID and email and must send token only. New precreated identities require password. Atomically consumes invitation; does not sign in.
+ */
+export const acceptClientPortalInvitationBodyTokenMin = 43;
+export const acceptClientPortalInvitationBodyTokenMax = 43;
+
+export const acceptClientPortalInvitationBodyDisplayNameMax = 120;
+
+export const acceptClientPortalInvitationBodyPasswordMin = 12;
+export const acceptClientPortalInvitationBodyPasswordMax = 128;
+
+export const AcceptClientPortalInvitationBody = zod.object({
+  token: zod
+    .string()
+    .min(acceptClientPortalInvitationBodyTokenMin)
+    .max(acceptClientPortalInvitationBodyTokenMax),
+  displayName: zod
+    .string()
+    .min(1)
+    .max(acceptClientPortalInvitationBodyDisplayNameMax)
+    .optional(),
+  password: zod
+    .string()
+    .min(acceptClientPortalInvitationBodyPasswordMin)
+    .max(acceptClientPortalInvitationBodyPasswordMax)
+    .optional(),
+});
+
+export const AcceptClientPortalInvitationResponse = zod.object({
+  accepted: zod.literal(true),
+  email: zod.string(),
+});
+
 export const GetClientPortalMeResponse = zod.object({
   clients: zod.array(
     zod.object({
@@ -1349,6 +1402,13 @@ export const ListClientPortalUsersResponse = zod.object({
       uid: zod.string(),
       email: zod.string(),
       disabled: zod.boolean(),
+      invitationStatus: zod
+        .enum(["pending", "expired", "revoked", "accepted"])
+        .optional(),
+      invitationExpiresAt: zod
+        .number()
+        .optional()
+        .describe("Unix epoch milliseconds; absent for legacy memberships"),
       clientIds: zod.array(zod.string()),
     }),
   ),
@@ -1394,6 +1454,13 @@ export const UpdateClientPortalUserResponse = zod.object({
     uid: zod.string(),
     email: zod.string(),
     disabled: zod.boolean(),
+    invitationStatus: zod
+      .enum(["pending", "expired", "revoked", "accepted"])
+      .optional(),
+    invitationExpiresAt: zod
+      .number()
+      .optional()
+      .describe("Unix epoch milliseconds; absent for legacy memberships"),
     clientIds: zod.array(zod.string()),
   }),
 });
@@ -1408,6 +1475,21 @@ export const ResendClientPortalInvitationParams = zod.object({
 
 export const ResendClientPortalInvitationResponse = zod.object({
   invitationSent: zod.boolean(),
+});
+
+/**
+ * Invalidates only a pending invitation, not accepted membership access.
+ */
+export const revokeClientPortalInvitationPathUidRegExp = new RegExp(
+  "^[A-Za-z0-9_-]+$",
+);
+
+export const RevokeClientPortalInvitationParams = zod.object({
+  uid: zod.coerce.string().regex(revokeClientPortalInvitationPathUidRegExp),
+});
+
+export const RevokeClientPortalInvitationResponse = zod.object({
+  revoked: zod.literal(true),
 });
 
 /**

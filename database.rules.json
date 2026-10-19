@@ -17,6 +17,10 @@
       ".read": false,
       ".write": false
     },
+    "clientPortalInvitationHashes": {
+      ".read": false,
+      ".write": false
+    },
 
     "schedulerLocks": {
       ".read": false,

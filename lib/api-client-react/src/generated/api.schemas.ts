@@ -299,10 +299,23 @@ export interface PortalTask {
   dueDate: string;
 }
 
+export type PortalUserInvitationStatus =
+  (typeof PortalUserInvitationStatus)[keyof typeof PortalUserInvitationStatus];
+
+export const PortalUserInvitationStatus = {
+  pending: "pending",
+  expired: "expired",
+  revoked: "revoked",
+  accepted: "accepted",
+} as const;
+
 export interface PortalUser {
   uid: string;
   email: string;
   disabled: boolean;
+  invitationStatus?: PortalUserInvitationStatus;
+  /** Unix epoch milliseconds; absent for legacy memberships */
+  invitationExpiresAt?: number;
   clientIds: string[];
 }
 
@@ -468,6 +481,45 @@ export type PreviewCreativeStudioEmail200 = {
   deliveryEnabled: boolean;
 };
 
+export type InspectClientPortalInvitationBody = {
+  /**
+   * @minLength 43
+   * @maxLength 43
+   */
+  token: string;
+};
+
+export type InspectClientPortalInvitation200 = {
+  email: string;
+  requiresSignIn: boolean;
+  /** Unix epoch milliseconds */
+  expiresAt: number;
+  clientNames: string[];
+};
+
+export type AcceptClientPortalInvitationBody = {
+  /**
+   * @minLength 43
+   * @maxLength 43
+   */
+  token: string;
+  /**
+   * @minLength 1
+   * @maxLength 120
+   */
+  displayName?: string;
+  /**
+   * @minLength 12
+   * @maxLength 128
+   */
+  password?: string;
+};
+
+export type AcceptClientPortalInvitation200 = {
+  accepted: boolean;
+  email: string;
+};
+
 export type GetClientPortalMe200 = {
   clients: PortalClient[];
 };
@@ -495,4 +547,8 @@ export type UpdateClientPortalUser200 = {
 
 export type ResendClientPortalInvitation200 = {
   invitationSent: boolean;
+};
+
+export type RevokeClientPortalInvitation200 = {
+  revoked: boolean;
 };

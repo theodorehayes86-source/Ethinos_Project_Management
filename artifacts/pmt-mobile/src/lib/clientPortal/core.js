@@ -160,8 +160,99 @@ export function createPortalApi({ base, getToken, fetchImpl }) {
     adminCreateUser: (email, clientIds) => call('/client-portal/admin/users', { method: 'POST', body: { email, clientIds } }),
     adminUpdateUser: (uid, patch) => call(`/client-portal/admin/users/${enc(uid)}`, { method: 'PATCH', body: patch }),
     adminInvite: (uid) => call(`/client-portal/admin/users/${enc(uid)}/invite`, { method: 'POST', body: {} }),
+    adminRevokeInvite: (uid) => call(`/client-portal/admin/users/${enc(uid)}/invite/revoke`, { method: 'POST', body: {} }),
   };
 }
 
 /** Errors that mean access was revoked/invalid: private data must be cleared. */
 export const isRevocationError = (err) => !!err && [401, 403, 404].includes(err.status);
+
+// ---------------------------------------------------------------------------
+// Single-link onboarding. Invite URL: <root>?client=1#invite=TOKEN.
+// The token lives only in module memory: never in storage, URL history or logs.
+
+const TOKEN_RE = /^[A-Za-z0-9._~-]{16,512}$/;
+export const parseInviteFragment = (hash) => {
+  const raw = String(hash || '').replace(/^#/, '');
+  if (!raw) return null;
+  let v = null;
+  try { v = new URLSearchParams(raw).get('invite'); } catch { return null; }
+  return v && TOKEN_RE.test(v) ? v : null;
+};
+
+let inviteTokenMemo = null;
+/** Reads #invite=..., strips it from the address bar (keeping ?client=1) and caches it in memory. Idempotent. */
+export function captureInviteToken(win = typeof window !== 'undefined' ? window : null) {
+  if (!win?.location) return inviteTokenMemo;
+  const token = parseInviteFragment(win.location.hash);
+  if (token) {
+    inviteTokenMemo = token;
+    try {
+      const url = new URL(win.location.href);
+      url.hash = '';
+      url.searchParams.set('client', '1');
+      win.history.replaceState(null, '', url.pathname + url.search);
+    } catch { /* address bar cleanup is best effort */ }
+  }
+  return inviteTokenMemo;
+}
+export const clearInviteToken = () => { inviteTokenMemo = null; };
+
+export const MIN_PASSWORD = 12;
+export function validateNewAccount({ displayName, password, confirm }) {
+  const errors = {};
+  if (!String(displayName || '').trim()) errors.displayName = 'Enter your name.';
+  else if (String(displayName).trim().length > 100) errors.displayName = 'Keep your name under 100 characters.';
+  if (String(password || '').length < MIN_PASSWORD) errors.password = `Use at least ${MIN_PASSWORD} characters.`;
+  else if (String(password).length > 128) errors.password = 'Use at most 128 characters.';
+  if (password !== confirm) errors.confirm = 'Passwords do not match.';
+  return errors;
+}
+
+/** Friendly copy for invite errors. Server message wins when it is specific. */
+export function inviteErrorMessage(err) {
+  const st = err?.status;
+  if (st === 410) return err?.message && !/^Request failed/.test(err.message) ? err.message : 'This invitation has expired. Ask your agency to send a new link.';
+  if (st === 404) return 'This invitation link is not valid. It may have been revoked or replaced by a newer link.';
+  if (st === 409) return err?.message && !/^Request failed/.test(err.message) ? err.message : 'This invitation has already been used or revoked.';
+  if (st === 403) return err?.message || 'This invitation belongs to a different email address.';
+  if (st === 0) return 'Connection lost. Check your network and retry.';
+  return err?.message || 'Something went wrong. Try again.';
+}
+
+/** Public invitation API. inspect is unauthenticated; accept optionally carries a Bearer token. */
+export function createInviteApi({ base, fetchImpl }) {
+  const doFetch = fetchImpl || ((...a) => fetch(...a));
+  const post = async (path, body, bearer) => {
+    let resp;
+    try {
+      resp = await doFetch(`${base}/client-portal/invitations/${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}) },
+        body: JSON.stringify(body),
+      });
+    } catch { throw new PortalApiError('Connection lost', 0); }
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new PortalApiError(data?.error || `Request failed (${resp.status})`, resp.status);
+    return data;
+  };
+  return {
+    inspect: (token) => post('inspect', { token }),
+    accept: (token, { displayName, password } = {}, bearer) => post('accept', {
+      token, ...(displayName ? { displayName } : {}), ...(password ? { password } : {}),
+    }, bearer),
+  };
+}
+
+export const INVITE_STATUSES = ['pending', 'expired', 'revoked', 'accepted'];
+/** Admin list status. Pending invites past expiry read as expired even before the server sweeps. */
+export function inviteStatus(u, now = Date.now()) {
+  const raw = u?.invitationStatus || u?.inviteStatus || null;
+  const exp = Number(u?.invitationExpiresAt || u?.expiresAt || 0);
+  if (raw === 'pending' && exp && exp < now) return 'expired';
+  return INVITE_STATUSES.includes(raw) ? raw : null;
+}
+
+/** Studio clients a portal member can open: enabled ones from the authorized bootstrap. */
+export const portalStudioClients = (bootstrap) =>
+  (bootstrap?.clients || []).filter(c => c && bootstrap?.configs?.[c.id]?.enabled === true);

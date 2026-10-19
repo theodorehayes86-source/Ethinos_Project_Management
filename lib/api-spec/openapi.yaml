@@ -327,6 +327,70 @@ paths:
                     type: string
                   deliveryEnabled:
                     type: boolean
+  /client-portal/invitations/inspect:
+    post:
+      operationId: inspectClientPortalInvitation
+      security: []
+      description: Rate-limited mailbox-token inspection. Invalid, used, revoked and expired tokens are rejected.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token]
+              properties:
+                token: { type: string, minLength: 43, maxLength: 43 }
+      responses:
+        "200":
+          description: Valid pending invitation
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [email, requiresSignIn, expiresAt, clientNames]
+                properties:
+                  email: { type: string }
+                  requiresSignIn: { type: boolean }
+                  expiresAt: { type: number, description: Unix epoch milliseconds }
+                  clientNames:
+                    type: array
+                    items: { type: string }
+        "400": { description: Invalid or unavailable invitation }
+        "429": { description: Rate limit exceeded }
+  /client-portal/invitations/accept:
+    post:
+      operationId: acceptClientPortalInvitation
+      security: []
+      description: Existing identities require a revoked-token-checked Firebase Bearer session for the invited UID and email and must send token only. New precreated identities require password. Atomically consumes invitation; does not sign in.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token]
+              properties:
+                token: { type: string, minLength: 43, maxLength: 43 }
+                displayName: { type: string, minLength: 1, maxLength: 120 }
+                password: { type: string, minLength: 12, maxLength: 128, writeOnly: true }
+      responses:
+        "200":
+          description: Invitation accepted; sign in normally afterward
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accepted, email]
+                properties:
+                  accepted: { type: boolean, enum: [true] }
+                  email: { type: string }
+        "400": { description: "Invalid, expired, revoked, used invitation or invalid input" }
+        "401": { description: Existing account sign-in required }
+        "403": { description: Wrong account or unavailable identity }
+        "429": { description: Rate limit exceeded }
   /client-portal/me:
     get:
       operationId: getClientPortalMe
@@ -462,6 +526,26 @@ paths:
                 required: [invitationSent]
                 properties:
                   invitationSent: { type: boolean }
+  /client-portal/admin/users/{uid}/invite/revoke:
+    parameters:
+      - name: uid
+        in: path
+        required: true
+        schema: { type: string, pattern: "^[A-Za-z0-9_-]+$" }
+    post:
+      operationId: revokeClientPortalInvitation
+      description: Invalidates only a pending invitation, not accepted membership access.
+      responses:
+        "200":
+          description: Pending invitation revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [revoked]
+                properties:
+                  revoked: { type: boolean, enum: [true] }
+        "409": { description: No pending invitation }
   /healthz:
     get:
       security: []
@@ -854,6 +938,8 @@ components:
         uid: { type: string }
         email: { type: string }
         disabled: { type: boolean }
+        invitationStatus: { type: string, enum: [pending, expired, revoked, accepted] }
+        invitationExpiresAt: { type: number, description: Unix epoch milliseconds; absent for legacy memberships }
         clientIds:
           type: array
           items: { type: string }

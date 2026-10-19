@@ -70,6 +70,16 @@ describe("Creative Studio security and contracts", () => {
     state.data.clientPortalUsers.external.disabled = true;
     expect((await api("get", "/bootstrap")).status).toBe(403);
   });
+  it.each(["pending", "revoked", "processing"])("blocks %s onboarding from Studio and approver selection even with verified Auth", async status => {
+    Object.assign(state.data.clientPortalUsers.external, { onboardingRequired: true,
+      invitation: { status, expiresAt: Date.now() + 86400000 } });
+    state.verify.mockResolvedValue(external);
+    expect((await api("get", "/bootstrap")).status).toBe(403);
+    expect((await api("get", itemPath)).status).toBe(403);
+    state.verify.mockResolvedValue(staffIdentity);
+    expect((await api("get", "/bootstrap")).body.approvers).toEqual([]);
+    expect((await action("request_approval", { phase: "reference", approverUid: "external" })).status).toBe(403);
+  });
   it("scopes external bootstrap and returns genuine empty collections", async () => {
     state.verify.mockResolvedValue(external);
     const response = await api("get", "/bootstrap");
@@ -301,6 +311,15 @@ describe("Creative Studio mail safety", () => {
     process.env.CREATIVE_STUDIO_EMAIL_DELIVERY = "enabled";
     await action("request_approval", { phase: "reference", approverUid: "external" });
     state.data.clientPortalUsers.external.disabled = true;
+    await runStudioEmailWorker();
+    expect((Object.values(state.data.creativeStudio.deliveries.a) as any[])[0].status).toBe("cancelled");
+    expect(state.send).not.toHaveBeenCalled();
+  });
+  it("cancels queued Studio email for pending onboarding despite verified Auth", async () => {
+    process.env.CREATIVE_STUDIO_EMAIL_DELIVERY = "enabled";
+    await action("request_approval", { phase: "reference", approverUid: "external" });
+    Object.assign(state.data.clientPortalUsers.external, { onboardingRequired: true,
+      invitation: { status: "pending", expiresAt: Date.now() + 86400000 } });
     await runStudioEmailWorker();
     expect((Object.values(state.data.creativeStudio.deliveries.a) as any[])[0].status).toBe("cancelled");
     expect(state.send).not.toHaveBeenCalled();

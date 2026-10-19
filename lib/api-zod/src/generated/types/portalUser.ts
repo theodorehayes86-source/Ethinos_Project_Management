@@ -5,10 +5,14 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { PortalUserInvitationStatus } from "./portalUserInvitationStatus";
 
 export interface PortalUser {
   uid: string;
   email: string;
   disabled: boolean;
+  invitationStatus?: PortalUserInvitationStatus;
+  /** Unix epoch milliseconds; absent for legacy memberships */
+  invitationExpiresAt?: number;
   clientIds: string[];
 }

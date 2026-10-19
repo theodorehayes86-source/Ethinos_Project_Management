@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./acceptClientPortalInvitation200";
+export * from "./acceptClientPortalInvitationBody";
 export * from "./actOnCreativeStudioDeliverableBody";
 export * from "./actOnCreativeStudioDeliverableBodyAction";
 export * from "./actOnCreativeStudioDeliverableBodyDecision";
@@ -14,6 +16,8 @@ export * from "./createClientPortalTask201";
 export * from "./createCreativeStudioDeliverableBody";
 export * from "./getClientPortalMe200";
 export * from "./healthStatus";
+export * from "./inspectClientPortalInvitation200";
+export * from "./inspectClientPortalInvitationBody";
 export * from "./inviteClientPortalUser201";
 export * from "./listClientPortalTasks200";
 export * from "./listClientPortalUsers200";
@@ -30,12 +34,14 @@ export * from "./portalMembershipInput";
 export * from "./portalTask";
 export * from "./portalTaskInput";
 export * from "./portalUser";
+export * from "./portalUserInvitationStatus";
 export * from "./previewCreativeStudioEmail200";
 export * from "./previewCreativeStudioEmailBody";
 export * from "./previewCreativeStudioEmailBodyPhase";
 export * from "./putCreativeStudioConfig200";
 export * from "./putCreativeStudioDefaults200";
 export * from "./resendClientPortalInvitation200";
+export * from "./revokeClientPortalInvitation200";
 export * from "./saveCreativeStudioAssetBody";
 export * from "./saveCreativeStudioAssetBodyKind";
 export * from "./saveCreativeStudioAssetBodyPhase";

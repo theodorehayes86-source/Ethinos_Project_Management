@@ -17,11 +17,15 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AcceptClientPortalInvitation200,
+  AcceptClientPortalInvitationBody,
   ActOnCreativeStudioDeliverableBody,
   CreateClientPortalTask201,
   CreateCreativeStudioDeliverableBody,
   GetClientPortalMe200,
   HealthStatus,
+  InspectClientPortalInvitation200,
+  InspectClientPortalInvitationBody,
   InviteClientPortalUser201,
   ListClientPortalTasks200,
   ListClientPortalUsers200,
@@ -37,6 +41,7 @@ import type {
   PutCreativeStudioConfig200,
   PutCreativeStudioDefaults200,
   ResendClientPortalInvitation200,
+  RevokeClientPortalInvitation200,
   SaveCreativeStudioAssetBody,
   SendCreativeStudioMessage200,
   SendCreativeStudioMessageBody,
@@ -1424,6 +1429,180 @@ export const usePreviewCreativeStudioEmail = <
   return useMutation(getPreviewCreativeStudioEmailMutationOptions(options));
 };
 
+/**
+ * Rate-limited mailbox-token inspection. Invalid, used, revoked and expired tokens are rejected.
+ */
+export const getInspectClientPortalInvitationUrl = () => {
+  return `/api/client-portal/invitations/inspect`;
+};
+
+export const inspectClientPortalInvitation = async (
+  inspectClientPortalInvitationBody: InspectClientPortalInvitationBody,
+  options?: RequestInit,
+): Promise<InspectClientPortalInvitation200> => {
+  return customFetch<InspectClientPortalInvitation200>(
+    getInspectClientPortalInvitationUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(inspectClientPortalInvitationBody),
+    },
+  );
+};
+
+export const getInspectClientPortalInvitationMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof inspectClientPortalInvitation>>,
+    TError,
+    { data: BodyType<InspectClientPortalInvitationBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof inspectClientPortalInvitation>>,
+  TError,
+  { data: BodyType<InspectClientPortalInvitationBody> },
+  TContext
+> => {
+  const mutationKey = ["inspectClientPortalInvitation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof inspectClientPortalInvitation>>,
+    { data: BodyType<InspectClientPortalInvitationBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return inspectClientPortalInvitation(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type InspectClientPortalInvitationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof inspectClientPortalInvitation>>
+>;
+export type InspectClientPortalInvitationMutationBody =
+  BodyType<InspectClientPortalInvitationBody>;
+export type InspectClientPortalInvitationMutationError = ErrorType<void>;
+
+export const useInspectClientPortalInvitation = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof inspectClientPortalInvitation>>,
+    TError,
+    { data: BodyType<InspectClientPortalInvitationBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof inspectClientPortalInvitation>>,
+  TError,
+  { data: BodyType<InspectClientPortalInvitationBody> },
+  TContext
+> => {
+  return useMutation(getInspectClientPortalInvitationMutationOptions(options));
+};
+
+/**
+ * Existing identities require a revoked-token-checked Firebase Bearer session for the invited UID and email and must send token only. New precreated identities require password. Atomically consumes invitation; does not sign in.
+ */
+export const getAcceptClientPortalInvitationUrl = () => {
+  return `/api/client-portal/invitations/accept`;
+};
+
+export const acceptClientPortalInvitation = async (
+  acceptClientPortalInvitationBody: AcceptClientPortalInvitationBody,
+  options?: RequestInit,
+): Promise<AcceptClientPortalInvitation200> => {
+  return customFetch<AcceptClientPortalInvitation200>(
+    getAcceptClientPortalInvitationUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(acceptClientPortalInvitationBody),
+    },
+  );
+};
+
+export const getAcceptClientPortalInvitationMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof acceptClientPortalInvitation>>,
+    TError,
+    { data: BodyType<AcceptClientPortalInvitationBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof acceptClientPortalInvitation>>,
+  TError,
+  { data: BodyType<AcceptClientPortalInvitationBody> },
+  TContext
+> => {
+  const mutationKey = ["acceptClientPortalInvitation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof acceptClientPortalInvitation>>,
+    { data: BodyType<AcceptClientPortalInvitationBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return acceptClientPortalInvitation(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AcceptClientPortalInvitationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof acceptClientPortalInvitation>>
+>;
+export type AcceptClientPortalInvitationMutationBody =
+  BodyType<AcceptClientPortalInvitationBody>;
+export type AcceptClientPortalInvitationMutationError = ErrorType<void>;
+
+export const useAcceptClientPortalInvitation = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof acceptClientPortalInvitation>>,
+    TError,
+    { data: BodyType<AcceptClientPortalInvitationBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof acceptClientPortalInvitation>>,
+  TError,
+  { data: BodyType<AcceptClientPortalInvitationBody> },
+  TContext
+> => {
+  return useMutation(getAcceptClientPortalInvitationMutationOptions(options));
+};
+
 export const getGetClientPortalMeUrl = () => {
   return `/api/client-portal/me`;
 };
@@ -1977,6 +2156,90 @@ export const useResendClientPortalInvitation = <
   TContext
 > => {
   return useMutation(getResendClientPortalInvitationMutationOptions(options));
+};
+
+/**
+ * Invalidates only a pending invitation, not accepted membership access.
+ */
+export const getRevokeClientPortalInvitationUrl = (uid: string) => {
+  return `/api/client-portal/admin/users/${uid}/invite/revoke`;
+};
+
+export const revokeClientPortalInvitation = async (
+  uid: string,
+  options?: RequestInit,
+): Promise<RevokeClientPortalInvitation200> => {
+  return customFetch<RevokeClientPortalInvitation200>(
+    getRevokeClientPortalInvitationUrl(uid),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getRevokeClientPortalInvitationMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof revokeClientPortalInvitation>>,
+    TError,
+    { uid: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof revokeClientPortalInvitation>>,
+  TError,
+  { uid: string },
+  TContext
+> => {
+  const mutationKey = ["revokeClientPortalInvitation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof revokeClientPortalInvitation>>,
+    { uid: string }
+  > = (props) => {
+    const { uid } = props ?? {};
+
+    return revokeClientPortalInvitation(uid, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RevokeClientPortalInvitationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof revokeClientPortalInvitation>>
+>;
+
+export type RevokeClientPortalInvitationMutationError = ErrorType<void>;
+
+export const useRevokeClientPortalInvitation = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof revokeClientPortalInvitation>>,
+    TError,
+    { uid: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof revokeClientPortalInvitation>>,
+  TError,
+  { uid: string },
+  TContext
+> => {
+  return useMutation(getRevokeClientPortalInvitationMutationOptions(options));
 };
 
 /**

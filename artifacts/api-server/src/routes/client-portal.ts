@@ -8,8 +8,8 @@ import {
   UpdateClientPortalUserBody, UpdateClientPortalUserParams, UpdateClientPortalUserResponse,
 } from "@workspace/api-zod";
 import { getAdminAuth, getAdminDatabase } from "../lib/firebase-admin";
-import { sendEmail, isEmailConfigured } from "../lib/microsoft-graph";
-import { APP_BASE_URL } from "../lib/app-url";
+import { createHash } from "node:crypto";
+import { acceptInvitation, assertClientIdentity, inspectInvitation, InvitationError, issueInvitation, revokeInvitation } from "../lib/client-invitations";
 import { logger } from "../lib/logger";
 import { clientDirectory, isStaffEmail, membershipAllows, normalizeDueDate, normalizeMembership, projectClientTask, safeKey, type PortalMembership } from "../lib/client-portal";
 
@@ -20,6 +20,25 @@ const database = () => getAdminDatabase();
 const membershipRef = (uid: string) => database().ref(`clientPortalUsers/${uid}`);
 
 router.use((_req, res, next) => { res.set("Cache-Control", "no-store"); next(); });
+// Public mailbox-token endpoints intentionally precede the session middleware.
+for (const action of ["inspect", "accept"] as const) router.post(`/invitations/${action}`, async (req, res): Promise<void> => {
+  const ipHash = createHash("sha256").update(req.ip ?? "unknown").digest("hex");
+  if (!await rateLimit(`public_${action}_${ipHash}`, 30, 60_000)) {
+    res.status(429).json({ error: "Too many invitation requests. Try again in a minute." }); return;
+  }
+  if (!req.body || typeof req.body !== "object" || Array.isArray(req.body) ||
+      Object.keys(req.body).some(k => !(action === "inspect" ? ["token"] : ["token", "displayName", "password"]).includes(k))) {
+    res.status(400).json({ error: "Invalid invitation request." }); return;
+  }
+  let user: DecodedIdToken | undefined;
+  if (action === "accept" && req.headers.authorization) {
+    try {
+      if (!req.headers.authorization.startsWith("Bearer ")) throw new Error("Invalid session");
+      user = await getAdminAuth().verifyIdToken(req.headers.authorization.slice(7), true);
+    } catch { res.status(401).json({ error: "Sign in again to accept your invitation." }); return; }
+  }
+  res.json(action === "inspect" ? await inspectInvitation(req.body.token) : await acceptInvitation(req.body, user));
+});
 router.use(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const token = req.headers.authorization;
   if (!token?.startsWith("Bearer ")) { res.status(401).json({ error: "Sign in to continue." }); return; }
@@ -132,24 +151,16 @@ router.get("/admin/users", async (_req, res): Promise<void> => {
   const raw = (await database().ref("clientPortalUsers").once("value")).val();
   const users = Object.entries(raw ?? {}).flatMap(([uid, value]) => {
     const membership = normalizeMembership(value);
-    return membership ? [{ uid, ...membership }] : [];
+    if (!membership) return [];
+    const { onboardingRequired: _private, ...publicMembership } = membership;
+    return [{ uid, ...publicMembership }];
   });
   res.json(ListClientPortalUsersResponse.parse({ users }));
 });
 
-const escapeHtml = (s: string) => s.replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
-async function sendInvitation(uid: string, email: string) {
-  if (!isEmailConfigured()) throw new Error("Email delivery not configured");
+async function sendInvitation(uid: string) {
   if (!await rateLimit(`invite_${uid}`, 5, 3_600_000)) throw new Error("Invitation rate limit");
-  const settings = { url: `${APP_BASE_URL}/?client=1` };
-  const [reset, verify] = await Promise.all([
-    getAdminAuth().generatePasswordResetLink(email, settings),
-    getAdminAuth().generateEmailVerificationLink(email, settings),
-  ]);
-  await sendEmail({
-    to: email, subject: "Your Flow Pro client access",
-    bodyHtml: `<p>You have been invited to your client workspace in Flow Pro.</p><p><a href="${escapeHtml(reset)}">Set or reset your password</a>, then <a href="${escapeHtml(verify)}">verify your email</a>.</p><p><a href="${escapeHtml(settings.url)}">Open your client workspace</a>. Only tasks explicitly shared with your assigned clients are visible.</p>`,
-  });
+  await issueInvitation(uid);
 }
 
 router.post("/admin/users", async (req, res): Promise<void> => {
@@ -160,11 +171,17 @@ router.post("/admin/users", async (req, res): Promise<void> => {
   const email = parsed.data.email.trim().toLowerCase();
   const clientIds = [...new Set(parsed.data.clientIds)];
   if (!await validClients(clientIds)) { res.status(400).json({ error: "Select existing clients only." }); return; }
-  let user;
+  const staffDirectory = (await database().ref("users").once("value")).val();
+  if (Object.values(staffDirectory ?? {}).some(row =>
+    (row as { email?: string })?.email?.toLowerCase() === email)) {
+    res.status(409).json({ error: "Staff identities cannot be invited as clients." }); return;
+  }
+  let user, created = false;
   try { user = await getAdminAuth().getUserByEmail(email); }
   catch (error) {
     if ((error as { code?: string }).code !== "auth/user-not-found") throw error;
     user = await getAdminAuth().createUser({ email, emailVerified: false });
+    created = true;
   }
   if (!safeKey(user.uid)) { res.status(400).json({ error: "This account cannot be invited." }); return; }
   const existing = (await membershipRef(user.uid).once("value")).val();
@@ -172,10 +189,14 @@ router.post("/admin/users", async (req, res): Promise<void> => {
   if (existing || staffRole != null || user.disabled) {
     res.status(409).json({ error: "This account already exists or is unavailable. Manage existing client access instead." }); return;
   }
+  await assertClientIdentity(user.uid, email);
   const membership: PortalMembership = { email, clientIds, disabled: false };
-  await membershipRef(user.uid).update(membership);
+  const saved = await membershipRef(user.uid).transaction(current => current ? undefined :
+    { ...membership, onboardingRequired: true, invitationIdentityCreated: created,
+      invitation: { status: "revoked", expiresAt: Date.now(), requiresSignIn: !created } });
+  if (!saved.committed) { res.status(409).json({ error: "This membership already exists." }); return; }
   let invitationSent = false;
-  try { await sendInvitation(user.uid, email); invitationSent = true; }
+  try { await sendInvitation(user.uid); invitationSent = true; }
   catch { logger.warn("Client membership saved but invitation email was not delivered"); }
   res.status(201).json({ ...UpdateClientPortalUserResponse.parse({ user: { uid: user.uid, ...membership } }), invitationSent });
 });
@@ -192,7 +213,10 @@ router.patch("/admin/users/:uid", async (req, res): Promise<void> => {
   if (!await validClients(body.data.clientIds)) { res.status(400).json({ error: "Select existing clients only." }); return; }
   const membership = { email: existing.email, clientIds: [...new Set(body.data.clientIds)], disabled: body.data.disabled };
   // Membership removal is effective immediately, even if Firebase Auth revocation fails.
-  await membershipRef(uid).update(membership);
+  const changed = await membershipRef(uid).transaction(current => current ? { ...current, ...membership,
+    ...(membership.disabled && current.invitation && ["pending", "processing"].includes(current.invitation.status)
+      ? { invitation: { ...current.invitation, status: "revoked", claim: null } } : {}) } : undefined);
+  if (!changed.committed) { res.status(409).json({ error: "Membership changed. Try again." }); return; }
   if (membership.disabled) await getAdminAuth().revokeRefreshTokens(uid);
   res.json(UpdateClientPortalUserResponse.parse({ user: { uid, ...membership } }));
 });
@@ -204,12 +228,19 @@ router.post("/admin/users/:uid/invite", async (req, res): Promise<void> => {
   if (!membership || membership.disabled || isStaffEmail(membership.email)) {
     res.status(404).json({ error: "Active client account not found." }); return;
   }
-  try { await sendInvitation(uid, membership.email); res.json({ invitationSent: true }); }
+  try { await sendInvitation(uid); res.json({ invitationSent: true }); }
   catch { res.status(503).json({ error: "Invitation could not be sent. Check email delivery or try again later." }); }
+});
+
+router.post("/admin/users/:uid/invite/revoke", async (req, res): Promise<void> => {
+  if (!safeKey(req.params.uid)) { res.status(400).json({ error: "Invalid account." }); return; }
+  await revokeInvitation(req.params.uid);
+  res.json({ revoked: true });
 });
 
 router.use((_req, res) => { res.status(403).json({ error: "This action is not available in the client workspace." }); });
 router.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  if (error instanceof InvitationError) { res.status(error.status).json({ error: error.message }); return; }
   logger.error({ errorType: error instanceof Error ? error.name : "Unknown" }, "Client portal request failed");
   res.status(500).json({ error: "The client workspace is temporarily unavailable. Try again later." });
 });

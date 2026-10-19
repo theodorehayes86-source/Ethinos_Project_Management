@@ -5,7 +5,8 @@ import React, { Suspense, useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { Loader2 } from 'lucide-react';
 import ClientPortal from './ClientPortal.jsx';
-import { isClientAccount, wantsClientEntry } from './core.js';
+import InviteAccept from './InviteAccept.jsx';
+import { isClientAccount, wantsClientEntry, captureInviteToken, clearInviteToken } from './core.js';
 import { captureStudioLink } from '../creativeStudio/core.js';
 
 const Spinner = () => (
@@ -17,20 +18,36 @@ const Spinner = () => (
 export default function PortalGate({ auth, apiBase, StaffApp, bypass = false }) {
   // Preserve Creative Studio email deep links across sign-in redirects.
   useState(() => captureStudioLink());
+  // Invite token: captured from #invite= before any routing, held in memory only.
+  const [inviteToken, setInviteToken] = useState(() => captureInviteToken());
   const [state, setState] = useState({ ready: false, user: null });
   const [clientEntry, setClientEntry] = useState(() => wantsClientEntry(window.location.search));
 
   useEffect(() => {
-    if (bypass) return undefined;
+    if (bypass && !inviteToken) return undefined;
     return onAuthStateChanged(auth, (user) => {
       // After a client signs out, stay on the client sign-in screen.
       if (isClientAccount(user)) setClientEntry(true);
       setState({ ready: true, user });
     });
-  }, [auth, bypass]);
+  }, [auth, bypass, inviteToken]);
 
-  if (bypass) return <Suspense fallback={<Spinner />}><StaffApp /></Suspense>;
+  if (bypass && !inviteToken) return <Suspense fallback={<Spinner />}><StaffApp /></Suspense>;
   if (!state.ready) return <Spinner />;
+
+  if (inviteToken) {
+    // Stays mounted through sign-in/sign-out; the staff app is never exposed meanwhile.
+    return (
+      <InviteAccept
+        auth={auth}
+        user={state.user}
+        apiBase={apiBase}
+        token={inviteToken}
+        onAccepted={() => { clearInviteToken(); setInviteToken(null); setClientEntry(true); }}
+        onDismiss={() => { clearInviteToken(); setInviteToken(null); setClientEntry(true); }}
+      />
+    );
+  }
 
   const portalMode = isClientAccount(state.user) || (!state.user && clientEntry);
   if (portalMode) {

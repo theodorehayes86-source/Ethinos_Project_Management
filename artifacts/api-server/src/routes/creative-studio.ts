@@ -110,7 +110,7 @@ router.get("/bootstrap", route(async (req, res) => {
   const approvers: RecordData[] = [];
   if (!c.external) for (const [uid, raw] of Object.entries(await read("clientPortalUsers") ?? {})) {
     const m = normalizeMembership(raw), clientIds = m?.clientIds.filter(id => authorized.has(id)) ?? [];
-    if (!m || m.disabled || !clientIds.length || isStaffEmail(m.email)) continue;
+    if (!m || !membershipAllows(m, m.email) || !clientIds.length || isStaffEmail(m.email)) continue;
     try { const u = await getAdminAuth().getUser(uid); if (u.emailVerified && !u.disabled && u.email?.toLowerCase() === m.email.toLowerCase()) approvers.push({ uid, name: u.displayName ?? m.email, clientIds }); } catch { /* unavailable auth accounts are not eligible */ }
   }
   res.json({ clients, configs, owners, staffCandidates, approvers, defaults, capabilities: { isClient: c.external, canManageSettings: manageableClientIds.length > 0, canManageDefaults: !c.external && ["Admin", "Super Admin"].includes(c.user.role), canEdit: editableClientIds.length > 0, manageableClientIds, editableClientIds } });

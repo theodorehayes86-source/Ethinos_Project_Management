@@ -76,6 +76,7 @@ export async function sendEmail(params: {
   to: string;
   subject: string;
   bodyHtml: string;
+  sensitive?: boolean;
   bcc?: string[];
 }): Promise<void> {
   const { senderEmail } = getAzureConfig();
@@ -120,8 +121,8 @@ export async function sendEmail(params: {
 
   if (!response.ok) {
     const text = await response.text();
-    logger.error({ status: response.status, body: text }, "Microsoft Graph sendMail failed");
-    throw new Error(`Failed to send email via Microsoft Graph: ${response.status} ${text}`);
+    logger.error({ status: response.status, ...(params.sensitive ? {} : { body: text }) }, "Microsoft Graph sendMail failed");
+    throw new Error(`Failed to send email via Microsoft Graph: ${response.status}${params.sensitive ? "" : ` ${text}`}`);
   }
 
   logger.info({ to: params.to, subject: params.subject }, "Email sent via Microsoft Graph");
