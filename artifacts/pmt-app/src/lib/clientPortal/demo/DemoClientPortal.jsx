@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { FlaskConical, RotateCcw, LogOut } from 'lucide-react';
 import ClientPortal from '../ClientPortal.jsx';
 import { createDemoStore, demoAuth } from './demoModel.js';
+import StudioCalendarDemo from './StudioCalendarDemo.jsx';
 
 export function exitDemoUrl(href) {
   const url = new URL(href);
@@ -12,6 +13,7 @@ export function exitDemoUrl(href) {
   url.searchParams.delete('demoTaskClient');
   url.searchParams.delete('demoTaskView');
   url.searchParams.delete('demoTaskId');
+  url.searchParams.delete('demoStudioCalendar');
   return url.pathname + url.search;
 }
 
@@ -22,6 +24,7 @@ export function demoInitialProps(search) {
   const view = q.get('demoTaskView');
   const task = q.get('demoTaskId');
   return {
+    studioCalendar: q.get('demoStudioCalendar') === '1',
     initialTaskId: task && /^t\d+$/.test(task) ? task : undefined,
     initialClientId: client && /^demo-[a-z]+$/.test(client) ? client : undefined,
     initialTaskView: view === 'calendar' || view === 'list' ? view : undefined,
@@ -30,6 +33,7 @@ export function demoInitialProps(search) {
 
 export default function DemoClientPortal() {
   const initial = useMemo(() => demoInitialProps(window.location.search), []);
+  const { studioCalendar, ...portalProps } = initial;
   const store = useMemo(() => createDemoStore(), []);
   const auth = useMemo(() => demoAuth(), []);
   const [gen, setGen] = useState(0);
@@ -38,7 +42,7 @@ export default function DemoClientPortal() {
   const reset = () => { store.reset(); setGen(g => g + 1); };
   return (
     <div className="pb-36 sm:pb-20">
-      <ClientPortal key={gen} auth={auth} user={auth.currentUser} apiBase="" portalApi={store.portalApi} studioApi={store.studioApi} onSignOut={exit} {...initial} />
+      {studioCalendar ? <StudioCalendarDemo key={gen} /> : <ClientPortal key={gen} auth={auth} user={auth.currentUser} apiBase="" portalApi={store.portalApi} studioApi={store.studioApi} onSignOut={exit} {...portalProps} />}
       <div data-testid="banner-client-demo" role="status" className="fixed bottom-0 inset-x-0 z-30 bg-amber-50 border-t border-amber-200 px-4 py-2.5 flex flex-wrap items-center gap-3 text-left">
         <FlaskConical size={15} className="text-amber-600 shrink-0" />
         <p className="text-xs text-amber-800 flex-1 min-w-[200px]"><b>Test Client</b> · Demo data only. Changes stay in this browser tab and nothing is sent or saved.</p>

@@ -12,6 +12,8 @@ import {
 } from './core.js';
 import { STUDIO_CONFIG_CHANGED } from './access.js';
 import ClientSelect from './ClientSelect.jsx';
+import StudioCalendar from './StudioCalendar.jsx';
+import { isStudioLayout } from './calendar.js';
 import StudioReminderLog, { canSeeReminderLog } from './StudioReminderLog.jsx';
 import {
   inputCls, btnPrimary, btnAccent, btnGhost, StageBadge, UrgencyTag, Field, Sheet, ErrorBanner,
@@ -36,6 +38,7 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
   const [view, setView] = useState(prefs.view || 'plan');
   const [mode, setMode] = useState('team');
   const [month, setMonth] = useState(prefs.month || nowMonth());
+  const [planLayout, setPlanLayout] = useState(isStudioLayout(prefs.planLayout) ? prefs.planLayout : 'list');
   const [type, setType] = useState(prefs.type || 'All');
   const [clientF, setClientF] = useState(prefs.clientF || 'all');
   const [stageF, setStageF] = useState(prefs.stageF || 'all');
@@ -66,8 +69,8 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
   }, [selectedId, items, initialLink]);
   useEffect(() => () => writeStudioLink(null), []);
   useEffect(() => {
-    sessionStorage.setItem(PREF_KEY, JSON.stringify({ view, month, type, clientF, stageF, ownerF, deadlineF }));
-  }, [view, month, type, clientF, stageF, ownerF, deadlineF]);
+    sessionStorage.setItem(PREF_KEY, JSON.stringify({ view, month, planLayout, type, clientF, stageF, ownerF, deadlineF }));
+  }, [view, month, planLayout, type, clientF, stageF, ownerF, deadlineF]);
 
   const enabledClients = useMemo(() => (boot?.clients || []).filter(c => boot.configs?.[c.id]?.enabled === true), [boot]);
   const editable = useMemo(() => new Set(boot?.capabilities?.editableClientIds || []), [boot]);
@@ -292,6 +295,14 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
                 <button data-testid="button-month-next" onClick={() => setMonth(m => shiftMonth(m, 1))} className="p-1.5 rounded-lg hover:bg-slate-100" aria-label="Next month"><ChevronRight size={16} /></button>
                 <span data-testid="text-month-count" className="text-xs text-slate-400">{monthItems.length} item{monthItems.length === 1 ? '' : 's'}</span>
                 <button data-testid="button-month-today" onClick={() => setMonth(nowMonth())} className="text-xs font-semibold text-indigo-600 hover:underline">Today</button>
+                <div className="flex p-0.5 rounded-lg bg-slate-100" role="tablist" aria-label="Content plan layout">
+                  {[['list', 'List', LayoutList], ['calendar', 'Calendar', CalendarDays]].map(([id, label, Icon]) => (
+                    <button key={id} type="button" role="tab" aria-selected={planLayout === id} data-testid={`button-plan-layout-${id}`} onClick={() => setPlanLayout(id)}
+                      className={`px-2.5 py-1 rounded-md text-xs font-bold flex items-center gap-1 ${planLayout === id ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                      <Icon size={12} /> {label}
+                    </button>
+                  ))}
+                </div>
                 <div className="hidden xl:flex items-center gap-3 ml-auto text-xs text-slate-600">
                   <span className="flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-emerald-500" />Approved</span>
                   <span className="flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-amber-500" />WIP / Awaiting approval</span>
@@ -299,7 +310,10 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
                   <span className="flex items-center gap-1.5"><Clock size={11} className="text-blue-500" />Scheduled</span>
                 </div>
               </div>
-              {groups.length === 0 ? (
+              {planLayout === 'calendar' ? (
+                <StudioCalendar items={filtered} month={month} todayKey={utcToLocal(new Date().toISOString(), 'Asia/Kolkata').date}
+                  selectedId={selectedId} onOpen={setSelectedId} clientName={clientName} />
+              ) : groups.length === 0 ? (
                 <EmptyState icon={<CalendarDays size={20} />} title="Nothing planned this month" body={unscheduled.length ? `${unscheduled.length} deliverable(s) still need a posting date. See the Deliverables view.` : 'Adjust filters or add content.'} />
               ) : (
                 <>

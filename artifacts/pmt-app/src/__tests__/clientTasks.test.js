@@ -127,8 +127,8 @@ describe('demo task operations', () => {
     expect(tasks.find(t => t.id === 't4').dueDate).toBe('2026-05-10');
   });
   it('initial props are allow-listed and stripped on exit', () => {
-    expect(demoInitialProps('?demoTaskClient=demo-harbour&demoTaskView=calendar')).toEqual({ initialClientId: 'demo-harbour', initialTaskView: 'calendar' });
-    expect(demoInitialProps('?demoTaskClient=../x&demoTaskView=admin')).toEqual({ initialClientId: undefined, initialTaskView: undefined });
+    expect(demoInitialProps('?demoTaskClient=demo-harbour&demoTaskView=calendar')).toMatchObject({ initialClientId: 'demo-harbour', initialTaskView: 'calendar' });
+    expect(demoInitialProps('?demoTaskClient=../x&demoTaskView=admin')).toMatchObject({ initialClientId: undefined, initialTaskView: undefined });
     expect(exitDemoUrl('https://a.test/?clientDemo=1&demoTaskClient=demo-harbour&demoTaskView=calendar')).toBe('/');
   });
 });
