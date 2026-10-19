@@ -369,6 +369,71 @@ describe("Creative Studio revisions and conversations", () => {
   });
 });
 describe("Creative Studio mail safety", () => {
+  it.each(["reference", "final"] as const)("substitutes all email variables for the %s reminder", phase => {
+    const settings = automationSettings(automation);
+    settings[phase].subject = "{{client}} | {{post}} | {{date}} | {{type}} | {{deadline}}";
+    settings[phase].body = settings[phase].subject;
+    const rendered = renderStudioEmail({
+      ...item(), title: "Launch post", type: "Reel", plannedAt: "2026-11-07T18:45:00Z",
+      productionDueDate: "2026-11-06", productionDueTime: "17:30",
+    }, { name: "Example client" }, settings, phase);
+    for (const content of [rendered.subject, rendered.body]) {
+      expect(content).toContain("Example client | Launch post | 8 Nov 2026 | Reel | 6 Nov 2026 at 17:30 (Asia/Kolkata)");
+      expect(content).not.toMatch(/{{(?:client|post|date|type|deadline)}}/);
+    }
+  });
+  it.each(["Story", "Reel", "Post"])("keeps the %s type in email templates", type => {
+    const settings = automationSettings(automation);
+    settings.final.body = "{{type}}";
+    expect(renderStudioEmail({ ...item(), type }, { name: "Alpha" }, settings, "final").body).toMatch(new RegExp(`^${type}\\n`));
+  });
+  it("does not invent a clock time for legacy date-only deadlines", () => {
+    const settings = automationSettings(automation);
+    const rendered = renderStudioEmail({ ...item(), productionDueDate: "2026-11-06" }, { name: "Alpha" }, settings, "final");
+    expect(rendered.body).toContain("6 Nov 2026 (time not set)");
+    expect(rendered.body).not.toContain("00:00");
+  });
+  it("includes the timezone and clock time when falling back to the planned posting instant", () => {
+    const rendered = renderStudioEmail({ ...item(), plannedAt: "2026-11-07T18:45:00Z" }, { name: "Alpha" }, automationSettings(automation), "final");
+    expect(rendered.body).toContain("8 Nov 2026 at 00:15 (Asia/Kolkata)");
+  });
+  it("saves, validates, copies and clears a production deadline time without exposing it in the client projection", async () => {
+    expect((await api("patch", itemPath, { revision: 1, productionDueDate: "2026-11-06", productionDueTime: "17:30" })).status).toBe(200);
+    expect(item().productionDueTime).toBe("17:30");
+    const copy = await action("duplicate");
+    expect(copy.status).toBe(201);
+    expect(copy.body.deliverable.productionDueTime).toBe("17:30");
+    expect(project(item(), true)).not.toHaveProperty("productionDueTime");
+    expect((await api("patch", itemPath, { revision: item().revision, productionDueDate: "2026-11-06", productionDueTime: "25:00" })).status).toBe(400);
+    expect((await api("patch", itemPath, { revision: item().revision, productionDueTime: "17:30" })).status).toBe(400);
+    expect((await api("patch", itemPath, { revision: item().revision, productionDueDate: null })).status).toBe(200);
+    expect(item().productionDueTime).toBeNull();
+  });
+  it.each(["reference", "final"] as const)("applies the shared send time, timezone and cadence to %s reminders", async phase => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      process.env.CREATIVE_STUDIO_EMAIL_DELIVERY = "enabled";
+      vi.setSystemTime(new Date("2026-10-19T19:44:00Z")); // 15:44 New York
+      state.data.creativeStudio.configs.a.automation = {
+        ...automation, sendTime: "15:45", timezone: "America/New_York", cadenceDays: 3,
+      };
+      Object.assign(item(), {
+        shared: true, stage: `awaiting_${phase}`, plannedAt: "2026-12-01T12:00:00Z",
+        approvals: { [phase]: { status: "pending", approverUid: "external", revision: 1 } },
+      });
+      await runStudioEmailWorker();
+      expect(state.send).not.toHaveBeenCalled();
+      vi.setSystemTime(new Date("2026-10-19T19:45:00Z"));
+      await runStudioEmailWorker();
+      expect(state.send).toHaveBeenCalledTimes(1);
+      vi.setSystemTime(new Date("2026-10-20T19:45:00Z"));
+      await runStudioEmailWorker();
+      expect(state.send).toHaveBeenCalledTimes(1);
+      vi.setSystemTime(new Date("2026-10-22T19:45:00Z"));
+      await runStudioEmailWorker();
+      expect(state.send).toHaveBeenCalledTimes(2);
+    } finally { vi.useRealTimers(); }
+  });
   it("does not acquire a lock or perform database writes when Graph is unconfigured", async () => {
     process.env.CREATIVE_STUDIO_EMAIL_DELIVERY = "enabled";
     state.configured.mockReturnValue(false);

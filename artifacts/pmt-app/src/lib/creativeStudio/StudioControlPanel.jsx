@@ -22,6 +22,10 @@ export const PHASES = [
   { id: 'final', title: 'Final post approval reminder', blurb: 'Sent when the final creative is ready to go live', trigger: 'Final post uploaded' },
 ];
 export const PLACEHOLDERS = ['{{client}}', '{{post}}', '{{date}}', '{{type}}', '{{deadline}}'];
+export const PLACEHOLDER_MEANINGS = {
+  '{{client}}': 'Client name', '{{post}}': 'Post name', '{{date}}': 'Posting date',
+  '{{type}}': 'Story, Reel or Post', '{{deadline}}': 'Deadline time and date',
+};
 const DEFAULT_AUTO = { enabled: false, sendTime: '09:00', timezone: 'Asia/Kolkata', cadenceDays: 1, reference: PHASE_DEFAULTS.reference, final: PHASE_DEFAULTS.final };
 
 // Deep-merge layers (built-in < global defaults < client config) so older configs
@@ -148,7 +152,11 @@ function AutomationFields({ value, onChange, prefix }) {
       <div className="sm:col-span-4 grid lg:grid-cols-2 gap-3">
         {PHASES.map(ph => <PhaseCard key={ph.id} phase={ph} master={value} value={value[ph.id]} onChange={(pv) => set(ph.id, pv)} prefix={prefix} />)}
       </div>
-      <p className="sm:col-span-4 text-[11px] text-slate-400">Placeholders: {PLACEHOLDERS.join(' ')}. Send time, timezone and cadence apply to both reminders.</p>
+      <div className="sm:col-span-4 text-[11px] text-slate-500 space-y-1">
+        <p>Variables are replaced with the client and post details when the email is sent.</p>
+        {PLACEHOLDERS.map(token => <span key={token} className="inline-block mr-3"><code className="font-semibold">{token}</code> = {PLACEHOLDER_MEANINGS[token]}</span>)}
+        <p>Send time, timezone and cadence apply to both reminders.</p>
+      </div>
     </div>
   );
 }

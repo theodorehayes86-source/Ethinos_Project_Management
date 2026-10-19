@@ -541,7 +541,7 @@ function Detail({ item, api, boot, mode, editable, clientName, ownerName, curren
               <Info label="Platforms" value={(item.platforms || []).join(', ') || 'None'} />
               <Info label="Timezone" value={item.timezone || 'Asia/Kolkata'} />
               {!preview && <Info label="Owner" value={ownerName(item.ownerId)} />}
-              {!preview && <Info label="Production due" value={item.productionDueDate || 'Not set'} />}
+              {!preview && <Info label="Production due" value={item.productionDueDate ? `${item.productionDueDate}${item.productionDueTime ? ` at ${item.productionDueTime} (${item.timezone})` : ' (time not set)'}` : 'Not set'} />}
             </dl>
             {!preview && item.brief && <Block label="Internal brief" text={item.brief} />}
             <Block label="Client-facing caption" text={item.caption || 'No caption yet.'} />
@@ -794,6 +794,7 @@ function Editor({ api, boot, item, clients, defaultClient, onClose, onSaved }) {
     clientId: item?.clientId || defaultClient || clients[0]?.id || '',
     title: item?.title || '', type: item?.type || 'Post', ownerId: item?.ownerId || '', brief: item?.brief || '',
     caption: item?.caption || '', platforms: item?.platforms || [], productionDueDate: item?.productionDueDate || '',
+    productionDueTime: item?.productionDueTime || '',
     date: local.date, time: local.time || '09:00', timezone: tz0,
   });
   const [errors, setErrors] = useState({});
@@ -810,11 +811,12 @@ function Editor({ api, boot, item, clients, defaultClient, onClose, onSaved }) {
     if (!f.title.trim()) er.title = 'Title is required.';
     if (!f.ownerId) er.ownerId = 'Choose an internal owner.';
     if (!f.brief.trim()) er.brief = 'Brief is required.';
+    if (f.productionDueTime && !f.productionDueDate) er.productionDueDate = 'Choose a deadline date before setting its time.';
     setErrors(er);
     if (Object.keys(er).length) return;
     const body = {
       title: f.title.trim(), type: f.type, ownerId: f.ownerId, brief: f.brief.trim(), caption: f.caption,
-      platforms: f.platforms, productionDueDate: f.productionDueDate || null,
+      platforms: f.platforms, productionDueDate: f.productionDueDate || null, productionDueTime: f.productionDueDate && f.productionDueTime ? f.productionDueTime : null,
       plannedAt: f.date ? localToUtc(f.date, f.time, f.timezone) : null, timezone: f.timezone,
     };
     setBusy(true); setError('');
@@ -843,7 +845,8 @@ function Editor({ api, boot, item, clients, defaultClient, onClose, onSaved }) {
             {owners.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
           </select>
         </Field>
-        <Field label="Production due" hint="Separate from posting date."><input data-testid="input-due" type="date" value={f.productionDueDate} onChange={e => set('productionDueDate', e.target.value)} className={inputCls} /></Field>
+        <Field label="Production due" error={errors.productionDueDate} hint="Separate from posting date."><input data-testid="input-due" type="date" value={f.productionDueDate} onChange={e => set('productionDueDate', e.target.value)} className={inputCls} /></Field>
+        <Field label="Deadline time" hint={`Uses ${f.timezone}. Included in reminder emails.`}><input data-testid="input-due-time" type="time" value={f.productionDueTime} onChange={e => set('productionDueTime', e.target.value)} className={inputCls} /></Field>
         <div className="sm:col-span-2"><Field label="Internal brief" error={errors.brief}><textarea data-testid="input-brief" rows={3} value={f.brief} onChange={e => set('brief', e.target.value)} className={inputCls} /></Field></div>
         <div className="sm:col-span-2"><Field label="Client-facing caption"><textarea data-testid="input-caption" rows={3} value={f.caption} onChange={e => set('caption', e.target.value)} className={inputCls} /></Field></div>
         <div className="sm:col-span-2">

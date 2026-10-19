@@ -65,10 +65,11 @@ export function automation(body: any) {
   }
   return { enabled: body.enabled, sendTime: body.sendTime, timezone: timezone(body.timezone), cadenceDays: body.cadenceDays, ...phases };
 }
-export const fields = ["title", "type", "ownerId", "brief", "caption", "platforms", "productionDueDate", "plannedAt", "timezone"];
+export const fields = ["title", "type", "ownerId", "brief", "caption", "platforms", "productionDueDate", "productionDueTime", "plannedAt", "timezone"];
 export function editable(body: any, creating = false): RecordData {
   strict(body, [...fields, ...(creating ? [] : ["revision"])]);
-  const out: RecordData = creating ? { caption: "", platforms: [], productionDueDate: null, plannedAt: null, timezone: "Asia/Kolkata" } : {};
+  const out: RecordData = creating ? { caption: "", platforms: [], productionDueDate: null, productionDueTime: null, plannedAt: null, timezone: "Asia/Kolkata" } : {};
+  if (body.productionDueTime && !body.productionDueDate) fail(400, "Provide a production date with its deadline time.");
   if (creating && ["title", "type", "ownerId", "brief"].some(k => body[k] === undefined)) fail(400, "Title, type, owner and brief are required.");
   for (const k of fields) {
     if (body[k] === undefined) continue;
@@ -80,6 +81,9 @@ export function editable(body: any, creating = false): RecordData {
     else if (k === "platforms") {
       if (!Array.isArray(v) || v.length > 4 || v.some(p => !["Instagram", "Facebook", "LinkedIn", "YouTube Shorts"].includes(p))) fail(400, "Invalid platforms.");
       out[k] = [...new Set(v)];
+    } else if (k === "productionDueTime") {
+      if (v !== null && (typeof v !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(v))) fail(400, "Invalid production deadline time.");
+      out[k] = v;
     } else if (k === "plannedAt") {
       if (v !== null && (typeof v !== "string" || !/T.*Z$/.test(v) || !Number.isFinite(Date.parse(v)))) fail(400, "Use an ISO UTC posting instant.");
       out[k] = v;
@@ -88,6 +92,7 @@ export function editable(body: any, creating = false): RecordData {
       out[k] = v;
     }
   }
+  if (body.productionDueDate === null) out.productionDueTime = null;
   return out;
 }
 export const hasStudioDepartmentAccess = (user: RecordData) =>
@@ -102,7 +107,7 @@ export function permissions(user: RecordData, client: RecordData, config: Record
 }
 export function project(item: RecordData, external: boolean): RecordData {
   const common = ["id", "clientId", "title", "type", "caption", "platforms", "plannedAt", "timezone", "revision", "stage", "shared", "archived", "scheduled", "createdAt", "updatedAt"];
-  const result = Object.fromEntries([...common, ...(!external ? ["ownerId", "brief", "productionDueDate"] : [])].map(k => [k, item[k] ?? null]));
+  const result = Object.fromEntries([...common, ...(!external ? ["ownerId", "brief", "productionDueDate", "productionDueTime"] : [])].map(k => [k, item[k] ?? null]));
   result.platforms = item.platforms ?? [];
   // A client sees submitted snapshots, never unpublished asset replacements.
   result.assets = external

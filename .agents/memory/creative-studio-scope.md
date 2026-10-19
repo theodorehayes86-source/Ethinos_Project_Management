@@ -68,3 +68,15 @@ spam clients. The user has not authorized real rollout emails.
 **How to apply:** Show uncertain delivery in the delivery log for investigation.
 Check the sender mailbox before any manual resend, and obtain rollout approval
 before enabling real transport.
+
+## Email template variables
+
+The user defines the email variables as: {{client}} = client name, {{post}} = post
+name, {{date}} = date, {{type}} = Story, Reel or Post, and {{deadline}} = deadline
+time and date. Send time, timezone and cadence apply to both reminders.
+
+**Why:** The user explicitly clarified that these are variables populated in the
+email template, not literal text in the delivered email.
+
+**How to apply:** Keep variable meanings consistent in previews and sent emails,
+and apply the shared schedule to reference and final approval reminders.

@@ -213,7 +213,7 @@ router.post("/clients/:clientId/deliverables/:id/actions", route(async (req, res
     const original = await itemFor(req);
     if (original.revision !== b.revision) fail(409, "Reload the current revision.");
     const id = randomUUID(), now = Date.now();
-    const copy: RecordData = { ...Object.fromEntries(["title", "type", "ownerId", "brief", "caption", "platforms", "productionDueDate", "plannedAt", "timezone"].map(k => [k, original[k] ?? null])), id, clientId: original.clientId, title: `${original.title} (copy)`, revision: 1, stage: "internal_draft", shared: false, archived: false, scheduled: null, approvals: {}, assets: {}, createdAt: now, updatedAt: now };
+    const copy: RecordData = { ...Object.fromEntries(["title", "type", "ownerId", "brief", "caption", "platforms", "productionDueDate", "productionDueTime", "plannedAt", "timezone"].map(k => [k, original[k] ?? null])), id, clientId: original.clientId, title: `${original.title} (copy)`, revision: 1, stage: "internal_draft", shared: false, archived: false, scheduled: null, approvals: {}, assets: {}, createdAt: now, updatedAt: now };
     for (const asset of values(original.assets)) { const aid = randomUUID(); copy.assets[aid] = { ...asset, id: aid, history: {}, revision: 1, updatedAt: now, updatedBy: c.uid }; }
     audit(copy, c.uid, "duplicated", now);
     await db().ref(`creativeStudio/items/${original.clientId}/${id}`).set(copy);
@@ -299,7 +299,7 @@ router.post("/clients/:clientId/preview", route(async (req, res) => {
   if (!["reference", "final"].includes(phase)) fail(400, "Select reference or final approval phase.");
   const settings = automationSettings(await read("creativeStudio/defaults"), config.automation);
   const now = Date.now();
-  const example = { id: "preview-example", title: "Example campaign post", type: "Post", timezone: settings.timezone, plannedAt: new Date(now + 7 * 86400000).toISOString(), productionDueDate: new Date(now + 5 * 86400000).toISOString().slice(0, 10) };
+  const example = { id: "preview-example", title: "Example campaign post", type: "Post", timezone: settings.timezone, plannedAt: new Date(now + 7 * 86400000).toISOString(), productionDueDate: new Date(now + 5 * 86400000).toISOString().slice(0, 10), productionDueTime: "17:00" };
   const { subject, body } = renderStudioEmail(example, client, settings, phase);
   res.json({ subject, body, deliveryEnabled: deliveryEnabled() && config.enabled === true && settings.enabled && settings[phase as "reference" | "final"].enabled });
 }));

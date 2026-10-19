@@ -22,7 +22,13 @@ const emailPhase = (item: RecordData, kind: string): ApprovalPhase => kind === "
 export function renderStudioEmail(item: RecordData, client: RecordData, settings: ReturnType<typeof automationSettings>, phase: ApprovalPhase, kind = "reminder") {
   const date = (value: string | undefined, dateOnly = false) => value && Number.isFinite(Date.parse(value))
     ? new Intl.DateTimeFormat("en-GB", { timeZone: dateOnly ? "UTC" : item.timezone ?? settings.timezone, day: "numeric", month: "short", year: "numeric" }).format(new Date(value)) : "Not scheduled";
-  const data: Record<string, string> = { client: String(client.name ?? "Client"), post: String(item.title ?? ""), type: String(item.type ?? "creative").toLowerCase(), date: date(item.plannedAt), deadline: item.productionDueDate ? date(item.productionDueDate, true) : date(item.plannedAt) };
+  const zone = item.timezone ?? settings.timezone;
+  const deadline = item.productionDueDate
+    ? `${date(item.productionDueDate, true)}${item.productionDueTime ? ` at ${item.productionDueTime} (${zone})` : " (time not set)"}`
+    : item.plannedAt && Number.isFinite(Date.parse(item.plannedAt))
+      ? `${date(item.plannedAt)} at ${new Intl.DateTimeFormat("en-GB", { timeZone: zone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(item.plannedAt))} (${zone})`
+      : "Not scheduled";
+  const data: Record<string, string> = { client: String(client.name ?? "Client"), post: String(item.title ?? ""), type: String(item.type ?? "Creative"), date: date(item.plannedAt), deadline };
   const fill = (template: string) => template.replace(/{{(client|post|date|type|deadline)}}/g, (_, key: string) => data[key]);
   const subject = (kind === "decision" ? "Flow Pro: creative approval updated" : fill(settings[phase].subject)).replace(/[\r\n]+/g, " ");
   const content = kind === "decision" ? `${item.title}: creative approval updated.` : fill(settings[phase].body);
