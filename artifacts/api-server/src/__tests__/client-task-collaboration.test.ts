@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({
   verify: vi.fn(), authUser: vi.fn(), mail: vi.fn(),
   beforeTransaction: vi.fn(), retry: vi.fn(),
   beforeUpdate: vi.fn(), log: vi.fn(), configured: true,
+  teamsConfigured: true, teams: vi.fn(), resolveEntra: vi.fn(),
   coldPaths: new Set<string>(),
   retained: new Map<string, Set<() => void>>(),
   firstNulls: [] as string[],
@@ -69,7 +70,11 @@ vi.mock("../lib/firebase-admin", () => {
     verifyIdToken: state.verify, getUser: state.authUser,
   }) };
 });
-vi.mock("../lib/microsoft-graph", () => ({ sendEmail: state.mail, isEmailConfigured: () => state.configured }));
+vi.mock("../lib/microsoft-graph", () => ({
+  sendEmail: state.mail, isEmailConfigured: () => state.configured,
+  isTeamsConfigured: () => state.teamsConfigured, resolveEntraObjectId: state.resolveEntra,
+  sendTeamsActivityNotification: state.teams,
+}));
 vi.mock("../lib/logger", () => ({ logger: { warn: state.log, error: state.log } }));
 import portalRouter from "../routes/client-portal";
 import { getAdminDatabase } from "../lib/firebase-admin";
@@ -100,6 +105,9 @@ beforeEach(() => {
   state.beforeUpdate.mockReset();
   state.mail.mockReset().mockResolvedValue(undefined);
   state.configured = true;
+  state.teamsConfigured = true;
+  state.teams.mockReset().mockResolvedValue({ ok: true });
+  state.resolveEntra.mockReset().mockResolvedValue("entra-object-id");
   state.data = {
     clients: { alpha: { id: "alpha", name: "Alpha", ownerIds: ["owner"] }, beta: { id: "beta", name: "Beta" } },
     clientPortalUsers: { "client-a": { email: client.email, disabled: false, clientIds: ["alpha"] } },
@@ -277,6 +285,7 @@ describe("shared-task collaboration privacy and scope", () => {
     expect(config.database.rules).toBe("database.rules.json");
     expect(rules.clientTaskCollaboration).toEqual({ ".read": false, ".write": false });
     expect(rules.clientTaskUpdateEmailDeliveries).toEqual({ ".read": false, ".write": false });
+    expect(rules.clientTaskUpdateTeamsDeliveries).toEqual({ ".read": false, ".write": false });
     // RTDB child denies cannot override an ancestor grant. This subtree is a
     // direct root child, and neither root grants nor root wildcards allow it.
     expect(rules[".read"]).toBe(false);
@@ -521,6 +530,219 @@ describe("client task update email (mocked Microsoft Graph only)", () => {
       expect(state.mail.mock.calls[0][0].bodyHtml).not.toContain("href=");
     },
   );
+});
+
+describe("client update Control Centre settings and independent Teams channel", () => {
+  const settingPath = "settings/notifications/client-task-updated";
+  const emailLedger = "clientTaskUpdateEmailDeliveries/alpha/stable-key";
+  const teamsLedger = "clientTaskUpdateTeamsDeliveries/alpha/stable-key";
+  const event: ClientTaskUpdateEvent = { id: "teams-event", actorUid: client.uid, at: 1700000000000,
+    kind: "message", text: "Updated copy ready", url: null };
+  const notify = () => sendClientTaskUpdateEmail("alpha", "stable-key", event);
+  const states = (path: string) => Object.values(valueAt(path) ?? {}).flatMap(value =>
+    Object.values(value as Record<string, any>)) as Record<string, any>[];
+  const statusPatch = (status: string) => request(app).patch(base.replace("/collaboration", ""))
+    .set("Authorization", "Bearer test").send({ status });
+  beforeEach(() => {
+    Object.assign(valueAt(parent), { assigneeId: "staff-id", status: "Pending" });
+    state.data.users.staffKey.teamsNotificationsEnabled = true;
+  });
+  it.each([
+    [undefined, undefined, 1, 1], [true, true, 1, 1], [false, false, 0, 0],
+    [true, false, 1, 0], [false, true, 0, 1], [false, undefined, 0, 1], [undefined, false, 1, 0],
+  ])("respects independent email=%s Teams=%s with both defaults on", async (enabled, teamsActivityEnabled, emailCount, teamsCount) => {
+    saveAt(settingPath, { ...(enabled === undefined ? {} : { enabled }),
+      ...(teamsActivityEnabled === undefined ? {} : { teamsActivityEnabled }) });
+    await notify();
+    expect(state.mail).toHaveBeenCalledTimes(emailCount);
+    expect(state.teams).toHaveBeenCalledTimes(teamsCount);
+    expect(states(emailLedger)[0].state).toBe(emailCount ? "sent" : "skipped");
+    expect(states(teamsLedger)[0].state).toBe(teamsCount ? "sent" : "skipped");
+    await notify();
+    expect(state.mail).toHaveBeenCalledTimes(emailCount);
+    expect(state.teams).toHaveBeenCalledTimes(teamsCount);
+  });
+  it("honors escaped custom email subject/intro, ignores BCC and leaves Teams independent", async () => {
+    saveAt(settingPath, { customSubject: "Client update\r\nHeader injection", customIntroText: '<img src=x onerror="unsafe"> & intro',
+      bccEmails: ["not-assigned@ethinos.com"] });
+    await notify();
+    expect(state.mail.mock.calls[0][0]).toMatchObject({ to: staff.email,
+      subject: "Client update Header injection — Client update on a shared task" });
+    expect(state.mail.mock.calls[0][0].bcc).toBeUndefined();
+    expect(state.mail.mock.calls[0][0].bodyHtml).toContain("&lt;img src=x onerror=&quot;unsafe&quot;&gt; &amp; intro");
+    expect(state.teams).toHaveBeenCalledTimes(1);
+  });
+  it("does not gate Teams on email configuration", async () => {
+    state.configured = false;
+    await notify();
+    expect(state.mail).not.toHaveBeenCalled();
+    expect(state.teams).toHaveBeenCalledTimes(1);
+    expect(states(emailLedger)[0]).toMatchObject({ state: "skipped", reason: "email-not-configured" });
+    expect(states(teamsLedger)[0].state).toBe("sent");
+  });
+  it("does not gate email on Teams configuration", async () => {
+    state.teamsConfigured = false;
+    await notify();
+    expect(state.mail).toHaveBeenCalledTimes(1);
+    expect(state.resolveEntra).not.toHaveBeenCalled();
+    expect(state.teams).not.toHaveBeenCalled();
+    expect(states(teamsLedger)[0]).toMatchObject({ state: "skipped", reason: "teams-not-configured" });
+  });
+  it.each([false, undefined])("requires existing per-user Teams opt-in (%s)", async preference => {
+    state.data.users.staffKey.teamsNotificationsEnabled = preference;
+    await notify();
+    expect(state.mail).toHaveBeenCalledTimes(1);
+    expect(state.resolveEntra).not.toHaveBeenCalled();
+    expect(state.teams).not.toHaveBeenCalled();
+    expect(states(teamsLedger)[0]).toMatchObject({ state: "skipped", reason: "user-disabled" });
+  });
+  it("records an unsupported/unresolvable Teams user without affecting email", async () => {
+    state.resolveEntra.mockResolvedValue(null);
+    await notify();
+    expect(state.resolveEntra).toHaveBeenCalledWith(staff.email, "staff-id", { sensitive: true });
+    expect(state.mail).toHaveBeenCalledTimes(1);
+    expect(state.teams).not.toHaveBeenCalled();
+    expect(states(teamsLedger)[0]).toMatchObject({ state: "skipped", reason: "recipient-unresolved" });
+    await notify();
+    expect(state.resolveEntra).toHaveBeenCalledTimes(1);
+  });
+  it("uses existing taskMention activity transport with sanitised bounded actor/client/task/update details and no delegated DM", async () => {
+    state.authUser.mockResolvedValue({ email: client.email, emailVerified: true, displayName: "<b>Client Actor</b>\r\n" });
+    state.data.clients.alpha.name = "<b>Alpha Client</b>";
+    valueAt(parent).name = "<img>Shared Task";
+    await notify();
+    const payload = state.teams.mock.calls[0][0];
+    expect(payload).toMatchObject({ recipientObjectId: "entra-object-id", mentionerName: "Client Actor",
+      clientName: "Alpha Client", taskName: "Shared Task", taskId: "stable-key", sensitive: true });
+    expect(payload.previewText).toContain("Client Actor");
+    expect(payload.previewText).toContain("Alpha Client");
+    expect(payload.previewText).toContain("Shared Task");
+    expect(payload.previewText).toContain("New client message");
+    expect(payload.previewText).toContain("Updated copy ready");
+    expect(payload.previewText).not.toMatch(/[<>\r\n]/);
+    expect(payload.previewText.length).toBeLessThanOrEqual(150);
+    expect(payload).not.toHaveProperty("activityType");
+    const transport = readFileSync(new URL("../lib/microsoft-graph.ts", import.meta.url), "utf8");
+    expect(transport).toContain('activityType: "taskMention"');
+  });
+  it("truncates long Teams fields and preview", async () => {
+    state.authUser.mockResolvedValue({ email: client.email, emailVerified: true, displayName: "A".repeat(200) });
+    valueAt(parent).name = "T".repeat(500);
+    state.data.clients.alpha.name = "C".repeat(500);
+    await notify();
+    const payload = state.teams.mock.calls[0][0];
+    expect(payload.mentionerName.length).toBeLessThanOrEqual(80);
+    expect(payload.taskName.length).toBeLessThanOrEqual(120);
+    expect(payload.clientName.length).toBeLessThanOrEqual(80);
+    expect(payload.previewText.length).toBeLessThanOrEqual(150);
+    expect(payload.previewText).toContain("New client message");
+  });
+  it("sends Teams when a compatible old email delivery already exists, without resending email", async () => {
+    state.data.users.staffKey.teamsNotificationsEnabled = false;
+    await notify();
+    expect(state.mail).toHaveBeenCalledTimes(1);
+    expect(state.teams).not.toHaveBeenCalled();
+    // Simulate pre-Teams persisted data: only the existing email ledger remains.
+    delete state.data.clientTaskUpdateTeamsDeliveries;
+    state.data.users.staffKey.teamsNotificationsEnabled = true;
+    await notify();
+    expect(state.mail).toHaveBeenCalledTimes(1);
+    expect(state.teams).toHaveBeenCalledTimes(1);
+  });
+  it("does not suppress Teams when email fails ambiguously", async () => {
+    state.mail.mockRejectedValue(new Error("PRIVATE_ERROR"));
+    await notify();
+    expect(states(emailLedger)[0].state).toBe("unknown");
+    expect(states(teamsLedger)[0].state).toBe("sent");
+    expect(state.teams).toHaveBeenCalledTimes(1);
+    await notify();
+    expect(state.mail).toHaveBeenCalledTimes(1);
+    expect(state.teams).toHaveBeenCalledTimes(1);
+  });
+  it("isolates email ledger claim failure so Teams still sends", async () => {
+    state.beforeTransaction.mockImplementation(async (path: string) => {
+      if (path.startsWith(emailLedger)) throw new Error("Ledger offline");
+    });
+    await notify();
+    expect(state.mail).not.toHaveBeenCalled();
+    expect(state.teams).toHaveBeenCalledTimes(1);
+    expect(states(teamsLedger)[0].state).toBe("sent");
+  });
+  it.each([
+    [{ ok: false, status: 403, error: "not installed PRIVATE" }, "failed", "app-unavailable"],
+    [{ ok: false, status: 404, error: "not found PRIVATE" }, "failed", "recipient-unavailable"],
+    [{ ok: false, status: 409, error: "multiple apps PRIVATE" }, "failed", "configuration-conflict"],
+    [{ ok: false, error: "ambiguous SECRET_TOKEN" }, "unknown", "transport-outcome-unknown"],
+    [{ ok: false, status: 500, error: "server SECRET_TOKEN" }, "unknown", "transport-outcome-unknown"],
+  ])("persists Teams result %j with no retry and leaves email independent", async (result, status, reason) => {
+    state.teams.mockResolvedValue(result);
+    await notify();
+    expect(state.mail).toHaveBeenCalledTimes(1);
+    expect(states(emailLedger)[0].state).toBe("sent");
+    expect(states(teamsLedger)[0]).toMatchObject({ state: status, reason });
+    expect(JSON.stringify(states(teamsLedger))).not.toMatch(/PRIVATE|SECRET_TOKEN/);
+    await notify();
+    expect(state.teams).toHaveBeenCalledTimes(1);
+  });
+  it("isolates thrown Teams outcomes without failing saved mutations or retrying", async () => {
+    state.teams.mockRejectedValue(new Error("SECRET_TOKEN staff@ethinos.com"));
+    const res = await post("entries", message());
+    expect(res.status).toBe(201);
+    expect(state.mail).toHaveBeenCalledTimes(1);
+    expect(states(teamsLedger)[0].state).toBe("unknown");
+    await post("entries", message());
+    expect(state.teams).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(state.log.mock.calls)).not.toMatch(/SECRET_TOKEN|ethinos.com/);
+  });
+  it.each(["revoked", "preference", "event-disabled", "hidden", "reassigned"])(
+    "rechecks %s after the Entra lookup before delivering Teams", async mode => {
+      state.resolveEntra.mockImplementation(async () => {
+        if (mode === "revoked") state.data.clientPortalUsers[client.uid].disabled = true;
+        if (mode === "preference") state.data.users.staffKey.teamsNotificationsEnabled = false;
+        if (mode === "event-disabled") saveAt(settingPath, { teamsActivityEnabled: false });
+        if (mode === "hidden") valueAt(parent).visibility = "internal";
+        if (mode === "reassigned") valueAt(parent).assigneeId = "other";
+        return "entra-object-id";
+      });
+      await notify();
+      expect(state.mail).toHaveBeenCalledTimes(1);
+      expect(state.teams).not.toHaveBeenCalled();
+      expect(states(teamsLedger)[0]).toMatchObject({ state: "skipped", reason: "access-or-preference-changed" });
+    },
+  );
+  it("deduplicates concurrent channel claims, create retries, status/subtask no-ops and preserves valid cycles", async () => {
+    const results = await Promise.all([post("entries", message()), post("entries", message())]);
+    expect(results.map(res => res.status)).toEqual([201, 201]);
+    expect(state.mail).toHaveBeenCalledTimes(1);
+    expect(state.teams).toHaveBeenCalledTimes(1);
+    await post("entries", message());
+    await statusPatch("Pending");
+    expect(state.teams).toHaveBeenCalledTimes(1);
+    await statusPatch("In Progress");
+    await statusPatch("In Progress");
+    await statusPatch("Pending");
+    await statusPatch("In Progress");
+    expect(state.mail).toHaveBeenCalledTimes(4);
+    expect(state.teams).toHaveBeenCalledTimes(4);
+    const child = (await post("subtasks", subtask(uuid2))).body.subtask;
+    await patch(child.id, { completed: false });
+    await Promise.all([patch(child.id, { completed: true }), patch(child.id, { completed: true })]);
+    await patch(child.id, { completed: false });
+    expect(state.mail).toHaveBeenCalledTimes(7);
+    expect(state.teams).toHaveBeenCalledTimes(7);
+  });
+  it("does not send either channel for unsupported recipients or staff writes", async () => {
+    state.data.users.staffKey.role = "Client";
+    await notify();
+    expect(state.mail).not.toHaveBeenCalled();
+    expect(state.teams).not.toHaveBeenCalled();
+    state.data.users.staffKey.role = "Employee";
+    state.identity = { ...staff };
+    await post("entries", message());
+    await post("subtasks", subtask(uuid2));
+    expect(state.mail).not.toHaveBeenCalled();
+    expect(state.teams).not.toHaveBeenCalled();
+  });
 });
 
 describe("collaboration validation, idempotency and concurrency", () => {

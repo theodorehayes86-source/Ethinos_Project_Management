@@ -20,6 +20,10 @@
       ".read": false,
       ".write": false
     },
+    "clientTaskUpdateTeamsDeliveries": {
+      ".read": false,
+      ".write": false
+    },
 
     "clientPortalUsers": {
       ".read": false,

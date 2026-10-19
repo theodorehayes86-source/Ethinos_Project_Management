@@ -310,7 +310,8 @@ const objectIdMemoryCache = new Map<string, string>();
  */
 export async function resolveEntraObjectId(
   email: string,
-  pmtUserId?: string
+  pmtUserId?: string,
+  options?: { sensitive?: boolean }
 ): Promise<string | null> {
   const normalised = email.toLowerCase();
 
@@ -339,7 +340,7 @@ export async function resolveEntraObjectId(
     );
     if (!resp.ok) {
       logger.warn(
-        { status: resp.status, email: normalised },
+        { status: resp.status, ...(options?.sensitive ? {} : { email: normalised }) },
         "[Teams] Graph user lookup failed"
       );
       return null;
@@ -351,13 +352,13 @@ export async function resolveEntraObjectId(
 
     if (pmtUserId) {
       writeFirebasePath(`userMeta/${pmtUserId}/msObjectId`, json.id).catch((err) => {
-        logger.warn({ err, pmtUserId }, "[Teams] Could not cache msObjectId in Firebase");
+        logger.warn(options?.sensitive ? {} : { err, pmtUserId }, "[Teams] Could not cache msObjectId in Firebase");
       });
     }
 
     return json.id;
   } catch (err) {
-    logger.warn({ err, email: normalised }, "[Teams] resolveEntraObjectId threw");
+    logger.warn(options?.sensitive ? {} : { err, email: normalised }, "[Teams] resolveEntraObjectId threw");
     return null;
   }
 }
@@ -460,6 +461,7 @@ export async function sendTeamsActivityNotification(params: {
   clientName?: string;
   previewText: string;
   taskId?: string;
+  sensitive?: boolean;
 }): Promise<TeamsNotificationResult> {
   const teamsAppId = getTeamsAppId();
   if (!teamsAppId) {
@@ -514,7 +516,7 @@ export async function sendTeamsActivityNotification(params: {
     }
 
     logger.info(
-      { recipientObjectId: params.recipientObjectId, installationId, topicSource: topic.source },
+      params.sensitive ? { topicSource: topic.source } : { recipientObjectId: params.recipientObjectId, installationId, topicSource: topic.source },
       "[Teams] Sending activity notification"
     );
 
@@ -533,7 +535,7 @@ export async function sendTeamsActivityNotification(params: {
     if (!resp.ok) {
       const text = await resp.text();
       logger.warn(
-        { status: resp.status, body: text, recipientObjectId: params.recipientObjectId },
+        { status: resp.status, ...(params.sensitive ? {} : { body: text, recipientObjectId: params.recipientObjectId }) },
         "[Teams] sendActivityNotification failed"
       );
 
@@ -553,13 +555,13 @@ export async function sendTeamsActivityNotification(params: {
     }
 
     logger.info(
-      { recipientObjectId: params.recipientObjectId, taskName: params.taskName },
+      params.sensitive ? {} : { recipientObjectId: params.recipientObjectId, taskName: params.taskName },
       "[Teams] Activity notification sent"
     );
     return { ok: true };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    logger.warn({ err }, "[Teams] sendActivityNotification threw — skipping");
+    logger.warn(params.sensitive ? {} : { err }, "[Teams] sendActivityNotification threw — skipping");
     return { ok: false, error: msg };
   }
 }

@@ -61,6 +61,17 @@ describe('sharing fields', () => {
 });
 
 describe('client-safe projection', () => {
+  it('exposes independent email and Teams controls for client task updates in Notifications', () => {
+    const source = readFileSync(new URL('../PMT/MasterDataView.jsx', import.meta.url), 'utf8');
+    const teams = source.slice(source.indexOf('const TEAMS_PING_EVENTS'), source.indexOf('const NOTIFICATION_EVENTS'));
+    expect(teams).toContain("'client-task-updated'");
+    expect(source).toContain("id: 'client-task-updated', label: 'Client Task Updated'");
+    expect(source).toContain("return eventId === 'mention' || eventId === 'client-task-updated'");
+    expect(source).toContain('onUpdateNotificationSetting(event.id, { enabled: !isEnabled })');
+    expect(source).toContain('onUpdateNotificationSetting(event.id, { teamsActivityEnabled: !teamsEnabled })');
+    expect(source).toContain("event.id === 'client-task-updated' ? (");
+    expect(source).toContain('Additional recipients cannot be added.');
+  });
   const task = { id: 't1', name: 'Launch', status: 'WIP', dueDate: '5th Aug 2026', comment: 'INTERNAL SECRET', assigneeName: 'Theo', steps: [{ label: 's' }] };
   it('never exposes internal comment', () => {
     const s = clientSafeTask(task);

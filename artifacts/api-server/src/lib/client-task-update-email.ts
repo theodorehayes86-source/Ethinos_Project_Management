@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { getAdminAuth, getAdminDatabase } from "./firebase-admin";
 import { isStaffEmail, membershipAllows, normalizeMembership, projectClientTask, safeKey } from "./client-portal";
 import { values, type RecordData } from "./creative-studio";
-import { isEmailConfigured, sendEmail } from "./microsoft-graph";
+import { isEmailConfigured, isTeamsConfigured, resolveEntraObjectId, sendEmail, sendTeamsActivityNotification } from "./microsoft-graph";
 import { logger } from "./logger";
 
 export type ClientTaskUpdateEvent = {
@@ -28,9 +28,22 @@ function safeLink(value: string | null): string | null {
   } catch { return null; }
 }
 const statusLabel = (value: string) => ({ WIP: "In Progress", Done: "Completed" })[value] ?? value;
+const compact = (value: unknown, max: number) => {
+  const plain = String(value ?? "").replace(/<[^>]*>/g, "").replace(/[<>&\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+  return plain.length > max ? `${plain.slice(0, max - 1)}…` : plain;
+};
+type NotificationSetting = { enabled?: boolean; teamsActivityEnabled?: boolean; customSubject?: string; customIntroText?: string };
+const settingPath = "settings/notifications/client-task-updated";
 
-/** No email/body/transport error details in logs. A successful mutation must
- * remain successful even when delivery, configuration or ledger storage fails. */
+function updateDetails(event: ClientTaskUpdateEvent) {
+  if (event.kind === "status") return { change: `Status changed from ${statusLabel(event.before)} to ${statusLabel(event.after)}`, text: "" };
+  if ("title" in event) return { change: { "subtask-added": "Subtask added", "subtask-completed": "Subtask completed", "subtask-reopened": "Subtask reopened" }[event.kind], text: event.title };
+  return { change: { message: "New client message", note: "New client note", link: "New client link" }[event.kind], text: event.text || event.url || "" };
+}
+
+/** Legacy hook name retained; delivers independent email and Teams channels.
+ * No email/body/transport error details in logs. Successful mutations remain
+ * successful even when delivery, configuration or ledger storage fails. */
 export async function sendClientTaskUpdateEmail(clientId: string, taskId: string, event: ClientTaskUpdateEvent): Promise<void> {
   try {
     if (![clientId, taskId, event.id, event.actorUid].every(safeKey) || clientId.startsWith("__")) return;
@@ -49,61 +62,96 @@ export async function sendClientTaskUpdateEmail(clientId: string, taskId: string
       // creates separate tasks; do not invent assigneeIds or trust assigneeEmail.
       const assigneeId = task.assigneeId;
       if ((typeof assigneeId !== "string" && typeof assigneeId !== "number") || !String(assigneeId)) return null;
-      const recipients = new Set<string>();
+      const recipients = new Map<string, { id: string; teamsEnabled: boolean }>();
       for (const user of values(await read("users"))) {
         if (String(user.id) !== String(assigneeId) || user.disabled === true || user.active === false || user.archived || user.role === "Client") continue;
         const email = typeof user.email === "string" ? user.email.trim().toLowerCase() : "";
         if (email.length > 254 || email.indexOf("@") > 64 ||
             !/^[a-z0-9_%+-](?:[a-z0-9._%+-]*[a-z0-9_%+-])?@ethinos\.com$/i.test(email) || email.includes("..") ||
             clientEmails.has(email) || clientUids.has(String(user.uid ?? user.id))) continue;
-        recipients.add(email);
+        if (!recipients.has(email)) recipients.set(email, { id: String(user.id), teamsEnabled: user.teamsNotificationsEnabled === true });
       }
       const name = actor.displayName?.trim();
       return { client, task, recipients, actorName: name && !name.includes("@") ? name.slice(0, 100) : "Client" };
     };
     const initial = await context();
     if (!initial) return;
-    for (const recipient of initial.recipients) {
-      const ref = db().ref(`clientTaskUpdateEmailDeliveries/${clientId}/${taskId}/${event.id}/${hash(recipient)}`);
-      // At-most-once: any existing state (including sending/unknown/skipped)
-      // blocks another send. Never reclaim ambiguous transport attempts.
-      const claimed = await ref.transaction(current => current ? undefined :
-        { state: "sending", createdAt: Date.now() }, undefined, false);
-      if (!claimed.committed) continue;
-      try {
-        // Recheck sharing, live membership/client and assignment after claiming.
-        const live = await context();
-        if (!live || !live.recipients.has(recipient) || !isEmailConfigured()) {
-          await ref.update({ state: "skipped", finishedAt: Date.now() });
-          continue;
+    for (const recipient of initial.recipients.keys()) {
+      // Keep the legacy email ledger unchanged. A sent email must never suppress
+      // Teams, and failures or settings in either channel cannot block the other.
+      for (const channel of ["email", "teams"] as const) {
+        const ledger = channel === "email" ? "clientTaskUpdateEmailDeliveries" : "clientTaskUpdateTeamsDeliveries";
+        const ref = db().ref(`${ledger}/${clientId}/${taskId}/${event.id}/${hash(recipient)}`);
+        let claimed = false;
+        try {
+          const claim = await ref.transaction(current => current ? undefined :
+            { state: "sending", createdAt: Date.now() }, undefined, false);
+          if (!claim.committed) continue;
+          claimed = true;
+          const finish = (state: string, reason: string) => ref.update({ state, reason, finishedAt: Date.now() });
+          const live = await context();
+          const settings = (await read(settingPath) ?? {}) as NotificationSetting;
+          const settingValue = channel === "email" ? settings.enabled : settings.teamsActivityEnabled;
+          if (!live || !live.recipients.has(recipient)) { await finish("skipped", "access-unavailable"); continue; }
+          if (settingValue === false) { await finish("skipped", "event-disabled"); continue; }
+          const { change, text } = updateDetails(event);
+          if (channel === "email") {
+            if (!isEmailConfigured()) { await finish("skipped", "email-not-configured"); continue; }
+            let detail = "";
+            if ("title" in event) detail = `<p>${escape(event.title)}</p>`;
+            else if ("text" in event) {
+              const url = event.kind === "link" ? safeLink(event.url) : null;
+              detail = `<p style="white-space:pre-wrap">${escape(event.text)}</p>` +
+                (url ? `<p><a href="${escape(url)}">${escape(url)}</a></p>` : "");
+            }
+            const intro = typeof settings.customIntroText === "string" ? settings.customIntroText.trim().slice(0, 2000) : "";
+            const prefix = typeof settings.customSubject === "string" ? compact(settings.customSubject, 160) : "";
+            const bodyHtml = `<h2>Client task update</h2>${intro ? `<p>${escape(intro)}</p>` : ""}` +
+              `<p>Client: ${escape(live.client.name)}</p><p>Task: ${escape(live.task.name)}</p><p>Updated by: ${escape(live.actorName)}</p>` +
+              `<p>${escape(change)}</p>${detail}<p>Time: ${escape(new Date(event.at).toISOString())} (UTC)</p>`;
+            // BCC settings are intentionally ignored: only assigned staff receive
+            // this event. No assumed app URL or invented task deep link.
+            await sendEmail({ to: recipient, subject: `${prefix ? `${prefix} — ` : ""}Client update on a shared task`, bodyHtml, sensitive: true });
+          } else {
+            const target = live.recipients.get(recipient)!;
+            // Match notify.ts: staff must opt in to Teams at user level.
+            if (!target.teamsEnabled) { await finish("skipped", "user-disabled"); continue; }
+            if (!isTeamsConfigured()) { await finish("skipped", "teams-not-configured"); continue; }
+            const objectId = await resolveEntraObjectId(recipient, target.id, { sensitive: true });
+            if (!objectId) { await finish("skipped", "recipient-unresolved"); continue; }
+            // Directory lookup may take time. Recheck client, assignment and
+            // per-user/event preference before the actual Teams transport call.
+            const final = await context();
+            const finalSettings = (await read(settingPath) ?? {}) as NotificationSetting;
+            if (!final?.recipients.get(recipient)?.teamsEnabled || finalSettings.teamsActivityEnabled === false) {
+              await finish("skipped", "access-or-preference-changed"); continue;
+            }
+            const previewText = compact(`${compact(final.actorName, 24)} · ${compact(final.client.name, 24)} · ${compact(final.task.name, 32)} — ${change}${text ? ` · ${compact(text, 50)}` : ""}`, 150);
+            // Existing transport uses the manifest-supported taskMention activity
+            // type/template and handles app-installation/topic quirks. No DM.
+            const result = await sendTeamsActivityNotification({
+              recipientObjectId: objectId, mentionerName: compact(final.actorName, 80),
+              taskName: compact(final.task.name, 120), clientName: compact(final.client.name, 80),
+              previewText, taskId, sensitive: true,
+            });
+            if (!result.ok) {
+              const reasons: Record<number, string> = { 400: "request-rejected", 403: "app-unavailable", 404: "recipient-unavailable", 409: "configuration-conflict" };
+              const reason = result.status ? reasons[result.status] : undefined;
+              await finish(reason ? "failed" : "unknown", reason ?? "transport-outcome-unknown");
+              continue;
+            }
+          }
+          await finish("sent", "delivered");
+        } catch {
+          // Any claimed outcome remains permanently blocked from auto-replay.
+          if (claimed) {
+            try { await ref.update({ state: "unknown", reason: "transport-outcome-unknown", finishedAt: Date.now() }); } catch { /* sending blocks replay */ }
+          }
+          logger.warn("Client task update notification delivery could not be confirmed; automatic retry disabled");
         }
-        let change: string;
-        let detail = "";
-        if (event.kind === "status") {
-          change = `Status changed from ${statusLabel(event.before)} to ${statusLabel(event.after)}`;
-        } else if ("title" in event) {
-          change = { "subtask-added": "Subtask added", "subtask-completed": "Subtask completed", "subtask-reopened": "Subtask reopened" }[event.kind];
-          detail = `<p>${escape(event.title)}</p>`;
-        } else {
-          change = { message: "New client message", note: "New client note", link: "New client link" }[event.kind];
-          const url = event.kind === "link" ? safeLink(event.url) : null;
-          detail = `<p style="white-space:pre-wrap">${escape(event.text)}</p>` +
-            (url ? `<p><a href="${escape(url)}">${escape(url)}</a></p>` : "");
-        }
-        const bodyHtml = `<h2>Client task update</h2><p>Client: ${escape(live.client.name)}</p>` +
-          `<p>Task: ${escape(live.task.name)}</p><p>Updated by: ${escape(live.actorName)}</p>` +
-          `<p>${escape(change)}</p>${detail}<p>Time: ${escape(new Date(event.at).toISOString())} (UTC)</p>`;
-        // No hardcoded production/development app URL or invented task deep link.
-        await sendEmail({ to: recipient, subject: "Client update on a shared task", bodyHtml, sensitive: true });
-        await ref.update({ state: "sent", finishedAt: Date.now() });
-      } catch {
-        // Transport errors can mean the provider accepted the message. Persist
-        // unknown and NEVER retry, even when a client repeats its request.
-        try { await ref.update({ state: "unknown", finishedAt: Date.now() }); } catch { /* sending still blocks replay */ }
-        logger.warn("Client task update email delivery is unknown; automatic retry disabled");
       }
     }
   } catch {
-    logger.warn("Client task update email could not be processed; task changes remain saved");
+    logger.warn("Client task update notifications could not be processed; task changes remain saved");
   }
 }

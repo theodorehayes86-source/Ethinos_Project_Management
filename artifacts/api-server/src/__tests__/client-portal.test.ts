@@ -59,6 +59,8 @@ vi.mock("../lib/firebase-admin", () => {
 });
 vi.mock("../lib/microsoft-graph", () => ({
   sendEmail: state.mail, isEmailConfigured: () => true,
+  isTeamsConfigured: () => false, resolveEntraObjectId: vi.fn().mockResolvedValue(null),
+  sendTeamsActivityNotification: vi.fn().mockResolvedValue({ ok: false }),
 }));
 vi.mock("../lib/logger", () => ({ logger: { warn: vi.fn(), error: vi.fn() } }));
 import portalRouter from "../routes/client-portal";

@@ -681,10 +681,11 @@ const MasterDataView = ({
   const TEAMS_PING_EVENTS = new Set([
     'mention', 'task-assigned', 'qc-submitted', 'qc-returned',
     'approval-required', 'feedback-response', 'client-added',
-    'assignment-accepted', 'qc-approved', 'task-overdue', 'task-due-soon', 'task-status-changed',
+    'assignment-accepted', 'qc-approved', 'task-overdue', 'task-due-soon', 'task-status-changed', 'client-task-updated',
   ]);
 
   const NOTIFICATION_EVENTS = [
+    { id: 'client-task-updated', label: 'Client Task Updated', description: 'Notifies the task assignee when a client changes status, posts a message, note or link, or adds, completes or reopens a subtask. Teams requires Flow Pro installed and the assignee’s Teams notifications enabled.', when: 'On a client task update', defaultOn: true },
     { id: 'task-assigned', label: 'Task Assigned', description: 'Sent to the assignee when a task is created and assigned to them.', when: 'On task creation / assignment', defaultOn: true },
     { id: 'approval-required', label: 'Approval Required', description: 'Sent to managers when someone requests to be assigned a task.', when: 'On assignment request', defaultOn: true },
     { id: 'qc-submitted', label: 'QC Submitted', description: 'Sent to the QC reviewer when a task is submitted for quality check.', when: 'On QC submission', defaultOn: true },
@@ -702,7 +703,7 @@ const MasterDataView = ({
   const getTeamsActivityEnabled = (eventId) => {
     const setting = notificationSettings[eventId];
     if (setting && typeof setting.teamsActivityEnabled === 'boolean') return setting.teamsActivityEnabled;
-    return eventId === 'mention'; // mention defaults ON, everything else defaults OFF
+    return eventId === 'mention' || eventId === 'client-task-updated';
   };
 
   const installTeamsApp = async () => {
@@ -2657,7 +2658,7 @@ const MasterDataView = ({
           const isMention = event.id === 'mention';
 
           return (
-            <div key={event.id} className={`rounded-lg border transition-colors ${isEnabled || teamsEnabled ? 'border-slate-200 bg-white' : 'border-slate-100 bg-slate-50'}`}>
+            <div key={event.id} data-testid={`notification-event-${event.id}`} className={`rounded-lg border transition-colors ${isEnabled || teamsEnabled ? 'border-slate-200 bg-white' : 'border-slate-100 bg-slate-50'}`}>
               <div className="flex items-center gap-3 px-3 py-2.5">
                 {/* Event info */}
                 <div className="flex-1 min-w-0">
@@ -2732,7 +2733,9 @@ const MasterDataView = ({
                       className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white outline-none focus:ring-2 ring-blue-500/20 resize-none"
                     />
                   </div>
-                  <div>
+                  {event.id === 'client-task-updated' ? (
+                    <p className="text-[11px] text-slate-500">Only the task’s current assigned staff receive these updates. Additional recipients cannot be added.</p>
+                  ) : <div>
                     <label className="text-[11px] font-semibold text-slate-600 block mb-1">BCC addresses</label>
                     <div className="flex gap-1.5 mb-1.5">
                       <input
@@ -2783,7 +2786,7 @@ const MasterDataView = ({
                     ) : (
                       <p className="text-[11px] text-slate-400 italic">No BCC addresses — only the primary recipient receives this email.</p>
                     )}
-                  </div>
+                  </div>}
                 </div>
               )}
             </div>
