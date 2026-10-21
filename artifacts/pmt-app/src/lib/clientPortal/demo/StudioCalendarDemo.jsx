@@ -3,6 +3,8 @@
 import React, { useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import StudioCalendar from '../../creativeStudio/StudioCalendar.jsx';
+import StudioSummaryCards from '../../creativeStudio/StudioSummaryCards.jsx';
+import { matchesStudioCard, studioCardCounts } from '../../creativeStudio/summary.js';
 import { utcToLocal, stageLabel, fmtInstant, tzShort } from '../../creativeStudio/core.js';
 
 const CLIENTS = { h: 'Harbour & Pine Interiors', k: 'Kestrel Cycle Co.' };
@@ -21,6 +23,9 @@ export function studioDemoItems(month) {
     { id: 'sd7', title: 'Helmet safety tips', type: 'Post', clientId: 'k', stage: 'in_production', plannedAt: at(17, '10:00'), timezone: 'Asia/Kolkata' },
     { id: 'sd8', title: 'Weekend sale banner', type: 'Post', clientId: 'k', stage: 'in_production', plannedAt: at(17, '11:00'), timezone: 'Asia/Kolkata' },
     { id: 'sd9', title: 'Brand film cutdown', type: 'Reel', clientId: 'h', stage: 'internal_draft', plannedAt: null, timezone: 'Asia/Kolkata' },
+    { id: 'sd10', title: 'Upcoming launch', type: 'Post', clientId: 'h', stage: 'in_production', plannedAt: at(20, '12:00'), timezone: 'Asia/Kolkata' },
+    { id: 'sd11', title: 'Approved campaign', type: 'Story', clientId: 'k', stage: 'final_approved', plannedAt: at(24, '12:00'), timezone: 'Asia/Kolkata' },
+    { id: 'sd12', title: 'Next campaign preview', type: 'Reel', clientId: 'h', stage: 'awaiting_reference', plannedAt: at(28, '12:00'), timezone: 'Asia/Kolkata' },
   ];
 }
 
@@ -29,18 +34,21 @@ export default function StudioCalendarDemo() {
   const [month, setMonth] = useState(today.slice(0, 7));
   const items = useMemo(() => studioDemoItems(today.slice(0, 7)), [today]);
   const [openId, setOpenId] = useState(null);
+  const [card, setCard] = useState('all');
+  const filtered = items.filter(i => matchesStudioCard(i, card));
   const open = items.find(i => i.id === openId);
   return (
     <div className="min-h-[100dvh] bg-indigo-50/40 p-3 md:p-6">
       <div className="max-w-6xl mx-auto bg-white rounded-2xl border border-slate-200 p-3 md:p-5">
         <p className="text-[10px] font-bold uppercase tracking-widest text-amber-600 mb-2">Demo fixture · Creative Studio content plan calendar</p>
+        <StudioSummaryCards counts={studioCardCounts(items)} active={card} onSelect={key => { setCard(key); setOpenId(null); }} />
         <div className="flex flex-wrap items-center gap-2 mb-4">
           <button data-testid="button-month-prev" onClick={() => setMonth(m => shift(m, -1))} className="p-1.5 rounded-lg hover:bg-slate-100" aria-label="Previous month"><ChevronLeft size={16} /></button>
           <h3 data-testid="text-month" className="text-xl font-bold">{month}</h3>
           <button data-testid="button-month-next" onClick={() => setMonth(m => shift(m, 1))} className="p-1.5 rounded-lg hover:bg-slate-100" aria-label="Next month"><ChevronRight size={16} /></button>
           <button data-testid="button-month-today" onClick={() => setMonth(today.slice(0, 7))} className="text-xs font-semibold text-indigo-600 hover:underline">Today</button>
         </div>
-        <StudioCalendar items={items} month={month} todayKey={today} selectedId={openId} onOpen={setOpenId} clientName={(id) => CLIENTS[id] || 'Client'} />
+        <StudioCalendar items={filtered} month={month} todayKey={today} selectedId={openId} onOpen={setOpenId} clientName={(id) => CLIENTS[id] || 'Client'} />
       </div>
       {open && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" role="dialog" aria-modal="true">

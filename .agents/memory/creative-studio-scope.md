@@ -80,3 +80,16 @@ email template, not literal text in the delivered email.
 
 **How to apply:** Keep variable meanings consistent in previews and sent emails,
 and apply the shared schedule to reference and final approval reminders.
+
+## Summary cards and calendar dates
+
+Creative Studio summary cards should be clickable filters. Calendar dates should
+use green for deadlines far away, orange in between, red close to deadline and
+deep red past deadline.
+
+**Why:** The user requested these interactions and deadline colours while keeping
+the existing Creative Studio interface.
+
+**How to apply:** Keep the normal Flow Pro theme; these are semantic deadline
+colours rather than a separate Studio colour scheme. Preserve client scoping
+and use the same calendar component in the client portal and its preview.

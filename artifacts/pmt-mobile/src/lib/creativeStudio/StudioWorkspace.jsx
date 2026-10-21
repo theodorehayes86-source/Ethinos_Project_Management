@@ -4,17 +4,19 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Plus, ChevronLeft, ChevronRight, CalendarDays, LayoutList, Eye, Users, Copy, Archive, ArchiveRestore,
   Pencil, Share2, EyeOff, CalendarCheck, Undo2, BellRing, ExternalLink, Link2, CheckCircle2,
-  AlertTriangle, Sparkles, X, Clock, RefreshCw, Lock, Activity, Settings2,
+  AlertTriangle, Sparkles, X, Clock, RefreshCw, Lock, Settings2,
 } from 'lucide-react';
 import {
   createStudioApi, TYPES, PLATFORMS, ASSET_KINDS, TIMEZONES, stageLabel, isHttps, localToUtc, utcToLocal,
-  dayKey, monthKey, urgency, relativeDay, fmtInstant, fmtStamp, tzShort, summarize, clientVisible, STAGES, peekStudioLink, writeStudioLink,
+  dayKey, monthKey, urgency, relativeDay, fmtInstant, fmtStamp, tzShort, clientVisible, STAGES, peekStudioLink, writeStudioLink,
 } from './core.js';
 import { STUDIO_CONFIG_CHANGED } from './access.js';
 import ClientSelect from './ClientSelect.jsx';
-import StudioCalendar from './StudioCalendar.jsx';
+import StudioCalendar, { StudioDeadlineLegend } from './StudioCalendar.jsx';
 import PortalStudio, { studioPreviewApi } from './PortalStudio.jsx';
-import { isStudioLayout } from './calendar.js';
+import { isStudioLayout, DEADLINE_TONES, mostUrgentStudioTone } from './calendar.js';
+import { isStudioCard, matchesStudioCard, studioCardCounts } from './summary.js';
+import StudioSummaryCards from './StudioSummaryCards.jsx';
 import StudioReminderLog, { canSeeReminderLog } from './StudioReminderLog.jsx';
 import {
   inputCls, btnPrimary, btnAccent, btnGhost, StageBadge, UrgencyTag, Field, Sheet, ErrorBanner,
@@ -45,6 +47,12 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
   const [stageF, setStageF] = useState(prefs.stageF || 'all');
   const [ownerF, setOwnerF] = useState(prefs.ownerF || 'all');
   const [deadlineF, setDeadlineF] = useState(prefs.deadlineF || 'all');
+  const [cardF, setCardF] = useState(isStudioCard(prefs.cardF) ? prefs.cardF : 'all');
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(t);
+  }, []);
   const [showArchived, setShowArchived] = useState(false);
   const initialLink = useRef(peekStudioLink()).current;
   const [selectedId, setSelectedId] = useState(() => initialLink?.item || null);
@@ -58,7 +66,7 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
     linkRevealed.current = true;
     if (!it) return;
     setMode('team');
-    setType('All'); setStageF('all'); setOwnerF('all'); setDeadlineF('all');
+    setType('All'); setStageF('all'); setOwnerF('all'); setDeadlineF('all'); setCardF('all');
     setClientF(c => (c === 'all' || c === it.clientId ? c : 'all'));
     if (it.archived) setShowArchived(true);
     if (it.plannedAt) { setView('plan'); setMonth(monthKey(it.plannedAt, it.timezone)); } else setView('tracker');
@@ -70,8 +78,8 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
   }, [selectedId, items, initialLink]);
   useEffect(() => () => writeStudioLink(null), []);
   useEffect(() => {
-    sessionStorage.setItem(PREF_KEY, JSON.stringify({ view, month, planLayout, type, clientF, stageF, ownerF, deadlineF }));
-  }, [view, month, planLayout, type, clientF, stageF, ownerF, deadlineF]);
+    sessionStorage.setItem(PREF_KEY, JSON.stringify({ view, month, planLayout, type, clientF, stageF, ownerF, deadlineF, cardF }));
+  }, [view, month, planLayout, type, clientF, stageF, ownerF, deadlineF, cardF]);
 
   const enabledClients = useMemo(() => (boot?.clients || []).filter(c => boot.configs?.[c.id]?.enabled === true), [boot]);
   const editable = useMemo(() => new Set(boot?.capabilities?.editableClientIds || []), [boot]);
@@ -142,8 +150,8 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
   const clientName = useCallback((id) => boot?.clients?.find(c => c.id === id)?.name || 'Client', [boot]);
   const ownerName = useCallback((id) => boot?.owners?.find(o => o.id === id)?.name || (id ? 'Unassigned staff' : 'Unassigned'), [boot]);
 
-  // One authorized filtered dataset feeds counts, plan and tracker.
-  const filtered = useMemo(() => (items || []).filter(i => {
+  // Keep counts independent of the card filter, within the same authorized scope.
+  const scoped = useMemo(() => (items || []).filter(i => {
     if (!enabledClients.some(c => c.id === i.clientId)) return false;
     if (mode === 'client' && !clientVisible(i)) return false;
     if (!showArchived && i.archived) return false;
@@ -161,9 +169,10 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
       }
     }
     return true;
-  }), [items, enabledClients, mode, showArchived, type, clientF, stageF, ownerF, deadlineF]);
+  }), [items, enabledClients, mode, showArchived, type, clientF, stageF, ownerF, deadlineF, now]);
 
-  const counts = useMemo(() => summarize(filtered), [filtered]);
+  const filtered = useMemo(() => scoped.filter(i => matchesStudioCard(i, cardF, now)), [scoped, cardF, now]);
+  const counts = useMemo(() => ({ ...studioCardCounts(scoped, now), overdue: scoped.filter(i => urgency(i, now) === 'overdue').length }), [scoped, now]);
   // Client preview renders the real PortalStudio over the server's client projection (read-only).
   const previewClients = useMemo(() => enabledClients.filter(c => clientF === 'all' || c.id === clientF).map(c => ({ id: c.id, name: c.name })), [enabledClients, clientF]);
   const previewApi = useMemo(() => studioPreviewApi(api, previewClients), [api, previewClients]);
@@ -201,13 +210,6 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
   const canCreate = enabledClients.some(c => editable.has(c.id));
   const showLog = mode === 'team' && canSeeReminderLog(boot);
   const activeView = view === 'log' && !showLog ? 'plan' : view;
-  const cards = [
-    { k: 'approved', label: 'Approved', v: counts.approved, box: 'bg-white border-slate-200', chip: 'bg-emerald-50 text-emerald-600', Icon: CheckCircle2 },
-    { k: 'wip', label: 'WIP / Awaiting approval', v: counts.wip, box: 'bg-white border-slate-200', chip: 'bg-amber-50 text-amber-600', Icon: Activity },
-    { k: 'soon', label: 'Close to post date', v: counts.soon, box: 'bg-white border-slate-200', chip: 'bg-red-50 text-red-600', Icon: AlertTriangle, sub: counts.overdue ? `${counts.overdue} overdue` : null },
-    { k: 'scheduled', label: 'Scheduled', v: counts.scheduled, box: 'bg-white border-slate-200', chip: 'bg-blue-50 text-blue-600', Icon: Clock },
-    { k: 'ans', label: 'Approved, not scheduled', v: counts.approvedNotScheduled, box: 'bg-white border-slate-200', chip: 'bg-slate-100 text-slate-500', Icon: CalendarDays },
-  ];
   const seg = (on) => `px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${on ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:text-slate-800'}`;
 
   return (
@@ -240,18 +242,10 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
         </div>
       ) : (<>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
-        {cards.map((c, idx) => (
-          <div key={c.k} data-testid={`card-count-${c.k}`} className={`rounded-2xl border p-4 ${c.box} ${idx === 4 ? 'col-span-2 md:col-span-1' : ''}`}>
-            <div className="flex items-start justify-between gap-2">
-              <p className="text-sm text-slate-700">{c.label}</p>
-              <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${c.chip}`}><c.Icon size={15} /></span>
-            </div>
-            <p className="text-3xl font-bold mt-2 tabular-nums">{c.v}</p>
-            {c.sub && <p className="text-[11px] font-semibold text-red-600 mt-0.5">{c.sub}</p>}
-          </div>
-        ))}
-      </div>
+      <StudioSummaryCards counts={counts} active={cardF} onSelect={key => {
+        setCardF(key); setSelectedId(null);
+        if (activeView === 'log') setView('tracker');
+      }} />
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="flex p-1 rounded-xl bg-white border border-slate-200">
@@ -315,13 +309,8 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
                     </button>
                   ))}
                 </div>
-                <div className="hidden xl:flex items-center gap-3 ml-auto text-xs text-slate-600">
-                  <span className="flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-emerald-500" />Approved</span>
-                  <span className="flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-amber-500" />WIP / Awaiting approval</span>
-                  <span className="flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-red-500" />Within 3 days of posting</span>
-                  <span className="flex items-center gap-1.5"><Clock size={11} className="text-blue-500" />Scheduled</span>
-                </div>
               </div>
+              {planLayout === 'list' && <div className="mb-4"><StudioDeadlineLegend /></div>}
               {planLayout === 'calendar' ? (
                 <StudioCalendar items={filtered} month={month} todayKey={utcToLocal(new Date().toISOString(), 'Asia/Kolkata').date}
                   selectedId={selectedId} onOpen={setSelectedId} clientName={clientName} />
@@ -335,7 +324,7 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
                   <div className="space-y-3">
                     {groups.map(([k, list]) => (
                       <div key={k} className="md:grid md:grid-cols-[120px_minmax(0,1fr)] gap-3">
-                        <DateBadge dayKeyStr={k} item={list[0]} count={list.length} />
+                        <DateBadge dayKeyStr={k} item={list[0]} items={list} count={list.length} now={now} />
                         <div className="space-y-2 mt-2 md:mt-0">
                           {list.map(i => <Row key={i.id} i={i} active={i.id === selectedId} onOpen={() => setSelectedId(i.id)} clientName={clientName(i.clientId)} />)}
                         </div>
@@ -410,14 +399,13 @@ const rowTone = (i) => {
 };
 const typeChip = { Post: 'bg-indigo-50 text-indigo-600', Reel: 'bg-slate-100 text-slate-600', Story: 'bg-slate-100 text-slate-600' };
 
-function DateBadge({ dayKeyStr, item, count }) {
+function DateBadge({ dayKeyStr, item, items, count, now }) {
   const [y, m, d] = dayKeyStr.split('-').map(Number);
   const wd = new Intl.DateTimeFormat('en-IN', { weekday: 'short', timeZone: 'UTC' }).format(new Date(Date.UTC(y, m - 1, d))).toUpperCase();
-  const u = urgency(item);
-  const tone = u === 'overdue' || u === 'soon' ? 'border-slate-200 text-red-600' : 'border-slate-200 text-slate-700';
+  const tone = DEADLINE_TONES[mostUrgentStudioTone(items, now)];
   return (
     <div className="flex items-start gap-2">
-      <div className={`w-11 shrink-0 rounded-xl border bg-white text-center py-1 ${tone}`}>
+      <div title={tone.label} className={`w-11 shrink-0 rounded-xl border text-center py-1 ${tone.badge}`}>
         <p className="text-[9px] font-bold">{wd}</p>
         <p className="text-lg font-bold leading-tight">{d}</p>
       </div>
