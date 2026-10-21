@@ -7,6 +7,7 @@ import { sendNotification } from '../utils/notify';
 import { auth, db } from '../firebase.js';
 import { ref, update } from 'firebase/database';
 import ClientPortalAdminPanel from './ClientPortalAdminPanel';
+import UserClientAssignments from './UserClientAssignments.jsx';
 import StudioControlPanel from '../lib/creativeStudio/StudioControlPanel.jsx';
 import { canManageClientPortal } from '../lib/clientPortal/core';
 import { APPLICABILITY_OPTIONS, applicabilityLabel } from './shared/checklistApplicability';
@@ -1692,15 +1693,15 @@ const MasterDataView = ({
           {filteredUsers.length === 0 ? (
             <p className="text-center text-sm text-slate-400 py-8">No users found.</p>
           ) : (
-            <div className="border border-slate-200 rounded-lg overflow-hidden">
-              <table className="w-full border-collapse text-left">
+            <div className="border border-slate-200 rounded-lg overflow-x-auto">
+              <table className="w-full min-w-[1040px] border-collapse text-left">
                 <thead className="bg-slate-50 border-b border-slate-200">
                   <tr className="text-xs font-semibold text-slate-600">
                     <th className="px-3 py-2">Name</th>
                     <th className="px-3 py-2">Role</th>
                     <th className="px-3 py-2">Department</th>
                     <th className="px-3 py-2">Region</th>
-                    <th className="px-3 py-2">Clients</th>
+                    <th className="px-3 py-2 min-w-[208px]">Clients</th>
                     {kekaCredentialsReady && <th className="px-3 py-2 text-center">Keka</th>}
                     <th className="px-3 py-2 text-center whitespace-nowrap">
                       <div className="flex flex-col items-center gap-0.5">
@@ -1773,13 +1774,7 @@ const MasterDataView = ({
                         <span className="text-[10px] font-medium text-orange-700 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full">{user.region || '—'}</span>
                       </td>
                       <td className="px-3 py-2.5">
-                        <div className="flex flex-wrap gap-1">
-                          {(user.assignedProjects || []).length === 0
-                            ? <span className="text-xs text-slate-400 italic">None</span>
-                            : (user.assignedProjects || []).map(p => (
-                              <span key={p} className="text-[10px] font-medium border border-blue-200 px-2 py-0.5 rounded-full text-blue-700 bg-blue-50">{p}</span>
-                            ))}
-                        </div>
+                        <UserClientAssignments clients={user.assignedProjects} userName={user.name} />
                       </td>
                       {kekaCredentialsReady && (
                         <td className="px-3 py-2.5 text-center">
