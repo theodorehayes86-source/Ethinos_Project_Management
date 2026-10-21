@@ -28,7 +28,8 @@ export default function InviteAccept({ auth, user, apiBase, token, onAccepted, o
   const api = useMemo(() => createInviteApi({ base: apiBase }), [apiBase]);
   const [info, setInfo] = useState(null);
   const [loadError, setLoadError] = useState('');
-  const [displayName, setDisplayName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
@@ -42,7 +43,7 @@ export default function InviteAccept({ auth, user, apiBase, token, onAccepted, o
     setLoadError(''); setInfo(null);
     try {
       const d = await api.inspect(token);
-      if (s === seq.current) setInfo(d);
+      if (s === seq.current) { setInfo(d); setFirstName(d.firstName || ''); setLastName(d.lastName || ''); }
     } catch (e) { if (s === seq.current) setLoadError(inviteErrorMessage(e)); }
   }, [api, token]);
   useEffect(() => { inspect(); return () => { seq.current += 1; }; }, [inspect]);
@@ -64,12 +65,12 @@ export default function InviteAccept({ auth, user, apiBase, token, onAccepted, o
 
   const createAccount = async (e) => {
     e.preventDefault();
-    const errs = validateNewAccount({ displayName, password, confirm });
+    const errs = validateNewAccount({ firstName, lastName, password, confirm });
     setFieldErrors(errs); setError('');
     if (Object.keys(errs).length) return;
     setBusy('create');
     try {
-      await api.accept(token, { displayName: displayName.trim(), password });
+      await api.accept(token, { firstName: firstName.trim(), lastName: lastName.trim(), password });
       try { await signInWithEmailAndPassword(auth, info.email, password); }
       catch { setPassword(''); setConfirm(''); setBusy(''); setAccountReady(true); return; }
       await finish();
@@ -201,8 +202,11 @@ export default function InviteAccept({ auth, user, apiBase, token, onAccepted, o
       {header}
       <form onSubmit={createAccount} className="space-y-3" noValidate>
         {emailField}
-        <FieldRow label="Your name" error={fieldErrors.displayName}>
-          <input data-testid="input-invite-name" autoComplete="name" value={displayName} maxLength={100} onChange={e => setDisplayName(e.target.value)} className={inputCls} />
+        <FieldRow label="First name" error={fieldErrors.firstName}>
+          <input data-testid="input-invite-first-name" autoComplete="given-name" value={firstName} maxLength={50} onChange={e => setFirstName(e.target.value)} className={inputCls} />
+        </FieldRow>
+        <FieldRow label="Last name" error={fieldErrors.lastName}>
+          <input data-testid="input-invite-last-name" autoComplete="family-name" value={lastName} maxLength={50} onChange={e => setLastName(e.target.value)} className={inputCls} />
         </FieldRow>
         <FieldRow label="Password" error={fieldErrors.password}>
           <input data-testid="input-invite-new-password" type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} className={inputCls} />

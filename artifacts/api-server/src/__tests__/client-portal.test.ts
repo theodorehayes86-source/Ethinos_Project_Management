@@ -496,6 +496,47 @@ describe("admin invitations and access lifecycle", () => {
     expect(html).toMatch(/https:\/\/project.ethinos.com\/\?client=1#invite=[A-Za-z0-9_-]{43}/);
     expect(html).not.toMatch(/password|verify/);
   });
+  it("saves first and last names, lists them, and personalizes the invitation", async () => {
+    const response = await post("/admin/users", { email: "new@example.test", clientIds: ["alpha"],
+      firstName: " Alex ", lastName: " Morgan " });
+    expect(response.status).toBe(201);
+    expect(response.body.user).toMatchObject({ firstName: "Alex", lastName: "Morgan" });
+    expect(state.data["clientPortalUsers/new-client"]).toMatchObject({ firstName: "Alex", lastName: "Morgan" });
+    state.data.clientPortalUsers = { "new-client": state.data["clientPortalUsers/new-client"] };
+    expect((await get("/admin/users")).body.users).toEqual(expect.arrayContaining([expect.objectContaining({ firstName: "Alex", lastName: "Morgan" })]));
+    expect(state.mail.mock.calls[0][0].bodyHtml).toContain("Hi Alex Morgan,");
+  });
+  it("prefills invite names and saves confirmed signup names with the Auth display name", async () => {
+    state.getUser.mockRejectedValue({ code: "auth/user-not-found" });
+    const created = await post("/admin/users", { email: "new@example.test", clientIds: ["alpha"], firstName: "Alex", lastName: "Morgan" });
+    expect(created.status).toBe(201);
+    const token = state.mail.mock.calls.at(-1)![0].bodyHtml.match(/#invite=([A-Za-z0-9_-]{43})/)![1];
+    const inspected = await request(app).post(`${api}/invitations/inspect`).send({ token });
+    expect(inspected.body).toMatchObject({ firstName: "Alex", lastName: "Morgan" });
+    const accepted = await request(app).post(`${api}/invitations/accept`).send({ token, password: "secure-long-password", firstName: "Alexander", lastName: "Morgan" });
+    expect(accepted.status).toBe(200);
+    expect(state.data["clientPortalUsers/new-client"]).toMatchObject({ firstName: "Alexander", lastName: "Morgan" });
+    expect(state.updateUser).toHaveBeenCalledWith("new-client", expect.objectContaining({ displayName: "Alexander Morgan" }));
+  });
+  it("edits contact names without dropping membership or invitation fields, and preserves them on disable", async () => {
+    const path = "clientPortalUsers/client-a";
+    state.data[path].invitation = { status: "accepted", expiresAt: 1 };
+    const result = await request(app).patch(`${api}/admin/users/client-a`).set("Authorization", "Bearer test")
+      .send({ clientIds: ["alpha"], disabled: false, firstName: "Renée", lastName: "O’Connor" });
+    expect(result.status).toBe(200);
+    expect(result.body.user).toMatchObject({ firstName: "Renée", lastName: "O’Connor" });
+    expect(state.data[path].invitation.status).toBe("accepted");
+    const disabled = await request(app).patch(`${api}/admin/users/client-a`).set("Authorization", "Bearer test")
+      .send({ clientIds: ["alpha"], disabled: true });
+    expect(disabled.body.user).toMatchObject({ firstName: "Renée", lastName: "O’Connor", disabled: true });
+  });
+  it.each([
+    { firstName: "Only" }, { firstName: " ", lastName: "Name" },
+    { firstName: "A\nB", lastName: "Name" }, { firstName: "A".repeat(51), lastName: "Name" },
+  ])("rejects invalid or partial contact names without writing", async names => {
+    expect((await post("/admin/users", { email: "new@example.test", clientIds: ["alpha"], ...names })).status).toBe(400);
+    expect(state.writes).toEqual([]);
+  });
   it("explicitly reports delivery failure without losing membership", async () => {
     state.mail.mockRejectedValue(new Error("no delivery"));
     const res = await post("/admin/users", { email: "new@example.test", clientIds: ["alpha"] });

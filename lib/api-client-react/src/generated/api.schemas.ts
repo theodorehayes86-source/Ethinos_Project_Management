@@ -371,6 +371,16 @@ export interface PortalInvitationInput {
   /** @maxLength 254 */
   email: string;
   /**
+   * @minLength 1
+   * @maxLength 50
+   */
+  firstName?: string;
+  /**
+   * @minLength 1
+   * @maxLength 50
+   */
+  lastName?: string;
+  /**
    * @minItems 1
    * @maxItems 100
    */
@@ -381,6 +391,16 @@ export interface PortalMembershipInput {
   /** @maxItems 100 */
   clientIds: string[];
   disabled: boolean;
+  /**
+   * @minLength 1
+   * @maxLength 50
+   */
+  firstName?: string;
+  /**
+   * @minLength 1
+   * @maxLength 50
+   */
+  lastName?: string;
 }
 
 export interface PortalTask {
@@ -411,6 +431,8 @@ export const PortalUserInvitationStatus = {
 export interface PortalUser {
   uid: string;
   email: string;
+  firstName?: string;
+  lastName?: string;
   disabled: boolean;
   invitationStatus?: PortalUserInvitationStatus;
   /** Unix epoch milliseconds; absent for legacy memberships */
@@ -591,6 +613,8 @@ export type InspectClientPortalInvitationBody = {
 export type InspectClientPortalInvitation200 = {
   email: string;
   requiresSignIn: boolean;
+  firstName?: string;
+  lastName?: string;
   /** Unix epoch milliseconds */
   expiresAt: number;
   clientNames: string[];
@@ -607,6 +631,16 @@ export type AcceptClientPortalInvitationBody = {
    * @maxLength 120
    */
   displayName?: string;
+  /**
+   * @minLength 1
+   * @maxLength 50
+   */
+  firstName?: string;
+  /**
+   * @minLength 1
+   * @maxLength 50
+   */
+  lastName?: string;
   /**
    * @minLength 12
    * @maxLength 128

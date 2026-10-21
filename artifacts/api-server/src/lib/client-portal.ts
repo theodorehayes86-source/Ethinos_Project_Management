@@ -1,6 +1,13 @@
 import { format, isValid, parse } from "date-fns";
 
-export type PortalMembership = { email: string; disabled: boolean; clientIds: string[]; onboardingRequired?: boolean; invitationStatus?: "pending" | "expired" | "revoked" | "accepted"; invitationExpiresAt?: number };
+export type PortalMembership = { email: string; firstName?: string; lastName?: string; disabled: boolean; clientIds: string[]; onboardingRequired?: boolean; invitationStatus?: "pending" | "expired" | "revoked" | "accepted"; invitationExpiresAt?: number };
+export const contactFullName = (record: { firstName?: string; lastName?: string }) =>
+  [record.firstName, record.lastName].filter(Boolean).join(" ").trim();
+/** Optional for legacy callers; explicit name updates must supply both parts. */
+export function validContactNames(record: { firstName?: unknown; lastName?: unknown }) {
+  return record.firstName === undefined && record.lastName === undefined ||
+    [record.firstName, record.lastName].every(v => typeof v === "string" && v.trim().length > 0 && v.trim().length <= 50 && !/[\u0000-\u001f\u007f]/.test(v));
+}
 export const isStaffEmail = (email: unknown): boolean =>
   typeof email === "string" && email.toLowerCase().endsWith("@ethinos.com");
 export const safeKey = (value: unknown): value is string =>
@@ -19,6 +26,8 @@ export function normalizeMembership(value: unknown): PortalMembership | null {
       : Number(invitation.expiresAt) <= Date.now() ? "expired" : "pending"
     : record.onboardingRequired === true ? "revoked" : "accepted";
   return { email: record.email, disabled: record.disabled !== false || record.deletionInProgress === true, clientIds: clientIds.filter(safeKey),
+    ...(typeof record.firstName === "string" ? { firstName: record.firstName.trim() } : {}),
+    ...(typeof record.lastName === "string" ? { lastName: record.lastName.trim() } : {}),
     onboardingRequired: record.onboardingRequired === true, invitationStatus,
     ...(invitation ? { invitationExpiresAt: Number(invitation.expiresAt) } : {}) };
 }

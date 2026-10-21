@@ -9,6 +9,8 @@
 export type InspectClientPortalInvitation200 = {
   email: string;
   requiresSignIn: boolean;
+  firstName?: string;
+  lastName?: string;
   /** Unix epoch milliseconds */
   expiresAt: number;
   clientNames: string[];

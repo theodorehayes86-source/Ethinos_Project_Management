@@ -1305,6 +1305,8 @@ export const InspectClientPortalInvitationBody = zod.object({
 export const InspectClientPortalInvitationResponse = zod.object({
   email: zod.string(),
   requiresSignIn: zod.boolean(),
+  firstName: zod.string().optional(),
+  lastName: zod.string().optional(),
   expiresAt: zod.number().describe("Unix epoch milliseconds"),
   clientNames: zod.array(zod.string()),
 });
@@ -1316,6 +1318,10 @@ export const acceptClientPortalInvitationBodyTokenMin = 43;
 export const acceptClientPortalInvitationBodyTokenMax = 43;
 
 export const acceptClientPortalInvitationBodyDisplayNameMax = 120;
+
+export const acceptClientPortalInvitationBodyFirstNameMax = 50;
+
+export const acceptClientPortalInvitationBodyLastNameMax = 50;
 
 export const acceptClientPortalInvitationBodyPasswordMin = 12;
 export const acceptClientPortalInvitationBodyPasswordMax = 128;
@@ -1329,6 +1335,16 @@ export const AcceptClientPortalInvitationBody = zod.object({
     .string()
     .min(1)
     .max(acceptClientPortalInvitationBodyDisplayNameMax)
+    .optional(),
+  firstName: zod
+    .string()
+    .min(1)
+    .max(acceptClientPortalInvitationBodyFirstNameMax)
+    .optional(),
+  lastName: zod
+    .string()
+    .min(1)
+    .max(acceptClientPortalInvitationBodyLastNameMax)
     .optional(),
   password: zod
     .string()
@@ -1646,6 +1662,8 @@ export const ListClientPortalUsersResponse = zod.object({
     zod.object({
       uid: zod.string(),
       email: zod.string(),
+      firstName: zod.string().optional(),
+      lastName: zod.string().optional(),
       disabled: zod.boolean(),
       invitationStatus: zod
         .enum(["pending", "expired", "revoked", "accepted"])
@@ -1661,6 +1679,10 @@ export const ListClientPortalUsersResponse = zod.object({
 
 export const inviteClientPortalUserBodyEmailMax = 254;
 
+export const inviteClientPortalUserBodyFirstNameMax = 50;
+
+export const inviteClientPortalUserBodyLastNameMax = 50;
+
 export const inviteClientPortalUserBodyClientIdsItemRegExp = new RegExp(
   "^[A-Za-z0-9_-]+$",
 );
@@ -1668,6 +1690,16 @@ export const inviteClientPortalUserBodyClientIdsMax = 100;
 
 export const InviteClientPortalUserBody = zod.object({
   email: zod.string().email().max(inviteClientPortalUserBodyEmailMax),
+  firstName: zod
+    .string()
+    .min(1)
+    .max(inviteClientPortalUserBodyFirstNameMax)
+    .optional(),
+  lastName: zod
+    .string()
+    .min(1)
+    .max(inviteClientPortalUserBodyLastNameMax)
+    .optional(),
   clientIds: zod
     .array(zod.string().regex(inviteClientPortalUserBodyClientIdsItemRegExp))
     .min(1)
@@ -1702,17 +1734,33 @@ export const updateClientPortalUserBodyClientIdsItemRegExp = new RegExp(
 );
 export const updateClientPortalUserBodyClientIdsMax = 100;
 
+export const updateClientPortalUserBodyFirstNameMax = 50;
+
+export const updateClientPortalUserBodyLastNameMax = 50;
+
 export const UpdateClientPortalUserBody = zod.object({
   clientIds: zod
     .array(zod.string().regex(updateClientPortalUserBodyClientIdsItemRegExp))
     .max(updateClientPortalUserBodyClientIdsMax),
   disabled: zod.boolean(),
+  firstName: zod
+    .string()
+    .min(1)
+    .max(updateClientPortalUserBodyFirstNameMax)
+    .optional(),
+  lastName: zod
+    .string()
+    .min(1)
+    .max(updateClientPortalUserBodyLastNameMax)
+    .optional(),
 });
 
 export const UpdateClientPortalUserResponse = zod.object({
   user: zod.object({
     uid: zod.string(),
     email: zod.string(),
+    firstName: zod.string().optional(),
+    lastName: zod.string().optional(),
     disabled: zod.boolean(),
     invitationStatus: zod
       .enum(["pending", "expired", "revoked", "accepted"])

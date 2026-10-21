@@ -10,6 +10,8 @@ import type { PortalUserInvitationStatus } from "./portalUserInvitationStatus";
 export interface PortalUser {
   uid: string;
   email: string;
+  firstName?: string;
+  lastName?: string;
   disabled: boolean;
   invitationStatus?: PortalUserInvitationStatus;
   /** Unix epoch milliseconds; absent for legacy memberships */

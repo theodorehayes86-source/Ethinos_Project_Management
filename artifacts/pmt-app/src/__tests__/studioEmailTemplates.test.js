@@ -5,7 +5,8 @@ import { PLACEHOLDER_MEANINGS } from '../lib/creativeStudio/StudioControlPanel.j
 describe('Creative Studio email variables and deadline input', () => {
   it('explains each live email variable', () => {
     expect(PLACEHOLDER_MEANINGS).toEqual({
-      '{{client}}': 'Client name', '{{post}}': 'Post name', '{{date}}': 'Posting date',
+      '{{recipientName}}': 'Recipient first and last name', '{{firstName}}': 'Recipient first name', '{{lastName}}': 'Recipient last name',
+      '{{client}}': 'Client company name', '{{post}}': 'Post name', '{{date}}': 'Posting date',
       '{{type}}': 'Story, Reel or Post', '{{deadline}}': 'Deadline time and date',
     });
   });

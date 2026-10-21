@@ -361,7 +361,7 @@ export function createPortalApi({ base, getToken, fetchImpl }) {
     updateTaskStatus: (clientId, taskId, status) =>
       call(`/client-portal/clients/${enc(clientId)}/tasks/${enc(taskId)}`, { method: 'PATCH', body: { status } }),
     adminListUsers: () => call('/client-portal/admin/users'),
-    adminCreateUser: (email, clientIds) => call('/client-portal/admin/users', { method: 'POST', body: { email, clientIds } }),
+    adminCreateUser: (email, clientIds, names = {}) => call('/client-portal/admin/users', { method: 'POST', body: { email, clientIds, ...names } }),
     adminUpdateUser: (uid, patch) => call(`/client-portal/admin/users/${enc(uid)}`, { method: 'PATCH', body: patch }),
     adminInvite: (uid) => call(`/client-portal/admin/users/${enc(uid)}/invite`, { method: 'POST', body: {} }),
     adminRevokeInvite: (uid) => call(`/client-portal/admin/users/${enc(uid)}/invite/revoke`, { method: 'POST', body: {} }),
@@ -404,9 +404,14 @@ export function captureInviteToken(win = typeof window !== 'undefined' ? window 
 export const clearInviteToken = () => { inviteTokenMemo = null; };
 
 export const MIN_PASSWORD = 12;
-export function validateNewAccount({ displayName, password, confirm }) {
+export function validateNewAccount({ displayName, firstName, lastName, password, confirm }) {
   const errors = {};
-  if (!String(displayName || '').trim()) errors.displayName = 'Enter your name.';
+  if (firstName !== undefined || lastName !== undefined) {
+    for (const [key, value] of Object.entries({ firstName, lastName })) {
+      if (!String(value || '').trim()) errors[key] = `Enter your ${key === 'firstName' ? 'first' : 'last'} name.`;
+      else if (String(value).trim().length > 50 || /[\u0000-\u001f\u007f]/.test(value)) errors[key] = 'Use up to 50 characters without line breaks.';
+    }
+  } else if (!String(displayName || '').trim()) errors.displayName = 'Enter your name.';
   else if (String(displayName).trim().length > 100) errors.displayName = 'Keep your name under 100 characters.';
   if (String(password || '').length < MIN_PASSWORD) errors.password = `Use at least ${MIN_PASSWORD} characters.`;
   else if (String(password).length > 128) errors.password = 'Use at most 128 characters.';
@@ -443,8 +448,8 @@ export function createInviteApi({ base, fetchImpl }) {
   };
   return {
     inspect: (token) => post('inspect', { token }),
-    accept: (token, { displayName, password } = {}, bearer) => post('accept', {
-      token, ...(displayName ? { displayName } : {}), ...(password ? { password } : {}),
+    accept: (token, { displayName, firstName, lastName, password } = {}, bearer) => post('accept', {
+      token, ...(displayName ? { displayName } : {}), ...(firstName !== undefined ? { firstName } : {}), ...(lastName !== undefined ? { lastName } : {}), ...(password ? { password } : {}),
     }, bearer),
   };
 }

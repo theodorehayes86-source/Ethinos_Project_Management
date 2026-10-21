@@ -18,6 +18,16 @@ export type AcceptClientPortalInvitationBody = {
    */
   displayName?: string;
   /**
+   * @minLength 1
+   * @maxLength 50
+   */
+  firstName?: string;
+  /**
+   * @minLength 1
+   * @maxLength 50
+   */
+  lastName?: string;
+  /**
    * @minLength 12
    * @maxLength 128
    */

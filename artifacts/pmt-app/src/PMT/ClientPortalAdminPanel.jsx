@@ -50,6 +50,8 @@ export default function ClientPortalAdminPanel({ clients = [] }) {
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState('');
   const [newEmail, setNewEmail] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [newClientIds, setNewClientIds] = useState([]);
   const [editing, setEditing] = useState(null); // { uid, clientIds }
 
@@ -72,10 +74,11 @@ export default function ClientPortalAdminPanel({ clients = [] }) {
     const email = newEmail.trim().toLowerCase();
     if (!email || !email.includes('@')) { setError('Enter a valid client email.'); return; }
     if (isStaffEmail(email)) { setError('Ethinos staff accounts cannot be portal users.'); return; }
+    if (!firstName.trim() || !lastName.trim()) { setError('Enter the contact’s first and last name.'); return; }
     const ids = newClientIds.filter(id => validIds.has(id));
     if (ids.length === 0) { setError('Select at least one client.'); return; }
-    const r = await run('create', () => api.adminCreateUser(email, ids), (res) => res?.invitationSent ? `Invitation link sent to ${email}.` : `${email} added. The invitation email was not sent; use Resend invite.`);
-    if (r) { setNewEmail(''); setNewClientIds([]); }
+    const r = await run('create', () => api.adminCreateUser(email, ids, { firstName: firstName.trim(), lastName: lastName.trim() }), (res) => res?.invitationSent ? `Invitation link sent to ${email}.` : `${email} added. The invitation email was not sent; use Resend invite.`);
+    if (r) { setNewEmail(''); setNewClientIds([]); setFirstName(''); setLastName(''); }
   };
 
   const deleteUser = async (user) => {
@@ -95,7 +98,11 @@ export default function ClientPortalAdminPanel({ clients = [] }) {
           <button onClick={load} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 text-slate-600 hover:bg-slate-50"><RefreshCw size={12} /> Refresh</button>
         </div>
         <form onSubmit={create} className="mt-4 grid gap-3 md:grid-cols-[1fr_1.4fr_auto] items-start">
-          <input data-testid="input-portal-admin-email" type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="client@company.com" className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 ring-indigo-500/20 bg-slate-50" />
+          <div className="space-y-2">
+            <label className="block text-xs text-slate-600">First name<input data-testid="input-portal-admin-first-name" required maxLength={50} autoComplete="given-name" value={firstName} onChange={e => setFirstName(e.target.value)} className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50" /></label>
+            <label className="block text-xs text-slate-600">Last name<input data-testid="input-portal-admin-last-name" required maxLength={50} autoComplete="family-name" value={lastName} onChange={e => setLastName(e.target.value)} className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50" /></label>
+            <label className="block text-xs text-slate-600">Email<input aria-label="Client email" data-testid="input-portal-admin-email" type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="client@company.com" className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 ring-indigo-500/20 bg-slate-50" /></label>
+          </div>
           <ClientPicker clients={realClients} selected={newClientIds} onChange={setNewClientIds} />
           <button data-testid="button-portal-admin-create" type="submit" disabled={!!busy} className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 disabled:opacity-50">
             {busy === 'create' ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />} Invite client
@@ -107,7 +114,7 @@ export default function ClientPortalAdminPanel({ clients = [] }) {
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <div className="grid grid-cols-[1.4fr_2fr_auto] gap-3 px-4 py-2.5 bg-slate-50 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-          <span>Email</span><span>Clients</span><span>Actions</span>
+          <span>Contact / Email</span><span>Clients</span><span>Actions</span>
         </div>
         {users === null ? (
           <div className="p-4 space-y-2">{[0, 1, 2].map(i => <div key={i} className="h-8 bg-slate-100 rounded animate-pulse" />)}</div>
@@ -120,6 +127,10 @@ export default function ClientPortalAdminPanel({ clients = [] }) {
           return (
             <div key={u.uid} data-testid={`row-portal-user-${u.uid}`} className="grid grid-cols-[1.4fr_2fr_auto] gap-3 px-4 py-3 border-b border-slate-100 last:border-0 items-start">
               <div className="min-w-0">
+                {isEditing ? <div className="space-y-2 mb-2">
+                  <label className="block text-xs text-slate-600">First name<input data-testid={`input-portal-first-name-${u.uid}`} maxLength={50} value={editing.firstName} onChange={e => setEditing({ ...editing, firstName: e.target.value })} className="w-full mt-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm" /></label>
+                  <label className="block text-xs text-slate-600">Last name<input data-testid={`input-portal-last-name-${u.uid}`} maxLength={50} value={editing.lastName} onChange={e => setEditing({ ...editing, lastName: e.target.value })} className="w-full mt-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm" /></label>
+                </div> : <p data-testid={`text-portal-name-${u.uid}`} className="text-sm font-semibold text-slate-900 truncate">{[u.firstName, u.lastName].filter(Boolean).join(' ') || 'Name not set'}</p>}
                 <p className="text-sm font-semibold text-slate-800 truncate">{u.email}</p>
                 <div className="flex flex-wrap items-center gap-1 mt-1">
                   <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded ${u.disabled ? 'bg-slate-100 text-slate-500' : 'bg-emerald-50 text-emerald-700'}`}>{u.disabled ? 'Disabled' : 'Active'}</span>
@@ -135,7 +146,8 @@ export default function ClientPortalAdminPanel({ clients = [] }) {
                     <div className="flex gap-2">
                       <button data-testid={`button-portal-user-save-${u.uid}`} disabled={!!busy} onClick={async () => {
                         const ids = editing.clientIds.filter(id => validIds.has(id));
-                        const r = await run(`save-${u.uid}`, () => api.adminUpdateUser(u.uid, { clientIds: ids, disabled: !!u.disabled }), 'Access updated.');
+                        if (!editing.firstName.trim() || !editing.lastName.trim()) { setError('Enter the contact’s first and last name.'); return; }
+                        const r = await run(`save-${u.uid}`, () => api.adminUpdateUser(u.uid, { clientIds: ids, disabled: !!u.disabled, firstName: editing.firstName.trim(), lastName: editing.lastName.trim() }), 'Contact and access updated.');
                         if (r) setEditing(null);
                       }} className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold disabled:opacity-50">Save</button>
                       <button onClick={() => setEditing(null)} className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600"><X size={12} /></button>
@@ -149,7 +161,7 @@ export default function ClientPortalAdminPanel({ clients = [] }) {
                 )}
               </div>
               <div className="flex items-center gap-1">
-                <button title="Edit clients" data-testid={`button-portal-user-edit-${u.uid}`} disabled={!!busy} onClick={() => setEditing({ uid: u.uid, clientIds: (u.clientIds || []).map(String) })} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 disabled:opacity-40"><Pencil size={13} /></button>
+                <button title="Edit contact and clients" data-testid={`button-portal-user-edit-${u.uid}`} disabled={!!busy} onClick={() => setEditing({ uid: u.uid, firstName: u.firstName || '', lastName: u.lastName || '', clientIds: (u.clientIds || []).map(String) })} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 disabled:opacity-40"><Pencil size={13} /></button>
                 <button title="Resend invite" data-testid={`button-portal-user-invite-${u.uid}`} disabled={!!busy} onClick={() => {
                   if (st === 'pending' && !window.confirm(`Send a new invitation link to ${u.email}? The previous link will stop working.`)) return;
                   run(`inv-${u.uid}`, () => api.adminInvite(u.uid), (res) => (res?.invitationSent === false ? `New link created for ${u.email}, but the email was not sent.` : `Invitation sent to ${u.email}.`));

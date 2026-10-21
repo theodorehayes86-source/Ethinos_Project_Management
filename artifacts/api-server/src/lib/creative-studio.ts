@@ -31,12 +31,12 @@ export const DEFAULTS = {
   reference: {
     enabled: true, escalationDays: 5,
     subject: "Action needed: approve references for {{post}}",
-    body: "Hi {{client}}, references for {{post}} going live on {{date}} are ready. Review the moodboard and thumbnail on SharePoint and approve in Creative Studio.",
+    body: "Hi {{recipientName}}, references for {{post}} going live on {{date}} are ready. Review the moodboard and thumbnail on SharePoint and approve in Creative Studio.",
   },
   final: {
     enabled: true, escalationDays: 2,
     subject: "Final approval needed: {{post}} goes live {{date}}",
-    body: "Hi {{client}}, the final {{type}} for {{post}} is ready. Approve by {{deadline}} so the team can schedule it on time.",
+    body: "Hi {{recipientName}}, the final {{type}} for {{post}} is ready. Approve by {{deadline}} so the team can schedule it on time.",
   },
 };
 /** Merge legacy records without losing phase defaults or inherited global settings. */
@@ -48,6 +48,8 @@ export function automationSettings(...layers: (RecordData | null | undefined)[])
       final: { ...out.final, ...layer.final },
     });
   }
+  // Upgrade only a greeting token; company references elsewhere remain intact.
+  for (const phase of ["reference", "final"] as const) out[phase].body = out[phase].body.replace(/^(\s*(?:hi|hello|dear)\s+){{client}}(?=\s*[,!:\n])/i, "$1{{recipientName}}");
   return out;
 }
 export function automation(body: any) {
@@ -60,7 +62,7 @@ export function automation(body: any) {
     if (typeof p.enabled !== "boolean" || !Number.isInteger(p.escalationDays) || p.escalationDays < 0 || p.escalationDays > 365) fail(400, "Invalid phase automation settings.");
     const subject = text(p.subject, 240, true), templateBody = text(p.body, 10000, true);
     if (/[\r\n]/.test(subject)) fail(400, "Subject must be a single line.");
-    if ([subject, templateBody].some(t => (t.match(/{{.*?}}/g) ?? []).some(token => !["{{client}}", "{{post}}", "{{date}}", "{{type}}", "{{deadline}}"].includes(token)))) fail(400, "Unsupported template placeholder.");
+    if ([subject, templateBody].some(t => (t.match(/{{.*?}}/g) ?? []).some(token => !["{{client}}", "{{firstName}}", "{{lastName}}", "{{recipientName}}", "{{post}}", "{{date}}", "{{type}}", "{{deadline}}"].includes(token)))) fail(400, "Unsupported template placeholder.");
     phases[phase] = { enabled: p.enabled, escalationDays: p.escalationDays, subject, body: templateBody };
   }
   return { enabled: body.enabled, sendTime: body.sendTime, timezone: timezone(body.timezone), cadenceDays: body.cadenceDays, ...phases };

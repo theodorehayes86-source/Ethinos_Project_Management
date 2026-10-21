@@ -300,7 +300,7 @@ router.post("/clients/:clientId/preview", route(async (req, res) => {
   const settings = automationSettings(await read("creativeStudio/defaults"), config.automation);
   const now = Date.now();
   const example = { id: "preview-example", title: "Example campaign post", type: "Post", timezone: settings.timezone, plannedAt: new Date(now + 7 * 86400000).toISOString(), productionDueDate: new Date(now + 5 * 86400000).toISOString().slice(0, 10), productionDueTime: "17:00" };
-  const { subject, body } = renderStudioEmail(example, client, settings, phase);
+  const { subject, body } = renderStudioEmail(example, client, settings, phase, "reminder", { firstName: "Alex", lastName: "Morgan", name: "Alex Morgan" });
   res.json({ subject, body, deliveryEnabled: deliveryEnabled() && config.enabled === true && settings.enabled && settings[phase as "reference" | "final"].enabled });
 }));
 router.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {

@@ -9,21 +9,22 @@ export const PHASE_DEFAULTS = {
   reference: {
     enabled: true, escalationDays: 5,
     subject: 'Action needed: approve references for {{post}}',
-    body: 'Hi {{client}}, references for {{post}} going live on {{date}} are ready. Review the moodboard and thumbnail on SharePoint and approve in Creative Studio.',
+    body: 'Hi {{recipientName}}, references for {{post}} going live on {{date}} are ready. Review the moodboard and thumbnail on SharePoint and approve in Creative Studio.',
   },
   final: {
     enabled: true, escalationDays: 2,
     subject: 'Final approval needed: {{post}} goes live {{date}}',
-    body: 'Hi {{client}}, the final {{type}} for {{post}} is ready. Approve by {{deadline}} so the team can schedule it on time.',
+    body: 'Hi {{recipientName}}, the final {{type}} for {{post}} is ready. Approve by {{deadline}} so the team can schedule it on time.',
   },
 };
 export const PHASES = [
   { id: 'reference', title: 'Reference approval reminder', blurb: 'Sent when references or moodboards need sign-off', trigger: 'Reference uploaded' },
   { id: 'final', title: 'Final post approval reminder', blurb: 'Sent when the final creative is ready to go live', trigger: 'Final post uploaded' },
 ];
-export const PLACEHOLDERS = ['{{client}}', '{{post}}', '{{date}}', '{{type}}', '{{deadline}}'];
+export const PLACEHOLDERS = ['{{recipientName}}', '{{firstName}}', '{{lastName}}', '{{client}}', '{{post}}', '{{date}}', '{{type}}', '{{deadline}}'];
 export const PLACEHOLDER_MEANINGS = {
-  '{{client}}': 'Client name', '{{post}}': 'Post name', '{{date}}': 'Posting date',
+  '{{recipientName}}': 'Recipient first and last name', '{{firstName}}': 'Recipient first name', '{{lastName}}': 'Recipient last name',
+  '{{client}}': 'Client company name', '{{post}}': 'Post name', '{{date}}': 'Posting date',
   '{{type}}': 'Story, Reel or Post', '{{deadline}}': 'Deadline time and date',
 };
 const DEFAULT_AUTO = { enabled: false, sendTime: '09:00', timezone: 'Asia/Kolkata', cadenceDays: 1, reference: PHASE_DEFAULTS.reference, final: PHASE_DEFAULTS.final };

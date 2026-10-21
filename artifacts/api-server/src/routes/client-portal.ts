@@ -13,7 +13,7 @@ import { getAdminAuth, getAdminDatabase } from "../lib/firebase-admin";
 import { createHash, randomUUID } from "node:crypto";
 import { acceptInvitation, assertClientIdentity, inspectInvitation, InvitationError, issueInvitation, revokeInvitation } from "../lib/client-invitations";
 import { logger } from "../lib/logger";
-import { clientDirectory, clientTaskStatusEditReason, isStaffEmail, membershipAllows, normalizeDueDate, normalizeMembership, projectClientTask, safeKey, type PortalMembership } from "../lib/client-portal";
+import { clientDirectory, clientTaskStatusEditReason, isStaffEmail, membershipAllows, normalizeDueDate, normalizeMembership, projectClientTask, safeKey, validContactNames, type PortalMembership } from "../lib/client-portal";
 import { deleteClientAccount } from "../lib/client-account-deletion";
 import { ids, permissions, values } from "../lib/creative-studio";
 import clientTaskCollaborationRouter from "./client-task-collaboration";
@@ -37,7 +37,7 @@ for (const action of ["inspect", "accept"] as const) router.post(`/invitations/$
     res.status(429).json({ error: "Too many invitation requests. Try again in a minute." }); return;
   }
   if (!req.body || typeof req.body !== "object" || Array.isArray(req.body) ||
-      Object.keys(req.body).some(k => !(action === "inspect" ? ["token"] : ["token", "displayName", "password"]).includes(k))) {
+      Object.keys(req.body).some(k => !(action === "inspect" ? ["token"] : ["token", "displayName", "firstName", "lastName", "password"]).includes(k))) {
     res.status(400).json({ error: "Invalid invitation request." }); return;
   }
   let user: DecodedIdToken | undefined;
@@ -257,7 +257,7 @@ async function sendInvitation(uid: string) {
 
 router.post("/admin/users", async (req, res): Promise<void> => {
   const parsed = InviteClientPortalUserBody.strict().safeParse(req.body);
-  if (!parsed.success || isStaffEmail(parsed.data.email)) {
+  if (!parsed.success || isStaffEmail(parsed.data.email) || !validContactNames(parsed.data)) {
     res.status(400).json({ error: "Provide an external client email and assigned clients." }); return;
   }
   const email = parsed.data.email.trim().toLowerCase();
@@ -282,7 +282,8 @@ router.post("/admin/users", async (req, res): Promise<void> => {
     res.status(409).json({ error: "This account already exists or is unavailable. Manage existing client access instead." }); return;
   }
   await assertClientIdentity(user.uid, email);
-  const membership: PortalMembership = { email, clientIds, disabled: false };
+  const membership: PortalMembership = { email, clientIds, disabled: false,
+    ...(parsed.data.firstName !== undefined ? { firstName: parsed.data.firstName.trim(), lastName: parsed.data.lastName!.trim() } : {}) };
   const saved = await membershipRef(user.uid).transaction(current => current ? undefined :
     { ...membership, onboardingRequired: true, invitationIdentityCreated: created,
       invitation: { status: "revoked", expiresAt: Date.now(), requiresSignIn: !created } });
@@ -300,21 +301,22 @@ router.delete("/admin/users/:uid", async (req, res): Promise<void> => {
 router.patch("/admin/users/:uid", async (req, res): Promise<void> => {
   const params = UpdateClientPortalUserParams.safeParse(req.params);
   const body = UpdateClientPortalUserBody.strict().safeParse(req.body);
-  if (!params.success || !safeKey(params.data.uid) || !body.success) {
+  if (!params.success || !safeKey(params.data.uid) || !body.success || !validContactNames(body.data)) {
     res.status(400).json({ error: "Invalid client access settings." }); return;
   }
   const { uid } = params.data;
   const existing = normalizeMembership((await membershipRef(uid).once("value")).val());
   if (!existing || isStaffEmail(existing.email)) { res.status(404).json({ error: "Client account not found." }); return; }
   if (!await validClients(body.data.clientIds)) { res.status(400).json({ error: "Select existing clients only." }); return; }
-  const membership = { email: existing.email, clientIds: [...new Set(body.data.clientIds)], disabled: body.data.disabled };
+  const membership = { email: existing.email, clientIds: [...new Set(body.data.clientIds)], disabled: body.data.disabled,
+    ...(body.data.firstName !== undefined ? { firstName: body.data.firstName.trim(), lastName: body.data.lastName!.trim() } : {}) };
   // Membership removal is effective immediately, even if Firebase Auth revocation fails.
   const changed = await membershipRef(uid).transaction(current => current && !current.deletionInProgress ? { ...current, ...membership,
     ...(membership.disabled && current.invitation && ["pending", "processing"].includes(current.invitation.status)
       ? { invitation: { ...current.invitation, status: "revoked", claim: null } } : {}) } : undefined);
   if (!changed.committed) { res.status(409).json({ error: "Membership changed. Try again." }); return; }
   if (membership.disabled) await getAdminAuth().revokeRefreshTokens(uid);
-  res.json(UpdateClientPortalUserResponse.parse({ user: { uid, ...membership } }));
+  res.json(UpdateClientPortalUserResponse.parse({ user: { uid, ...normalizeMembership(changed.snapshot.val())! } }));
 });
 
 router.post("/admin/users/:uid/invite", async (req, res): Promise<void> => {

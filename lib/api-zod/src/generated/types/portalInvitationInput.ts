@@ -10,6 +10,16 @@ export interface PortalInvitationInput {
   /** @maxLength 254 */
   email: string;
   /**
+   * @minLength 1
+   * @maxLength 50
+   */
+  firstName?: string;
+  /**
+   * @minLength 1
+   * @maxLength 50
+   */
+  lastName?: string;
+  /**
    * @minItems 1
    * @maxItems 100
    */

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import cron from "node-cron";
 import { getAdminAuth, getAdminDatabase } from "./firebase-admin";
-import { isStaffEmail, membershipAllows, normalizeMembership } from "./client-portal";
+import { isStaffEmail, membershipAllows, normalizeMembership, contactFullName } from "./client-portal";
 import { automationSettings, permissions, studioUrgency, values, type RecordData, type ApprovalPhase } from "./creative-studio";
 import { fromZonedTime } from "date-fns-tz";
 import { isEmailConfigured, sendEmail } from "./microsoft-graph";
@@ -19,7 +19,7 @@ const emailPhase = (item: RecordData, kind: string): ApprovalPhase => kind === "
   : approvalPhase(item);
 
 /** Templates are plain text. Only our own deep link becomes an HTML link. */
-export function renderStudioEmail(item: RecordData, client: RecordData, settings: ReturnType<typeof automationSettings>, phase: ApprovalPhase, kind = "reminder") {
+export function renderStudioEmail(item: RecordData, client: RecordData, settings: ReturnType<typeof automationSettings>, phase: ApprovalPhase, kind = "reminder", recipientInfo: RecordData = {}) {
   const date = (value: string | undefined, dateOnly = false) => value && Number.isFinite(Date.parse(value))
     ? new Intl.DateTimeFormat("en-GB", { timeZone: dateOnly ? "UTC" : item.timezone ?? settings.timezone, day: "numeric", month: "short", year: "numeric" }).format(new Date(value)) : "Not scheduled";
   const zone = item.timezone ?? settings.timezone;
@@ -28,8 +28,10 @@ export function renderStudioEmail(item: RecordData, client: RecordData, settings
     : item.plannedAt && Number.isFinite(Date.parse(item.plannedAt))
       ? `${date(item.plannedAt)} at ${new Intl.DateTimeFormat("en-GB", { timeZone: zone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(item.plannedAt))} (${zone})`
       : "Not scheduled";
-  const data: Record<string, string> = { client: String(client.name ?? "Client"), post: String(item.title ?? ""), type: String(item.type ?? "Creative"), date: date(item.plannedAt), deadline };
-  const fill = (template: string) => template.replace(/{{(client|post|date|type|deadline)}}/g, (_, key: string) => data[key]);
+  const data: Record<string, string> = { client: String(client.name ?? "Client"), post: String(item.title ?? ""), type: String(item.type ?? "Creative"), date: date(item.plannedAt), deadline,
+    firstName: String(recipientInfo.firstName || "there"), lastName: String(recipientInfo.lastName || ""),
+    recipientName: contactFullName(recipientInfo) || String(recipientInfo.name || "there") };
+  const fill = (template: string) => template.replace(/{{(client|firstName|lastName|recipientName|post|date|type|deadline)}}/g, (_, key: string) => data[key]);
   const subject = (kind === "decision" ? "Flow Pro: creative approval updated" : fill(settings[phase].subject)).replace(/[\r\n]+/g, " ");
   const content = kind === "decision" ? `${item.title}: creative approval updated.` : fill(settings[phase].body);
   const url = studioEmailLink(item, kind);
@@ -51,7 +53,7 @@ async function recipient(item: RecordData, kind: string, enforceAutomation = tru
   const approval = kind === "decision"
     ? Object.values(item.approvals ?? {}).filter((a: any) => a.decidedAt).sort((a: any, b: any) => b.decidedAt - a.decidedAt)[0] as RecordData | undefined
     : item.approvals?.[phase];
-  let approver: { email: string; uid: string; revision: number; name: string } | null = null;
+  let approver: { email: string; uid: string; revision: number; name: string; firstName?: string; lastName?: string } | null = null;
   if (kind !== "decision") {
     if (!approval || approval.status !== "pending" || !["awaiting_reference", "awaiting_final"].includes(item.stage) || item.scheduled) return null;
     if (kind === "escalation" && studioUrgency(item, Date.now(), settings[phase].escalationDays) === "none") return null;
@@ -60,14 +62,16 @@ async function recipient(item: RecordData, kind: string, enforceAutomation = tru
     try {
       const authUser = await getAdminAuth().getUser(approval.approverUid);
       if (authUser.disabled || !authUser.emailVerified || authUser.email?.toLowerCase() !== m.email.toLowerCase()) return null;
-      approver = { email: m.email, uid: approval.approverUid, revision: approval.revision, name: authUser.displayName ?? m.email };
+      approver = { email: m.email, uid: approval.approverUid, revision: approval.revision,
+        firstName: m.firstName, lastName: m.lastName, name: contactFullName(m) || authUser.displayName || "there" };
     } catch { return null; }
   }
   if (kind === "decision" || kind === "escalation") {
     const users = values(await read("users"));
     const owner = users.find(u => String(u.id) === String(item.ownerId) && u.active !== false && u.disabled !== true && !u.archived);
     if (!owner || !client || !isStaffEmail(owner.email) || !permissions(owner, client, config).editor) return null;
-    return { email: owner.email as string, uid: String(owner.id), revision: approval?.revision ?? item.revision, name: owner.name ?? owner.email };
+    return { email: owner.email as string, uid: String(owner.id), revision: approval?.revision ?? item.revision,
+      firstName: owner.firstName, lastName: owner.lastName, name: owner.name || "there" };
   }
   return approver;
 }
@@ -186,7 +190,7 @@ export async function runStudioEmailWorker() {
           continue;
         }
         const client = values(await read("clients")).find(c => String(c.id) === String(clientId)) ?? {};
-        const { subject, bodyHtml } = renderStudioEmail(item, client, liveSettings, approvalPhase(item), delivery.kind);
+        const { subject, bodyHtml } = renderStudioEmail(item, client, liveSettings, approvalPhase(item), delivery.kind, target);
         try {
           await sendEmail({ to: target.email, subject, bodyHtml });
           await ref.update({ status: "sent", sentAt: Date.now() });

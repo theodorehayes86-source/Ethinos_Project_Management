@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { DecodedIdToken } from "firebase-admin/auth";
 import { getAdminAuth, getAdminDatabase } from "./firebase-admin";
-import { isStaffEmail, normalizeMembership, safeKey } from "./client-portal";
+import { isStaffEmail, normalizeMembership, safeKey, contactFullName, validContactNames } from "./client-portal";
 import { APP_BASE_URL } from "./app-url";
 import { isEmailConfigured, sendEmail } from "./microsoft-graph";
 import { logger } from "./logger";
@@ -68,8 +68,9 @@ async function issueLoadedInvitation(uid: string) {
     // Deletion may have revoked/removed membership while this index write was in flight.
     if (!usable(await read(`clientPortalUsers/${uid}`), hash)) throw invalid();
     stage = "email";
+    const name = (contactFullName(before) || "there").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
     await sendEmail({ to: before.email, subject: "Your Flow Pro client access", sensitive: true,
-      bodyHtml: `<p>You have been invited to your client workspace in Flow Pro.</p><p><a href="${APP_BASE_URL}/?client=1#invite=${token}">Accept your invitation</a></p><p>This link expires in 7 days and can only be used once.</p>` });
+      bodyHtml: `<p>Hi ${name},</p><p>You have been invited to your client workspace in Flow Pro.</p><p><a href="${APP_BASE_URL}/?client=1#invite=${token}">Accept your invitation</a></p><p>This link expires in 7 days and can only be used once.</p>` });
   } catch (error) {
     // Log only a bounded status and stage, never recipient, invitation token,
     // Graph response body or credentials.
@@ -120,27 +121,31 @@ export async function inspectInvitation(token: unknown) {
     return ids.includes(String(c.id ?? id)) && !c.deleted && !c.archived && typeof c.name === "string" ? [c.name] : [];
   });
   if (!usable(await read(`clientPortalUsers/${uid}`), hash)) throw invalid();
-  return { email: membership.email, requiresSignIn: membership.invitation.requiresSignIn,
+   return { email: membership.email, firstName: membership.firstName || "", lastName: membership.lastName || "", requiresSignIn: membership.invitation.requiresSignIn,
     expiresAt: membership.invitation.expiresAt, clientNames };
 }
 
-export async function acceptInvitation(body: { token: unknown; displayName?: unknown; password?: unknown }, identity?: DecodedIdToken) {
+export async function acceptInvitation(body: { token: unknown; displayName?: unknown; firstName?: unknown; lastName?: unknown; password?: unknown }, identity?: DecodedIdToken) {
   const { uid, hash, membership } = await lookup(body.token);
   return withLoadedRecord(`clientPortalUsers/${uid}`, () => acceptLoadedInvitation(body, identity, uid, hash, membership));
 }
 
-async function acceptLoadedInvitation(body: { token: unknown; displayName?: unknown; password?: unknown }, identity: DecodedIdToken | undefined, uid: string, hash: string, membership: any) {
+async function acceptLoadedInvitation(body: { token: unknown; displayName?: unknown; firstName?: unknown; lastName?: unknown; password?: unknown }, identity: DecodedIdToken | undefined, uid: string, hash: string, membership: any) {
   const existing = membership.invitation.requiresSignIn !== false;
   if (identity && (identity.uid !== uid || identity.email?.toLowerCase() !== membership.email.toLowerCase()))
     throw new InvitationError(403, "Sign in with the invited account.");
   if (existing) {
     if (!identity) throw new InvitationError(401, "Sign in to your existing account to accept this invitation.");
-    if (body.password !== undefined || body.displayName !== undefined)
+    if (body.password !== undefined || body.displayName !== undefined || body.firstName !== undefined || body.lastName !== undefined)
       throw new InvitationError(400, "Existing accounts must accept with the invitation token only.");
   } else if (typeof body.password !== "string" || body.password.length < 12 || body.password.length > 128 ||
       (body.displayName !== undefined && (typeof body.displayName !== "string" || !body.displayName.trim() || body.displayName.length > 120))) {
     throw new InvitationError(400, "Provide a password of 12–128 characters and an optional name of 1–120 characters.");
   }
+  if (!validContactNames(body)) throw new InvitationError(400, "Provide both first and last names, each up to 50 characters.");
+  const names = !existing && body.firstName !== undefined
+    ? { firstName: (body.firstName as string).trim(), lastName: (body.lastName as string).trim() } : {};
+  const displayName = contactFullName(names) || contactFullName(membership) || (typeof body.displayName === "string" ? body.displayName.trim() : "");
   const claim = randomBytes(16).toString("hex");
   const reserved = await ref(uid).transaction(current => usable(current, hash) && current.email === membership.email
     ? { ...current, invitation: { ...current.invitation, status: "processing", claim } } : undefined);
@@ -149,12 +154,12 @@ async function acceptLoadedInvitation(body: { token: unknown; displayName?: unkn
     // Never restore a reservation after an Auth failure: retrying a partially applied password update is unsafe.
     await assertClientIdentity(uid, membership.email);
     await getAdminAuth().updateUser(uid, { emailVerified: true,
-      ...(!existing ? { password: body.password as string, ...(body.displayName ? { displayName: (body.displayName as string).trim() } : {}) } : {}) });
+      ...(!existing ? { password: body.password as string, ...(displayName ? { displayName } : {}) } : {}) });
     await assertClientIdentity(uid, membership.email);
     const accepted = await ref(uid).transaction(current =>
       current && !current.disabled && !current.deletionInProgress && current.email === membership.email && current.invitation?.tokenHash === hash &&
       current.invitation.status === "processing" && current.invitation.claim === claim && current.invitation.expiresAt > Date.now()
-        ? { ...current, onboardingRequired: false, invitationIdentityCreated: false, invitation: { ...current.invitation, status: "accepted", acceptedAt: Date.now(), claim: null } }
+        ? { ...current, ...names, onboardingRequired: false, invitationIdentityCreated: false, invitation: { ...current.invitation, status: "accepted", acceptedAt: Date.now(), claim: null } }
         : undefined);
     if (!accepted.committed) throw invalid();
     return { accepted: true as const, email: membership.email };

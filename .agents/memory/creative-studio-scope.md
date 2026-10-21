@@ -81,6 +81,18 @@ email template, not literal text in the delivered email.
 **How to apply:** Keep variable meanings consistent in previews and sent emails,
 and apply the shared schedule to reference and final approval reminders.
 
+Email greetings must address the client contact's first and last name, not the
+client company. Keep {{client}} as the company reference; use {{recipientName}}
+for the contact's full name, with individual first/last-name variables available.
+
+**Why:** The user subsequently requested first and last names in Client Portal
+and personal names in emails instead of the company-based greeting.
+
+**How to apply:** Collect names during invitations and setup, allow agency edits,
+and personalize separately for the actual recipient at send time. Preserve
+company-name references outside greetings. Never infer missing name parts by
+splitting an existing display name.
+
 ## Summary cards and calendar dates
 
 Creative Studio summary cards should be clickable filters. Calendar dates should

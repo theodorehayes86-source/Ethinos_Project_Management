@@ -369,6 +369,41 @@ describe("Creative Studio revisions and conversations", () => {
   });
 });
 describe("Creative Studio mail safety", () => {
+  it("uses current contact names at transport time, not stale names from queueing", async () => {
+    process.env.CREATIVE_STUDIO_EMAIL_DELIVERY = "enabled";
+    state.data.clientPortalUsers.external.firstName = "Old";
+    state.data.clientPortalUsers.external.lastName = "Name";
+    await action("request_approval", { phase: "reference", approverUid: "external" });
+    state.data.clientPortalUsers.external.firstName = "Alex";
+    state.data.clientPortalUsers.external.lastName = "Morgan";
+    await runStudioEmailWorker();
+    expect(state.send).toHaveBeenCalled();
+    expect(state.send.mock.calls[0][0].bodyHtml).toContain("Hi Alex Morgan,");
+    expect(state.send.mock.calls[0][0].bodyHtml).not.toContain("Hi Old Name");
+  });
+  it.each(["reference", "final"] as const)("personalizes %s templates with recipient names, keeping company variables separate", phase => {
+    const settings = automationSettings();
+    settings[phase].subject = "{{firstName}} {{lastName}} — {{client}}";
+    settings[phase].body = "Hi {{recipientName}}, {{firstName}} / {{lastName}} / {{client}}";
+    const rendered = renderStudioEmail(item(), { name: "Example Company" }, settings, phase, "reminder",
+      { firstName: "Alex", lastName: "Morgan" });
+    expect(rendered.subject).toBe("Alex Morgan — Example Company");
+    expect(rendered.body).toContain("Hi Alex Morgan, Alex / Morgan / Example Company");
+    expect(rendered.body).not.toMatch(/{{(firstName|lastName|recipientName)}}/);
+  });
+  it("upgrades legacy company greetings without replacing company mentions elsewhere", () => {
+    const settings = automationSettings({ reference: { body: "Hi {{client}}, please review work for {{client}}." } });
+    expect(settings.reference.body).toBe("Hi {{recipientName}}, please review work for {{client}}.");
+    const rendered = renderStudioEmail(item(), { name: "Example Company" }, settings, "reference", "request", { firstName: "Alex", lastName: "Morgan" });
+    expect(rendered.body).toContain("Hi Alex Morgan, please review work for Example Company.");
+  });
+  it("escapes recipient names and uses an honest greeting for legacy unnamed contacts", () => {
+    const settings = automationSettings();
+    const named = renderStudioEmail(item(), { name: "Company" }, settings, "final", "reminder", { firstName: "<Alex>", lastName: "{{client}}" });
+    expect(named.bodyHtml).toContain("&lt;Alex&gt; {{client}}");
+    expect(named.bodyHtml).not.toContain("<Alex>");
+    expect(renderStudioEmail(item(), { name: "Company" }, settings, "final").body).toContain("Hi there,");
+  });
   it.each(["reference", "final"] as const)("substitutes all email variables for the %s reminder", phase => {
     const settings = automationSettings(automation);
     settings[phase].subject = "{{client}} | {{post}} | {{date}} | {{type}} | {{deadline}}";
@@ -619,7 +654,7 @@ describe("Creative Studio phase automation", () => {
     const final = await api("post", "/clients/a/preview", { phase: "final" });
     expect(reference.body.subject).toBe("Action needed: approve references for Example campaign post");
     expect(final.body.subject).toContain("Final approval needed:");
-    expect(final.body.body).toContain("Hi Alpha");
+    expect(final.body.body).toContain("Hi Alex Morgan");
     expect(final.body.body).not.toContain("{{");
     expect(final.body.deliveryEnabled).toBe(false);
     expect((await api("post", "/clients/a/preview", { phase: "bad" })).status).toBe(400);

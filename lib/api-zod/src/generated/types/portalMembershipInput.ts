@@ -10,4 +10,14 @@ export interface PortalMembershipInput {
   /** @maxItems 100 */
   clientIds: string[];
   disabled: boolean;
+  /**
+   * @minLength 1
+   * @maxLength 50
+   */
+  firstName?: string;
+  /**
+   * @minLength 1
+   * @maxLength 50
+   */
+  lastName?: string;
 }
