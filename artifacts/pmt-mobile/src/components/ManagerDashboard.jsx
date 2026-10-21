@@ -16,6 +16,7 @@ import { isTaskOverdue, isTaskLeaveAwareOverdue, getLeaveAndHolidayData, getLeav
 import TeamHeader from './team/TeamHeader.jsx';
 import TeamFilterSheet from './team/TeamFilterSheet.jsx';
 import CollapsibleSection from './team/CollapsibleSection.jsx';
+import PersonAtRiskCard from './team/PersonAtRiskCard.jsx';
 
 const STATUS_COLORS = {
   Pending: 'bg-amber-100 text-amber-700',
@@ -664,46 +665,6 @@ function KpiFocusBar({ type, index, total, onPrev, onNext, onExit }) {
       <button onClick={onExit} aria-label="Exit focus mode" className="w-11 h-11 rounded-full bg-white/15 flex items-center justify-center active:bg-white/30 ml-0.5">
         <X size={16} />
       </button>
-    </div>
-  );
-}
-
-function PersonAtRiskCard({ user, tasks, isOnLeave, accent, onTaskClick }) {
-  const red = accent === 'red';
-  const c = red
-    ? { bg: 'bg-red-50', border: 'border-red-100', avatar: 'bg-red-200', avatarText: 'text-red-700', name: 'text-red-800', countBg: 'bg-red-100', countText: 'text-red-500', rowHover: 'hover:bg-red-100', taskText: 'text-red-700' }
-    : { bg: 'bg-indigo-50', border: 'border-indigo-100', avatar: 'bg-indigo-200', avatarText: 'text-indigo-700', name: 'text-indigo-800', countBg: 'bg-indigo-100', countText: 'text-indigo-500', rowHover: 'hover:bg-indigo-100', taskText: 'text-indigo-700' };
-  const icon = red
-    ? <AlertTriangle size={10} className="text-red-400 flex-shrink-0" />
-    : <Clock size={10} className="text-indigo-400 flex-shrink-0" />;
-
-  return (
-    <div className={`${c.bg} rounded-2xl border ${c.border} px-4 py-3`}>
-      <div className="flex items-center gap-2 mb-2">
-        <div className={`w-6 h-6 rounded-full ${c.avatar} flex items-center justify-center flex-shrink-0`}>
-          <span className={`${c.avatarText} font-black text-[10px]`}>{initials(user.name)}</span>
-        </div>
-        <p className={`text-xs font-bold ${c.name}`}>{user.name}</p>
-        {isOnLeave && (
-          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700">On Leave</span>
-        )}
-        <span className={`ml-auto text-[10px] font-bold ${c.countText} ${c.countBg} px-1.5 py-0.5 rounded-full`}>
-          {tasks.length} {red ? 'overdue' : 'due today'}
-        </span>
-      </div>
-      <div className="space-y-1">
-        {tasks.map(t => (
-          <button
-            key={`${t._clientId}-${t.id}`}
-            onClick={() => onTaskClick(t)}
-            className={`w-full flex items-center gap-2 text-left px-2 py-1.5 rounded-xl ${c.rowHover} transition-colors min-h-[44px]`}
-          >
-            {icon}
-            <span className={`text-xs ${c.taskText} font-medium flex-1 truncate`}>{t.name || t.comment}</span>
-            {t._clientName && <span className={`text-[10px] ${c.countText} flex-shrink-0 truncate max-w-[80px]`}>{t._clientName}</span>}
-          </button>
-        ))}
-      </div>
     </div>
   );
 }
