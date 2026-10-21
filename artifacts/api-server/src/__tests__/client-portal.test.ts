@@ -518,7 +518,8 @@ describe("admin invitations and access lifecycle", () => {
     expect(state.data["clientPortalUsers/new-client"]).toMatchObject({ firstName: "Alexander", lastName: "Morgan" });
     expect(state.updateUser).toHaveBeenCalledWith("new-client", expect.objectContaining({ displayName: "Alexander Morgan" }));
   });
-  it("edits contact names without dropping membership or invitation fields, and preserves them on disable", async () => {
+  it.each([false, true])("edits contact names and preserves invitation fields with cold cache=%s", async cold => {
+    state.cold = cold;
     const path = "clientPortalUsers/client-a";
     state.data[path].invitation = { status: "accepted", expiresAt: 1 };
     const result = await request(app).patch(`${api}/admin/users/client-a`).set("Authorization", "Bearer test")
@@ -529,6 +530,24 @@ describe("admin invitations and access lifecycle", () => {
     const disabled = await request(app).patch(`${api}/admin/users/client-a`).set("Authorization", "Bearer test")
       .send({ clientIds: ["alpha"], disabled: true });
     expect(disabled.body.user).toMatchObject({ firstName: "Renée", lastName: "O’Connor", disabled: true });
+    expect(state.retained.get(path)?.size ?? 0).toBe(0);
+  });
+  it.each(["deleted", "deleting", "error"])("does not restore a membership during a concurrent %s and releases its listener", async action => {
+    const path = "clientPortalUsers/client-a";
+    state.cold = true;
+    state.transaction.mockImplementation(async (transactionPath: string) => {
+      if (transactionPath !== path) return;
+      if (action === "error") throw new Error("Database unavailable");
+      if (action === "deleted") delete state.data[path];
+      else state.data[path].deletionInProgress = true;
+    });
+    const result = await request(app).patch(`${api}/admin/users/client-a`).set("Authorization", "Bearer test")
+      .send({ clientIds: ["alpha"], disabled: false, firstName: "Alex", lastName: "Morgan" });
+    expect(result.status).toBe(action === "error" ? 500 : 409);
+    expect(state.data[path]?.firstName).toBeUndefined();
+    if (action === "deleted") expect(state.data[path]).toBeUndefined();
+    if (action === "deleting") expect(state.data[path].deletionInProgress).toBe(true);
+    expect(state.retained.get(path)?.size ?? 0).toBe(0);
   });
   it.each([
     { firstName: "Only" }, { firstName: " ", lastName: "Name" },

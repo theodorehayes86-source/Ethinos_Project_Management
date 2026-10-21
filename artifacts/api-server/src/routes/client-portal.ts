@@ -305,18 +305,25 @@ router.patch("/admin/users/:uid", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Invalid client access settings." }); return;
   }
   const { uid } = params.data;
-  const existing = normalizeMembership((await membershipRef(uid).once("value")).val());
-  if (!existing || isStaffEmail(existing.email)) { res.status(404).json({ error: "Client account not found." }); return; }
-  if (!await validClients(body.data.clientIds)) { res.status(400).json({ error: "Select existing clients only." }); return; }
-  const membership = { email: existing.email, clientIds: [...new Set(body.data.clientIds)], disabled: body.data.disabled,
-    ...(body.data.firstName !== undefined ? { firstName: body.data.firstName.trim(), lastName: body.data.lastName!.trim() } : {}) };
-  // Membership removal is effective immediately, even if Firebase Auth revocation fails.
-  const changed = await membershipRef(uid).transaction(current => current && !current.deletionInProgress ? { ...current, ...membership,
-    ...(membership.disabled && current.invitation && ["pending", "processing"].includes(current.invitation.status)
-      ? { invitation: { ...current.invitation, status: "revoked", claim: null } } : {}) } : undefined);
-  if (!changed.committed) { res.status(409).json({ error: "Membership changed. Try again." }); return; }
-  if (membership.disabled) await getAdminAuth().revokeRefreshTokens(uid);
-  res.json(UpdateClientPortalUserResponse.parse({ user: { uid, ...normalizeMembership(changed.snapshot.val())! } }));
+  const record = membershipRef(uid);
+  // Retain the exact record across the read and transaction: a detached once()
+  // can leave a cold local cache, making an existing membership appear absent.
+  const retainValue = () => {};
+  record.on("value", retainValue, () => {});
+  try {
+    const existing = normalizeMembership((await record.once("value")).val());
+    if (!existing || isStaffEmail(existing.email)) { res.status(404).json({ error: "Client account not found." }); return; }
+    if (!await validClients(body.data.clientIds)) { res.status(400).json({ error: "Select existing clients only." }); return; }
+    const membership = { email: existing.email, clientIds: [...new Set(body.data.clientIds)], disabled: body.data.disabled,
+      ...(body.data.firstName !== undefined ? { firstName: body.data.firstName.trim(), lastName: body.data.lastName!.trim() } : {}) };
+    // Membership removal is effective immediately, even if Firebase Auth revocation fails.
+    const changed = await record.transaction(current => current && !current.deletionInProgress ? { ...current, ...membership,
+      ...(membership.disabled && current.invitation && ["pending", "processing"].includes(current.invitation.status)
+        ? { invitation: { ...current.invitation, status: "revoked", claim: null } } : {}) } : undefined);
+    if (!changed.committed) { res.status(409).json({ error: "Membership changed. Try again." }); return; }
+    if (membership.disabled) await getAdminAuth().revokeRefreshTokens(uid);
+    res.json(UpdateClientPortalUserResponse.parse({ user: { uid, ...normalizeMembership(changed.snapshot.val())! } }));
+  } finally { record.off("value", retainValue); }
 });
 
 router.post("/admin/users/:uid/invite", async (req, res): Promise<void> => {
