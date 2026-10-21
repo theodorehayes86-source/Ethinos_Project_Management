@@ -2,6 +2,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import MemberCardHeader, { MemberTaskFilter } from '../../../pmt-mobile/src/components/team/MemberCardHeader.jsx';
+import { personDisplayName } from '../../../pmt-mobile/src/components/team/displayName.js';
 
 const props = {
   user: { id: 'sample', name: 'Alexandra Samantha Winter', role: 'Director', kekaEmployeeId: 'sample' },
@@ -10,6 +11,23 @@ const props = {
   hasTeam: true, onFilter: () => {}, onOpenTasks: () => {}, onDrillIn: () => {},
 };
 describe('compact mobile member-card header', () => {
+  it.each([
+    ['Alexandra Winter | Team Ethinos', 'Alexandra Winter'],
+    ['  Alexandra Winter  | Team | Department', 'Alexandra Winter'],
+    ['Alexandra Winter|Team Ethinos', 'Alexandra Winter'],
+    ['Alexandra Winter', 'Alexandra Winter'],
+    ['Renée O’Connor | Team Ethinos', 'Renée O’Connor'],
+  ])('shows only the name before the first pipe: %s', (stored, expected) => {
+    expect(personDisplayName(stored)).toBe(expected);
+    const user = { ...props.user, name: stored };
+    const html = renderToStaticMarkup(<MemberCardHeader {...props} user={user} />);
+    expect(html).toContain(expected);
+    expect(html).not.toContain('Team Ethinos');
+    const drill = vi.fn();
+    MemberCardHeader({ ...props, user, onDrillIn: drill }).props.children[1].props.children[4].props.onClick();
+    expect(drill).toHaveBeenCalledWith(user);
+    expect(user.name).toBe(stored);
+  });
   it('gives the full name its own line without ellipsis or clipping', () => {
     const html = renderToStaticMarkup(<MemberCardHeader {...props} />);
     const name = html.match(/<span data-testid="text-member-name"[^>]*>.*?<\/span>/)?.[0];

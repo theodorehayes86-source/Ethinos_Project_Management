@@ -8,6 +8,15 @@ const tasks = [
   { id: 'b', _clientId: 'client-b', comment: 'Second task', _clientName: 'Client B' },
 ];
 describe('per-person At Risk disclosure', () => {
+  it('hides directory suffixes but retains the full personal name and pending count', () => {
+    const html = renderToStaticMarkup(<PersonAtRiskCard user={{ id: 'u', name: 'Sample Person | Team Ethinos | Design' }} tasks={tasks} accent="red" onTaskClick={() => {}} />);
+    const summary = html.match(/<summary[^>]*>(.*?)<\/summary>/s)?.[1];
+    expect(summary).toContain('Sample Person');
+    expect(summary).toContain('2 pending');
+    expect(summary).not.toContain('Team Ethinos');
+    expect(summary).not.toContain('|');
+    expect(html).not.toMatch(/<details[^>]*\sopen(?:=|\s|>)/);
+  });
   it.each(['red', 'indigo'])('starts collapsed with visible name and pending count (%s)', accent => {
     const html = renderToStaticMarkup(<PersonAtRiskCard user={{ id: 'u', name: 'Sample Person' }} tasks={tasks} accent={accent} onTaskClick={() => {}} />);
     expect(html).toContain('<details');

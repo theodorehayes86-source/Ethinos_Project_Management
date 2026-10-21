@@ -1,12 +1,14 @@
 import React from 'react';
 import { AlertTriangle, Clock, ChevronDown } from 'lucide-react';
+import { personDisplayName } from './displayName.js';
 
 export default function PersonAtRiskCard({ user, tasks, isOnLeave, accent, onTaskClick }) {
   const red = accent === 'red';
   const c = red
     ? { bg: 'bg-red-50', border: 'border-red-100', avatar: 'bg-red-200', avatarText: 'text-red-700', name: 'text-red-800', countBg: 'bg-red-100', countText: 'text-red-500', rowHover: 'hover:bg-red-100', taskText: 'text-red-700' }
     : { bg: 'bg-indigo-50', border: 'border-indigo-100', avatar: 'bg-indigo-200', avatarText: 'text-indigo-700', name: 'text-indigo-800', countBg: 'bg-indigo-100', countText: 'text-indigo-500', rowHover: 'hover:bg-indigo-100', taskText: 'text-indigo-700' };
-  const initials = (user.name || '').split(' ').filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase();
+  const displayName = personDisplayName(user.name);
+  const initials = displayName.split(' ').filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase();
   const label = red ? 'overdue' : 'due today';
 
   return (
@@ -16,7 +18,7 @@ export default function PersonAtRiskCard({ user, tasks, isOnLeave, accent, onTas
           <span className={`${c.avatarText} font-black text-[10px]`}>{initials}</span>
         </span>
         <span className="min-w-0 flex-1">
-          <span className={`block text-xs font-bold break-words ${c.name}`}>{user.name}</span>
+          <span className={`block text-xs font-bold break-words ${c.name}`}>{displayName}</span>
           {isOnLeave && <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700">On Leave</span>}
         </span>
         <span aria-label={`${tasks.length} pending ${label} tasks`} className={`shrink-0 text-[10px] font-bold ${c.countText} ${c.countBg} px-2 py-1 rounded-full`}>

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Users, ChevronRight, Link2, Link2Off, LogIn, LogOut, Star } from 'lucide-react';
+import { personDisplayName } from './displayName.js';
 
 export function MemberTaskFilter({ label, value, active, red, onClick }) {
   if (!value) return null;
@@ -11,9 +12,10 @@ export function MemberTaskFilter({ label, value, active, red, onClick }) {
 }
 
 export default function MemberCardHeader({ user, stats, leaveStatus, leaveDate, attendanceStatus, taskFilter, onFilter, onOpenTasks, hasTeam, onDrillIn }) {
+  const displayName = personDisplayName(user.name);
   const arrived = attendanceStatus && (attendanceStatus.hasArrived ?? (attendanceStatus.clockIn !== null));
   const fmt = iso => new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-  const initials = (user.name || '').split(' ').filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  const initials = displayName.split(' ').filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase();
   const pill = 'inline-flex items-center gap-0.5 text-[9px] leading-4 font-bold px-1.5 rounded-full border whitespace-nowrap';
   const dot = leaveStatus === 'on_leave' ? 'bg-orange-400' : leaveStatus === 'leave_soon' ? 'bg-amber-300' : attendanceStatus?.isInOffice ? 'bg-emerald-400' : arrived ? 'bg-slate-400' : 'bg-red-400';
   const dotTitle = leaveStatus === 'on_leave' ? 'On Leave' : leaveStatus === 'leave_soon' ? 'Leave Soon' : attendanceStatus?.isInOffice ? 'In office' : arrived ? 'Left for day' : 'Not arrived';
@@ -25,7 +27,7 @@ export default function MemberCardHeader({ user, stats, leaveStatus, leaveDate, 
           {(attendanceStatus || leaveStatus === 'on_leave' || leaveStatus === 'leave_soon') && <span title={dotTitle} className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${dot}`} />}
         </span>
         <span className="flex-1 min-w-0">
-          <span data-testid="text-member-name" className="block text-sm leading-5 font-bold text-slate-900 break-words [overflow-wrap:anywhere]">{user.name}</span>
+          <span data-testid="text-member-name" className="block text-sm leading-5 font-bold text-slate-900 break-words [overflow-wrap:anywhere]">{displayName}</span>
           <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-0.5">
             <span className="text-[10px] text-slate-400">{user.role}</span>
             <span className={`${pill} ${user.kekaEmployeeId ? 'bg-teal-50 text-teal-600 border-teal-200' : 'bg-slate-100 text-slate-400 border-slate-200'}`}>
@@ -45,7 +47,7 @@ export default function MemberCardHeader({ user, stats, leaveStatus, leaveDate, 
         <MemberTaskFilter label="Today" value={stats.today} active={taskFilter === 'today'} onClick={() => onFilter('today')} />
         <MemberTaskFilter label="Overdue" value={stats.overdue} red active={taskFilter === 'overdue'} onClick={() => onFilter('overdue')} />
         <MemberTaskFilter label="QC" value={stats.pendingQC} active={taskFilter === 'awaitingQC'} onClick={() => onFilter('awaitingQC')} />
-        {hasTeam && <button type="button" onClick={() => onDrillIn(user)} aria-label={`View ${user.name}'s team`} className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-50 border border-indigo-100 min-h-[36px]">
+        {hasTeam && <button type="button" onClick={() => onDrillIn(user)} aria-label={`View ${displayName}'s team`} className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-50 border border-indigo-100 min-h-[36px]">
           <Users size={10} className="text-indigo-500" /><span className="text-[9px] font-bold text-indigo-600 uppercase">Team</span><ChevronRight size={10} className="text-indigo-400" />
         </button>}
       </div>
