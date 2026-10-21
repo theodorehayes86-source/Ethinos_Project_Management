@@ -17,6 +17,7 @@ import TeamHeader from './team/TeamHeader.jsx';
 import TeamFilterSheet from './team/TeamFilterSheet.jsx';
 import CollapsibleSection from './team/CollapsibleSection.jsx';
 import PersonAtRiskCard from './team/PersonAtRiskCard.jsx';
+import MemberCardHeader from './team/MemberCardHeader.jsx';
 
 const STATUS_COLORS = {
   Pending: 'bg-amber-100 text-amber-700',
@@ -389,19 +390,6 @@ function PersonTaskSheet({ user, tasks: rawTasks, onClose, onTaskClick, currentU
   );
 }
 
-function FilterBadge({ label, value, active, red, onClick }) {
-  if (!value) return null;
-  const base = active
-    ? (red ? 'bg-red-500 text-white' : 'bg-indigo-600 text-white')
-    : (red ? 'text-red-500 hover:bg-red-50' : 'text-indigo-600 hover:bg-indigo-50');
-  return (
-    <button onClick={onClick} className={`text-center px-2 py-0.5 rounded-lg transition-colors ${base}`}>
-      <p className="text-base font-black leading-none">{value}</p>
-      <p className="text-[9px] uppercase tracking-wide leading-tight mt-0.5">{label}</p>
-    </button>
-  );
-}
-
 function TaskRow({ task, onTaskClick }) {
   const overdue = isTaskOverdue(task);
   const awaitingQC = isAwaitingQC(task);
@@ -462,105 +450,9 @@ function PersonCard({ user, clientLogs, clients, users, allUsers, onDrillIn, onT
   return (
     <>
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="flex items-stretch">
-          <button
-            type="button"
-            className="flex items-center gap-3 px-4 py-4 flex-1 min-w-0 text-left active:bg-slate-50 transition-colors"
-            onClick={() => setShowTaskSheet(true)}
-          >
-            <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0 relative">
-              <span className="text-indigo-700 font-black text-sm">{initials(user.name)}</span>
-              {leaveStatus === 'on_leave' && (
-                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-orange-400 border-2 border-white" title="On Leave" />
-              )}
-              {leaveStatus === 'leave_soon' && (
-                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-amber-300 border-2 border-white" title="Leave Soon" />
-              )}
-              {/* Attendance dot: green=in office, slate=left, red=not arrived, hidden=no Keka data */}
-              {leaveStatus !== 'on_leave' && attendanceStatus && (() => {
-                const arrived = attendanceStatus.hasArrived ?? (attendanceStatus.clockIn !== null);
-                const dotClass = attendanceStatus.isInOffice ? 'bg-emerald-400'
-                  : arrived ? 'bg-slate-400'
-                  : 'bg-red-400';
-                const dotTitle = attendanceStatus.isInOffice ? 'In office'
-                  : arrived ? 'Left for day'
-                  : 'Not arrived';
-                return <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${dotClass}`} title={dotTitle} />;
-              })()}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <p className="text-sm font-bold text-slate-900 truncate">{user.name}</p>
-                {leaveStatus === 'on_leave' && (
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700">On Leave</span>
-                )}
-                {leaveStatus === 'leave_soon' && leaveDate && (
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
-                    Leave {new Date(leaveDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                <p className="text-xs text-slate-400">{user.role}</p>
-                {user.kekaEmployeeId ? (
-                  <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-teal-50 text-teal-600 border border-teal-200">
-                    <Link2 size={8} strokeWidth={2.5} /> Keka
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400 border border-slate-200">
-                    <Link2Off size={8} strokeWidth={2.5} /> No Keka
-                  </span>
-                )}
-                {leaveStatus !== 'on_leave' && attendanceStatus && (() => {
-                  const arrived = attendanceStatus.hasArrived ?? (attendanceStatus.clockIn !== null);
-                  const fmt = (iso) => new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-                  if (!arrived) {
-                    return (
-                      <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-50 text-red-500 border border-red-200">
-                        ✕ Not Arrived
-                      </span>
-                    );
-                  }
-                  return (
-                    <span className={`inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${
-                      attendanceStatus.isInOffice
-                        ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
-                        : 'bg-slate-100 text-slate-500 border-slate-200'
-                    }`}>
-                      <LogIn size={8} strokeWidth={2.5} />
-                      {fmt(attendanceStatus.clockIn)}
-                      {!attendanceStatus.isInOffice && attendanceStatus.clockOut && (
-                        <>{' · '}<LogOut size={8} strokeWidth={2.5} className="ml-0.5" />{fmt(attendanceStatus.clockOut)}</>
-                      )}
-                    </span>
-                  );
-                })()}
-              </div>
-              {overridePersonal.avgRating && (
-                <span className="flex items-center gap-0.5 text-[11px] text-amber-500 font-bold mt-0.5">
-                  <Star size={10} className="fill-amber-400" /> {overridePersonal.avgRating.toFixed(1)}/10
-                </span>
-              )}
-            </div>
-          </button>
-          <div className="flex items-center gap-1.5 pr-3 flex-shrink-0">
-            <FilterBadge label="Pending" value={overridePersonal.pending} active={taskFilter === 'pending'} onClick={() => toggleFilter('pending')} />
-            <FilterBadge label="Today"   value={overridePersonal.today}   active={taskFilter === 'today'}   onClick={() => toggleFilter('today')} />
-            {overridePersonal.overdue > 0 && <FilterBadge label="Overdue" value={overridePersonal.overdue} red active={taskFilter === 'overdue'} onClick={() => toggleFilter('overdue')} />}
-            {overridePersonal.pendingQC > 0 && <FilterBadge label="QC" value={overridePersonal.pendingQC} active={taskFilter === 'awaitingQC'} onClick={() => toggleFilter('awaitingQC')} />}
-            {hasTeam && (
-              <button
-                type="button"
-                onClick={() => onDrillIn(user)}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-indigo-50 border border-indigo-100 min-h-[44px]"
-              >
-                <Users size={12} className="text-indigo-500" />
-                <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wide">Team</span>
-                <ChevronRight size={12} className="text-indigo-400" />
-              </button>
-            )}
-          </div>
-        </div>
+        <MemberCardHeader user={user} stats={overridePersonal} leaveStatus={leaveStatus} leaveDate={leaveDate}
+          attendanceStatus={attendanceStatus} taskFilter={taskFilter} onFilter={toggleFilter}
+          onOpenTasks={() => setShowTaskSheet(true)} hasTeam={hasTeam} onDrillIn={onDrillIn} />
 
         {filteredTasks && filteredTasks.length > 0 && (
           <div className="border-t border-slate-100 px-3 py-2.5 space-y-1.5">
