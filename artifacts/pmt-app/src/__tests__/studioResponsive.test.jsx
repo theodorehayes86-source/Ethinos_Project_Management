@@ -8,9 +8,12 @@ import StudioCalendar from '../lib/creativeStudio/StudioCalendar.jsx';
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 
 describe('Studio uses available width, not the outer browser viewport', () => {
-  it('keeps summary filters in two columns until the Studio container is wide', () => {
+  it('keeps all five summary filters in one compact row at every Studio width', () => {
     const html = renderToStaticMarkup(<StudioSummaryCards counts={{ approved: 2 }} active="approved" onSelect={() => {}} />);
-    expect(html).toContain('grid-cols-2 @3xl:grid-cols-5');
+    expect(html).toContain('grid-cols-5');
+    expect(html).toContain('min-h-[64px]');
+    expect(html).not.toContain('grid-cols-2');
+    expect(html).not.toContain('col-span-2');
     expect(html).toContain('aria-pressed="true"');
     expect(html).not.toContain(' md:');
   });

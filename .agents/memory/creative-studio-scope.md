@@ -99,8 +99,13 @@ Creative Studio summary cards should be clickable filters. Calendar dates should
 use green for deadlines far away, orange in between, red close to deadline and
 deep red past deadline.
 
+Keep all five summary counts in a single compact, readable row on mobile, not
+stacked cards. Use the approved shorter visible labels while preserving the full
+status names for accessibility and filter feedback.
+
 **Why:** The user requested these interactions and deadline colours while keeping
-the existing Creative Studio interface.
+the existing Creative Studio interface, then approved the single-row preview and
+explicitly asked for it to be clickable.
 
 **How to apply:** Keep the normal Flow Pro theme; these are semantic deadline
 colours rather than a separate Studio colour scheme. Preserve client scoping
