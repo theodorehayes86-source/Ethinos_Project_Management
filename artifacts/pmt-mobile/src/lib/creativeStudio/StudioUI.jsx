@@ -40,8 +40,8 @@ export function Sheet({ title, onClose, children, footer, wide, testid }) {
     return () => window.removeEventListener('keydown', k);
   }, [onClose]);
   return (
-    <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center bg-slate-900/40 backdrop-blur-[2px] cs-fade" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div role="dialog" aria-modal="true" aria-label={title} data-testid={testid} className={`cs-rise bg-white w-full ${wide ? 'sm:max-w-2xl' : 'sm:max-w-md'} max-h-[92dvh] flex flex-col rounded-t-2xl sm:rounded-2xl shadow-xl border border-slate-200`}>
+    <div className="fixed inset-0 z-[120] flex items-end @xl:items-center justify-center bg-slate-900/40 backdrop-blur-[2px] cs-fade" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div role="dialog" aria-modal="true" aria-label={title} data-testid={testid} className={`cs-rise bg-white w-full ${wide ? '@xl:max-w-2xl' : '@xl:max-w-md'} max-h-[92dvh] flex flex-col rounded-t-2xl @xl:rounded-2xl shadow-xl border border-slate-200`}>
         <div className="flex items-center justify-between px-5 pt-5 pb-3">
           <h3 className="cs-display text-xl text-slate-900">{title}</h3>
           <button data-testid="button-sheet-close" onClick={onClose} aria-label="Close" className="p-2 rounded-full hover:bg-slate-100"><X size={16} /></button>

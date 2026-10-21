@@ -1642,7 +1642,7 @@ const MasterDataView = ({
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            className={`${tab.id === 'creativeStudio' ? 'max-md:hidden ' : ''}px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
               activeTab === tab.id
                 ? 'bg-blue-600 text-white'
                 : 'bg-slate-50 text-slate-600 border border-slate-200'
@@ -1654,7 +1654,10 @@ const MasterDataView = ({
       </div>
 
       {activeTab === 'clientPortal' && canManageClientPortal(currentUser?.role) && <ClientPortalAdminPanel clients={clients} />}
-      {activeTab === 'creativeStudio' && canManageStudio && <StudioControlPanel auth={auth} apiBase={import.meta.env.VITE_API_BASE_URL || '/api'} users={users} clients={clients} />}
+      {activeTab === 'creativeStudio' && canManageStudio && <>
+        <div className="hidden md:block"><StudioControlPanel auth={auth} apiBase={import.meta.env.VITE_API_BASE_URL || '/api'} users={users} clients={clients} /></div>
+        <p className="md:hidden rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600">Studio settings are available on desktop. Choose another Control Centre tab to continue here.</p>
+      </>}
 
       {/* ─── USERS TAB ─── */}
       {activeTab === 'users' && (

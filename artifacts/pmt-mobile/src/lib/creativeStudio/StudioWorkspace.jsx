@@ -188,7 +188,7 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
   const missingLink = !!(selectedId && items && !selected && !loadError);
 
   if (bootError && !boot) return <div className="p-6 max-w-lg"><ErrorBanner message={bootError} onRetry={loadBoot} /></div>;
-  if (!boot) return <div className="p-4 md:p-6 space-y-4"><div className="h-24 rounded-3xl bg-slate-100 animate-pulse" /><SkeletonList /></div>;
+  if (!boot) return <div className="p-4 @3xl:p-6 space-y-4"><div className="h-24 rounded-3xl bg-slate-100 animate-pulse" /><SkeletonList /></div>;
   if (enabledClients.length === 0) {
     return (
       <div className="p-6 max-w-xl mx-auto">
@@ -210,18 +210,18 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
   const canCreate = enabledClients.some(c => editable.has(c.id));
   const showLog = mode === 'team' && canSeeReminderLog(boot);
   const activeView = view === 'log' && !showLog ? 'plan' : view;
-  const seg = (on) => `px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${on ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:text-slate-800'}`;
+  const seg = (on) => `flex-1 @3xl:flex-none whitespace-nowrap px-3 @3xl:px-3.5 py-2 @3xl:py-1.5 rounded-lg text-xs font-semibold transition-colors ${on ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:text-slate-800'}`;
 
   return (
-    <div className="cs-root min-h-full p-3 md:p-6 text-left text-slate-900 font-sans">
-      <div className="flex flex-wrap items-center gap-3 justify-between mb-5">
-        <div className="flex items-baseline gap-2">
+    <div className="cs-root min-h-full p-3 text-left text-slate-900 font-sans">
+      <div className="flex flex-col @3xl:flex-row @3xl:flex-wrap @3xl:items-center gap-2.5 @3xl:gap-3 @3xl:justify-between mb-4 @3xl:mb-5">
+        <div className="flex items-baseline gap-2 min-w-0 flex-wrap">
           <h2 className="text-lg font-black tracking-tight uppercase">Creative Studio</h2>
           <span className="text-xs text-slate-400">/ {activeView === 'plan' ? 'Content calendar' : activeView === 'log' ? 'Reminder log' : 'Deliverables tracker'}</span>
         </div>
         <ClientSelect clients={enabledClients} value={clientF} onChange={selectClient} />
-        <div role="tablist" aria-label="Viewing as" className="flex items-center gap-1 p-1 rounded-xl bg-white border border-slate-200">
-          <span className="text-[11px] text-slate-400 px-2">Viewing as</span>
+        <div role="tablist" aria-label="Viewing as" className="flex items-center gap-1 p-1 rounded-xl bg-white border border-slate-200 w-full @3xl:w-auto">
+          <span className="text-[11px] text-slate-400 px-2 shrink-0">Viewing as</span>
           {[['team', 'Ethinos team'], ['client', 'Client']].map(([id, label]) => (
             <button key={id} role="tab" aria-selected={mode === id} data-testid={`button-mode-${id}`} onClick={() => setMode(id)} className={seg(mode === id)}>{label}</button>
           ))}
@@ -235,7 +235,7 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
       )}
 
       {mode === 'client' ? (
-        <div data-testid="panel-studio-client-preview" className="bg-white rounded-2xl border border-slate-200 p-3 md:p-5">
+        <div data-testid="panel-studio-client-preview" className="bg-white rounded-2xl border border-slate-200 p-3 @3xl:p-5">
           {previewClients.length === 0
             ? <EmptyState icon={<Eye size={20} />} title="No client to preview" body="Select a client with Creative Studio enabled." />
             : <PortalStudio key={previewClients.map(c => c.id).join('|')} auth={auth} api={previewApi} readOnly />}
@@ -247,41 +247,41 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
         if (activeView === 'log') setView('tracker');
       }} />
 
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        <div className="flex p-1 rounded-xl bg-white border border-slate-200">
+      <div className="grid grid-cols-2 @3xl:flex @3xl:flex-wrap items-center gap-2 mb-4">
+        <div className="col-span-2 flex p-1 rounded-xl bg-white border border-slate-200 overflow-x-auto">
           {[['plan', 'Content plan'], ['tracker', 'Deliverables'], ...(showLog ? [['log', 'Reminder log']] : [])].map(([id, label]) => (
             <button key={id} data-testid={`button-view-${id}`} onClick={() => setView(id)} className={seg(activeView === id)}>{label}</button>
           ))}
         </div>
-        <div className="flex p-1 rounded-xl bg-white border border-slate-200">
+        <div className="col-span-2 flex p-1 rounded-xl bg-white border border-slate-200 overflow-x-auto">
           {['All', ...TYPES].map(t => (
             <button key={t} data-testid={`filter-type-${t}`} onClick={() => setType(t)} className={seg(type === t)}>{t === 'All' ? 'All' : `${t}s`}</button>
           ))}
         </div>
-        <select data-testid="select-filter-stage" value={stageF} onChange={e => setStageF(e.target.value)} className={`${inputCls} !w-auto !py-2`} aria-label="Stage filter">
+        <select data-testid="select-filter-stage" value={stageF} onChange={e => setStageF(e.target.value)} className={`${inputCls} @3xl:!w-auto !py-2 min-w-0`} aria-label="Stage filter">
           <option value="all">All stages</option>
           {Object.keys(STAGES).map(s => <option key={s} value={s}>{stageLabel(s)}</option>)}
         </select>
         {mode === 'team' && (
           <>
-            <select data-testid="select-filter-owner" value={ownerF} onChange={e => setOwnerF(e.target.value)} className={`${inputCls} !w-auto !py-2`} aria-label="Owner filter">
+            <select data-testid="select-filter-owner" value={ownerF} onChange={e => setOwnerF(e.target.value)} className={`${inputCls} @3xl:!w-auto !py-2 min-w-0`} aria-label="Owner filter">
               <option value="all">All owners</option>
               {(boot.owners || []).map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
             </select>
-            <select data-testid="select-filter-deadline" value={deadlineF} onChange={e => setDeadlineF(e.target.value)} className={`${inputCls} !w-auto !py-2`} aria-label="Deadline filter">
+            <select data-testid="select-filter-deadline" value={deadlineF} onChange={e => setDeadlineF(e.target.value)} className={`${inputCls} @3xl:!w-auto !py-2 min-w-0`} aria-label="Deadline filter">
               <option value="all">Any deadline</option>
               <option value="week">Due within 7 days</option>
               <option value="overdue">Production overdue</option>
               <option value="none">No deadline</option>
             </select>
-            <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600">
+            <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 min-h-[40px]">
               <input data-testid="checkbox-show-archived" type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} /> Archived
             </label>
           </>
         )}
-        <button data-testid="button-refresh-studio" onClick={loadItems} className={btnGhost} aria-label="Refresh"><RefreshCw size={13} /></button>
+        <button data-testid="button-refresh-studio" onClick={loadItems} className={`${btnGhost} justify-center`} aria-label="Refresh"><RefreshCw size={13} /></button>
         {mode === 'team' && canCreate && (
-          <button data-testid="button-add-content" onClick={() => setEditing({})} className={`${btnPrimary} md:ml-auto`}><Plus size={14} /> Add content</button>
+          <button data-testid="button-add-content" onClick={() => setEditing({})} className={`${btnPrimary} justify-center col-span-2 @3xl:col-span-1 @3xl:ml-auto`}><Plus size={14} /> Add content</button>
         )}
       </div>
 
@@ -291,20 +291,20 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
       {bootError && <div className="mb-3"><ErrorBanner message={`Could not refresh access: ${bootError}`} onRetry={loadBoot} /></div>}
       {loadError && <div className="mb-3"><ErrorBanner message={loadError} onRetry={loadItems} /></div>}
 
-      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_380px] gap-4 items-start">
-        <div className="min-w-0 bg-white rounded-2xl border border-slate-200 p-3 md:p-5">
+      <div className="@4xl:grid @4xl:grid-cols-[minmax(0,1fr)_380px] gap-4 items-start">
+        <div className="min-w-0 bg-white rounded-2xl border border-slate-200 p-2.5 @3xl:p-5">
           {activeView === 'log' ? <StudioReminderLog api={api} boot={boot} clientFilter={clientF} /> : items === null ? <SkeletonList /> : activeView === 'plan' ? (
             <section aria-label="Content calendar">
-              <div className="flex flex-wrap items-center gap-2 mb-4">
-                <button data-testid="button-month-prev" onClick={() => setMonth(m => shiftMonth(m, -1))} className="p-1.5 rounded-lg hover:bg-slate-100" aria-label="Previous month"><ChevronLeft size={16} /></button>
-                <h3 data-testid="text-month" className="text-xl font-bold">{monthTitle(month)}</h3>
-                <button data-testid="button-month-next" onClick={() => setMonth(m => shiftMonth(m, 1))} className="p-1.5 rounded-lg hover:bg-slate-100" aria-label="Next month"><ChevronRight size={16} /></button>
-                <span data-testid="text-month-count" className="text-xs text-slate-400">{monthItems.length} item{monthItems.length === 1 ? '' : 's'}</span>
-                <button data-testid="button-month-today" onClick={() => setMonth(nowMonth())} className="text-xs font-semibold text-indigo-600 hover:underline">Today</button>
-                <div className="flex p-0.5 rounded-lg bg-slate-100" role="tablist" aria-label="Content plan layout">
+              <div className="flex flex-wrap items-center gap-x-1 gap-y-2 mb-4">
+                <button data-testid="button-month-prev" onClick={() => setMonth(m => shiftMonth(m, -1))} className="p-2.5 @3xl:p-1.5 rounded-lg hover:bg-slate-100" aria-label="Previous month"><ChevronLeft size={16} /></button>
+                <h3 data-testid="text-month" className="text-lg @3xl:text-xl font-bold mx-1">{monthTitle(month)}</h3>
+                <button data-testid="button-month-next" onClick={() => setMonth(m => shiftMonth(m, 1))} className="p-2.5 @3xl:p-1.5 rounded-lg hover:bg-slate-100" aria-label="Next month"><ChevronRight size={16} /></button>
+                <span data-testid="text-month-count" className="text-xs text-slate-400 ml-1">{monthItems.length} item{monthItems.length === 1 ? '' : 's'}</span>
+                <button data-testid="button-month-today" onClick={() => setMonth(nowMonth())} className="text-xs font-semibold text-indigo-600 hover:underline px-2 py-2">Today</button>
+                <div className="flex p-0.5 rounded-lg bg-slate-100 w-full @3xl:w-auto @3xl:ml-2" role="tablist" aria-label="Content plan layout">
                   {[['list', 'List', LayoutList], ['calendar', 'Calendar', CalendarDays]].map(([id, label, Icon]) => (
                     <button key={id} type="button" role="tab" aria-selected={planLayout === id} data-testid={`button-plan-layout-${id}`} onClick={() => setPlanLayout(id)}
-                      className={`px-2.5 py-1 rounded-md text-xs font-bold flex items-center gap-1 ${planLayout === id ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                      className={`flex-1 justify-center px-2.5 py-2 @3xl:py-1 rounded-md text-xs font-bold flex items-center gap-1 ${planLayout === id ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
                       <Icon size={12} /> {label}
                     </button>
                   ))}
@@ -318,14 +318,14 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
                 <EmptyState icon={<CalendarDays size={20} />} title="Nothing planned this month" body={unscheduled.length ? `${unscheduled.length} deliverable(s) still need a posting date. See the Deliverables view.` : 'Adjust filters or add content.'} />
               ) : (
                 <>
-                  <div className="hidden md:grid grid-cols-[120px_minmax(0,1fr)_160px_150px] gap-3 px-2 mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                  <div className="hidden @3xl:grid grid-cols-[120px_minmax(0,1fr)_160px_150px] gap-3 px-2 mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">
                     <span /><span className="pl-3">Content · Stage</span><span>Platform · Time</span><span>Status · Schedule</span>
                   </div>
                   <div className="space-y-3">
                     {groups.map(([k, list]) => (
-                      <div key={k} className="md:grid md:grid-cols-[120px_minmax(0,1fr)] gap-3">
+                      <div key={k} className="@3xl:grid @3xl:grid-cols-[120px_minmax(0,1fr)] gap-3">
                         <DateBadge dayKeyStr={k} item={list[0]} items={list} count={list.length} now={now} />
-                        <div className="space-y-2 mt-2 md:mt-0">
+                        <div className="space-y-2 mt-2 @3xl:mt-0">
                           {list.map(i => <Row key={i.id} i={i} active={i.id === selectedId} onOpen={() => setSelectedId(i.id)} clientName={clientName(i.clientId)} />)}
                         </div>
                       </div>
@@ -340,12 +340,12 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
                 <EmptyState icon={<LayoutList size={20} />} title="No deliverables match" body="Change filters, or add content to start tracking." />
               ) : (
                 <div className="rounded-2xl border border-slate-200 bg-white/70 overflow-hidden">
-                  <div className="hidden md:grid grid-cols-[2fr_1fr_1fr_1fr_1.3fr] gap-2 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-200">
+                  <div className="hidden @3xl:grid grid-cols-[2fr_1fr_1fr_1fr_1.3fr] gap-2 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-200">
                     <span>Deliverable</span><span>Owner</span><span>Production due</span><span>Posting</span><span>Stage</span>
                   </div>
                   {[...filtered].sort((a, b) => String(a.productionDueDate || '9').localeCompare(String(b.productionDueDate || '9'))).map(i => (
                     <button key={i.id} data-testid={`row-deliverable-${i.id}`} onClick={() => setSelectedId(i.id)}
-                      className={`w-full text-left grid grid-cols-1 md:grid-cols-[2fr_1fr_1fr_1fr_1.3fr] gap-1 md:gap-2 px-3 py-2.5 border-b border-slate-100 last:border-0 hover:bg-indigo-50 transition-colors ${i.id === selectedId ? 'bg-indigo-50' : ''} ${i.archived ? 'opacity-60' : ''}`}>
+                      className={`w-full text-left grid grid-cols-1 @3xl:grid-cols-[2fr_1fr_1fr_1fr_1.3fr] gap-1 @3xl:gap-2 px-3 py-2.5 border-b border-slate-100 last:border-0 hover:bg-indigo-50 transition-colors ${i.id === selectedId ? 'bg-indigo-50' : ''} ${i.archived ? 'opacity-60' : ''}`}>
                       <span className="min-w-0"><span className="block text-sm font-bold truncate">{i.title}</span><span className="text-[11px] text-slate-500">{clientName(i.clientId)} · {i.type}</span></span>
                       <span className="text-xs text-slate-600">{mode === 'team' ? ownerName(i.ownerId) : ''}</span>
                       <span className="text-xs text-slate-600">{mode === 'team' ? (i.productionDueDate || 'Not set') : ''}</span>
@@ -366,14 +366,14 @@ export default function StudioWorkspace({ auth, apiBase, currentUser }) {
         </div>
 
         {selected ? (
-          <div className="fixed inset-0 z-[110] bg-white overflow-y-auto lg:static lg:z-auto lg:bg-transparent lg:overflow-visible lg:sticky lg:top-4">
+          <div className="fixed inset-0 z-[110] bg-white overflow-y-auto @4xl:static @4xl:z-auto @4xl:bg-transparent @4xl:overflow-visible @4xl:sticky @4xl:top-4">
             <Detail key={selected.id} item={selected} api={api} boot={boot} mode={mode} editable={editable.has(selected.clientId)}
               clientName={clientName(selected.clientId)} ownerName={ownerName} currentUser={currentUser}
               onClose={() => setSelectedId(null)} onChange={upsert} onEdit={() => setEditing(selected)}
               onDuplicated={(d) => { upsert(d); setSelectedId(d.id); }} onReload={loadItems} />
           </div>
         ) : (
-          <div className="hidden lg:block rounded-3xl border border-dashed border-slate-200 p-8 text-center text-xs text-slate-400">
+          <div className="hidden @4xl:block rounded-3xl border border-dashed border-slate-200 p-8 text-center text-xs text-slate-400">
             <Sparkles size={18} className="mx-auto mb-2 text-indigo-600" /> Select a deliverable to see assets, approvals and conversations.
           </div>
         )}
@@ -429,17 +429,17 @@ function StatusPill({ i }) {
 function Row({ i, active, onOpen, clientName }) {
   return (
     <button data-testid={`card-content-${i.id}`} onClick={onOpen}
-      className={`w-full text-left grid grid-cols-[auto_minmax(0,1fr)] md:grid-cols-[auto_minmax(0,1fr)_160px_150px] items-center gap-x-3 gap-y-1 rounded-xl border px-3 py-2.5 transition-colors ${rowTone(i)} ${active ? '!bg-indigo-50 border-indigo-200' : 'hover:bg-slate-50'} ${i.archived ? 'opacity-60' : ''}`}>
+      className={`w-full text-left grid grid-cols-[auto_minmax(0,1fr)] @3xl:grid-cols-[auto_minmax(0,1fr)_160px_150px] items-center gap-x-3 gap-y-1 rounded-xl border px-3 py-2.5 transition-colors ${rowTone(i)} ${active ? '!bg-indigo-50 border-indigo-200' : 'hover:bg-slate-50'} ${i.archived ? 'opacity-60' : ''}`}>
       <span className={`w-6 h-6 rounded-md text-[10px] font-bold flex items-center justify-center ${typeChip[i.type] || 'bg-slate-100 text-slate-600'}`}>{(i.type || '?')[0]}</span>
       <span className="min-w-0">
         <span className="block text-sm font-semibold truncate">{i.title}</span>
         <span className="block text-[11px] text-slate-500 truncate">{clientName} · {stageLabel(i.stage)}</span>
       </span>
-      <span className="col-start-2 md:col-start-auto min-w-0">
+      <span className="col-start-2 @3xl:col-start-auto min-w-0">
         <span className="block text-xs text-slate-700 truncate">{(i.platforms || []).join(' · ') || 'No platforms'}</span>
         <span className="block text-[11px] text-slate-400">{i.plannedAt ? `${fmtInstant(i.plannedAt, i.timezone, { day: undefined, month: undefined })} ${tzShort(i.timezone)}` : 'No posting date'}</span>
       </span>
-      <span className="col-start-2 md:col-start-auto flex md:flex-col items-start gap-1">
+      <span className="col-start-2 @3xl:col-start-auto flex @3xl:flex-col items-start gap-1">
         <StatusPill i={i} />
         <span className={`inline-flex items-center gap-1 text-[10px] ${i.scheduled ? 'text-blue-600 font-semibold' : 'text-slate-400'}`}><Clock size={10} />{i.scheduled ? 'Scheduled' : 'Not scheduled'}</span>
       </span>
@@ -478,7 +478,7 @@ function Detail({ item, api, boot, mode, editable, clientName, ownerName, curren
     : [['overview', 'Overview'], ['assets', 'Assets'], ['approvals', 'Approvals'], ['chat', 'Chat'], ['history', 'History']];
 
   return (
-    <article data-testid="panel-deliverable-detail" className="cs-rise lg:rounded-2xl lg:border border-slate-200 bg-white lg:shadow-sm min-h-full lg:min-h-0">
+    <article data-testid="panel-deliverable-detail" className="cs-rise @4xl:rounded-2xl @4xl:border border-slate-200 bg-white @4xl:shadow-sm min-h-full @4xl:min-h-0">
       <header className="p-4 border-b border-slate-200">
         <div className="flex items-start gap-2">
           <button data-testid="button-close-detail" onClick={onClose} className="p-1.5 -ml-1 rounded-full hover:bg-slate-100" aria-label="Close detail"><X size={16} /></button>
@@ -817,8 +817,8 @@ function Editor({ api, boot, item, clients, defaultClient, onClose, onSaved }) {
   return (
     <Sheet wide testid="dialog-deliverable-editor" title={item ? 'Edit deliverable' : 'Add content'} onClose={onClose}
       footer={<><button data-testid="button-cancel-editor" onClick={onClose} className={btnGhost}>Cancel</button><button data-testid="button-save-deliverable" type="submit" form="deliverable-form" disabled={busy} className={btnAccent}>{busy ? 'Saving' : item ? 'Save changes' : 'Create draft'}</button></>}>
-      <form id="deliverable-form" onSubmit={save} className="grid sm:grid-cols-2 gap-3">
-        <div className="sm:col-span-2"><Field label="Title" error={errors.title}><input data-testid="input-title" value={f.title} maxLength={200} onChange={e => set('title', e.target.value)} className={inputCls} /></Field></div>
+      <form id="deliverable-form" onSubmit={save} className="grid @xl:grid-cols-2 gap-3">
+        <div className="@xl:col-span-2"><Field label="Title" error={errors.title}><input data-testid="input-title" value={f.title} maxLength={200} onChange={e => set('title', e.target.value)} className={inputCls} /></Field></div>
         <Field label="Studio client" error={errors.clientId}>
           <select data-testid="select-client" disabled={!!item} value={f.clientId} onChange={e => { set('clientId', e.target.value); set('ownerId', ''); }} className={inputCls}>
             {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -835,9 +835,9 @@ function Editor({ api, boot, item, clients, defaultClient, onClose, onSaved }) {
         </Field>
         <Field label="Production due" error={errors.productionDueDate} hint="Separate from posting date."><input data-testid="input-due" type="date" value={f.productionDueDate} onChange={e => set('productionDueDate', e.target.value)} className={inputCls} /></Field>
         <Field label="Deadline time" hint={`Uses ${f.timezone}. Included in reminder emails.`}><input data-testid="input-due-time" type="time" value={f.productionDueTime} onChange={e => set('productionDueTime', e.target.value)} className={inputCls} /></Field>
-        <div className="sm:col-span-2"><Field label="Internal brief" error={errors.brief}><textarea data-testid="input-brief" rows={3} value={f.brief} onChange={e => set('brief', e.target.value)} className={inputCls} /></Field></div>
-        <div className="sm:col-span-2"><Field label="Client-facing caption"><textarea data-testid="input-caption" rows={3} value={f.caption} onChange={e => set('caption', e.target.value)} className={inputCls} /></Field></div>
-        <div className="sm:col-span-2">
+        <div className="@xl:col-span-2"><Field label="Internal brief" error={errors.brief}><textarea data-testid="input-brief" rows={3} value={f.brief} onChange={e => set('brief', e.target.value)} className={inputCls} /></Field></div>
+        <div className="@xl:col-span-2"><Field label="Client-facing caption"><textarea data-testid="input-caption" rows={3} value={f.caption} onChange={e => set('caption', e.target.value)} className={inputCls} /></Field></div>
+        <div className="@xl:col-span-2">
           <Field label="Platforms">
             <div className="flex flex-wrap gap-1.5">
               {PLATFORMS.map(p => <button type="button" key={p} data-testid={`button-platform-${p}`} aria-pressed={f.platforms.includes(p)} onClick={() => togglePlat(p)} className={`px-3 py-1.5 rounded-full text-[11px] font-bold border ${f.platforms.includes(p) ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white border-slate-200'}`}>{p}</button>)}
@@ -855,10 +855,10 @@ function Editor({ api, boot, item, clients, defaultClient, onClose, onSaved }) {
           </Field>
         </div>
         {item && (item.stage !== 'internal_draft' || item.scheduled) && (
-          <p className="sm:col-span-2 text-[11px] text-amber-700 flex gap-1.5"><AlertTriangle size={12} className="mt-0.5" /> Material changes can invalidate existing approvals and the scheduled marker.</p>
+          <p className="@xl:col-span-2 text-[11px] text-amber-700 flex gap-1.5"><AlertTriangle size={12} className="mt-0.5" /> Material changes can invalidate existing approvals and the scheduled marker.</p>
         )}
-        {error && <div className="sm:col-span-2"><ErrorBanner message={error} /></div>}
-        {f.clientId && owners.length === 0 && <p className="sm:col-span-2 text-[11px] text-slate-500 flex gap-1.5"><CheckCircle2 size={12} /> No eligible creative owners for this client. Assign editors in Control Center.</p>}
+        {error && <div className="@xl:col-span-2"><ErrorBanner message={error} /></div>}
+        {f.clientId && owners.length === 0 && <p className="@xl:col-span-2 text-[11px] text-slate-500 flex gap-1.5"><CheckCircle2 size={12} /> No eligible creative owners for this client. Assign editors in Control Center.</p>}
       </form>
     </Sheet>
   );

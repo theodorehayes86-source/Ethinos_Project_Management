@@ -35,12 +35,13 @@ export default function StudioCalendarDemo() {
   const items = useMemo(() => studioDemoItems(today.slice(0, 7)), [today]);
   const [openId, setOpenId] = useState(null);
   const [card, setCard] = useState('all');
+  const [phone, setPhone] = useState(() => new URLSearchParams(window.location.search).get('phone') === '1');
   const filtered = items.filter(i => matchesStudioCard(i, card));
   const open = items.find(i => i.id === openId);
   return (
     <div className="min-h-[100dvh] bg-indigo-50/40 p-3 md:p-6">
-      <div className="max-w-6xl mx-auto bg-white rounded-2xl border border-slate-200 p-3 md:p-5">
-        <p className="text-[10px] font-bold uppercase tracking-widest text-amber-600 mb-2">Demo fixture · Creative Studio content plan calendar</p>
+      <div className={`${phone ? 'max-w-[390px]' : 'max-w-6xl'} cs-root mx-auto bg-white rounded-2xl border border-slate-200 p-3`}>
+        <p className="text-[10px] font-bold uppercase tracking-widest text-amber-600 mb-2">Demo fixture · Creative Studio content plan calendar <button type="button" data-testid="button-demo-width" onClick={() => setPhone(p => !p)} className="ml-2 underline">{phone ? 'Show wide' : 'Show phone width'}</button></p>
         <StudioSummaryCards counts={studioCardCounts(items)} active={card} onSelect={key => { setCard(key); setOpenId(null); }} />
         <div className="flex flex-wrap items-center gap-2 mb-4">
           <button data-testid="button-month-prev" onClick={() => setMonth(m => shift(m, -1))} className="p-1.5 rounded-lg hover:bg-slate-100" aria-label="Previous month"><ChevronLeft size={16} /></button>

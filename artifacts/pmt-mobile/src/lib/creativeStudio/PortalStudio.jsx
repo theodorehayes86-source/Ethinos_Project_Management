@@ -121,7 +121,7 @@ export default function PortalStudio({ auth, apiBase, onRevoked, api: injectedAp
 
 function List({ list, name, onOpen, accent }) {
   return (
-    <div className="grid gap-2 sm:grid-cols-2">
+    <div className="grid gap-2 @xl:grid-cols-2">
       {list.map(i => (
         <button key={i.id} data-testid={`card-portal-deliverable-${i.id}`} onClick={() => onOpen(i.id)}
           className={`text-left rounded-2xl border p-3 transition-all hover:-translate-y-px ${accent ? 'border-indigo-600 bg-indigo-50' : 'border-slate-200 bg-white/80'}`}>
@@ -162,7 +162,7 @@ function PortalDetail({ item, api, uid, readOnly, clientName, onBack, onChange, 
     <div className="cs-root space-y-4 text-left text-slate-900">
       {readOnly && <PreviewNotice />}
       <button data-testid="button-portal-studio-back" onClick={onBack} className={btnGhost}><ChevronLeft size={14} /> Shared content</button>
-      <div className="rounded-3xl border border-slate-200 bg-white p-4 sm:p-6 space-y-4">
+      <div className="rounded-3xl border border-slate-200 bg-white p-4 @xl:p-6 space-y-4">
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">{clientName} · {item.type} · revision {item.revision}</p>
           <h2 data-testid="text-portal-deliverable-title" className="cs-display text-3xl leading-tight break-words">{item.title}</h2>

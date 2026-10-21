@@ -79,7 +79,7 @@ export default function StudioReminderLog({ api, boot, clientFilter = 'all' }) {
     <section aria-label="Reminder log" data-testid="section-reminder-log">
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <ScrollText size={15} className="text-indigo-600" />
-        <h3 className="text-xl font-bold flex-1">Reminder log</h3>
+        <h3 className="text-lg @3xl:text-xl font-bold flex-1">Reminder log</h3>
         <span className="text-xs text-slate-400">{clients.length === 1 ? clients[0].name : `${clients.length} clients`}</span>
         <button data-testid="button-refresh-deliveries" onClick={load} className={btnGhost} aria-label="Refresh reminder log"><RefreshCw size={13} /></button>
       </div>
@@ -102,7 +102,22 @@ function LogTable({ title, testid, rows, people, multi, empty }) {
     <div>
       <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">{title} <span className="text-slate-300">({rows.length})</span></p>
       {rows.length === 0 ? <p className="text-xs text-slate-400 px-1">{empty}</p> : (
-        <div className="rounded-xl border border-slate-200 overflow-x-auto">
+        <>
+        <ul className="@3xl:hidden space-y-2" data-testid={`${testid}-cards`}>
+          {rows.map(d => (
+            <li key={`${d.clientId}-${d.upcoming ? 'u' : 's'}-${d.id}`} data-testid={`card-${d.upcoming ? 'upcoming' : 'delivery'}-${d.id}`} className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-700">
+              <div className="flex items-start justify-between gap-2">
+                <p className="min-w-0 text-sm font-semibold text-slate-900 break-words">{d.itemTitle || `Item ${String(d.itemId || '').slice(0, 8)}`}{d.revision ? <span className="font-normal text-slate-400"> r{d.revision}</span> : null}</p>
+                <span className={`shrink-0 inline-flex px-2 py-0.5 rounded-full border text-[10px] font-bold capitalize ${d.upcoming ? DELIVERY_TONE_SCHEDULED : (DELIVERY_TONE[d.status] || 'bg-slate-100 text-slate-600 border-slate-200')}`}>{d.status}{d.attempts ? ` x${d.attempts}` : ''}</span>
+              </div>
+              <p className={`mt-0.5 font-semibold ${d.approvalPhase === 'final' ? 'text-emerald-700' : d.approvalPhase === 'reference' ? 'text-amber-700' : 'text-slate-700'}`}>{phaseLabel(d)}{multi ? <span className="font-normal text-slate-500"> · {d.clientName}</span> : null}</p>
+              <p className="mt-1 text-slate-600 break-words">{people.get(String(d.recipientUid)) || d.recipientName || 'Recipient no longer listed'}</p>
+              <p className="text-slate-400">{d.when ? fmtStamp(ts(d.when)) : 'Not set'}</p>
+              {d.error && <p className="text-[10px] text-red-600 mt-1 break-words">{d.error}</p>}
+            </li>
+          ))}
+        </ul>
+        <div className="hidden @3xl:block rounded-xl border border-slate-200 overflow-x-auto">
           <table className="w-full text-xs" data-testid={testid}>
             <thead><tr className="text-left text-[10px] uppercase tracking-wider text-slate-400 bg-slate-50">
               <th className="py-2 px-3">Type</th><th className="px-3">Content</th>{multi && <th className="px-3">Client</th>}<th className="px-3">Recipient</th><th className="px-3">When</th><th className="px-3">Status</th>
@@ -125,6 +140,7 @@ function LogTable({ title, testid, rows, people, multi, empty }) {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   );

@@ -102,7 +102,7 @@ export default function StudioControlPanel({ auth, apiBase }) {
 
       {boot.capabilities.canManageDefaults && <Defaults api={api} initial={boot.defaults || DEFAULT_AUTO} />}
 
-      <div className="grid lg:grid-cols-[320px_minmax(0,1fr)] gap-4 items-start">
+      <div className="grid @4xl:grid-cols-[320px_minmax(0,1fr)] gap-4 items-start">
         <div className="rounded-2xl border border-slate-200 bg-white/80 p-3">
           <div className="relative mb-2">
             <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -139,8 +139,8 @@ export default function StudioControlPanel({ auth, apiBase }) {
 function AutomationFields({ value, onChange, prefix }) {
   const set = (k, v) => onChange({ ...value, [k]: v });
   return (
-    <div className="grid sm:grid-cols-4 gap-3">
-      <label className="flex items-center gap-2 text-sm font-semibold sm:col-span-4">
+    <div className="grid @xl:grid-cols-4 gap-3">
+      <label className="flex items-center gap-2 text-sm font-semibold @xl:col-span-4">
         <input data-testid={`checkbox-${prefix}-auto-enabled`} type="checkbox" checked={!!value.enabled} onChange={e => set('enabled', e.target.checked)} /> Email reminders enabled
       </label>
       <Field label="Daily send time"><input data-testid={`input-${prefix}-send-time`} type="time" value={value.sendTime || '09:00'} onChange={e => set('sendTime', e.target.value)} className={inputCls} /></Field>
@@ -150,10 +150,10 @@ function AutomationFields({ value, onChange, prefix }) {
         </select>
       </Field>
       <Field label="Cadence (days)"><input data-testid={`input-${prefix}-cadence`} type="number" min={1} max={30} value={value.cadenceDays ?? 1} onChange={e => set('cadenceDays', Number(e.target.value))} className={inputCls} /></Field>
-      <div className="sm:col-span-4 grid lg:grid-cols-2 gap-3">
+      <div className="@xl:col-span-4 grid @4xl:grid-cols-2 gap-3">
         {PHASES.map(ph => <PhaseCard key={ph.id} phase={ph} master={value} value={value[ph.id]} onChange={(pv) => set(ph.id, pv)} prefix={prefix} />)}
       </div>
-      <div className="sm:col-span-4 text-[11px] text-slate-500 space-y-1">
+      <div className="@xl:col-span-4 text-[11px] text-slate-500 space-y-1">
         <p>Variables are replaced with the client and post details when the email is sent.</p>
         {PLACEHOLDERS.map(token => <span key={token} className="inline-block mr-3"><code className="font-semibold">{token}</code> = {PLACEHOLDER_MEANINGS[token]}</span>)}
         <p>Send time, timezone and cadence apply to both reminders.</p>
@@ -268,7 +268,7 @@ function ClientConfig({ api, client, config, candidates, people, defaults, onSav
         <Field label="Creative owners" hint="Grants creative editing to existing project members only. Does not grant Control Center access."><Picker k="ownerIds" list={candidates} testid="button-owner" /></Field>
         <Field label="Creative editors" hint="Only existing project members of this client are eligible."><Picker k="editorIds" list={candidates} testid="button-editor" /></Field>
         <Field label="Default posting timezone">
-          <select data-testid="select-studio-tz" value={v.timezone} onChange={e => edit(p => ({ ...p, timezone: e.target.value }))} className={`${inputCls} sm:max-w-xs`}>
+          <select data-testid="select-studio-tz" value={v.timezone} onChange={e => edit(p => ({ ...p, timezone: e.target.value }))} className={`${inputCls} @xl:max-w-xs`}>
             {[...new Set([v.timezone, ...TIMEZONES])].map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </Field>

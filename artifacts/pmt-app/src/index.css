@@ -89,7 +89,7 @@
 
 /* Creative Studio */
 .cs-display { font-weight: 700; letter-spacing: -0.015em; }
-.cs-root { font-feature-settings: "tnum" 0; }
+.cs-root { container-type: inline-size; font-feature-settings: "tnum" 0; }
 @keyframes cs-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes cs-fade { from { opacity: 0; } to { opacity: 1; } }
 .cs-rise { animation: cs-rise 320ms cubic-bezier(.2,.7,.2,1) both; }

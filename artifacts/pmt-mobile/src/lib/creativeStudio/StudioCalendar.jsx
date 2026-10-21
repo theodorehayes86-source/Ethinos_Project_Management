@@ -18,9 +18,9 @@ const deadlineText = (i, now) => `${i.productionDueDate
 export function StudioDeadlineLegend() {
   return (
     <div data-testid="calendar-deadline-legend" className="space-y-1">
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-600" aria-label="Deadline colours">
+      <div className="grid grid-cols-2 @3xl:flex @3xl:flex-wrap gap-x-4 gap-y-1.5 text-[11px] text-slate-600" aria-label="Deadline colours">
         {Object.entries(DEADLINE_TONES).map(([key, t]) => (
-          <span key={key} className="inline-flex items-center gap-1.5"><i aria-hidden="true" className={`w-2 h-2 rounded-full ${t.dot}`} />{t.label}</span>
+          <span key={key} className="inline-flex items-center gap-1.5 whitespace-nowrap"><i aria-hidden="true" className={`w-2 h-2 rounded-full ${t.dot}`} />{t.label}</span>
         ))}
       </div>
       <p className="text-[10px] text-slate-400">Production deadline when available; otherwise posting time. Each date shows its most urgent item. Date-only deadlines remain due all day.</p>
@@ -84,7 +84,7 @@ export default function StudioCalendar({ items, month, todayKey, selectedId, onO
             const dayTone = DEADLINE_TONES[mostUrgentStudioTone(list, now)];
             return (
               <div key={c.key} role="gridcell" data-testid={`calendar-cell-${c.key}`} aria-label={`${longDay(c.key)}, ${list.length} item${list.length === 1 ? '' : 's'}`}
-                className={`min-w-0 min-h-[56px] md:min-h-[112px] border-b border-r border-slate-100 p-1 ${c.inMonth ? 'bg-white' : 'bg-slate-50/70'} ${isPicked ? 'md:bg-white bg-indigo-50/60' : ''}`}>
+                className={`min-w-0 min-h-[56px] @3xl:min-h-[112px] border-b border-r border-slate-100 p-1 ${c.inMonth ? 'bg-white' : 'bg-slate-50/70'} ${isPicked ? '@3xl:bg-white bg-indigo-50/60' : ''}`}>
                 <button type="button" data-testid={`button-calendar-day-${c.key}`} onClick={() => setPicked(c.key)} aria-pressed={isPicked}
                   className="w-full flex items-center justify-between gap-1 rounded-md px-0.5 focus-visible:outline-none focus-visible:ring-2 ring-indigo-400">
                   <span title={list.length ? dayTone.label : undefined} className={`inline-flex items-center justify-center w-6 h-6 rounded-full border border-transparent text-[11px] font-bold ${list.length ? dayTone.badge : c.inMonth ? 'text-slate-700' : 'text-slate-300'} ${isToday ? 'ring-2 ring-indigo-500 ring-offset-1' : ''}`}>{c.day}</span>
@@ -92,11 +92,11 @@ export default function StudioCalendar({ items, month, todayKey, selectedId, onO
                 </button>
                 {list.length > 0 && (
                   <>
-                    <div className="hidden md:block space-y-1 mt-1">
+                    <div className="hidden @3xl:block space-y-1 mt-1">
                       {list.slice(0, 3).map(i => <Chip key={i.id} i={i} active={i.id === selectedId} onOpen={onOpen} clientName={clientName} now={now} />)}
                       {list.length > 3 && <button type="button" onClick={() => setPicked(c.key)} className="text-[10px] font-semibold text-indigo-600 hover:underline">+{list.length - 3} more</button>}
                     </div>
-                    <div className="md:hidden flex flex-wrap justify-center gap-0.5 mt-1" aria-hidden="true">
+                    <div className="@3xl:hidden flex flex-wrap justify-center gap-0.5 mt-1" aria-hidden="true">
                       {list.slice(0, 4).map(i => <i key={i.id} className={`w-1.5 h-1.5 rounded-full ${tone(i, now).dot}`} />)}
                     </div>
                   </>
@@ -108,7 +108,7 @@ export default function StudioCalendar({ items, month, todayKey, selectedId, onO
       </div>
 
       {/* Selected-day agenda: primary on mobile, overflow ("+N more") on desktop. */}
-      <section aria-label="Selected day" data-testid="calendar-day-agenda" className={`space-y-2 ${dayItems.length > 3 ? '' : 'md:hidden'}`}>
+      <section aria-label="Selected day" data-testid="calendar-day-agenda" className={`space-y-2 ${dayItems.length > 3 ? '' : '@3xl:hidden'}`}>
         <h4 className="text-sm font-bold text-slate-800">{longDay(pickedKey)} <span className="text-xs font-normal text-slate-400">· {dayItems.length} item{dayItems.length === 1 ? '' : 's'}</span></h4>
         {dayItems.length === 0
           ? <p className="text-xs text-slate-400">Nothing planned on this day.</p>
@@ -118,7 +118,7 @@ export default function StudioCalendar({ items, month, todayKey, selectedId, onO
       <section aria-label="Unscheduled" data-testid="calendar-unscheduled">
         <h4 className="text-sm font-bold text-slate-800 mb-2">Without a posting date <span className="text-xs font-normal text-slate-400">({unscheduled.length})</span></h4>
         {unscheduled.length === 0 ? <p className="text-xs text-slate-400">Every deliverable has a planned post time.</p> : (
-          <div className="grid gap-1.5 sm:grid-cols-2">
+          <div className="grid gap-1.5 @xl:grid-cols-2">
             {unscheduled.map(i => (
               <button key={i.id} type="button" data-testid={`unscheduled-item-${i.id}`} onClick={() => onOpen(i.id)}
                 title={deadlineText(i, now)} className={`text-left rounded-xl border border-slate-200 border-l-4 ${tone(i, now).border} px-3 py-2 bg-white hover:bg-slate-50 ${i.id === selectedId ? '!bg-indigo-50' : ''}`}>

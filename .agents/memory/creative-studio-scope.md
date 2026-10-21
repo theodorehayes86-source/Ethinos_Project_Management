@@ -105,3 +105,15 @@ the existing Creative Studio interface.
 **How to apply:** Keep the normal Flow Pro theme; these are semantic deadline
 colours rather than a separate Studio colour scheme. Preserve client scoping
 and use the same calendar component in the client portal and its preview.
+
+Studio settings must be available on desktop only, not in the mobile Studio.
+
+**Why:** The user explicitly requested desktop-only settings while asking for a mobile redesign.
+
+**How to apply:** Keep operational planning and approvals on mobile; retain configuration in desktop Control Centre.
+
+Responsive Studio layouts must use the available Studio width rather than the outer viewport.
+
+**Why:** The mobile application can occupy a narrow column inside a wide browser. Viewport breakpoints then activate desktop grids inside that column and crush cards and rows.
+
+**How to apply:** Use container-responsive layouts in shared Studio components. Do not globally override mobile breakpoints, which would affect unrelated screens.
